@@ -233,13 +233,13 @@ export default function InscricoesPage({ embedded }: InscricoesPageProps) {
         )}
         <div className="grid gap-3 md:grid-cols-[1.2fr_1.8fr]">
           <input
-            className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+            className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
             placeholder="Título do formulário"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
           />
           <input
-            className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+            className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
             placeholder="Descrição curta (opcional) · podes usar como formulário simples"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
@@ -266,7 +266,7 @@ export default function InscricoesPage({ embedded }: InscricoesPageProps) {
               className={cn(
                 "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[12px] font-semibold transition",
                 isActive
-                  ? "border-white/30 bg-white/15 text-white shadow-[0_12px_30px_rgba(107,255,255,0.2)]"
+                  ? "border-white/30 bg-white/15 text-white shadow-[0_12px_30px_rgba(34,211,238,0.2)]"
                   : "border-white/10 text-white/70 hover:bg-white/10",
               )}
             >

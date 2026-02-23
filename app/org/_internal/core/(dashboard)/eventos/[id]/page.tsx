@@ -530,7 +530,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
   const actionToneClasses = (tone: "primary" | "success" | "warning" | "neutral") => {
     switch (tone) {
       case "primary":
-        return "border-[#6BFFFF]/45 bg-[#6BFFFF]/10 text-white hover:border-[#6BFFFF]/70";
+        return "border-[#22D3EE]/45 bg-[#22D3EE]/10 text-white hover:border-[#22D3EE]/70";
       case "success":
         return "border-emerald-400/45 bg-emerald-400/10 text-emerald-50 hover:border-emerald-400/70";
       case "warning":
@@ -1061,8 +1061,8 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
         </div>
 
       <section id="padel-finance" className="scroll-mt-24 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="rounded-2xl border border-[#6BFFFF]/40 bg-[#02040b]/95 backdrop-blur-xl px-4 py-3.5">
-          <p className="text-[11px] text-[#6BFFFF]/80">
+        <div className="rounded-2xl border border-[#22D3EE]/40 bg-[#02040b]/95 backdrop-blur-xl px-4 py-3.5">
+          <p className="text-[11px] text-[#22D3EE]/80">
             {ticketsSoldLabel}
           </p>
             <p className="mt-1 text-2xl font-semibold tracking-tight">
@@ -1077,7 +1077,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
             {overallOccupancy !== null && (
               <div className="mt-2 h-1.5 rounded-full bg-white/10 overflow-hidden">
                 <div
-                  className="h-full rounded-full bg-gradient-to-r from-[#6BFFFF] to-[#FF00C8]"
+                  className="h-full rounded-full bg-gradient-to-r from-[#22D3EE] to-[#FF00C8]"
                   style={{ width: `${overallOccupancy}%` }}
                 />
               </div>
@@ -1163,7 +1163,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
                     {category.occupancy !== null && (
                       <div className="h-1.5 w-40 rounded-full bg-white/10 overflow-hidden">
                         <div
-                          className="h-full rounded-full bg-gradient-to-r from-[#6BFFFF] to-[#FF00C8]"
+                          className="h-full rounded-full bg-gradient-to-r from-[#22D3EE] to-[#FF00C8]"
                           style={{ width: `${category.occupancy}%` }}
                         />
                       </div>
@@ -1312,7 +1312,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
                       {occupancy !== null && (
                         <div className="h-1.5 w-40 rounded-full bg-white/10 overflow-hidden">
                           <div
-                            className="h-full rounded-full bg-gradient-to-r from-[#6BFFFF] to-[#FF00C8]"
+                            className="h-full rounded-full bg-gradient-to-r from-[#22D3EE] to-[#FF00C8]"
                             style={{ width: `${occupancy}%` }}
                           />
                         </div>

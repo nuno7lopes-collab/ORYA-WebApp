@@ -19,7 +19,6 @@ const GATE_PATTERNS: RegExp[] = [
 const ALLOWLIST: Record<string, string> = {
   "app/api/org-hub/organizations/route.ts": "org creation (no email yet)",
   "app/api/org-hub/organizations/switch/route.ts": "context switch (read-only mutation)",
-  "app/api/org-hub/become/route.ts": "onboarding flow (pre-email)",
   "app/api/org-hub/organizations/settings/official-email/route.ts": "email setup endpoint",
   "app/api/org-hub/organizations/settings/official-email/confirm/route.ts": "email confirm endpoint",
 };

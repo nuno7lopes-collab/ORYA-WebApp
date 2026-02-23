@@ -56,9 +56,9 @@ export default function OrgHubTopNav({ groupDashboardHref }: Props = {}) {
             key={item.href}
             href={item.href}
             className={cn(
-              "rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55",
+              "rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55",
               active
-                ? "border border-[#6BFFFF]/50 bg-[#6BFFFF]/15 text-[#D8FDFF]"
+                ? "border border-[#22D3EE]/50 bg-[#22D3EE]/15 text-[#D8FDFF]"
                 : "border border-transparent text-white/70 hover:border-white/20 hover:bg-white/10 hover:text-white",
             )}
             aria-current={active ? "page" : undefined}

@@ -132,7 +132,7 @@ export function CalendarMatchAdjustmentsPanel(props: {
               value={props.form.courtId}
               onChange={(event) => props.onFormChange({ courtId: event.target.value })}
               disabled={disabled}
-              className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+              className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
             >
               <option value="">Selecionar campo</option>
               {props.courts.map((court) => (
@@ -173,7 +173,7 @@ export function CalendarMatchAdjustmentsPanel(props: {
                 value={bulkCourtId}
                 onChange={(event) => setBulkCourtId(event.target.value)}
                 disabled={!props.eventId || props.saving}
-                className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
               >
                 <option value="">Mover selecionados para campo...</option>
                 {props.courts.map((court) => (
@@ -216,7 +216,7 @@ export function CalendarMatchAdjustmentsPanel(props: {
                 return (
                   <div
                     key={`manual-match-${match.id}`}
-                    className={`rounded-lg border px-2 py-2 text-[12px] ${isSelected ? "border-[#6BFFFF]/60 bg-[#6BFFFF]/12" : "border-white/12 bg-white/[0.03]"}`}
+                    className={`rounded-lg border px-2 py-2 text-[12px] ${isSelected ? "border-[#22D3EE]/60 bg-[#22D3EE]/12" : "border-white/12 bg-white/[0.03]"}`}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
@@ -224,7 +224,7 @@ export function CalendarMatchAdjustmentsPanel(props: {
                           type="checkbox"
                           checked={isSelected}
                           onChange={() => props.onToggleSelectMatch(match.id)}
-                          className="h-3.5 w-3.5 rounded border-white/30 bg-transparent accent-[#6BFFFF]"
+                          className="h-3.5 w-3.5 rounded border-white/30 bg-transparent accent-[#22D3EE]"
                         />
                         <p className="font-semibold text-white">Jogo #{match.id}</p>
                       </div>

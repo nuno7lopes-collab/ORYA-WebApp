@@ -2,7 +2,7 @@
 
 ## users
 
-API routes (69):
+API routes (63):
 - /api/auth/apple/link
 - /api/auth/bootstrap
 - /api/auth/check-email
@@ -18,17 +18,13 @@ API routes (69):
 - /api/me/claim-guest
 - /api/me/consents
 - /api/me/contact-phone
-- /api/me/creditos
 - /api/me/dsar/export
 - /api/me/events/signals
-- /api/me/inscricoes
 - /api/me/inscricoes/[id]
 - /api/me/location/consent
-- /api/me/loyalty/carteira
 - /api/me/loyalty/recompensas
 - /api/me/loyalty/recompensas/[rewardId]/resgatar
 - /api/me/notifications
-- /api/me/notifications/[id]/read
 - /api/me/notifications/feed
 - /api/me/notifications/mute
 - /api/me/purchases
@@ -39,7 +35,6 @@ API routes (69):
 - /api/me/push-tokens
 - /api/me/reservas
 - /api/me/reservas/[id]
-- /api/me/reservas/[id]/calendar.ics
 - /api/me/reservas/[id]/cancel
 - /api/me/reservas/[id]/cancel/preview
 - /api/me/reservas/[id]/invites
@@ -48,7 +43,6 @@ API routes (69):
 - /api/me/reservas/[id]/review
 - /api/me/reservas/[id]/split
 - /api/me/settings/delete
-- /api/me/settings/delete/cancel
 - /api/me/settings/email
 - /api/me/settings/save
 - /api/me/wallet
@@ -93,8 +87,7 @@ Pages (16):
 
 ## orgs
 
-API routes (206):
-- /api/org-hub/become
+API routes (178):
 - /api/org-hub/groups/[groupId]/dashboard/agenda
 - /api/org-hub/groups/[groupId]/governance
 - /api/org-hub/groups/[groupId]/governance/members
@@ -119,8 +112,6 @@ API routes (206):
 - /api/org-hub/organizations/members
 - /api/org-hub/organizations/members/invites
 - /api/org-hub/organizations/members/permissions
-- /api/org-hub/organizations/owner/confirm
-- /api/org-hub/organizations/owner/transfer
 - /api/org-hub/organizations/settings/official-email
 - /api/org-hub/organizations/settings/official-email/confirm
 - /api/org-hub/organizations/switch
@@ -136,15 +127,12 @@ API routes (206):
 - /api/org/[orgId]/analytics/overview
 - /api/org/[orgId]/analytics/time-series
 - /api/org/[orgId]/audit
-- /api/org/[orgId]/avaliacoes
 - /api/org/[orgId]/checkin
 - /api/org/[orgId]/checkin/manual
 - /api/org/[orgId]/checkin/preview
-- /api/org/[orgId]/club/finance/overview
 - /api/org/[orgId]/consentimentos
 - /api/org/[orgId]/consentimentos/[userId]
 - /api/org/[orgId]/crm/campanhas
-- /api/org/[orgId]/crm/campanhas/[campaignId]
 - /api/org/[orgId]/crm/campanhas/[campaignId]/approve
 - /api/org/[orgId]/crm/campanhas/[campaignId]/cancel
 - /api/org/[orgId]/crm/campanhas/[campaignId]/enviar
@@ -197,25 +185,7 @@ API routes (206):
 - /api/org/[orgId]/marketing/overview
 - /api/org/[orgId]/me
 - /api/org/[orgId]/ops/feed
-- /api/org/[orgId]/padel/analytics
-- /api/org/[orgId]/padel/audit
-- /api/org/[orgId]/padel/broadcast
-- /api/org/[orgId]/padel/courts
-- /api/org/[orgId]/padel/exports/analytics
-- /api/org/[orgId]/padel/exports/bracket
-- /api/org/[orgId]/padel/exports/calendario
-- /api/org/[orgId]/padel/exports/inscritos
-- /api/org/[orgId]/padel/exports/resultados
-- /api/org/[orgId]/padel/imports/inscritos
-- /api/org/[orgId]/padel/pairings/swap
-- /api/org/[orgId]/padel/waitlist
-- /api/org/[orgId]/padel/waitlist/promote
 - /api/org/[orgId]/pagamentos/invoices
-- /api/org/[orgId]/payouts/connect
-- /api/org/[orgId]/payouts/list
-- /api/org/[orgId]/payouts/settings
-- /api/org/[orgId]/payouts/status
-- /api/org/[orgId]/payouts/summary
 - /api/org/[orgId]/policies
 - /api/org/[orgId]/policies/[id]
 - /api/org/[orgId]/policies/padel
@@ -236,7 +206,6 @@ API routes (206):
 - /api/org/[orgId]/reservas/config
 - /api/org/[orgId]/reservas/delays
 - /api/org/[orgId]/reservas/disponibilidade
-- /api/org/[orgId]/reservas/disponibilidade/[overrideId]
 - /api/org/[orgId]/reservas/disponibilidade/changesets
 - /api/org/[orgId]/reservas/disponibilidade/changesets/[changeSetId]
 - /api/org/[orgId]/reservas/disponibilidade/changesets/[changeSetId]/apply
@@ -254,7 +223,6 @@ API routes (206):
 - /api/org/[orgId]/servicos/[id]/class-series
 - /api/org/[orgId]/servicos/[id]/class-series/[seriesId]
 - /api/org/[orgId]/servicos/[id]/class-sessions
-- /api/org/[orgId]/servicos/[id]/duration-prices
 - /api/org/[orgId]/servicos/[id]/packages
 - /api/org/[orgId]/servicos/[id]/packages/[packageId]
 - /api/org/[orgId]/servicos/[id]/packs
@@ -283,7 +251,6 @@ API routes (206):
 - /api/org/[orgId]/store/products/[id]/options/[optionId]/values/[valueId]
 - /api/org/[orgId]/store/products/[id]/variants
 - /api/org/[orgId]/store/products/[id]/variants/[variantId]
-- /api/org/[orgId]/store/settings
 - /api/org/[orgId]/store/shipments/[shipmentId]
 - /api/org/[orgId]/store/shipping/methods/[methodId]
 - /api/org/[orgId]/store/shipping/methods/[methodId]/tiers
@@ -295,13 +262,118 @@ API routes (206):
 - /api/org/[orgId]/tournaments/blocks/bulk
 - /api/org/[orgId]/tournaments/blocks/overrides
 - /api/org/[orgId]/tournaments/create
-- /api/org/[orgId]/trainers
 - /api/org/[orgId]/trainers/profile
 - /api/org/[orgId]/username
 - /api/org/[orgId]/venues/recent
 - /api/organizations/search
 
-Pages (0):
+Pages (106):
+- /org-hub
+- /org-hub/create
+- /org-hub/groups
+- /org-hub/groups/[groupId]
+- /org-hub/groups/owner-transfer/confirm
+- /org-hub/groups/requests/confirm
+- /org-hub/organizations
+- /org/[orgId]
+- /org/[orgId]/[...slug]
+- /org/[orgId]/analytics
+- /org/[orgId]/bookings
+- /org/[orgId]/bookings/[id]
+- /org/[orgId]/bookings/availability
+- /org/[orgId]/bookings/availability/conflicts/[changeSetId]
+- /org/[orgId]/bookings/customers
+- /org/[orgId]/bookings/integrations
+- /org/[orgId]/bookings/new
+- /org/[orgId]/bookings/operations
+- /org/[orgId]/bookings/policies
+- /org/[orgId]/bookings/prices
+- /org/[orgId]/bookings/professionals
+- /org/[orgId]/bookings/professionals/[id]
+- /org/[orgId]/bookings/resources
+- /org/[orgId]/bookings/resources/[id]
+- /org/[orgId]/calendar
+- /org/[orgId]/calendar/day
+- /org/[orgId]/chat
+- /org/[orgId]/chat/preview
+- /org/[orgId]/check-in
+- /org/[orgId]/check-in/devices
+- /org/[orgId]/check-in/list
+- /org/[orgId]/check-in/logs
+- /org/[orgId]/check-in/scanner
+- /org/[orgId]/check-in/sessions
+- /org/[orgId]/crm
+- /org/[orgId]/crm/campaigns
+- /org/[orgId]/crm/customers
+- /org/[orgId]/crm/customers/[customerId]
+- /org/[orgId]/crm/journeys
+- /org/[orgId]/crm/loyalty
+- /org/[orgId]/crm/reports
+- /org/[orgId]/crm/segments
+- /org/[orgId]/crm/segments/[segmentId]
+- /org/[orgId]/events
+- /org/[orgId]/events/[id]
+- /org/[orgId]/events/[id]/edit
+- /org/[orgId]/events/new
+- /org/[orgId]/finance
+- /org/[orgId]/forms
+- /org/[orgId]/forms/[id]
+- /org/[orgId]/forms/responses
+- /org/[orgId]/forms/settings
+- /org/[orgId]/marketing
+- /org/[orgId]/marketing/content
+- /org/[orgId]/marketing/promos
+- /org/[orgId]/marketing/promoters
+- /org/[orgId]/overview
+- /org/[orgId]/padel/clubs
+- /org/[orgId]/padel/clubs/community
+- /org/[orgId]/padel/clubs/courts
+- /org/[orgId]/padel/clubs/lessons
+- /org/[orgId]/padel/clubs/players
+- /org/[orgId]/padel/clubs/trainers
+- /org/[orgId]/padel/parcerias
+- /org/[orgId]/padel/parcerias/[agreementId]
+- /org/[orgId]/padel/tournaments
+- /org/[orgId]/padel/tournaments/calendar
+- /org/[orgId]/padel/tournaments/categories
+- /org/[orgId]/padel/tournaments/create
+- /org/[orgId]/padel/tournaments/players
+- /org/[orgId]/padel/tournaments/teams
+- /org/[orgId]/policies
+- /org/[orgId]/settings
+- /org/[orgId]/settings/verify
+- /org/[orgId]/store
+- /org/[orgId]/team
+- /org/[orgId]/team/trainers
+- /org/_internal/core/chat
+- /org/_internal/core/crm/campanhas
+- /org/_internal/core/crm/clientes
+- /org/_internal/core/crm/clientes/[customerId]
+- /org/_internal/core/crm/journeys
+- /org/_internal/core/crm/loyalty
+- /org/_internal/core/crm/relatorios
+- /org/_internal/core/crm/segmentos
+- /org/_internal/core/crm/segmentos/[segmentId]
+- /org/_internal/core/eventos
+- /org/_internal/core/eventos/[id]
+- /org/_internal/core/eventos/[id]/edit
+- /org/_internal/core/eventos/novo
+- /org/_internal/core/inscricoes
+- /org/_internal/core/inscricoes/[id]
+- /org/_internal/core/reservas
+- /org/_internal/core/reservas/[id]
+- /org/_internal/core/reservas/clientes
+- /org/_internal/core/reservas/novo
+- /org/_internal/core/reservas/profissionais
+- /org/_internal/core/reservas/profissionais/[id]
+- /org/_internal/core/reservas/recursos
+- /org/_internal/core/reservas/recursos/[id]
+- /org/_internal/core/reservas/servicos
+- /org/_internal/core/scan
+- /org/_internal/core/settings
+- /org/_internal/core/settings/verify
+- /org/_internal/core/staff
+- /org/_internal/core/treinadores
 
 ## payments
 
@@ -355,7 +427,7 @@ Pages (16):
 
 API routes (0):
 
-Pages (10):
+Pages (9):
 - /[username]/loja
 - /[username]/loja/carrinho
 - /[username]/loja/checkout
@@ -365,11 +437,10 @@ Pages (10):
 - /me/compras/loja
 - /me/compras/loja/[orderId]
 - /me/loja
-- /org/_internal/core/loja
 
 ## padel
 
-API routes (88):
+API routes (66):
 - /api/padel/calendar
 - /api/padel/calendar/auto-schedule
 - /api/padel/calendar/auto-schedule/runs/[runId]
@@ -382,23 +453,16 @@ API routes (88):
 - /api/padel/clubs/[id]/courts
 - /api/padel/clubs/[id]/staff
 - /api/padel/clubs/[id]/staff/invites
-- /api/padel/community/posts
-- /api/padel/community/posts/[id]/comments
-- /api/padel/community/posts/[id]/reactions
 - /api/padel/discover
 - /api/padel/event-categories
 - /api/padel/formats/plan
-- /api/padel/live
-- /api/padel/live/raw
 - /api/padel/matches
-- /api/padel/matches/[id]/delay
 - /api/padel/matches/[id]/dispute
 - /api/padel/matches/[id]/result/confirm
 - /api/padel/matches/[id]/result/override
 - /api/padel/matches/[id]/result/reject
 - /api/padel/matches/[id]/result/reset-pending
 - /api/padel/matches/[id]/result/submit
-- /api/padel/matches/[id]/undo
 - /api/padel/matches/[id]/walkover
 - /api/padel/matches/assign
 - /api/padel/matches/generate
@@ -409,18 +473,10 @@ API routes (88):
 - /api/padel/ops/summary
 - /api/padel/pairings
 - /api/padel/pairings/[id]/accept
-- /api/padel/pairings/[id]/assume
-- /api/padel/pairings/[id]/cancel
 - /api/padel/pairings/[id]/checkout
 - /api/padel/pairings/[id]/decline
-- /api/padel/pairings/[id]/invite
-- /api/padel/pairings/[id]/public
-- /api/padel/pairings/[id]/regularize
-- /api/padel/pairings/[id]/reopen
-- /api/padel/pairings/[id]/swap
 - /api/padel/pairings/claim/[token]
 - /api/padel/pairings/invite-status
-- /api/padel/pairings/my
 - /api/padel/pairings/open
 - /api/padel/partnerships/agreements
 - /api/padel/partnerships/agreements/[id]/approve
@@ -437,29 +493,22 @@ API routes (88):
 - /api/padel/partnerships/tournament-requests/[id]/reject
 - /api/padel/partnerships/workspace/[id]/calendar
 - /api/padel/players
-- /api/padel/public/calendar
 - /api/padel/public/clubs
 - /api/padel/public/live
 - /api/padel/public/open-pairings
 - /api/padel/rankings
-- /api/padel/rankings/rebuild
-- /api/padel/rankings/sanctions
 - /api/padel/rounds/advance
 - /api/padel/rulesets
 - /api/padel/standings
 - /api/padel/teams
 - /api/padel/teams/[id]/invites
-- /api/padel/teams/[id]/members
 - /api/padel/teams/entries
 - /api/padel/tournaments/config
 - /api/padel/tournaments/lifecycle
 - /api/padel/tournaments/roles
 - /api/padel/tournaments/seeds
-- /api/padel/tournaments/tier-approvals/[id]/approve
-- /api/padel/tournaments/tier-approvals/[id]/reject
-- /api/padel/tournaments/tier-approvals/request
 
-Pages (26):
+Pages (19):
 - /[username]/padel
 - /descobrir/torneios
 - /onboarding/padel
@@ -477,22 +526,14 @@ Pages (26):
 - /org/[orgId]/padel/tournaments/create
 - /org/[orgId]/padel/tournaments/players
 - /org/[orgId]/padel/tournaments/teams
-- /org/_internal/core/categorias/padel
-- /org/_internal/core/padel
-- /org/_internal/core/padel/clube
-- /org/_internal/core/padel/parcerias
-- /org/_internal/core/padel/parcerias/[agreementId]
-- /org/_internal/core/padel/torneios
-- /org/_internal/core/padel/torneios/novo
 - /padel/duplas
 - /padel/rankings
 
 ## reservas
 
-API routes (20):
+API routes (14):
 - /api/me/reservas
 - /api/me/reservas/[id]
-- /api/me/reservas/[id]/calendar.ics
 - /api/me/reservas/[id]/cancel
 - /api/me/reservas/[id]/cancel/preview
 - /api/me/reservas/[id]/invites
@@ -501,24 +542,18 @@ API routes (20):
 - /api/me/reservas/[id]/review
 - /api/me/reservas/[id]/split
 - /api/servicos/[id]
-- /api/servicos/[id]/booking-status
 - /api/servicos/[id]/calendario
 - /api/servicos/[id]/checkout
-- /api/servicos/[id]/creditos
-- /api/servicos/[id]/creditos/checkout
-- /api/servicos/[id]/disponibilidade
 - /api/servicos/[id]/reservar
-- /api/servicos/[id]/slots
 - /api/servicos/list
 
-Pages (14):
+Pages (13):
 - /descobrir/reservas
 - /me/reservas
 - /org/_internal/core/reservas
 - /org/_internal/core/reservas/[id]
 - /org/_internal/core/reservas/clientes
 - /org/_internal/core/reservas/novo
-- /org/_internal/core/reservas/politicas
 - /org/_internal/core/reservas/profissionais
 - /org/_internal/core/reservas/profissionais/[id]
 - /org/_internal/core/reservas/recursos
@@ -529,9 +564,30 @@ Pages (14):
 
 ## crm
 
-API routes (0):
+API routes (21):
+- /api/org/[orgId]/crm/campanhas
+- /api/org/[orgId]/crm/campanhas/[campaignId]/approve
+- /api/org/[orgId]/crm/campanhas/[campaignId]/cancel
+- /api/org/[orgId]/crm/campanhas/[campaignId]/enviar
+- /api/org/[orgId]/crm/campanhas/[campaignId]/reject
+- /api/org/[orgId]/crm/campanhas/[campaignId]/submit
+- /api/org/[orgId]/crm/clientes
+- /api/org/[orgId]/crm/clientes/[customerId]
+- /api/org/[orgId]/crm/clientes/[customerId]/notas
+- /api/org/[orgId]/crm/clientes/[customerId]/tags
+- /api/org/[orgId]/crm/config
+- /api/org/[orgId]/crm/journeys
+- /api/org/[orgId]/crm/journeys/[id]
+- /api/org/[orgId]/crm/journeys/[id]/pause
+- /api/org/[orgId]/crm/journeys/[id]/publish
+- /api/org/[orgId]/crm/relatorios
+- /api/org/[orgId]/crm/saved-views
+- /api/org/[orgId]/crm/saved-views/[id]
+- /api/org/[orgId]/crm/segmentos
+- /api/org/[orgId]/crm/segmentos/[segmentId]
+- /api/org/[orgId]/crm/segmentos/[segmentId]/preview
 
-Pages (18):
+Pages (17):
 - /org/[orgId]/crm
 - /org/[orgId]/crm/campaigns
 - /org/[orgId]/crm/customers
@@ -541,7 +597,6 @@ Pages (18):
 - /org/[orgId]/crm/reports
 - /org/[orgId]/crm/segments
 - /org/[orgId]/crm/segments/[segmentId]
-- /org/_internal/core/crm
 - /org/_internal/core/crm/campanhas
 - /org/_internal/core/crm/clientes
 - /org/_internal/core/crm/clientes/[customerId]
@@ -622,9 +677,8 @@ Pages (17):
 
 ## notifications
 
-API routes (7):
+API routes (6):
 - /api/me/notifications
-- /api/me/notifications/[id]/read
 - /api/me/notifications/feed
 - /api/me/notifications/mute
 - /api/notifications/mark-click

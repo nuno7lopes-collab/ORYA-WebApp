@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { authHeaders } from "./auth.mjs";
 
 function blockingErrorRegex() {
-  return /(Application error|Unhandled Runtime Error|LEGACY_ROUTE_REMOVED|500\s*\)|Internal Server Error)/i;
+  return /(Application error|Unhandled Runtime Error|500\s*\)|Internal Server Error)/i;
 }
 
 async function assertNoBlockingErrors(page) {

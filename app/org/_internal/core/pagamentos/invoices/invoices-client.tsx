@@ -230,7 +230,7 @@ export default function InvoicesClient({
                 }
                 className={`rounded-full px-3 py-1.5 transition ${
                   preset.key !== "all" && from && to
-                    ? "bg-gradient-to-r from-[#FF00C8]/25 via-[#6BFFFF]/20 to-[#1646F5]/25 text-white shadow-[0_0_14px_rgba(107,255,255,0.35)]"
+                    ? "bg-gradient-to-r from-[#FF00C8]/25 via-[#22D3EE]/20 to-[#1646F5]/25 text-white shadow-[0_0_14px_rgba(34,211,238,0.35)]"
                     : "border border-white/20 text-white/75 hover:bg-white/10"
                 }`}
               >
@@ -334,7 +334,7 @@ function SummaryCard({
     tone === "success"
       ? "bg-gradient-to-br from-emerald-400/25 via-emerald-500/20 to-teal-500/25 border-emerald-300/45 text-emerald-50"
       : tone === "bright"
-        ? "bg-gradient-to-r from-[#FF00C8]/30 via-[#6BFFFF]/18 to-[#1646F5]/28 border-white/18 text-white"
+        ? "bg-gradient-to-r from-[#FF00C8]/30 via-[#22D3EE]/18 to-[#1646F5]/28 border-white/18 text-white"
         : tone === "muted"
           ? "bg-white/6 text-white/70 border-white/12"
           : tone === "slate"

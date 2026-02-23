@@ -28,7 +28,7 @@ const fetcher = (url: string) => fetch(url).then((res) => res.json());
 const CHIP_BASE =
   "rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[12px] text-white/75 transition hover:border-white/20 hover:bg-white/10 hover:text-white";
 const CHIP_ACTIVE =
-  "border-[#6BFFFF]/40 bg-[linear-gradient(120deg,rgba(107,255,255,0.22),rgba(106,123,255,0.18))] text-white shadow-[0_10px_28px_rgba(34,211,238,0.22)]";
+  "border-[#22D3EE]/40 bg-[linear-gradient(120deg,rgba(34,211,238,0.22),rgba(106,123,255,0.18))] text-white shadow-[0_10px_28px_rgba(34,211,238,0.22)]";
 
 function parsePositiveInt(value: string | null): number | null {
   if (!value) return null;

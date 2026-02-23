@@ -26,7 +26,7 @@ describe("tournament wizard format requirements", () => {
     expect(source).toContain("amMxProgressionMode");
     expect(source).toContain("nonStopMode");
     expect(source).toContain("nonStopRounds");
-    expect(source).toContain("Define número de rondas válido para NON_STOP.");
+    expect(source).toContain("Define rondas válidas para NON_STOP em");
   });
 
   it("persiste configuração por formato no payload final", () => {
@@ -36,5 +36,9 @@ describe("tournament wizard format requirements", () => {
     expect(source).toContain("format,");
     expect(source).toContain("advancedSettings:");
     expect(source).toContain("formatProfilesByCategory");
+    expect(source).toContain("selectedCategories.reduce<Record<string, WizardFormatProfile>>");
+    expect(source).toContain('acc[String(category.id)]');
+    expect(source).toContain("resolveCategoryFormatProfile(cat.id)");
+    expect(source).toContain("Formato da categoria");
   });
 });

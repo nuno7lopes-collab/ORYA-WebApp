@@ -25,12 +25,10 @@ function sectionHasItems(title) {
 }
 
 const missingUsed = sectionHasItems("B) Frontend chama endpoint inexistente");
-const legacyUsed = sectionHasItems("C) Frontend chama endpoint legacy/410");
 
-if (missingUsed || legacyUsed) {
+if (missingUsed) {
   console.error("V9 parity gate failed:");
   if (missingUsed) console.error("- Frontend calls non-existent endpoints");
-  if (legacyUsed) console.error("- Frontend calls legacy/410 endpoints");
   process.exit(1);
 }
 

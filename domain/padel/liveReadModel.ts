@@ -49,6 +49,8 @@ export type PadelLiveReadModel = {
     matches: Array<{
       id: number;
       status: string;
+      categoryId: number | null;
+      categoryLabel: string | null;
       roundLabel: string | null;
       groupLabel: string | null;
       startAt: string | null;
@@ -66,6 +68,8 @@ export type PadelLiveReadModel = {
     matches: Array<{
       id: number;
       status: string;
+      categoryId: number | null;
+      categoryLabel: string | null;
       startAt: string | null;
       courtLabel: string;
       pairingA: string;
@@ -79,6 +83,8 @@ export type PadelLiveReadModel = {
   latest_results_feed: Array<{
     id: number;
     status: string;
+    categoryId: number | null;
+    categoryLabel: string | null;
     startAt: string | null;
     courtLabel: string;
     pairingA: string;
@@ -114,6 +120,8 @@ export type PadelLiveReadModel = {
         startAt: string;
         endAt: string | null;
         status: string;
+        categoryId: number | null;
+        categoryLabel: string | null;
         roundLabel: string | null;
         groupLabel: string | null;
         courtId: number | null;
@@ -137,6 +145,7 @@ type BuildLiveReadModelParams = {
 
 type MatchRow = Prisma.EventMatchSlotGetPayload<{
   include: {
+    category: { select: { id: true; label: true } };
     court: { select: { id: true; name: true } };
     pairingA: { include: { slots: { include: { playerProfile: true } } } };
     pairingB: { include: { slots: { include: { playerProfile: true } } } };
@@ -370,6 +379,7 @@ export async function buildPadelLiveReadModel(params: BuildLiveReadModelParams):
   const matches = await prisma.eventMatchSlot.findMany({
     where: { eventId: params.eventId },
     include: {
+      category: { select: { id: true, label: true } },
       court: { select: { id: true, name: true } },
       pairingA: { include: { slots: { include: { playerProfile: true } } } },
       pairingB: { include: { slots: { include: { playerProfile: true } } } },
@@ -482,6 +492,10 @@ export async function buildPadelLiveReadModel(params: BuildLiveReadModelParams):
     const startAt = resolveMatchStart(match);
     const endAt = resolveMatchEnd(match, startAt);
     const courtLabel = resolveCourtLabel(match);
+    const categoryId = match.categoryId ?? null;
+    const categoryLabel =
+      match.category?.label?.trim() ||
+      (typeof match.categoryId === "number" ? `Categoria ${match.categoryId}` : null);
     const pairingA = formatPairingLabel(match, "A", params.visibility);
     const pairingB = formatPairingLabel(match, "B", params.visibility);
     const scoreLabel = buildScoreLabel(match);
@@ -504,6 +518,8 @@ export async function buildPadelLiveReadModel(params: BuildLiveReadModelParams):
         startAt: startAt.toISOString(),
         endAt: endAt ? endAt.toISOString() : null,
         status: match.status,
+        categoryId,
+        categoryLabel,
         roundLabel: match.roundLabel ?? null,
         groupLabel: match.groupLabel ?? null,
         courtId: match.courtId ?? null,
@@ -520,6 +536,8 @@ export async function buildPadelLiveReadModel(params: BuildLiveReadModelParams):
       latestResultsFeed.push({
         id: match.id,
         status: match.status,
+        categoryId,
+        categoryLabel,
         startAt: startAt ? startAt.toISOString() : null,
         courtLabel,
         pairingA,
@@ -559,6 +577,8 @@ export async function buildPadelLiveReadModel(params: BuildLiveReadModelParams):
       courtMap.get(key)!.matches.push({
         id: match.id,
         status: match.status,
+        categoryId,
+        categoryLabel,
         roundLabel: match.roundLabel ?? null,
         groupLabel: match.groupLabel ?? null,
         startAt: startAt ? startAt.toISOString() : null,
@@ -592,6 +612,8 @@ export async function buildPadelLiveReadModel(params: BuildLiveReadModelParams):
         upcomingByPlayer.get(playerLabel)!.matches.push({
           id: match.id,
           status: match.status,
+          categoryId,
+          categoryLabel,
           startAt: startAt ? startAt.toISOString() : null,
           courtLabel,
           pairingA,

@@ -103,6 +103,22 @@ describe("POST /api/auth/login", () => {
     });
   });
 
+  it("aceita username sem @ e resolve email do owner", async () => {
+    const res = await POST(makeRequest({ identifier: "Joao", password: "abc123" }));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(resolveUsernameOwner).toHaveBeenCalledWith(
+      "joao",
+      expect.objectContaining({ expectedOwnerType: "user" }),
+    );
+    expect(signInWithPassword).toHaveBeenCalledWith({
+      email: "joao@example.com",
+      password: "abc123",
+    });
+  });
+
   it("rejeita identificadores com @ ambíguo que não são email válido", async () => {
     const res = await POST(makeRequest({ identifier: "joao@empresa", password: "123456" }));
     const body = await res.json();
@@ -123,6 +139,19 @@ describe("POST /api/auth/login", () => {
     expect(resolveUsernameOwner).not.toHaveBeenCalled();
     expect(signInWithPassword).toHaveBeenCalledWith({
       email: "ana@example.com",
+      password: "123456",
+    });
+  });
+
+  it("mantém compatibilidade com payload legado usando campo email", async () => {
+    const res = await POST(makeRequest({ email: "legacy@example.com", password: "123456" }));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(resolveUsernameOwner).not.toHaveBeenCalled();
+    expect(signInWithPassword).toHaveBeenCalledWith({
+      email: "legacy@example.com",
       password: "123456",
     });
   });

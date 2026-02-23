@@ -6,6 +6,7 @@ import { headers } from "next/headers";
 import WavesSectionClient, { type WaveTicket, type WaveStatus } from "./WavesSectionClient";
 import Link from "next/link";
 import EventPageClient from "./EventPageClient";
+import PadelMatchesByCategoryClient from "./PadelMatchesByCategoryClient";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import type { Metadata } from "next";
 import type { Prisma } from "@prisma/client";
@@ -1059,6 +1060,10 @@ export default async function EventPage({
                 {descriptionText}
               </p>
             </section>
+
+            {checkoutVariant === "PADEL" && (
+              <PadelMatchesByCategoryClient slug={event.slug} />
+            )}
 
           </div>
 

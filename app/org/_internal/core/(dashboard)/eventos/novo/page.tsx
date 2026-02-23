@@ -945,7 +945,7 @@ export function NewOrganizationEventPage({
   };
 
   const baseInputClasses =
-    "w-full rounded-xl border border-white/12 bg-black/25 px-4 py-3 text-sm text-white/90 placeholder:text-white/45 outline-none transition backdrop-blur-sm focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)] focus:ring-offset-0 focus:ring-offset-transparent";
+    "w-full rounded-xl border border-white/12 bg-black/25 px-4 py-3 text-sm text-white/90 placeholder:text-white/45 outline-none transition backdrop-blur-sm focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)] focus:ring-offset-0 focus:ring-offset-transparent";
   const errorInputClasses =
     "border-[rgba(255,0,200,0.45)] focus:border-[rgba(255,0,200,0.6)] focus:ring-[rgba(255,0,200,0.4)]";
   const inputClass = (errored?: boolean) => `${baseInputClasses} ${errored ? errorInputClasses : ""}`;
@@ -1052,7 +1052,7 @@ export function NewOrganizationEventPage({
             {padelClubSource === "ORG" ? (
               <>
                 <select
-                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)]"
+                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
                   value={selectedPadelClubId ?? ""}
                   onChange={(e) => {
                     setSelectedPadelClubId(Number(e.target.value) || null);
@@ -1137,7 +1137,7 @@ export function NewOrganizationEventPage({
                   value={padelDirectoryQuery}
                   onChange={(e) => setPadelDirectoryQuery(e.target.value)}
                   placeholder="Pesquisar clube, cidade, organização"
-                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)]"
+                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
                 />
                 {padelDirectoryError && (
                   <p className="text-[12px] text-rose-200">{padelDirectoryError}</p>
@@ -2425,7 +2425,7 @@ export function NewOrganizationEventPage({
                 <label
                   className={`group relative flex min-h-[96px] w-full flex-col items-center justify-center gap-1 rounded-2xl border border-dashed px-4 py-3 text-center transition ${
                     coverDragActive
-                      ? "border-[var(--orya-cyan)] bg-[rgba(107,255,255,0.12)] shadow-[0_0_0_1px_rgba(107,255,255,0.4)]"
+                      ? "border-[var(--orya-cyan)] bg-[rgba(34,211,238,0.12)] shadow-[0_0_0_1px_rgba(34,211,238,0.4)]"
                       : "border-white/20 bg-black/30 hover:border-white/35 hover:bg-black/40"
                   }`}
                   onDragEnter={(event) => {
@@ -2486,7 +2486,7 @@ export function NewOrganizationEventPage({
                       if (isSuggestions) setCoverCategory("ALL");
                     }}
                     placeholder={searchPlaceholder}
-                    className="w-full rounded-2xl border border-white/15 bg-black/40 px-10 py-3 text-[13px] text-white/95 placeholder:text-white/45 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)]"
+                    className="w-full rounded-2xl border border-white/15 bg-black/40 px-10 py-3 text-[13px] text-white/95 placeholder:text-white/45 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
                   />
                   {coverSearch && (
                     <button
@@ -2919,7 +2919,7 @@ export function NewOrganizationEventPage({
                 >
                   <div className="flex items-center justify-between">
                     <span className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.12em] text-white/75">
-                      <span aria-hidden className="text-[#6BFFFF]">🎟️</span>
+                      <span aria-hidden className="text-[#22D3EE]">🎟️</span>
                       {isPadelPaid && categoryLabel ? (
                         <>
                           <span>{categoryLabel}</span>
@@ -3665,7 +3665,7 @@ export function NewOrganizationEventPage({
                               onClick={() => setPadelFormat(opt.value)}
                               className={`rounded-full border px-3 py-1 text-[12px] font-semibold transition ${
                                 padelFormat === opt.value
-                                  ? "border-[var(--orya-cyan)] bg-[rgba(107,255,255,0.16)] text-white"
+                                  ? "border-[var(--orya-cyan)] bg-[rgba(34,211,238,0.16)] text-white"
                                   : "border-white/20 bg-black/30 text-white/70 hover:border-white/35"
                               }`}
                             >
@@ -3680,7 +3680,7 @@ export function NewOrganizationEventPage({
                       <div className="space-y-2">
                         <label className={labelClass}>RuleSet</label>
                         <select
-                          className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)]"
+                          className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
                           value={padelRuleSetId ?? ""}
                           onChange={(e) => setPadelRuleSetId(Number(e.target.value) || null)}
                         >
@@ -3799,7 +3799,7 @@ export function NewOrganizationEventPage({
                                     Formato
                                   </span>
                                   <select
-                                    className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-[12px] text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)]"
+                                    className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-[12px] text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
                                     value={config?.format ?? ""}
                                     onChange={(e) =>
                                       setPadelCategoryConfigs((prev) => ({
@@ -3843,7 +3843,7 @@ export function NewOrganizationEventPage({
                                       }));
                                     }}
                                     disabled={isPadelPaid}
-                                    className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-[12px] text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)] disabled:opacity-65"
+                                    className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-[12px] text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)] disabled:opacity-65"
                                   />
                                 </div>
                               </div>
@@ -3899,7 +3899,7 @@ export function NewOrganizationEventPage({
                               inputMode="numeric"
                               value={padelMaxEntriesTotal}
                               onChange={(e) => setPadelMaxEntriesTotal(normalizeIntegerInput(e.target.value))}
-                              className="mt-1 w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-[12px] text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)]"
+                              className="mt-1 w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-[12px] text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
                             />
                           </label>
                           <label className="text-[11px] text-white/70">

@@ -102,7 +102,7 @@ export function CalendarManualAdjustmentsPanel(props: {
             type="text"
             value={props.blockForm.label}
             onChange={(event) => props.onBlockFormChange({ label: event.target.value })}
-            className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+            className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
             placeholder="Título do bloqueio (opcional)"
             disabled={!props.eventId || props.saving}
           />
@@ -110,7 +110,7 @@ export function CalendarManualAdjustmentsPanel(props: {
             type="text"
             value={props.blockForm.note}
             onChange={(event) => props.onBlockFormChange({ note: event.target.value })}
-            className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+            className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
             placeholder="Nota (opcional)"
             disabled={!props.eventId || props.saving}
           />
@@ -214,7 +214,7 @@ export function CalendarManualAdjustmentsPanel(props: {
             type="text"
             value={props.availabilityForm.playerName}
             onChange={(event) => props.onAvailabilityFormChange({ playerName: event.target.value })}
-            className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+            className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
             placeholder="Nome do jogador (opcional)"
             disabled={!props.eventId || props.saving}
           />
@@ -222,7 +222,7 @@ export function CalendarManualAdjustmentsPanel(props: {
             type="email"
             value={props.availabilityForm.playerEmail}
             onChange={(event) => props.onAvailabilityFormChange({ playerEmail: event.target.value })}
-            className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+            className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
             placeholder="Email (opcional)"
             disabled={!props.eventId || props.saving}
           />
@@ -230,7 +230,7 @@ export function CalendarManualAdjustmentsPanel(props: {
             type="text"
             value={props.availabilityForm.note}
             onChange={(event) => props.onAvailabilityFormChange({ note: event.target.value })}
-            className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+            className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
             placeholder="Nota (opcional)"
             disabled={!props.eventId || props.saving}
           />

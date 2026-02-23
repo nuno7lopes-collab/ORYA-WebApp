@@ -45,9 +45,12 @@ async function _POST(req: NextRequest) {
 
   const ctx = getRequestContext(req);
   const body = (await req.json().catch(() => null)) as
-    | { identifier?: string; password?: string }
+    | { identifier?: string; email?: string; password?: string }
     | null;
-  const identifierRaw = body?.identifier ?? "";
+  const identifierRaw =
+    typeof body?.identifier === "string" && body.identifier.trim().length > 0
+      ? body.identifier
+      : (body?.email ?? "");
   const password = body?.password ?? "";
   const identifier = identifierRaw.trim();
 

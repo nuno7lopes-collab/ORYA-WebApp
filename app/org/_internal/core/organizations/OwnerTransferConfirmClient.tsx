@@ -94,13 +94,13 @@ export default function OwnerTransferConfirmClient({ groupId, token }: Props) {
           <button
             type="button"
             onClick={() => router.push("/org-hub/groups")}
-            className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55"
+            className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55"
           >
             Ir para governança
           </button>
           <Link
             href="/org-hub/organizations"
-            className="rounded-full border border-white/20 bg-white/8 px-4 py-2 text-sm font-semibold text-white/90 transition hover:bg-white/14 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55"
+            className="rounded-full border border-white/20 bg-white/8 px-4 py-2 text-sm font-semibold text-white/90 transition hover:bg-white/14 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55"
           >
             Ver organizações
           </Link>

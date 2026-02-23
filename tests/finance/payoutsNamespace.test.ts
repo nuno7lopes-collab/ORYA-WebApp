@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 function readLocal(pathname: string) {
@@ -23,7 +23,7 @@ describe("finance payouts namespace", () => {
     }
   });
 
-  it("returns LEGACY_ROUTE_REMOVED in legacy /payouts/* routes", () => {
+  it("removes legacy /payouts/* routes from runtime", () => {
     const legacyRoutes = [
       "app/api/org/[orgId]/payouts/status/route.ts",
       "app/api/org/[orgId]/payouts/list/route.ts",
@@ -33,9 +33,7 @@ describe("finance payouts namespace", () => {
     ];
 
     for (const route of legacyRoutes) {
-      const content = readLocal(route);
-      expect(content).toContain("LEGACY_ROUTE_REMOVED");
-      expect(content).toContain("status: 410");
+      expect(existsSync(resolve(process.cwd(), route))).toBe(false);
     }
   });
 });

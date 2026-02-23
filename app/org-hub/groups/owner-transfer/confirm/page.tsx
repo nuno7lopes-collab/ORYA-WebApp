@@ -51,7 +51,7 @@ export default async function OwnerTransferConfirmPage({
           </p>
           <Link
             href="/org-hub/groups"
-            className="mt-5 inline-flex rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55"
+            className="mt-5 inline-flex rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55"
           >
             Voltar ao hub de grupos
           </Link>

@@ -421,10 +421,10 @@ const PADEL_MANAGE_SECTIONS = [PADEL_CLUB_SECTION, PADEL_TOURNAMENTS_SECTION] as
 const TOOL_FLOW_ORDER: DashboardToolFlow[] = ["Operações", "Gestão", "Administração"];
 const MODULE_ICON_GRADIENTS: Record<string, string> = {
   EVENTOS: "from-[#FF7AD1]/45 via-[#7FE0FF]/35 to-[#6A7BFF]/45",
-  RESERVAS: "from-[#6BFFFF]/40 via-[#6A7BFF]/30 to-[#0EA5E9]/40",
+  RESERVAS: "from-[#22D3EE]/40 via-[#6A7BFF]/30 to-[#0EA5E9]/40",
   TORNEIOS: "from-[#F59E0B]/35 via-[#FF7AD1]/35 to-[#6A7BFF]/35",
   CHECKIN: "from-[#22D3EE]/35 via-[#60A5FA]/30 to-[#A78BFA]/35",
-  INSCRICOES: "from-[#34D399]/35 via-[#6BFFFF]/30 to-[#7FE0FF]/35",
+  INSCRICOES: "from-[#34D399]/35 via-[#22D3EE]/30 to-[#7FE0FF]/35",
   MENSAGENS: "from-[#A78BFA]/35 via-[#7FE0FF]/30 to-[#34D399]/35",
   LOJA: "from-[#F97316]/35 via-[#FB7185]/30 to-[#F59E0B]/35",
   CRM: "from-[#22D3EE]/35 via-[#38BDF8]/30 to-[#F97316]/35",
@@ -434,8 +434,8 @@ const MODULE_ICON_GRADIENTS: Record<string, string> = {
   MARKETING: "from-[#FF7AD1]/35 via-[#FB7185]/30 to-[#F59E0B]/35",
   DEFINICOES: "from-[#94A3B8]/35 via-[#64748B]/25 to-[#94A3B8]/35",
   TOOL_EVENTOS: "from-[#FF4ECD]/56 via-[#7FE0FF]/44 to-[#6A7BFF]/56",
-  TOOL_RESERVAS: "from-[#6BFFFF]/52 via-[#4DB4FF]/42 to-[#6A7BFF]/54",
-  TOOL_CALENDARIO: "from-[#6BFFFF]/50 via-[#60A5FA]/40 to-[#8B5CF6]/52",
+  TOOL_RESERVAS: "from-[#22D3EE]/52 via-[#4DB4FF]/42 to-[#6A7BFF]/54",
+  TOOL_CALENDARIO: "from-[#22D3EE]/50 via-[#60A5FA]/40 to-[#8B5CF6]/52",
   TOOL_PADEL_CLUBE: "from-[#F59E0B]/52 via-[#FB7185]/40 to-[#6A7BFF]/50",
   TOOL_PADEL_TORNEIOS: "from-[#22D3EE]/54 via-[#A78BFA]/40 to-[#F59E0B]/50",
   TOOL_CHECKIN: "from-[#22D3EE]/52 via-[#34D399]/42 to-[#60A5FA]/50",
@@ -470,8 +470,8 @@ const MODULE_ICON_SURFACE_GLOWS: Record<string, string> = {
 };
 const MODULE_ICON_BG_STYLES: Record<string, string> = {
   TOOL_EVENTOS: "linear-gradient(145deg, rgba(255,78,205,0.85) 0%, rgba(127,224,255,0.72) 46%, rgba(106,123,255,0.86) 100%)",
-  TOOL_RESERVAS: "linear-gradient(145deg, rgba(107,255,255,0.84) 0%, rgba(77,180,255,0.7) 46%, rgba(106,123,255,0.84) 100%)",
-  TOOL_CALENDARIO: "linear-gradient(145deg, rgba(107,255,255,0.8) 0%, rgba(96,165,250,0.72) 46%, rgba(139,92,246,0.84) 100%)",
+  TOOL_RESERVAS: "linear-gradient(145deg, rgba(34,211,238,0.84) 0%, rgba(77,180,255,0.7) 46%, rgba(106,123,255,0.84) 100%)",
+  TOOL_CALENDARIO: "linear-gradient(145deg, rgba(34,211,238,0.8) 0%, rgba(96,165,250,0.72) 46%, rgba(139,92,246,0.84) 100%)",
   TOOL_PADEL_CLUBE: "linear-gradient(145deg, rgba(245,158,11,0.84) 0%, rgba(251,113,133,0.7) 44%, rgba(106,123,255,0.82) 100%)",
   TOOL_PADEL_TORNEIOS: "linear-gradient(145deg, rgba(34,211,238,0.86) 0%, rgba(167,139,250,0.7) 44%, rgba(245,158,11,0.8) 100%)",
   TOOL_CHECKIN: "linear-gradient(145deg, rgba(34,211,238,0.82) 0%, rgba(52,211,153,0.72) 46%, rgba(96,165,250,0.82) 100%)",
@@ -1578,7 +1578,7 @@ function OrganizacaoPageInner({
   }, [overview, managePrimaryLabel, salesUnitHint, salesUnitLabel]);
 
   const statGradients = [
-    "from-[#6BFFFF]/25 via-[#0b1224]/70 to-[#0a0f1c]/90",
+    "from-[#22D3EE]/25 via-[#0b1224]/70 to-[#0a0f1c]/90",
     "from-[#FF00C8]/18 via-[#130d1f]/70 to-[#0a0f1c]/90",
     "from-[#7AF89A]/18 via-[#0d1c16]/70 to-[#0a0f1c]/90",
     "from-[#AEE4FF]/18 via-[#0d1623]/70 to-[#0a0f1c]/90",
@@ -2651,7 +2651,7 @@ function OrganizacaoPageInner({
             cy="18"
             r="16"
             fill="none"
-            stroke="#6BFFFF"
+            stroke="#22D3EE"
             strokeWidth="3"
             strokeDasharray={`${dash} ${circumference - dash}`}
             strokeLinecap="round"
@@ -2670,7 +2670,7 @@ function OrganizacaoPageInner({
       "linear-gradient(145deg, rgba(34,211,238,0.82) 0%, rgba(96,165,250,0.72) 48%, rgba(167,139,250,0.82) 100%)";
     const iconSurfaceGlow =
       MODULE_ICON_SURFACE_GLOWS[tool.iconKey] ??
-      "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_22px_42px_rgba(107,255,255,0.34)]";
+      "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_22px_42px_rgba(34,211,238,0.34)]";
     const canHide = canCustomizeTools && !NON_HIDEABLE_DASHBOARD_TOOL_IDS.has(tool.id);
     const customAppIconSrc = TOOL_CUSTOM_ICON_BY_ID[tool.id];
     const isCustomAppIcon = Boolean(customAppIconSrc);
@@ -3333,7 +3333,7 @@ function OrganizacaoPageInner({
                           className={cn(
                             "inline-flex items-center gap-2 rounded-2xl border border-white/12 bg-white/5 px-3 py-2 text-[12px] font-semibold text-white/80 shadow-[0_14px_40px_rgba(0,0,0,0.35)] transition hover:bg-white/10",
                             eventStatusFilter !== "all" &&
-                              "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]",
+                              "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(34,211,238,0.45)]",
                           )}
                         >
                           Estado: {statusLabelMap[eventStatusFilter]} <span className="text-white/50">▾</span>
@@ -3369,7 +3369,7 @@ function OrganizacaoPageInner({
                           className={cn(
                             "inline-flex items-center gap-2 rounded-2xl border border-white/12 bg-white/5 px-3 py-2 text-[12px] font-semibold text-white/80 shadow-[0_14px_40px_rgba(0,0,0,0.35)] transition hover:bg-white/10",
                             timeScope !== "all" &&
-                              "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]",
+                              "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(34,211,238,0.45)]",
                           )}
                         >
                           Período: {timeScopeLabels[timeScope]} <span className="text-white/50">▾</span>
@@ -3405,7 +3405,7 @@ function OrganizacaoPageInner({
                           className={cn(
                             "inline-flex items-center gap-2 rounded-2xl border border-white/12 bg-white/5 px-3 py-2 text-[12px] font-semibold text-white/80 shadow-[0_14px_40px_rgba(0,0,0,0.35)] transition hover:bg-white/10",
                             activeFilterCount > 0 &&
-                              "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]",
+                              "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(34,211,238,0.45)]",
                           )}
                         >
                           Filtros{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""} <span className="text-white/50">▾</span>
@@ -3547,7 +3547,7 @@ function OrganizacaoPageInner({
                           className={cn(
                             "rounded-xl px-3 py-1.5 font-semibold transition",
                             eventView === "list"
-                              ? "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]"
+                              ? "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(34,211,238,0.45)]"
                               : "text-white/70 hover:bg-white/10",
                           )}
                         >
@@ -3559,7 +3559,7 @@ function OrganizacaoPageInner({
                           className={cn(
                             "rounded-xl px-3 py-1.5 font-semibold transition",
                             eventView === "grid"
-                              ? "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]"
+                              ? "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(34,211,238,0.45)]"
                               : "text-white/70 hover:bg-white/10",
                           )}
                         >
@@ -3675,7 +3675,7 @@ function OrganizacaoPageInner({
                 >
                   <defs>
                     <linearGradient id="calendarGlow" x1="0" y1="0" x2="1" y2="1">
-                      <stop offset="0%" stopColor="#6BFFFF" stopOpacity="0.5" />
+                      <stop offset="0%" stopColor="#22D3EE" stopOpacity="0.5" />
                       <stop offset="50%" stopColor="#FF7AD1" stopOpacity="0.45" />
                       <stop offset="100%" stopColor="#6A7BFF" stopOpacity="0.5" />
                     </linearGradient>
@@ -3687,7 +3687,7 @@ function OrganizacaoPageInner({
                   <rect x="70" y="74" width="36" height="28" rx="8" fill="rgba(255,255,255,0.12)" />
                   <rect x="118" y="74" width="36" height="28" rx="8" fill="rgba(255,255,255,0.12)" />
                   <rect x="166" y="74" width="28" height="28" rx="8" fill="rgba(255,255,255,0.12)" />
-                  <circle cx="54" cy="120" r="10" fill="rgba(107,255,255,0.4)" />
+                  <circle cx="54" cy="120" r="10" fill="rgba(34,211,238,0.4)" />
                   <circle cx="186" cy="120" r="10" fill="rgba(255,122,209,0.4)" />
                   <path
                     d="M120 96c6 0 10-6 10-12h-20c0 6 4 12 10 12Z"
@@ -3940,7 +3940,7 @@ function OrganizacaoPageInner({
                                     style={{ backgroundImage: `url(${coverUrl})` }}
                                   />
                                 ) : (
-                                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(107,255,255,0.12),transparent_55%),radial-gradient(circle_at_80%_30%,rgba(255,122,209,0.12),transparent_55%),linear-gradient(135deg,rgba(11,17,36,0.85),rgba(5,10,18,0.95))]" />
+                                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(34,211,238,0.12),transparent_55%),radial-gradient(circle_at_80%_30%,rgba(255,122,209,0.12),transparent_55%),linear-gradient(135deg,rgba(11,17,36,0.85),rgba(5,10,18,0.95))]" />
                                 )}
                                 <div className="absolute inset-0 bg-gradient-to-b from-[#050810]/35 via-[#050810]/75 to-[#050810]/95" />
                               </div>
@@ -4146,7 +4146,7 @@ function OrganizacaoPageInner({
                     {idx === 0 && nextEvent && (
                       <Link
                         href={`/eventos/${nextEvent.slug}`}
-                        className="relative mt-2 inline-flex text-[11px] text-[#6BFFFF] hover:underline"
+                        className="relative mt-2 inline-flex text-[11px] text-[#22D3EE] hover:underline"
                       >
                         Ver {managePrimaryLabelLower} →
                       </Link>
@@ -4273,7 +4273,7 @@ function OrganizacaoPageInner({
                 <select
                   value={salesEventId ?? ""}
                   onChange={(e) => setSalesEventId(e.target.value ? Number(e.target.value) : null)}
-                  className="w-full rounded-2xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)]"
+                  className="w-full rounded-2xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
                 >
                   <option value="">Seleciona</option>
                   {eventsList.map((ev) => (

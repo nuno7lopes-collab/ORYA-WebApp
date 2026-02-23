@@ -336,7 +336,7 @@ export default function TrainerProfilePage() {
               <input
                 value={experienceYears}
                 onChange={(e) => setExperienceYears(e.target.value)}
-                className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
                 placeholder="Ex: 6"
                 disabled={!canEdit}
               />
@@ -349,7 +349,7 @@ export default function TrainerProfilePage() {
               value={bio}
               onChange={(e) => setBio(e.target.value)}
               rows={4}
-              className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+              className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
               placeholder="Conta a tua história como treinador."
               disabled={!canEdit}
             />

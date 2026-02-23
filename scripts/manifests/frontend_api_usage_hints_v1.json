@@ -1,0 +1,245 @@
+{
+  "version": 1,
+  "description": "Hints de cobertura UI para endpoints chamados via endpointBase dinâmico (difíceis de inferir por AST).",
+  "entries": [
+    {
+      "route": "/api/org/[orgId]/store/bundles",
+      "reason": "dynamic_endpoint_base_props",
+      "files": [
+        "app/org/[orgId]/store/OrgStoreToolClient.tsx",
+        "components/store/StoreBundlesPanel.tsx",
+        "components/store/StoreBundleItemsPanel.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/store/bundles/[id]",
+      "reason": "dynamic_endpoint_base_props",
+      "files": [
+        "components/store/StoreBundlesPanel.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/store/bundles/[id]/items",
+      "reason": "dynamic_endpoint_base_props",
+      "files": [
+        "components/store/StoreBundlesPanel.tsx",
+        "components/store/StoreBundleItemsPanel.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/store/bundles/[id]/items/[itemId]",
+      "reason": "dynamic_endpoint_base_props",
+      "files": [
+        "components/store/StoreBundleItemsPanel.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/store/categories",
+      "reason": "dynamic_endpoint_base_props",
+      "files": [
+        "app/org/[orgId]/store/OrgStoreToolClient.tsx",
+        "components/store/StoreCategoriesPanel.tsx",
+        "components/store/StoreProductsPanel.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/store/categories/[id]",
+      "reason": "dynamic_endpoint_base_props",
+      "files": [
+        "components/store/StoreCategoriesPanel.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/store/orders",
+      "reason": "dynamic_endpoint_base_props",
+      "files": [
+        "app/org/[orgId]/store/OrgStoreToolClient.tsx",
+        "components/store/StoreOrdersPanel.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/store/orders/[orderId]",
+      "reason": "dynamic_endpoint_base_props",
+      "files": [
+        "components/store/StoreOrdersPanel.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/store/orders/[orderId]/shipments",
+      "reason": "dynamic_endpoint_base_props",
+      "files": [
+        "components/store/StoreOrdersPanel.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/store/overview",
+      "reason": "dynamic_endpoint_base_props",
+      "files": [
+        "app/org/[orgId]/store/OrgStoreToolClient.tsx",
+        "components/store/StoreOverviewPanel.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/store/products",
+      "reason": "dynamic_endpoint_base_props",
+      "files": [
+        "app/org/[orgId]/store/OrgStoreToolClient.tsx",
+        "components/store/StoreProductsPanel.tsx",
+        "components/store/StoreProductImagesPanel.tsx",
+        "components/store/StoreProductVariantsPanel.tsx",
+        "components/store/StoreProductOptionsPanel.tsx",
+        "components/store/StoreProductOptionValuesPanel.tsx",
+        "components/store/StoreProductDigitalAssetsPanel.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/store/products/[id]",
+      "reason": "dynamic_endpoint_base_props",
+      "files": [
+        "components/store/StoreProductsPanel.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/store/products/[id]/digital-assets",
+      "reason": "dynamic_endpoint_base_props",
+      "files": [
+        "components/store/StoreProductsPanel.tsx",
+        "components/store/StoreProductDigitalAssetsPanel.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/store/products/[id]/digital-assets/[assetId]",
+      "reason": "dynamic_endpoint_base_props",
+      "files": [
+        "components/store/StoreProductDigitalAssetsPanel.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/store/products/[id]/images",
+      "reason": "dynamic_endpoint_base_props",
+      "files": [
+        "components/store/StoreProductsPanel.tsx",
+        "components/store/StoreProductImagesPanel.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/store/products/[id]/images/[imageId]",
+      "reason": "dynamic_endpoint_base_props",
+      "files": [
+        "components/store/StoreProductImagesPanel.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/store/products/[id]/options",
+      "reason": "dynamic_endpoint_base_props",
+      "files": [
+        "components/store/StoreProductsPanel.tsx",
+        "components/store/StoreProductOptionsPanel.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/store/products/[id]/options/[optionId]",
+      "reason": "dynamic_endpoint_base_props",
+      "files": [
+        "components/store/StoreProductsPanel.tsx",
+        "components/store/StoreProductOptionsPanel.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/store/products/[id]/options/[optionId]/values",
+      "reason": "dynamic_endpoint_base_props",
+      "files": [
+        "components/store/StoreProductOptionValuesPanel.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/store/products/[id]/options/[optionId]/values/[valueId]",
+      "reason": "dynamic_endpoint_base_props",
+      "files": [
+        "components/store/StoreProductOptionValuesPanel.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/store/products/[id]/variants",
+      "reason": "dynamic_endpoint_base_props",
+      "files": [
+        "components/store/StoreProductsPanel.tsx",
+        "components/store/StoreProductVariantsPanel.tsx",
+        "components/store/StoreBundleItemsPanel.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/store/products/[id]/variants/[variantId]",
+      "reason": "dynamic_endpoint_base_props",
+      "files": [
+        "components/store/StoreProductsPanel.tsx",
+        "components/store/StoreProductVariantsPanel.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/store/shipments/[shipmentId]",
+      "reason": "dynamic_endpoint_base_props",
+      "files": [
+        "components/store/StoreOrdersPanel.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/store/shipping/methods/[methodId]",
+      "reason": "dynamic_endpoint_base_props",
+      "files": [
+        "components/store/StoreShippingSettingsPanel.tsx",
+        "components/store/StoreShippingMethodsPanel.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/store/shipping/methods/[methodId]/tiers",
+      "reason": "dynamic_endpoint_base_props",
+      "files": [
+        "components/store/StoreShippingTiersPanel.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/store/shipping/settings",
+      "reason": "dynamic_endpoint_base_props",
+      "files": [
+        "app/org/[orgId]/store/OrgStoreToolClient.tsx",
+        "components/store/StoreShippingSettingsPanel.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/store/shipping/tiers/[tierId]",
+      "reason": "dynamic_endpoint_base_props",
+      "files": [
+        "components/store/StoreShippingTiersPanel.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/store/shipping/zones",
+      "reason": "dynamic_endpoint_base_props",
+      "files": [
+        "app/org/[orgId]/store/OrgStoreToolClient.tsx",
+        "components/store/StoreShippingSettingsPanel.tsx",
+        "components/store/StoreShippingZonesPanel.tsx",
+        "components/store/StoreShippingMethodsPanel.tsx",
+        "components/store/StoreShippingTiersPanel.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/store/shipping/zones/[zoneId]",
+      "reason": "dynamic_endpoint_base_props",
+      "files": [
+        "components/store/StoreShippingSettingsPanel.tsx",
+        "components/store/StoreShippingZonesPanel.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/store/shipping/zones/[zoneId]/methods",
+      "reason": "dynamic_endpoint_base_props",
+      "files": [
+        "components/store/StoreShippingSettingsPanel.tsx",
+        "components/store/StoreShippingMethodsPanel.tsx",
+        "components/store/StoreShippingTiersPanel.tsx"
+      ]
+    }
+  ]
+}

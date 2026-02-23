@@ -248,7 +248,7 @@ export function OrganizationTour({ organizationId }: OrganizationTourProps) {
       const style = document.createElement("style");
       style.id = "tour-highlight-style";
       style.textContent =
-        ".tour-highlight-ring{position:relative;box-shadow:0 0 0 3px rgba(107,255,255,0.6),0 0 24px rgba(107,255,255,0.35);border-radius:14px;z-index:9999;}";
+        ".tour-highlight-ring{position:relative;box-shadow:0 0 0 3px rgba(34,211,238,0.6),0 0 24px rgba(34,211,238,0.35);border-radius:14px;z-index:9999;}";
       document.head.appendChild(style);
     }
   }, []);
@@ -342,7 +342,7 @@ export function OrganizationTour({ organizationId }: OrganizationTourProps) {
 
   return (
     <div className="fixed inset-0 z-[9999] pointer-events-auto">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(107,255,255,0.09),rgba(0,0,0,0)),rgba(5,9,21,0.7)] backdrop-blur-[9px] backdrop-saturate-[1.4]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(34,211,238,0.09),rgba(0,0,0,0)),rgba(5,9,21,0.7)] backdrop-blur-[9px] backdrop-saturate-[1.4]" />
       {highlightRect && (
         <div
           className="pointer-events-none absolute rounded-2xl"
@@ -351,8 +351,8 @@ export function OrganizationTour({ organizationId }: OrganizationTourProps) {
             top: highlightRect.top,
             width: highlightRect.width,
             height: highlightRect.height,
-            boxShadow: "0 0 0 2px rgba(107,255,255,0.75), 0 0 24px rgba(107,255,255,0.35)",
-            background: "radial-gradient(circle at center, rgba(107,255,255,0.08), rgba(7,11,19,0))",
+            boxShadow: "0 0 0 2px rgba(34,211,238,0.75), 0 0 24px rgba(34,211,238,0.35)",
+            background: "radial-gradient(circle at center, rgba(34,211,238,0.08), rgba(7,11,19,0))",
           }}
         />
       )}

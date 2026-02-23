@@ -36,6 +36,7 @@ const getErrorMessage = (payload: any) => {
 
 const isRateLimited = (code: string | null) =>
   code === "RATE_LIMITED" || code === "THROTTLED";
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 async function checkUsernameAvailabilityRemote(
   value: string,
@@ -84,7 +85,7 @@ export default function AuthWall({
   const [error, setError] = useState<string | null>(null);
   const [otp, setOtp] = useState("");
   const [authOtpCooldown, setAuthOtpCooldown] = useState(0);
-  const isEmailLike = (value: string) => value.includes("@");
+  const isEmailLike = (value: string) => EMAIL_REGEX.test(value.trim().toLowerCase());
   const allowReservedForEmail = isEmailLike(identifier) ? identifier.trim().toLowerCase() : null;
   const isLogin = mode === "login";
 
@@ -216,10 +217,11 @@ export default function AuthWall({
     setError(null);
 
     try {
-      const emailToUse = identifier.trim().toLowerCase();
+      const normalizedIdentifier = identifier.trim();
+      const emailToUse = normalizedIdentifier.toLowerCase();
 
       if (mode === "verify") {
-        if (!identifier || !isEmailLike(identifier) || !otp.trim()) {
+        if (!normalizedIdentifier || !isEmailLike(normalizedIdentifier) || !otp.trim()) {
           setError("Indica o email e o código recebido.");
           return;
         }
@@ -262,7 +264,7 @@ export default function AuthWall({
         const loginRes = await fetch("/api/auth/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ identifier, password }),
+          body: JSON.stringify({ identifier: normalizedIdentifier, password }),
           credentials: "include",
         });
         const loginData = await loginRes.json().catch(() => null);
@@ -270,7 +272,7 @@ export default function AuthWall({
           const errorCode = getErrorCode(loginData);
           const errorMessage = getErrorMessage(loginData);
           if (errorCode === "EMAIL_NOT_CONFIRMED") {
-            const emailValue = isEmailLike(identifier) ? identifier : "";
+            const emailValue = isEmailLike(normalizedIdentifier) ? normalizedIdentifier.toLowerCase() : "";
             setMode("verify");
             setIdentifier(emailValue);
             setError(

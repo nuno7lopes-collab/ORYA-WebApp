@@ -309,7 +309,7 @@ export function DayFieldGrid(props: {
                       onDragEnd={() => setDraggedMatchId(null)}
                       className={`rounded-lg border px-2 py-1 text-[12px] ${
                         entry.selected
-                          ? "border-[#6BFFFF]/60 bg-[#6BFFFF]/12"
+                          ? "border-[#22D3EE]/60 bg-[#22D3EE]/12"
                           : "border-white/10 bg-white/5"
                       }`}
                     >
@@ -320,7 +320,7 @@ export function DayFieldGrid(props: {
                               type="checkbox"
                               checked={entry.selected}
                               onChange={() => props.onToggleSelectMatch?.(entry.id)}
-                              className="h-3.5 w-3.5 rounded border-white/30 bg-transparent accent-[#6BFFFF]"
+                              className="h-3.5 w-3.5 rounded border-white/30 bg-transparent accent-[#22D3EE]"
                             />
                           ) : null}
                           <div>
@@ -386,7 +386,7 @@ export function DayFieldGrid(props: {
                         });
                         setDraggedMatchId(null);
                       }}
-                      className="rounded-md border border-white/15 bg-black/20 px-1.5 py-1 text-[10px] text-white/75 hover:border-[#6BFFFF]/45 hover:text-white"
+                      className="rounded-md border border-white/15 bg-black/20 px-1.5 py-1 text-[10px] text-white/75 hover:border-[#22D3EE]/45 hover:text-white"
                     >
                       {fmt(slot, props.timezone)}
                     </button>

@@ -74,6 +74,11 @@ type CategoryDraft = {
   selected: boolean;
   price: string;
   capacityTeams: string;
+  format?: string;
+  amMxMode?: "INDIVIDUAL_ROTATION" | "FIXED_PAIR";
+  amMxProgressionMode?: "ROUND_BY_ROUND";
+  nonStopMode?: "ACTIVE_QUEUE" | "HARD_CAP_WAITLIST";
+  nonStopRounds?: string;
 };
 
 type DailyWindowDraft = {
@@ -221,6 +226,16 @@ const createDailyWindowFromDate = (date: Date, durationMinutes = 60): DailyWindo
     startTime: start,
     endTime: end,
   };
+};
+
+const formatDateInputValue = (date: Date) =>
+  `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+
+const resolveDailyWindowDurationMinutes = (windowItem: DailyWindowDraft) => {
+  const start = parseDateTimeLocal(combineDateAndTime(windowItem.date, windowItem.startTime));
+  const end = parseDateTimeLocal(combineDateAndTime(windowItem.date, windowItem.endTime));
+  if (!start || !end || end <= start) return null;
+  return Math.round((end.getTime() - start.getTime()) / (60 * 1000));
 };
 
 const normalizeDailyWindows = (windows: DailyWindowDraft[]) =>
@@ -460,22 +475,65 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
     if (normalizedDailyWindows.length === 0) return "";
     return formatDateTimeLocal(normalizedDailyWindows[normalizedDailyWindows.length - 1]!.end);
   }, [normalizedDailyWindows]);
+  const scheduleSummary = useMemo(() => {
+    const totalMinutes = normalizedDailyWindows.reduce((acc, windowItem) => {
+      const delta = Math.round((windowItem.end.getTime() - windowItem.start.getTime()) / (60 * 1000));
+      return acc + Math.max(0, delta);
+    }, 0);
+    const invalidDays = Math.max(0, dailyWindows.length - normalizedDailyWindows.length);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return {
+      validDays: normalizedDailyWindows.length,
+      invalidDays,
+      totalMinutes,
+      totalLabel: `${hours}h${minutes > 0 ? ` ${minutes}m` : ""}`,
+    };
+  }, [dailyWindows.length, normalizedDailyWindows]);
 
   const buildFormatProfile = useCallback(
-    (formatValue: string): WizardFormatProfile => {
+    (
+      formatValue: string,
+      options?: {
+        amMxMode?: "INDIVIDUAL_ROTATION" | "FIXED_PAIR";
+        amMxProgressionMode?: "ROUND_BY_ROUND";
+        nonStopMode?: "ACTIVE_QUEUE" | "HARD_CAP_WAITLIST";
+        nonStopRoundsRaw?: string | number | null;
+      },
+    ): WizardFormatProfile => {
       const profile: WizardFormatProfile = { format: formatValue };
       if (isAmMxFormat(formatValue)) {
-        profile.amMxMode = globalAmMxMode;
-        profile.amMxProgressionMode = globalAmMxProgressionMode;
+        profile.amMxMode = options?.amMxMode ?? globalAmMxMode;
+        profile.amMxProgressionMode = options?.amMxProgressionMode ?? globalAmMxProgressionMode;
       }
       if (isNonStopFormat(formatValue)) {
-        profile.nonStopMode = globalNonStopMode;
-        const roundsRaw = asNumber(globalNonStopRounds);
+        profile.nonStopMode = options?.nonStopMode ?? globalNonStopMode;
+        const roundsSource =
+          typeof options?.nonStopRoundsRaw === "number"
+            ? String(options.nonStopRoundsRaw)
+            : typeof options?.nonStopRoundsRaw === "string"
+              ? options.nonStopRoundsRaw
+              : globalNonStopRounds;
+        const roundsRaw = asNumber(roundsSource);
         profile.nonStopRounds = roundsRaw && roundsRaw > 0 ? Math.floor(roundsRaw) : 6;
       }
       return profile;
     },
     [globalAmMxMode, globalAmMxProgressionMode, globalNonStopMode, globalNonStopRounds],
+  );
+
+  const resolveCategoryFormatProfile = useCallback(
+    (categoryId: number): WizardFormatProfile => {
+      const draft = categoryDrafts[categoryId];
+      const categoryFormat = draft?.format ?? format;
+      return buildFormatProfile(categoryFormat, {
+        amMxMode: draft?.amMxMode,
+        amMxProgressionMode: draft?.amMxProgressionMode,
+        nonStopMode: draft?.nonStopMode,
+        nonStopRoundsRaw: draft?.nonStopRounds,
+      });
+    },
+    [buildFormatProfile, categoryDrafts, format],
   );
 
   const activeCourts = useMemo(
@@ -547,8 +605,29 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
     if (windowStart && windowEnd && windowEnd <= windowStart) {
       warnings.push("A janela oficial do torneio está inválida.");
     }
+    const byDate = new Map<string, Array<{ start: Date; end: Date }>>();
+    normalizedDailyWindows.forEach((windowItem) => {
+      const rows = byDate.get(windowItem.date) ?? [];
+      rows.push({ start: windowItem.start, end: windowItem.end });
+      byDate.set(windowItem.date, rows);
+    });
+    for (const [date, windows] of byDate.entries()) {
+      if (windows.length < 2) continue;
+      const ordered = [...windows].sort((a, b) => a.start.getTime() - b.start.getTime());
+      let hasOverlap = false;
+      for (let idx = 1; idx < ordered.length; idx += 1) {
+        const prev = ordered[idx - 1];
+        const current = ordered[idx];
+        if (!prev || !current) continue;
+        if (current.start < prev.end) {
+          hasOverlap = true;
+          break;
+        }
+      }
+      if (hasOverlap) warnings.push(`Existem janelas sobrepostas no dia ${date}.`);
+    }
     return warnings;
-  }, [dailyWindows, normalizedDailyWindows.length, scheduleWindowEnd, scheduleWindowStart]);
+  }, [dailyWindows, normalizedDailyWindows, scheduleWindowEnd, scheduleWindowStart]);
 
   useEffect(() => {
     const windowStart = toIsoFromLocalInput(scheduleWindowStart);
@@ -591,9 +670,10 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
       }, {}),
       categories: selectedCategories.map((category) => {
         const draft = categoryDrafts[category.id];
-        const profile = buildFormatProfile(format);
+        const profile = resolveCategoryFormatProfile(category.id);
+        const categoryFormat = profile.format;
         const teams = asNumber(draft?.capacityTeams ?? "");
-        const defaultTeams = format === "GRUPOS_ELIMINATORIAS" ? 4 : 2;
+        const defaultTeams = categoryFormat === "GRUPOS_ELIMINATORIAS" ? 4 : 2;
         const plannedTeams =
           plannerMode === "minimum"
             ? defaultTeams
@@ -604,7 +684,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
           categoryId: category.id,
           label: category.label,
           teams: plannedTeams,
-          format,
+          format: categoryFormat,
           amMxMode: profile.amMxMode,
           amMxProgressionMode: profile.amMxProgressionMode,
           nonStopMode: profile.nonStopMode,
@@ -652,17 +732,13 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
     };
   }, [
     bufferMinutes,
-    buildFormatProfile,
     categoryDrafts,
     durationMinutes,
     endsAt,
     format,
-    globalAmMxMode,
-    globalAmMxProgressionMode,
-    globalNonStopMode,
-    globalNonStopRounds,
     organizationId,
     prioritizedCourtIds,
+    resolveCategoryFormatProfile,
     scheduleWindowEnd,
     scheduleWindowStart,
     normalizedDailyWindows,
@@ -686,6 +762,16 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
       };
     });
   };
+
+  const patchCategoryDraft = useCallback((id: number, patch: Partial<CategoryDraft>) => {
+    setCategoryDrafts((prev) => ({
+      ...prev,
+      [id]: {
+        ...(prev[id] ?? { selected: true, price: "0", capacityTeams: "" }),
+        ...patch,
+      },
+    }));
+  }, []);
 
   const toggleCourt = (courtId: number) => {
     setSelectedCourtIds((prev) => {
@@ -761,16 +847,25 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
       setError(scheduleWarnings[0]);
       return;
     }
+    const invalidNonStopCategory = selectedCategories.find((category) => {
+      const profile = resolveCategoryFormatProfile(category.id);
+      return isNonStopFormat(profile.format) && (!profile.nonStopRounds || profile.nonStopRounds < 1);
+    });
+    if (invalidNonStopCategory) {
+      setError(`Define rondas válidas para NON_STOP em ${invalidNonStopCategory.label}.`);
+      return;
+    }
 
     const categoryConfigs = selectedCategories.map((cat) => {
       const draft = categoryDrafts[cat.id];
+      const profile = resolveCategoryFormatProfile(cat.id);
       const priceValue = asNumber(draft?.price ?? "0") ?? 0;
       const capacityValue = asNumber(draft?.capacityTeams ?? "") ?? null;
       return {
         padelCategoryId: cat.id,
         pricePerPlayer: Math.max(0, priceValue),
         capacityTeams: capacityValue && capacityValue > 0 ? Math.floor(capacityValue) : null,
-        format,
+        format: profile.format,
         currency: "EUR",
       };
     });
@@ -783,6 +878,17 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
     const numberOfCourts = Math.max(1, courtsCount || 1);
     const courtIdsPayload = effectiveCourtIds;
     const courtPriorityOrderPayload = prioritizedCourtIds;
+    const primaryFormat = selectedCategories[0] ? resolveCategoryFormatProfile(selectedCategories[0].id).format : format;
+    const allSelectedFormats = selectedCategories.map((category) => resolveCategoryFormatProfile(category.id).format);
+    const allFormatsNonStop = allSelectedFormats.length > 0 && allSelectedFormats.every((value) => isNonStopFormat(value));
+    const baseFormatProfile = buildFormatProfile(format);
+    const formatProfilesByCategory = selectedCategories.reduce<Record<string, WizardFormatProfile>>(
+      (acc, category) => {
+        acc[String(category.id)] = resolveCategoryFormatProfile(category.id);
+        return acc;
+      },
+      { global: { ...baseFormatProfile } },
+    );
     const courtsFromClubs = (resolvedCourts.length > 0 ? resolvedCourts : activeCourts).map((court, idx) => ({
       id: court.id,
       clubId: clubIdValue,
@@ -805,7 +911,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
       padel: {
         clubId: clubIdValue,
         categoryIds: selectedCategories.map((cat) => cat.id),
-        format,
+        format: primaryFormat,
         eligibilityType: eligibility,
         ruleSetId: ruleSetId ? Number(ruleSetId) : null,
         isInterclub: false,
@@ -832,9 +938,9 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
             slotMinutes: Number.isFinite(scheduleSlot) ? Math.max(5, Math.round(scheduleSlot)) : null,
             bufferMinutes: Number.isFinite(scheduleBuffer) ? Math.max(0, Math.round(scheduleBuffer)) : null,
             minRestMinutes: Number.isFinite(scheduleRest) ? Math.max(0, Math.round(scheduleRest)) : null,
-            priority: isNonStopFormat(format) ? null : schedulePriority,
+            priority: allFormatsNonStop ? null : schedulePriority,
           },
-          formatProfilesByCategory: { global: buildFormatProfile(format) },
+          formatProfilesByCategory,
           capacityPolicy: {
             publishWarnOnly: true,
             hardBlockGenerate: true,
@@ -958,14 +1064,16 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
     if (!format) issues.push("Formato em falta.");
     if (!eligibility) issues.push("Elegibilidade em falta.");
     if (courtsCount <= 0) issues.push("Sem campos operacionais selecionados.");
-    if (isNonStopFormat(format)) {
-      const roundsRaw = asNumber(globalNonStopRounds);
-      if (!roundsRaw || roundsRaw < 1) {
-        issues.push("Define número de rondas válido para NON_STOP.");
-      }
+    const invalidNonStopCategory = selectedCategories.find((category) => {
+      const profile = resolveCategoryFormatProfile(category.id);
+      if (!isNonStopFormat(profile.format)) return false;
+      return !profile.nonStopRounds || profile.nonStopRounds < 1;
+    });
+    if (invalidNonStopCategory) {
+      issues.push(`Define rondas válidas para NON_STOP em ${invalidNonStopCategory.label}.`);
     }
     return issues;
-  }, [courtsCount, eligibility, format, globalNonStopRounds]);
+  }, [courtsCount, eligibility, format, resolveCategoryFormatProfile, selectedCategories]);
 
   const renderSectionIssues = (issues: string[]) =>
     issues.length > 0 ? (
@@ -1015,7 +1123,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
                 <input
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#6BFFFF]"
+                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
                 />
               </label>
               <label className="space-y-1 text-sm text-white/70">
@@ -1023,7 +1131,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
                 <select
                   value={selectedClubId}
                   onChange={(e) => setSelectedClubId(e.target.value)}
-                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#6BFFFF]"
+                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
                 >
                   <option value="">Seleciona...</option>
                   {selectableClubs.map((club) => (
@@ -1058,7 +1166,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                className="min-h-[120px] w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#6BFFFF]"
+                className="min-h-[120px] w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
               />
             </label>
 
@@ -1088,7 +1196,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
                 <select
                   value={timezone}
                   onChange={(e) => setTimezone(e.target.value)}
-                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#6BFFFF]"
+                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
                 >
                   {TIMEZONE_OPTIONS.map((tz) => (
                     <option key={`tz-${tz}`} value={tz}>
@@ -1134,25 +1242,71 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
                   <p className="text-[12px] uppercase tracking-[0.18em] text-white/60">Dias e horários</p>
                   <p className="text-[12px] text-white/70">Cada dia pode ter o seu horário.</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setDailyWindows((prev) => [
-                      ...prev,
-                      createDailyWindowFromDate(parseDateTimeLocal(startsAt) ?? new Date(), asNumber(durationMinutes) ?? 60),
-                    ])
-                  }
-                  className="rounded-lg border border-white/15 px-3 py-1.5 text-[12px] text-white/80 transition hover:border-white/30 hover:text-white"
-                >
-                  Adicionar dia
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDailyWindows((prev) => {
+                        if (prev.length === 0) {
+                          return [createDailyWindowFromDate(parseDateTimeLocal(startsAt) ?? new Date(), asNumber(durationMinutes) ?? 60)];
+                        }
+                        const last = prev[prev.length - 1] ?? null;
+                        const baseDate = last
+                          ? parseDateTimeLocal(`${last.date}T00:00`)
+                          : parseDateTimeLocal(startsAt) ?? new Date();
+                        const nextDate = baseDate ? new Date(baseDate.getTime()) : new Date();
+                        nextDate.setDate(nextDate.getDate() + 1);
+                        const startTime = last?.startTime ?? "09:00";
+                        const endTime = last?.endTime ?? "10:00";
+                        return [
+                          ...prev,
+                          {
+                            id: makeWindowId(),
+                            date: formatDateInputValue(nextDate),
+                            startTime,
+                            endTime,
+                          },
+                        ];
+                      })
+                    }
+                    className="rounded-lg border border-white/15 px-3 py-1.5 text-[12px] text-white/80 transition hover:border-white/30 hover:text-white"
+                  >
+                    Adicionar dia seguinte
+                  </button>
+                  <button
+                    type="button"
+                    disabled={dailyWindows.length < 2}
+                    onClick={() =>
+                      setDailyWindows((prev) => {
+                        const first = prev[0];
+                        if (!first) return prev;
+                        return prev.map((entry, idx) =>
+                          idx === 0 ? entry : { ...entry, startTime: first.startTime, endTime: first.endTime },
+                        );
+                      })
+                    }
+                    className="rounded-lg border border-white/15 px-3 py-1.5 text-[12px] text-white/70 transition hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    Aplicar 1.º horário a todos
+                  </button>
+                </div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-[12px] text-white/70">
+                <p>
+                  Dias válidos: {scheduleSummary.validDays} · Tempo útil: {scheduleSummary.totalLabel}.
+                </p>
+                {scheduleSummary.invalidDays > 0 ? (
+                  <p className="text-amber-100">Existem {scheduleSummary.invalidDays} dia(s) com horário inválido.</p>
+                ) : null}
               </div>
               <div className="space-y-2">
-                {dailyWindows.map((windowItem, idx) => (
-                  <div
-                    key={windowItem.id}
-                    className="grid gap-2 rounded-xl border border-white/10 bg-black/25 p-3 md:grid-cols-[1fr_170px_170px_auto]"
-                  >
+                {dailyWindows.map((windowItem, idx) => {
+                  const windowDurationMinutes = resolveDailyWindowDurationMinutes(windowItem);
+                  return (
+                    <div
+                      key={windowItem.id}
+                      className="grid gap-2 rounded-xl border border-white/10 bg-black/25 p-3 md:grid-cols-[1fr_170px_170px_auto]"
+                    >
                     <label className="space-y-1 text-[12px] text-white/70">
                       <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">Dia {idx + 1}</span>
                       <OryaDateField
@@ -1165,6 +1319,16 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
                         buttonClassName="h-10 w-full rounded-lg justify-between"
                         className="w-full"
                       />
+                      {windowDurationMinutes ? (
+                        <p className="text-[10px] text-white/55">
+                          Duração: {Math.floor(windowDurationMinutes / 60)}h
+                          {windowDurationMinutes % 60 > 0
+                            ? ` ${windowDurationMinutes % 60}m`
+                            : ""}
+                        </p>
+                      ) : (
+                        <p className="text-[10px] text-amber-100">Horário inválido</p>
+                      )}
                     </label>
                     <label className="space-y-1 text-[12px] text-white/70">
                       <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">Início</span>
@@ -1194,7 +1358,27 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
                         className="w-full"
                       />
                     </label>
-                    <div className="flex items-end justify-end">
+                    <div className="flex flex-col items-end justify-end gap-2">
+                      <button
+                        type="button"
+                        disabled={idx === 0}
+                        onClick={() =>
+                          setDailyWindows((prev) => {
+                            const currentIdx = prev.findIndex((entry) => entry.id === windowItem.id);
+                            if (currentIdx <= 0) return prev;
+                            const above = prev[currentIdx - 1];
+                            if (!above) return prev;
+                            return prev.map((entry, entryIdx) =>
+                              entryIdx === currentIdx
+                                ? { ...entry, startTime: above.startTime, endTime: above.endTime }
+                                : entry,
+                            );
+                          })
+                        }
+                        className="rounded-lg border border-white/15 px-3 py-2 text-[11px] text-white/70 transition hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        Copiar acima
+                      </button>
                       <button
                         type="button"
                         disabled={dailyWindows.length <= 1}
@@ -1204,8 +1388,9 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
                         Remover
                       </button>
                     </div>
-                  </div>
-                ))}
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
@@ -1217,7 +1402,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
                   min={10}
                   value={durationMinutes}
                   onChange={(e) => setDurationMinutes(e.target.value)}
-                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#6BFFFF]"
+                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
                 />
               </label>
               <label className="space-y-1 text-sm text-white/70">
@@ -1227,7 +1412,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
                   min={0}
                   value={minRestMinutes}
                   onChange={(e) => setMinRestMinutes(e.target.value)}
-                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#6BFFFF]"
+                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
                 />
               </label>
             </div>
@@ -1253,7 +1438,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
                     <select
                       value={eligibility}
                       onChange={(e) => setEligibility(e.target.value)}
-                      className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#6BFFFF]"
+                      className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
                     >
                       {ELIGIBILITY_OPTIONS.map((opt) => (
                         <option key={`elig-${opt.value}`} value={opt.value}>
@@ -1271,7 +1456,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
                     <select
                       value={ruleSetId}
                       onChange={(e) => setRuleSetId(e.target.value)}
-                      className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#6BFFFF]"
+                      className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
                     >
                       <option value="">Padrão</option>
                       {rulesets.map((set) => (
@@ -1290,7 +1475,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
                         onChange={(e) =>
                           setSchedulePriority(e.target.value === "KNOCKOUT_FIRST" ? "KNOCKOUT_FIRST" : "GROUPS_FIRST")
                         }
-                        className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#6BFFFF]"
+                        className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
                       >
                         <option value="GROUPS_FIRST">Grupos primeiro</option>
                         <option value="KNOCKOUT_FIRST">Eliminatórias primeiro</option>
@@ -1304,7 +1489,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
                       min={0}
                       value={bufferMinutes}
                       onChange={(e) => setBufferMinutes(e.target.value)}
-                      className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#6BFFFF]"
+                      className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
                     />
                   </label>
                   <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/80">
@@ -1312,7 +1497,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
                       type="checkbox"
                       checked={waitlistEnabled}
                       onChange={(e) => setWaitlistEnabled(e.target.checked)}
-                      className="h-4 w-4 rounded border-white/30 bg-black/40 text-[#6BFFFF]"
+                      className="h-4 w-4 rounded border-white/30 bg-black/40 text-[#22D3EE]"
                     />
                     Lista de espera ativa
                   </label>
@@ -1321,7 +1506,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
                     <select
                       value={plannerMode}
                       onChange={(e) => setPlannerMode(e.target.value === "minimum" ? "minimum" : "capacity")}
-                      className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#6BFFFF]"
+                      className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
                     >
                       <option value="capacity">Capacidade declarada</option>
                       <option value="minimum">Mínimo técnico</option>
@@ -1378,15 +1563,15 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
           <section id="wizard-categories" className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
             <div className="space-y-1 border-b border-white/10 pb-3">
               <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Categorias</p>
-              <p className="text-sm text-white/75">Formato único por torneio e edição das categorias selecionadas.</p>
+              <p className="text-sm text-white/75">Cada categoria pode ter o seu próprio formato e regras.</p>
             </div>
             <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
               <label className="space-y-1 text-sm text-white/70">
-                <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">Formato do torneio</span>
+                <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">Formato base (default)</span>
                 <select
                   value={format}
                   onChange={(e) => setFormat(e.target.value)}
-                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#6BFFFF]"
+                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
                 >
                   {PADEL_FORMATS.map((opt) => (
                     <option key={`format-${opt.value}`} value={opt.value}>
@@ -1408,6 +1593,65 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
               </div>
             </div>
 
+            {(isAmMxFormat(format) || isNonStopFormat(format)) && (
+              <div className="grid gap-3 rounded-2xl border border-white/10 bg-black/30 p-3 md:grid-cols-3">
+                <div className="md:col-span-3">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">Defaults do formato base</p>
+                  <p className="text-[12px] text-white/65">
+                    Só são usados em categorias que não tenham override próprio.
+                  </p>
+                </div>
+                {isAmMxFormat(format) && (
+                  <label className="space-y-1 text-[12px] text-white/70">
+                    <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">Modo AM/MX</span>
+                    <select
+                      value={globalAmMxMode}
+                      onChange={(e) =>
+                        setGlobalAmMxMode(e.target.value === "FIXED_PAIR" ? "FIXED_PAIR" : "INDIVIDUAL_ROTATION")
+                      }
+                      className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                    >
+                      <option value="INDIVIDUAL_ROTATION">Rotação individual</option>
+                      <option value="FIXED_PAIR">Duplas fixas</option>
+                    </select>
+                  </label>
+                )}
+                {isAmMxFormat(format) && (
+                  <div className="space-y-1 rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-[12px] text-white/70">
+                    <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">Progressão</span>
+                    <p>Round by round (fixo)</p>
+                  </div>
+                )}
+                {isNonStopFormat(format) && (
+                  <label className="space-y-1 text-[12px] text-white/70">
+                    <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">Modo NON_STOP</span>
+                    <select
+                      value={globalNonStopMode}
+                      onChange={(e) =>
+                        setGlobalNonStopMode(e.target.value === "ACTIVE_QUEUE" ? "ACTIVE_QUEUE" : "HARD_CAP_WAITLIST")
+                      }
+                      className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                    >
+                      <option value="ACTIVE_QUEUE">Active queue</option>
+                      <option value="HARD_CAP_WAITLIST">Hard-cap + waitlist</option>
+                    </select>
+                  </label>
+                )}
+                {isNonStopFormat(format) && (
+                  <label className="space-y-1 text-[12px] text-white/70">
+                    <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">Rondas default</span>
+                    <input
+                      type="number"
+                      min={1}
+                      value={globalNonStopRounds}
+                      onChange={(e) => setGlobalNonStopRounds(e.target.value)}
+                      className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                    />
+                  </label>
+                )}
+              </div>
+            )}
+
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-[12px] text-white/70">{selectedCategories.length} selecionada(s)</p>
             </div>
@@ -1427,7 +1671,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
                           type="checkbox"
                           checked={Boolean(draft?.selected)}
                           onChange={() => toggleCategory(cat.id)}
-                          className="h-4 w-4 rounded border-white/30 bg-black/40 text-[#6BFFFF]"
+                          className="h-4 w-4 rounded border-white/30 bg-black/40 text-[#22D3EE]"
                         />
                         <span className="font-semibold">{cat.label}</span>
                       </span>
@@ -1445,41 +1689,121 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
                 <p className="text-[12px] uppercase tracking-[0.16em] text-white/60">Edição das selecionadas</p>
                 {selectedCategories.map((cat) => {
                   const draft = categoryDrafts[cat.id] ?? { selected: true, price: "0", capacityTeams: "" };
+                  const categoryProfile = resolveCategoryFormatProfile(cat.id);
+                  const categoryFormat = categoryProfile.format;
+                  const hasCustomFormat = Boolean(draft.format);
                   return (
-                    <div key={`selected-cat-${cat.id}`} className="grid gap-2 rounded-xl border border-white/10 bg-black/25 p-3 md:grid-cols-[minmax(0,1fr)_160px_180px]">
-                      <p className="self-center text-sm font-semibold text-white">{cat.label}</p>
-                      <label className="space-y-1 text-[12px] text-white/70">
-                        <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">Preço / jogador (€)</span>
-                        <input
-                          value={draft.price}
-                          onChange={(e) =>
-                            setCategoryDrafts((prev) => ({
-                              ...prev,
-                              [cat.id]: {
-                                ...(prev[cat.id] ?? { selected: true, price: "0", capacityTeams: "" }),
-                                price: e.target.value,
-                              },
-                            }))
-                          }
-                          className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
-                        />
-                      </label>
-                      <label className="space-y-1 text-[12px] text-white/70">
-                        <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">Capacidade (equipas)</span>
-                        <input
-                          value={draft.capacityTeams}
-                          onChange={(e) =>
-                            setCategoryDrafts((prev) => ({
-                              ...prev,
-                              [cat.id]: {
-                                ...(prev[cat.id] ?? { selected: true, price: "0", capacityTeams: "" }),
-                                capacityTeams: e.target.value,
-                              },
-                            }))
-                          }
-                          className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
-                        />
-                      </label>
+                    <div key={`selected-cat-${cat.id}`} className="space-y-3 rounded-xl border border-white/10 bg-black/25 p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-white">{cat.label}</p>
+                        {hasCustomFormat ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              patchCategoryDraft(cat.id, {
+                                format: undefined,
+                                amMxMode: undefined,
+                                amMxProgressionMode: undefined,
+                                nonStopMode: undefined,
+                                nonStopRounds: undefined,
+                              })
+                            }
+                            className="rounded-lg border border-white/15 px-2 py-1 text-[11px] text-white/70 transition hover:border-white/30 hover:text-white"
+                          >
+                            Usar default
+                          </button>
+                        ) : (
+                          <span className="text-[11px] text-white/55">A usar default ({resolveFormatLabel(format)})</span>
+                        )}
+                      </div>
+
+                      <div className="grid gap-2 md:grid-cols-3">
+                        <label className="space-y-1 text-[12px] text-white/70">
+                          <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">Preço / jogador (€)</span>
+                          <input
+                            value={draft.price}
+                            onChange={(e) => patchCategoryDraft(cat.id, { price: e.target.value })}
+                            className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                          />
+                        </label>
+                        <label className="space-y-1 text-[12px] text-white/70">
+                          <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">Capacidade (equipas)</span>
+                          <input
+                            value={draft.capacityTeams}
+                            onChange={(e) => patchCategoryDraft(cat.id, { capacityTeams: e.target.value })}
+                            className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                          />
+                        </label>
+                        <label className="space-y-1 text-[12px] text-white/70">
+                          <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">Formato da categoria</span>
+                          <select
+                            value={draft.format ?? format}
+                            onChange={(e) => patchCategoryDraft(cat.id, { format: e.target.value })}
+                            className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                          >
+                            {PADEL_FORMATS.map((opt) => (
+                              <option key={`cat-format-${cat.id}-${opt.value}`} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+
+                      {isAmMxFormat(categoryFormat) && (
+                        <div className="grid gap-2 md:grid-cols-2">
+                          <label className="space-y-1 text-[12px] text-white/70">
+                            <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">Modo AM/MX</span>
+                            <select
+                              value={draft.amMxMode ?? globalAmMxMode}
+                              onChange={(e) =>
+                                patchCategoryDraft(cat.id, {
+                                  amMxMode: e.target.value === "FIXED_PAIR" ? "FIXED_PAIR" : "INDIVIDUAL_ROTATION",
+                                  amMxProgressionMode: "ROUND_BY_ROUND",
+                                })
+                              }
+                              className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                            >
+                              <option value="INDIVIDUAL_ROTATION">Rotação individual</option>
+                              <option value="FIXED_PAIR">Duplas fixas</option>
+                            </select>
+                          </label>
+                          <div className="space-y-1 rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-[12px] text-white/70">
+                            <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">Progressão</span>
+                            <p>Round by round</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {isNonStopFormat(categoryFormat) && (
+                        <div className="grid gap-2 md:grid-cols-2">
+                          <label className="space-y-1 text-[12px] text-white/70">
+                            <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">Modo NON_STOP</span>
+                            <select
+                              value={draft.nonStopMode ?? globalNonStopMode}
+                              onChange={(e) =>
+                                patchCategoryDraft(cat.id, {
+                                  nonStopMode: e.target.value === "ACTIVE_QUEUE" ? "ACTIVE_QUEUE" : "HARD_CAP_WAITLIST",
+                                })
+                              }
+                              className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                            >
+                              <option value="ACTIVE_QUEUE">Active queue</option>
+                              <option value="HARD_CAP_WAITLIST">Hard-cap + waitlist</option>
+                            </select>
+                          </label>
+                          <label className="space-y-1 text-[12px] text-white/70">
+                            <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">Rondas NON_STOP</span>
+                            <input
+                              type="number"
+                              min={1}
+                              value={draft.nonStopRounds ?? globalNonStopRounds}
+                              onChange={(e) => patchCategoryDraft(cat.id, { nonStopRounds: e.target.value })}
+                              className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                            />
+                          </label>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -1511,7 +1835,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
                           return next;
                         });
                       }}
-                      className="h-4 w-4 rounded border-white/30 bg-black/40 text-[#6BFFFF]"
+                      className="h-4 w-4 rounded border-white/30 bg-black/40 text-[#22D3EE]"
                     />
                     Usar todos
                   </label>
@@ -1524,7 +1848,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
                           type="checkbox"
                           checked={selectedCourtIds.includes(court.id)}
                           onChange={() => toggleCourt(court.id)}
-                          className="h-4 w-4 rounded border-white/30 bg-black/40 text-[#6BFFFF]"
+                          className="h-4 w-4 rounded border-white/30 bg-black/40 text-[#22D3EE]"
                         />
                         {court.name}
                       </label>
@@ -1591,7 +1915,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
                         type="checkbox"
                         checked={selectedStaffIds.includes(staff.id)}
                         onChange={() => toggleStaff(staff.id)}
-                        className="h-4 w-4 rounded border-white/30 bg-black/40 text-[#6BFFFF]"
+                        className="h-4 w-4 rounded border-white/30 bg-black/40 text-[#22D3EE]"
                       />
                       <span>
                         {staff.fullName || staff.email || staff.username || `Staff #${staff.id}`}

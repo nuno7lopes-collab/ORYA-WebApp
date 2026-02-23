@@ -69,7 +69,7 @@ export function resolveCanonicalOrgApiPath(
   ) {
     return input;
   }
-  if (pathname.startsWith("/api/organizacao")) {
+  if (/^\/api\/organizacao(?:\/|$)/.test(pathname)) {
     // Hard-cut global: callers must use canonical namespaces explicitly.
     return input;
   }

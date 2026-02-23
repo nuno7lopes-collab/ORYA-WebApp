@@ -1,5 +1,4 @@
 const TECHNICAL_ERROR_CODES = new Set([
-  "LEGACY_ROUTE_REMOVED",
   "NOT_ORGANIZATION",
   "UNAUTHENTICATED",
   "INTERNAL_ERROR",
@@ -35,7 +34,6 @@ export function sanitizeUiErrorMessage(raw: unknown, fallback: string): string {
   const upper = message.toUpperCase();
   if (FUNCTIONAL_ERROR_MESSAGES[upper]) return FUNCTIONAL_ERROR_MESSAGES[upper];
   if (TECHNICAL_ERROR_CODES.has(upper)) return fallback;
-  if (upper.includes("LEGACY_ROUTE_REMOVED")) return fallback;
   if (TECHNICAL_TOKEN_PATTERN.test(message) && message === upper) return fallback;
 
   return message;

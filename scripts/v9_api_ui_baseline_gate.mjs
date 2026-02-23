@@ -57,6 +57,7 @@ const today = new Date().toISOString().slice(0, 10);
 const invalid = [];
 const expired = [];
 const seen = new Set();
+const allowedWaves = new Set(["wave-1", "wave-2", "wave-3"]);
 
 for (const [index, entry] of entries.entries()) {
   const rawRoute = entry.route;
@@ -92,9 +93,13 @@ for (const [index, entry] of entries.entries()) {
     : typeof policy.expiresAt === "string"
       ? policy.expiresAt.trim()
       : "";
+  const wave = typeof entry.wave === "string" && entry.wave.trim()
+    ? entry.wave.trim()
+    : "";
 
   if (!owner) invalid.push({ index, route, reason: "owner_missing" });
   if (!reason) invalid.push({ index, route, reason: "reason_missing" });
+  if (!allowedWaves.has(wave)) invalid.push({ index, route, reason: "wave_missing_or_invalid" });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(expiresAt)) {
     invalid.push({ index, route, reason: "expiresAt_invalid" });
   } else if (expiresAt < today) {

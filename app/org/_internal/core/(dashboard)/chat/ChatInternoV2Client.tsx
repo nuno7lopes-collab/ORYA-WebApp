@@ -2304,7 +2304,7 @@ export default function ChatInternoV2Client() {
           <section
             ref={leftPaneRef}
             tabIndex={-1}
-            className="flex min-h-0 min-w-0 flex-col gap-2.5 border-r border-white/10 bg-[var(--orya-surface-1)]/85 p-2.5 outline-none focus:ring-2 focus:ring-[#6BFFFF]/50"
+            className="flex min-h-0 min-w-0 flex-col gap-2.5 border-r border-white/10 bg-[var(--orya-surface-1)]/85 p-2.5 outline-none focus:ring-2 focus:ring-[#22D3EE]/50"
             aria-label="Lista de conversas"
             onKeyDown={(event) => {
               if (event.key === "ArrowDown") {
@@ -2505,7 +2505,7 @@ export default function ChatInternoV2Client() {
                       )}
                       aria-current={isActive ? "true" : undefined}
                     >
-                      {isActive ? <span className="absolute left-0 top-0 h-full w-1 bg-[#6BFFFF]/70" /> : null}
+                      {isActive ? <span className="absolute left-0 top-0 h-full w-1 bg-[#22D3EE]/70" /> : null}
                       <div className="flex items-center gap-3">
                         <Avatar
                           src={avatarUrl}
@@ -2547,7 +2547,7 @@ export default function ChatInternoV2Client() {
       <section
         ref={centerPaneRef}
         tabIndex={-1}
-        className="flex min-h-0 min-w-0 flex-col bg-[var(--orya-surface-2)] outline-none focus:ring-2 focus:ring-[#6BFFFF]/50"
+        className="flex min-h-0 min-w-0 flex-col bg-[var(--orya-surface-2)] outline-none focus:ring-2 focus:ring-[#22D3EE]/50"
         aria-label="Conversação ativa"
       >
         <header className="flex items-center justify-between border-b border-white/10 px-4 py-2">

@@ -38,8 +38,8 @@ export default function CrmSubnav({ variant = "default", className, campaignsEna
     ? "inline-flex items-center rounded-full px-3 py-1.5 text-[12px] font-semibold transition whitespace-nowrap"
     : "inline-flex items-center rounded-full px-4 py-2 text-[12px] font-semibold transition";
   const linkActive = isTopbar
-    ? "bg-white/15 text-white shadow-[0_10px_28px_rgba(107,255,255,0.25)]"
-    : "bg-gradient-to-r from-[#FF7AD1]/55 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_32px_rgba(107,255,255,0.35)]";
+    ? "bg-white/15 text-white shadow-[0_10px_28px_rgba(34,211,238,0.25)]"
+    : "bg-gradient-to-r from-[#FF7AD1]/55 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_32px_rgba(34,211,238,0.35)]";
   const linkInactive = isTopbar
     ? "text-white/70 hover:bg-white/10"
     : "border border-white/15 bg-white/5 text-white/70 hover:bg-white/10";

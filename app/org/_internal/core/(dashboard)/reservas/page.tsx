@@ -764,7 +764,7 @@ export default function ReservasDashboardPage() {
       appearance: {
         theme: "night",
         variables: {
-          colorPrimary: "#6BFFFF",
+          colorPrimary: "#22D3EE",
           colorBackground: "#0B0D0F",
           colorText: "#F8FAFC",
           fontFamily: "inherit",

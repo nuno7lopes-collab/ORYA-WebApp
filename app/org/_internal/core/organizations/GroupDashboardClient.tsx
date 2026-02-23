@@ -225,7 +225,7 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
               <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Recursos</p>
               <p className="mt-1 text-xl font-semibold">{metrics.resources}</p>
             </div>
-            <div className="rounded-2xl border border-[#6BFFFF]/32 bg-[#6BFFFF]/10 p-3">
+            <div className="rounded-2xl border border-[#22D3EE]/32 bg-[#22D3EE]/10 p-3">
               <p className="text-[10px] uppercase tracking-[0.2em] text-[#B5F9FF]">Agenda 7 dias</p>
               <p className="mt-1 text-xl font-semibold text-[#DEFDFF]">{metrics.upcomingAgenda}</p>
             </div>
@@ -240,9 +240,9 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
                   type="button"
                   onClick={() => setTab(item.id)}
                   className={cn(
-                    "rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55",
+                    "rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55",
                     active
-                      ? "border-[#6BFFFF]/50 bg-[#6BFFFF]/15 text-[#D8FDFF]"
+                      ? "border-[#22D3EE]/50 bg-[#22D3EE]/15 text-[#D8FDFF]"
                       : "border-white/20 bg-white/8 text-white/70 hover:bg-white/12",
                   )}
                 >
@@ -325,7 +325,7 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
                     type="date"
                     value={toDateInputValue(fromDate)}
                     onChange={(event) => setFromDate(new Date(`${event.target.value}T00:00:00`))}
-                    className="rounded-xl border border-white/20 bg-black/30 px-2.5 py-1.5 text-[12px] text-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55"
+                    className="rounded-xl border border-white/20 bg-black/30 px-2.5 py-1.5 text-[12px] text-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55"
                   />
                 </div>
                 <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-white/70">
@@ -334,7 +334,7 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
                     type="date"
                     value={toDateInputValue(toDate)}
                     onChange={(event) => setToDate(new Date(`${event.target.value}T23:59:59`))}
-                    className="rounded-xl border border-white/20 bg-black/30 px-2.5 py-1.5 text-[12px] text-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55"
+                    className="rounded-xl border border-white/20 bg-black/30 px-2.5 py-1.5 text-[12px] text-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55"
                   />
                 </div>
               </div>
@@ -358,7 +358,7 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
                       className={cn(
                         "rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition",
                         active
-                          ? "border-[#6BFFFF]/50 bg-[#6BFFFF]/15 text-[#D8FDFF]"
+                          ? "border-[#22D3EE]/50 bg-[#22D3EE]/15 text-[#D8FDFF]"
                           : "border-white/20 bg-white/8 text-white/70 hover:bg-white/12",
                       )}
                     >

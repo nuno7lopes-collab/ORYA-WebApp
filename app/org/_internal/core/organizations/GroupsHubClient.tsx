@@ -410,7 +410,7 @@ export default function GroupsHubClient({ initialGroups }: Props) {
           <button
             type="button"
             onClick={() => router.push(buildOrgHubHref("/organizations"))}
-            className="mt-4 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55"
+            className="mt-4 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55"
           >
             Ir para organizações
           </button>
@@ -439,7 +439,7 @@ export default function GroupsHubClient({ initialGroups }: Props) {
             <button
               type="button"
               onClick={() => router.push(buildOrgHubHref("/organizations"))}
-              className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55"
+              className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55"
             >
               Ver organizações
             </button>
@@ -462,7 +462,7 @@ export default function GroupsHubClient({ initialGroups }: Props) {
               <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Pedidos abertos</p>
               <p className="mt-1 text-xl font-semibold">{summary.openRequests}</p>
             </div>
-            <div className="rounded-2xl border border-[#6BFFFF]/32 bg-[#6BFFFF]/10 p-3">
+            <div className="rounded-2xl border border-[#22D3EE]/32 bg-[#22D3EE]/10 p-3">
               <p className="text-[10px] uppercase tracking-[0.2em] text-[#B5F9FF]">Ação tua</p>
               <p className="mt-1 text-xl font-semibold text-[#DEFDFF]">{summary.actionable}</p>
             </div>
@@ -481,9 +481,9 @@ export default function GroupsHubClient({ initialGroups }: Props) {
 	                  type="button"
 	                  onClick={() => setViewFilter(option.id)}
 	                  className={cn(
-	                    "rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55",
+	                    "rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55",
 	                    active
-	                      ? "border-[#6BFFFF]/50 bg-[#6BFFFF]/15 text-[#D8FDFF]"
+	                      ? "border-[#22D3EE]/50 bg-[#22D3EE]/15 text-[#D8FDFF]"
 	                      : "border-white/20 bg-white/8 text-white/70 hover:bg-white/12",
 	                  )}
 	                >
@@ -515,7 +515,7 @@ export default function GroupsHubClient({ initialGroups }: Props) {
             <button
               type="button"
               onClick={() => setViewFilter("all")}
-              className="mt-4 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55"
+              className="mt-4 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55"
             >
               Ver todos
             </button>
@@ -559,7 +559,7 @@ export default function GroupsHubClient({ initialGroups }: Props) {
                     className={cn(
                       "rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]",
                       group.viewerIsGroupOwner
-                        ? "border-[#6BFFFF]/55 bg-[#6BFFFF]/14 text-[#CCFCFF]"
+                        ? "border-[#22D3EE]/55 bg-[#22D3EE]/14 text-[#CCFCFF]"
                         : "border-white/20 bg-white/8 text-white/72",
                     )}
                   >
@@ -569,7 +569,7 @@ export default function GroupsHubClient({ initialGroups }: Props) {
                     <button
                       type="button"
                       onClick={() => router.push(defaultGroupOrgHref)}
-                      className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55"
+                      className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55"
                     >
                       Abrir equipa
                     </button>
@@ -577,7 +577,7 @@ export default function GroupsHubClient({ initialGroups }: Props) {
                   <button
                     type="button"
                     onClick={() => router.push(groupDashboardHref)}
-                    className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55"
+                    className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55"
                   >
                     Dashboard do grupo
                   </button>
@@ -587,7 +587,7 @@ export default function GroupsHubClient({ initialGroups }: Props) {
                       onClick={() =>
                         router.push(`${buildOrgHubHref("/create")}?groupMode=EXISTING_GROUP&groupId=${group.groupId}`)
                       }
-                      className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55"
+                      className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55"
                     >
                       Nova org no grupo
                     </button>
@@ -649,7 +649,7 @@ export default function GroupsHubClient({ initialGroups }: Props) {
                                       onChange={(event) =>
                                         setGovernanceRoleByMember((prev) => ({ ...prev, [memberKey]: event.target.value }))
                                       }
-                                      className="rounded-full border border-white/20 bg-black/30 px-2 py-1 text-[11px] text-white/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55"
+                                      className="rounded-full border border-white/20 bg-black/30 px-2 py-1 text-[11px] text-white/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55"
                                     >
                                       <option value="CO_OWNER">Co-owner</option>
                                       <option value="ADMIN">Admin</option>
@@ -657,7 +657,7 @@ export default function GroupsHubClient({ initialGroups }: Props) {
                                     <button
                                       type="button"
                                       onClick={() => updateGovernanceMember(group.groupId, member.userId, member.role)}
-                                      className="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55"
+                                      className="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55"
                                     >
                                       Atualizar
                                     </button>
@@ -695,13 +695,13 @@ export default function GroupsHubClient({ initialGroups }: Props) {
                         }
                         placeholder="Ex: Grupo Norte"
                         disabled={!group.viewerIsGroupOwner}
-                        className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm text-white/90 placeholder:text-white/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm text-white/90 placeholder:text-white/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55 disabled:cursor-not-allowed disabled:opacity-60"
                       />
                       <button
                         type="button"
                         onClick={() => renameGroup(group.groupId, group.groupName)}
                         disabled={!group.viewerIsGroupOwner}
-                        className="w-full rounded-full border border-white/20 bg-white/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="w-full rounded-full border border-white/20 bg-white/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         Guardar nome
                       </button>
@@ -716,7 +716,7 @@ export default function GroupsHubClient({ initialGroups }: Props) {
                         }
                         placeholder="email ou username"
                         disabled={!group.viewerIsGroupOwner}
-                        className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm text-white/90 placeholder:text-white/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm text-white/90 placeholder:text-white/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55 disabled:cursor-not-allowed disabled:opacity-60"
                       />
                       <div className="flex gap-2">
                         <select
@@ -725,7 +725,7 @@ export default function GroupsHubClient({ initialGroups }: Props) {
                             setGovernanceRoleByGroup((prev) => ({ ...prev, [group.groupId]: event.target.value }))
                           }
                           disabled={!group.viewerIsGroupOwner}
-                          className="flex-1 rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm text-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55 disabled:cursor-not-allowed disabled:opacity-60"
+                          className="flex-1 rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm text-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           <option value="CO_OWNER">Co-owner</option>
                           <option value="ADMIN">Admin</option>
@@ -734,7 +734,7 @@ export default function GroupsHubClient({ initialGroups }: Props) {
                           type="button"
                           onClick={() => addGovernanceMember(group.groupId)}
                           disabled={!group.viewerIsGroupOwner}
-                          className="rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           Adicionar
                         </button>
@@ -790,7 +790,7 @@ export default function GroupsHubClient({ initialGroups }: Props) {
 	                          onChange={(event) =>
 	                            setJoinOrganizationByGroup((prev) => ({ ...prev, [group.groupId]: event.target.value }))
 	                          }
-	                          className="w-full rounded-xl border border-white/14 bg-black/45 px-3 py-2 text-sm text-white outline-none transition focus:border-[#6BFFFF] focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/35"
+	                          className="w-full rounded-xl border border-white/14 bg-black/45 px-3 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/35"
 	                        >
 	                          <option value="">Seleciona organização owner tua</option>
 	                          {group.joinCandidates.map((candidate) => (
@@ -817,7 +817,7 @@ export default function GroupsHubClient({ initialGroups }: Props) {
 	                            group.joinCandidates.length === 0 ||
 	                            Boolean(selectedJoinCandidate?.hasOpenJoinRequest)
 	                          }
-	                          className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55 disabled:opacity-50"
+	                          className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55 disabled:opacity-50"
 	                        >
 	                          {isBusy(`join:${group.groupId}`) ? "A iniciar..." : "Iniciar entrada"}
 	                        </button>
@@ -840,7 +840,7 @@ export default function GroupsHubClient({ initialGroups }: Props) {
 	                          onChange={(event) =>
 	                            setExitOrganizationByGroup((prev) => ({ ...prev, [group.groupId]: event.target.value }))
 	                          }
-	                          className="w-full rounded-xl border border-white/14 bg-black/45 px-3 py-2 text-sm text-white outline-none transition focus:border-[#6BFFFF] focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/35"
+	                          className="w-full rounded-xl border border-white/14 bg-black/45 px-3 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/35"
 	                        >
 	                          <option value="">Seleciona organização para saída</option>
 	                          {group.organizations.map((organization) => (
@@ -862,7 +862,7 @@ export default function GroupsHubClient({ initialGroups }: Props) {
 	                              [group.groupId]: event.target.value === "TRANSFER_OWNER" ? "TRANSFER_OWNER" : "KEEP_OWNER",
 	                            }))
 	                          }
-	                          className="w-full rounded-xl border border-white/14 bg-black/45 px-3 py-2 text-sm text-white outline-none transition focus:border-[#6BFFFF] focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/35"
+	                          className="w-full rounded-xl border border-white/14 bg-black/45 px-3 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/35"
 	                        >
 	                          <option value="KEEP_OWNER">{EXIT_MODE_LABELS.KEEP_OWNER}</option>
 	                          <option value="TRANSFER_OWNER">{EXIT_MODE_LABELS.TRANSFER_OWNER}</option>
@@ -879,7 +879,7 @@ export default function GroupsHubClient({ initialGroups }: Props) {
 	                            onChange={(event) =>
 	                              setExitTargetByGroup((prev) => ({ ...prev, [group.groupId]: event.target.value }))
 	                            }
-	                            className="w-full rounded-xl border border-white/14 bg-black/45 px-3 py-2 text-sm text-white outline-none transition focus:border-[#6BFFFF] focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/35"
+	                            className="w-full rounded-xl border border-white/14 bg-black/45 px-3 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/35"
 	                            placeholder="Username/email do próximo owner"
 	                          />
 	                          </>
@@ -895,7 +895,7 @@ export default function GroupsHubClient({ initialGroups }: Props) {
 	                          type="button"
 	                          onClick={() => startExitRequest(group.groupId)}
 	                          disabled={isBusy(`exit:${group.groupId}`) || group.organizations.length === 0}
-	                          className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55 disabled:opacity-50"
+	                          className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55 disabled:opacity-50"
 	                        >
 	                          {isBusy(`exit:${group.groupId}`) ? "A iniciar..." : "Iniciar saída"}
 	                        </button>
@@ -917,14 +917,14 @@ export default function GroupsHubClient({ initialGroups }: Props) {
 	                        onChange={(event) =>
 	                          setTransferTargetByGroup((prev) => ({ ...prev, [group.groupId]: event.target.value }))
 	                        }
-	                        className="w-full rounded-xl border border-white/14 bg-black/45 px-3 py-2 text-sm text-white outline-none transition focus:border-[#6BFFFF] focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/35"
+	                        className="w-full rounded-xl border border-white/14 bg-black/45 px-3 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/35"
 	                        placeholder="Username/email do próximo owner"
 	                      />
 	                      <button
 	                        type="button"
 	                        onClick={() => startOwnerTransfer(group.groupId)}
 	                        disabled={isBusy(`transfer:start:${group.groupId}`)}
-	                        className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55 disabled:opacity-50"
+	                        className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55 disabled:opacity-50"
 	                      >
 	                        {isBusy(`transfer:start:${group.groupId}`) ? "A iniciar..." : "Transferir owner"}
 	                      </button>
@@ -953,14 +953,14 @@ export default function GroupsHubClient({ initialGroups }: Props) {
 	                            onChange={(event) =>
 	                              setTransferTokenById((prev) => ({ ...prev, [transfer.id]: event.target.value }))
 	                            }
-	                            className="w-full rounded-xl border border-white/14 bg-black/45 px-3 py-2 text-sm text-white outline-none transition focus:border-[#6BFFFF] focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/35"
+	                            className="w-full rounded-xl border border-white/14 bg-black/45 px-3 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/35"
 	                            placeholder="Token de confirmação recebido por email"
 	                          />
 	                          <button
 	                            type="button"
 	                            onClick={() => confirmOwnerTransfer(transfer)}
 	                            disabled={isBusy(`transfer:confirm:${transfer.id}`)}
-	                            className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55 disabled:opacity-50"
+	                            className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55 disabled:opacity-50"
 	                          >
 	                            {isBusy(`transfer:confirm:${transfer.id}`) ? "A confirmar..." : "Confirmar owner"}
 	                          </button>
@@ -971,7 +971,7 @@ export default function GroupsHubClient({ initialGroups }: Props) {
 	                            type="button"
 	                            onClick={() => cancelOwnerTransfer(transfer)}
 	                            disabled={isBusy(`transfer:cancel:${transfer.id}`)}
-	                            className="mt-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55 disabled:opacity-50"
+	                            className="mt-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55 disabled:opacity-50"
 	                          >
 	                            {isBusy(`transfer:cancel:${transfer.id}`) ? "A cancelar..." : "Cancelar transferência"}
 	                          </button>
@@ -1029,7 +1029,7 @@ export default function GroupsHubClient({ initialGroups }: Props) {
                         </div>
                         <div className="flex flex-wrap gap-1 text-[10px] uppercase tracking-[0.16em]">
                           {request.canActAsGroupOwner && (
-                            <span className="rounded-full border border-[#6BFFFF]/45 bg-[#6BFFFF]/12 px-2 py-1 text-[#CCFCFF]">Owner do grupo</span>
+                            <span className="rounded-full border border-[#22D3EE]/45 bg-[#22D3EE]/12 px-2 py-1 text-[#CCFCFF]">Owner do grupo</span>
                           )}
                           {request.canActAsOrgOwner && (
                             <span className="rounded-full border border-white/20 bg-white/8 px-2 py-1 text-white/75">Owner da org</span>
@@ -1070,7 +1070,7 @@ export default function GroupsHubClient({ initialGroups }: Props) {
                                         [request.id]: event.target.value,
                                       }))
                                     }
-                                    className="w-full rounded-xl border border-white/14 bg-black/45 px-3 py-2 text-sm text-white outline-none transition focus:border-[#6BFFFF] focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/35"
+                                    className="w-full rounded-xl border border-white/14 bg-black/45 px-3 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/35"
                                   >
                                     <option value="">Seleciona o teu papel</option>
                                     {allowedParticipants.map((option) => (
@@ -1097,7 +1097,7 @@ export default function GroupsHubClient({ initialGroups }: Props) {
                                     allowedParticipants.length === 0 ||
                                     (allowedParticipants.length > 1 && !resolvedParticipant)
                                   }
-                                  className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55 disabled:opacity-50"
+                                  className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55 disabled:opacity-50"
                                 >
                                   {isBusy(`request:code:${request.id}`) ? "A gerar..." : "Gerar código"}
                                 </button>
@@ -1113,7 +1113,7 @@ export default function GroupsHubClient({ initialGroups }: Props) {
                                     }))
                                   }
                                   placeholder="Código owner da org"
-                                  className="w-full rounded-xl border border-white/14 bg-black/45 px-3 py-2 text-sm text-white outline-none transition focus:border-[#6BFFFF] focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/35"
+                                  className="w-full rounded-xl border border-white/14 bg-black/45 px-3 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/35"
                                 />
                                 {isJoin ? (
                                   <input
@@ -1125,7 +1125,7 @@ export default function GroupsHubClient({ initialGroups }: Props) {
                                       }))
                                     }
                                     placeholder="Código owner do grupo"
-                                    className="w-full rounded-xl border border-white/14 bg-black/45 px-3 py-2 text-sm text-white outline-none transition focus:border-[#6BFFFF] focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/35"
+                                    className="w-full rounded-xl border border-white/14 bg-black/45 px-3 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/35"
                                   />
                                 ) : (
                                   <input
@@ -1137,14 +1137,14 @@ export default function GroupsHubClient({ initialGroups }: Props) {
                                       }))
                                     }
                                     placeholder="Código próximo owner"
-                                    className="w-full rounded-xl border border-white/14 bg-black/45 px-3 py-2 text-sm text-white outline-none transition focus:border-[#6BFFFF] focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/35"
+                                    className="w-full rounded-xl border border-white/14 bg-black/45 px-3 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/35"
                                   />
                                 )}
                                 <button
                                   type="button"
                                   onClick={() => verifyCodes(request)}
                                   disabled={isBusy(`request:verify:${request.id}`)}
-                                  className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55 disabled:opacity-50 sm:col-span-2"
+                                  className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55 disabled:opacity-50 sm:col-span-2"
                                 >
                                   {isBusy(`request:verify:${request.id}`) ? "A validar..." : "Verificar códigos"}
                                 </button>
@@ -1161,7 +1161,7 @@ export default function GroupsHubClient({ initialGroups }: Props) {
                                 type="button"
                                 onClick={() => resendEmails(request)}
                                 disabled={isBusy(`request:email:${request.id}`)}
-                                className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55 disabled:opacity-50"
+                                className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55 disabled:opacity-50"
                               >
                                 {isBusy(`request:email:${request.id}`) ? "A enviar..." : "Reenviar emails"}
                               </button>
@@ -1175,13 +1175,13 @@ export default function GroupsHubClient({ initialGroups }: Props) {
                                   setTokenByRequest((prev) => ({ ...prev, [request.id]: event.target.value }))
                                 }
                                 placeholder="Token recebido por email"
-                                className="w-full rounded-xl border border-white/14 bg-black/45 px-3 py-2 text-sm text-white outline-none transition focus:border-[#6BFFFF] focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/35"
+                                className="w-full rounded-xl border border-white/14 bg-black/45 px-3 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/35"
                               />
                               <button
                                 type="button"
                                 onClick={() => confirmToken(request)}
                                 disabled={isBusy(`request:confirm:${request.id}`)}
-                                className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55 disabled:opacity-50 sm:col-span-2"
+                                className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55 disabled:opacity-50 sm:col-span-2"
                               >
                                 {isBusy(`request:confirm:${request.id}`) ? "A confirmar..." : "Confirmar token"}
                               </button>

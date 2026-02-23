@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { execFileSync } from "child_process";
 
 const ROOT = process.cwd();
 const API_ROOT = path.join(ROOT, "app", "api");
@@ -12,10 +13,7 @@ const OUTPUTS = {
   frontendApi: path.join(ROOT, "reports", "v9_inventory_frontend_api_usage_v1.md"),
   parity: path.join(ROOT, "reports", "v9_parity_report_v1.md"),
 };
-
-const FRONTEND_API_USAGE_EXCLUDES = new Set([
-  "lib/canonicalOrgApiPath.ts",
-]);
+const COVERAGE_CSV_PATH = path.join(ROOT, "reports", "api_ui_coverage_v1.csv");
 
 const API_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 
@@ -107,17 +105,9 @@ function detectStatusCodes(content) {
   return Array.from(codes).sort();
 }
 
-function isLegacyTombstoneRoute(content) {
-  const hasLegacyGoneHandler = /function\s+legacyGone\s*\(/.test(content);
-  const hasRemovedMessage = /Endpoint legado removido\./.test(content);
-  const hasGoneStatus = /\{\s*status:\s*410\s*\}/.test(content);
-  return hasLegacyGoneHandler && hasRemovedMessage && hasGoneStatus;
-}
-
 function detectLegacy(content) {
   const legacy = [];
   if (/@deprecated/i.test(content)) legacy.push("@deprecated");
-  if (isLegacyTombstoneRoute(content)) legacy.push("410-tombstone");
   return legacy;
 }
 
@@ -134,7 +124,6 @@ function detectType(routePath) {
   if (routePath.startsWith("/api/internal")) return "internal";
   if (routePath.startsWith("/api/cron")) return "cron";
   if (routePath.startsWith("/api/admin")) return "admin";
-  if (routePath.startsWith("/api/organizacao")) return "organizacao";
   if (routePath.startsWith("/api/me")) return "me";
   if (routePath.startsWith("/api/public")) return "public";
   if (routePath.startsWith("/api/widgets")) return "public";
@@ -186,56 +175,84 @@ function detectCaching(content) {
   return "default";
 }
 
-function normalizeEndpoint(raw) {
-  let endpoint = raw.trim();
-  endpoint = endpoint.split("?")[0];
-  endpoint = endpoint.replace(/\$\{[^}]+\}/g, "[param]");
-  endpoint = endpoint.replace(/\[[^/]+\]/g, "[param]");
-  endpoint = endpoint.replace(/([^/])\[param\]$/, "$1");
-  endpoint = endpoint.replace(/\\/g, "/");
-  endpoint = endpoint.replace(/\/+/g, "/");
-  if (endpoint.length > 1 && endpoint.endsWith("/")) endpoint = endpoint.slice(0, -1);
-  return endpoint;
+function parseCsvLine(line) {
+  const values = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (ch === "\"") {
+      if (inQuotes && line[i + 1] === "\"") {
+        current += "\"";
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (ch === "," && !inQuotes) {
+      values.push(current);
+      current = "";
+      continue;
+    }
+    current += ch;
+  }
+  values.push(current);
+  return values;
 }
 
-function extractFrontendApiUsage() {
-  const sourceRoots = [
-    path.join(ROOT, "app"),
-    path.join(ROOT, "components"),
-    path.join(ROOT, "lib"),
-    path.join(ROOT, "domain"),
-    path.join(ROOT, "apps", "mobile", "app"),
-    path.join(ROOT, "apps", "mobile", "features"),
-    path.join(ROOT, "apps", "mobile", "lib"),
-  ];
-  const files = [];
-  const apiRoot = path.join(ROOT, "app", "api");
-  for (const root of sourceRoots) {
-    if (!fs.existsSync(root)) continue;
-    files.push(...listFiles(root));
-  }
-  const codeFiles = files.filter((file) => {
-    if (!/\.(ts|tsx|js|jsx)$/.test(file)) return false;
-    if (file.startsWith(apiRoot + path.sep)) return false;
-    const rel = path.relative(ROOT, file).replace(/\\/g, "/");
-    if (FRONTEND_API_USAGE_EXCLUDES.has(rel)) return false;
-    return true;
-  });
-  const usage = new Map();
-  const apiRegex = /["'`](\/api\/[^"'`\s]+)["'`]/g;
+function runCoverageAudit() {
+  execFileSync(
+    "node",
+    ["scripts/run-ts.cjs", "scripts/audit_api_ui_coverage.ts"],
+    {
+      cwd: ROOT,
+      stdio: "inherit",
+      env: { ...process.env, FAIL_ON_ORPHANS: "0" },
+    },
+  );
+}
 
-  for (const file of codeFiles) {
-    const content = fs.readFileSync(file, "utf8");
-    let match;
-    while ((match = apiRegex.exec(content))) {
-      const raw = match[1];
-      const endpoint = normalizeEndpoint(raw);
-      if (!usage.has(endpoint)) usage.set(endpoint, new Set());
-      usage.get(endpoint).add(path.relative(ROOT, file));
+function loadCoverageUsageAndParity() {
+  if (!fs.existsSync(COVERAGE_CSV_PATH)) {
+    throw new Error("Missing reports/api_ui_coverage_v1.csv after audit run.");
+  }
+  const text = fs.readFileSync(COVERAGE_CSV_PATH, "utf8").trim();
+  if (!text) {
+    throw new Error("Empty reports/api_ui_coverage_v1.csv");
+  }
+  const rows = text.split(/\r?\n/).slice(1).map(parseCsvLine);
+  const usage = new Map();
+  const unusedApi = [];
+  const missingApi = [];
+
+  for (const row of rows) {
+    const [route, , apiType, uiStatus, , uiFilesRaw = ""] = row;
+    if (typeof route !== "string" || !route.startsWith("/api/")) continue;
+    const files = uiFilesRaw
+      .split(";")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    if (files.length > 0) {
+      if (!usage.has(route)) usage.set(route, new Set());
+      for (const file of files) usage.get(route).add(file);
+    }
+
+    if (uiStatus === "missing_api") {
+      missingApi.push(route);
+      continue;
+    }
+
+    if (uiStatus === "orphan") {
+      unusedApi.push({ route, type: apiType || "public" });
     }
   }
 
-  return usage;
+  return {
+    usage,
+    missingApi: Array.from(new Set(missingApi)).sort(),
+    unusedApi: unusedApi.sort((a, b) => a.route.localeCompare(b.route)),
+  };
 }
 
 function writeFile(filePath, content) {
@@ -282,7 +299,7 @@ function tagPageRoute(route) {
   const tags = new Set();
   if (/^\/login$|^\/signup$|^\/reset-password$|^\/auth\//.test(route)) tags.add("login");
   if (/^\/onboarding\b/.test(route)) tags.add("onboarding");
-  if (/^\/organizacao\b/.test(route)) tags.add("organizacao");
+  if (/^\/org\b|^\/org-hub\b/.test(route)) tags.add("organizacao");
   if (/\/checkout/.test(route)) tags.add("checkout");
   if (/\/padel\b/.test(route)) tags.add("padel");
   if (/\/loja\b/.test(route)) tags.add("loja");
@@ -337,7 +354,7 @@ function renderParityReport(parity) {
   lines.push("## A) API endpoints existentes mas não usados no frontend");
   lines.push("");
   for (const entry of parity.unusedApi) {
-    lines.push(`- ${entry.route} (${entry.type}${entry.legacy ? ", legacy" : ""})`);
+    lines.push(`- ${entry.route} (${entry.type})`);
   }
   lines.push("");
   lines.push("## B) Frontend chama endpoint inexistente");
@@ -346,40 +363,10 @@ function renderParityReport(parity) {
     lines.push(`- ${endpoint}`);
   }
   lines.push("");
-  lines.push("## C) Frontend chama endpoint legacy/410");
-  lines.push("");
-  for (const entry of parity.legacyUsed) {
-    lines.push(`- ${entry.endpoint} (files: ${entry.files.join(", ")})`);
-  }
-  lines.push("");
   lines.push("## Notas");
   lines.push("");
-  lines.push("- Paridade calculada por normalização heurística; revisar manualmente endpoints críticos e internos.");
+  lines.push("- Paridade calculada a partir do auditor API/UI (reports/api_ui_coverage_v1.csv).");
   return lines.join("\n");
-}
-
-function matchesEndpointPattern(pattern, candidate) {
-  if (pattern === candidate) return true;
-  const patternParts = pattern.split("/").filter(Boolean);
-  const candidateParts = candidate.split("/").filter(Boolean);
-  if (patternParts.length !== candidateParts.length) return false;
-  for (let i = 0; i < patternParts.length; i += 1) {
-    const part = patternParts[i];
-    if (part === "[param]") continue;
-    if (part !== candidateParts[i]) return false;
-  }
-  return true;
-}
-
-function isTemplateBaseEndpoint(endpoint, apiRoutesSet) {
-  const normalized = normalizeEndpoint(endpoint);
-  if (!normalized.startsWith("/api/")) return false;
-  if (apiRoutesSet.has(normalized)) return false;
-  const prefix = `${normalized}/`;
-  for (const route of apiRoutesSet) {
-    if (route.startsWith(prefix)) return true;
-  }
-  return false;
 }
 
 function main() {
@@ -422,18 +409,20 @@ function main() {
     })
     .sort((a, b) => a.route.localeCompare(b.route));
 
-  const usage = extractFrontendApiUsage();
+  runCoverageAudit();
+  const parityData = loadCoverageUsageAndParity();
+  const usage = parityData.usage;
 
   const featurePatterns = {
     users: [/^\/api\/auth/, /^\/api\/users/, /^\/api\/profiles/, /^\/api\/me(\/|$)/, /^\/api\/social/],
     orgs: [/^\/api\/org\//, /^\/api\/organizations/, /^\/api\/org-hub\//, /^\/api\/org-system\//],
-    payments: [/^\/api\/payments/, /^\/api\/checkout/, /^\/api\/stripe/, /^\/api\/webhooks\/stripe/, /^\/api\/organizacao\/payouts/, /^\/api\/admin\/payments/, /^\/api\/admin\/payouts/, /^\/api\/organizacao\/finance/, /^\/api\/organizacao\/pagamentos/],
+    payments: [/^\/api\/payments/, /^\/api\/checkout/, /^\/api\/stripe/, /^\/api\/webhooks\/stripe/, /^\/api\/admin\/payments/, /^\/api\/admin\/payouts/],
     tickets: [/^\/api\/tickets/, /^\/api\/eventos/, /^\/api\/public\/v1\/events/],
-    store: [/^\/api\/store/, /^\/api\/me\/store/, /^\/api\/organizacao\/loja/],
-    padel: [/^\/api\/padel/, /^\/api\/organizacao\/padel/, /^\/api\/tournaments/, /^\/api\/organizacao\/tournaments/],
-    reservas: [/^\/api\/organizacao\/reservas/, /^\/api\/me\/reservas/, /^\/api\/servicos/, /^\/api\/agenda/],
-    crm: [/^\/api\/organizacao\/crm/],
-    ops_outbox: [/^\/api\/internal/, /^\/api\/cron/, /^\/api\/organizacao\/ops/],
+    store: [/^\/api\/store/, /^\/api\/me\/store/],
+    padel: [/^\/api\/padel/, /^\/api\/tournaments/],
+    reservas: [/^\/api\/me\/reservas/, /^\/api\/servicos/, /^\/api\/agenda/],
+    crm: [/^\/api\/org\/[^/]+\/crm/],
+    ops_outbox: [/^\/api\/internal/, /^\/api\/cron/],
     notifications: [/^\/api\/notifications/, /^\/api\/me\/notifications/],
   };
 
@@ -453,7 +442,7 @@ function main() {
   for (const page of pageEntries) {
     const route = page.route;
     if (/^\/me\b|^\/perfil\b|^\/login$|^\/signup$|^\/reset-password$/.test(route)) features.users.pages.push(route);
-    if (/^\/organizacao\b/.test(route)) features.orgs.pages.push(route);
+    if (/^\/org\b|^\/org-hub\b/.test(route)) features.orgs.pages.push(route);
     if (/\/checkout/.test(route)) features.payments.pages.push(route);
     if (/\/bilhetes|\/eventos|\/tickets/.test(route)) features.tickets.pages.push(route);
     if (/\/loja\b/.test(route)) features.store.pages.push(route);
@@ -464,39 +453,13 @@ function main() {
     if (/\/notificacoes|\/notifications/.test(route)) features.notifications.pages.push(route);
   }
 
-  // Parity report
-  const apiRoutes = apiEntries.map((entry) => normalizeEndpoint(entry.route));
-  const apiRoutesSet = new Set(apiRoutes);
-  const missingApi = [];
-  for (const endpoint of usage.keys()) {
-    if (endpoint === "/api/organizacao") continue;
-    if (apiRoutesSet.has(endpoint)) continue;
-    if (isTemplateBaseEndpoint(endpoint, apiRoutesSet)) continue;
-    if (endpoint.includes("[param]")) {
-      const matched = apiRoutes.some((candidate) => matchesEndpointPattern(endpoint, candidate));
-      if (matched) continue;
-    }
-    missingApi.push(endpoint);
-  }
-
-  const unusedApi = apiEntries.filter((entry) => !usage.has(normalizeEndpoint(entry.route)));
-  const legacyUsed = [];
-  for (const entry of apiEntries) {
-    if (entry.legacy.length === 0) continue;
-    const endpoint = normalizeEndpoint(entry.route);
-    if (usage.has(endpoint)) {
-      legacyUsed.push({ endpoint, files: Array.from(usage.get(endpoint)) });
-    }
-  }
-
   writeFile(OUTPUTS.api, renderApiInventory(apiEntries));
   writeFile(OUTPUTS.pages, renderPagesInventory(pageEntries));
   writeFile(OUTPUTS.features, renderFeaturesInventory(features));
   writeFile(OUTPUTS.frontendApi, renderFrontendUsage(usage));
   writeFile(OUTPUTS.parity, renderParityReport({
-    unusedApi: unusedApi.map((entry) => ({ route: entry.route, type: entry.type, legacy: entry.legacy.length > 0 })),
-    missingApi: missingApi.sort(),
-    legacyUsed,
+    unusedApi: parityData.unusedApi,
+    missingApi: parityData.missingApi,
   }));
 }
 

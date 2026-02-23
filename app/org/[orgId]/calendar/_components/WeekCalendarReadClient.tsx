@@ -917,7 +917,7 @@ export default function WeekCalendarReadClient() {
 
   return (
     <div className="space-y-4 p-4 md:p-6">
-      <div className="rounded-2xl border border-white/10 bg-[linear-gradient(150deg,rgba(107,255,255,0.14),rgba(16,24,39,0.82))] p-4 shadow-[0_24px_90px_rgba(0,0,0,0.45)]">
+      <div className="rounded-2xl border border-white/10 bg-[linear-gradient(150deg,rgba(34,211,238,0.14),rgba(16,24,39,0.82))] p-4 shadow-[0_24px_90px_rgba(0,0,0,0.45)]">
         <p className="text-xs uppercase tracking-[0.22em] text-cyan-100/70">Calendar</p>
         <h1 className="mt-1 text-2xl font-semibold text-white">Calendário operacional</h1>
         <p className="mt-2 text-sm text-white/70">
@@ -1155,7 +1155,7 @@ export default function WeekCalendarReadClient() {
                           className={cn(
                             "flex h-11 items-center justify-center border border-white/10 border-b-0 bg-white/[0.06] px-2 text-[11px] font-semibold text-white/75",
                             isToday &&
-                              "border-cyan-300/30 bg-[linear-gradient(145deg,rgba(107,255,255,0.22),rgba(106,123,255,0.14))] text-white",
+                              "border-cyan-300/30 bg-[linear-gradient(145deg,rgba(34,211,238,0.22),rgba(106,123,255,0.14))] text-white",
                           )}
                         >
                           {label}
@@ -1230,7 +1230,7 @@ export default function WeekCalendarReadClient() {
                               />
                             ))}
                             {isToday && (
-                              <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(107,255,255,0.08),rgba(106,123,255,0.03),rgba(106,123,255,0.01))]" />
+                              <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(34,211,238,0.08),rgba(106,123,255,0.03),rgba(106,123,255,0.01))]" />
                             )}
                             {isToday && isTodayInRange && nowTop >= 0 && nowTop <= gridHeight && (
                               <div className="pointer-events-none absolute left-0 right-0 z-10 flex items-center gap-2" style={{ top: nowTop }}>

@@ -7216,7 +7216,7 @@ export default function PadelHubClient({
                             <input
                               value={draft.label}
                               onChange={(e) => updateCategoryDraft(cat.id, { label: e.target.value })}
-                              className="mt-2 w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                              className="mt-2 w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
                               placeholder="Ex: M7, F8, MX Open"
                             />
                           </div>
@@ -7394,13 +7394,13 @@ export default function PadelHubClient({
               <input
                 value={categoryForm.label}
                 onChange={(e) => setCategoryForm((prev) => ({ ...prev, label: e.target.value }))}
-                className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
                 placeholder="Ex: M7, F8, MX Open"
               />
               <select
                 value={categoryForm.genderRestriction}
                 onChange={(e) => setCategoryForm((prev) => ({ ...prev, genderRestriction: e.target.value }))}
-                className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
               >
                 {CATEGORY_GENDER_OPTIONS.map((opt) => (
                   <option key={`new-gender-${opt.value}`} value={opt.value}>
@@ -7411,25 +7411,25 @@ export default function PadelHubClient({
               <input
                 value={categoryForm.minLevel}
                 onChange={(e) => setCategoryForm((prev) => ({ ...prev, minLevel: e.target.value }))}
-                className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
                 placeholder="Nível min"
               />
               <input
                 value={categoryForm.maxLevel}
                 onChange={(e) => setCategoryForm((prev) => ({ ...prev, maxLevel: e.target.value }))}
-                className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
                 placeholder="Nível max"
               />
               <input
                 value={categoryForm.season}
                 onChange={(e) => setCategoryForm((prev) => ({ ...prev, season: e.target.value }))}
-                className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
                 placeholder="Época"
               />
               <input
                 value={categoryForm.year}
                 onChange={(e) => setCategoryForm((prev) => ({ ...prev, year: e.target.value }))}
-                className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
                 placeholder="Ano"
               />
             </div>
@@ -7476,7 +7476,7 @@ export default function PadelHubClient({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Procurar por nome ou email"
-                className="w-56 rounded-full border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                className="w-56 rounded-full border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
               />
               <select
                 value={genderFilter}
@@ -7654,7 +7654,7 @@ export default function PadelHubClient({
               <select
                 value={entryTeamId}
                 onChange={(e) => setEntryTeamId(e.target.value)}
-                className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
               >
                 <option value="">Equipa</option>
                 {teams.map((team) => (
@@ -7666,7 +7666,7 @@ export default function PadelHubClient({
               <select
                 value={entryEventId}
                 onChange={(e) => setEntryEventId(e.target.value)}
-                className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
               >
                 <option value="">Torneio</option>
                 {interclubEvents.map((event) => (
@@ -7679,7 +7679,7 @@ export default function PadelHubClient({
               <select
                 value={entryCategoryId}
                 onChange={(e) => setEntryCategoryId(e.target.value)}
-                className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
                 disabled={!entryEventId}
               >
                 <option value="">Categoria (opcional)</option>
@@ -7720,19 +7720,19 @@ export default function PadelHubClient({
               <input
                 value={teamName}
                 onChange={(e) => setTeamName(e.target.value)}
-                className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
                 placeholder="Nome da equipa"
               />
               <input
                 value={teamLevel}
                 onChange={(e) => setTeamLevel(e.target.value)}
-                className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
                 placeholder="Nível (opcional)"
               />
               <select
                 value={teamClubId}
                 onChange={(e) => setTeamClubId(e.target.value)}
-                className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
               >
                 <option value="">Clube (opcional)</option>
                 {clubs.map((club) => (
@@ -7744,7 +7744,7 @@ export default function PadelHubClient({
               <select
                 value={teamCategoryId}
                 onChange={(e) => setTeamCategoryId(e.target.value)}
-                className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
               >
                 <option value="">Categoria (opcional)</option>
                 {categories.map((cat) => (
@@ -7846,7 +7846,7 @@ export default function PadelHubClient({
                   <select
                     value={trainerCreateUserId}
                     onChange={(e) => setTrainerCreateUserId(e.target.value)}
-                    className="w-full rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                    className="w-full rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
                   >
                     <option value="">Seleciona um membro</option>
                     {trainerMemberCandidates.map((member) => (
@@ -8132,12 +8132,12 @@ export default function PadelHubClient({
                   value={lessonTitle}
                   onChange={(e) => setLessonTitle(e.target.value)}
                   placeholder="Nome da aula"
-                  className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                  className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
                 />
                 <select
                   value={lessonDuration}
                   onChange={(e) => setLessonDuration(e.target.value)}
-                  className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                  className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
                 >
                   {LESSON_DURATION_OPTIONS.map((minutes) => (
                     <option key={`lesson-${minutes}`} value={minutes}>
@@ -8150,12 +8150,12 @@ export default function PadelHubClient({
                   onChange={(e) => setLessonPrice(e.target.value)}
                   placeholder="Preço"
                   inputMode="decimal"
-                  className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                  className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
                 />
                 <select
                   value={lessonTrainerUserId}
                   onChange={(e) => setLessonTrainerUserId(e.target.value)}
-                  className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                  className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
                 >
                   <option value="">Seleciona treinador</option>
                   {lessonTrainerOptions.map((trainer) => (
@@ -8167,7 +8167,7 @@ export default function PadelHubClient({
                 <select
                   value={lessonCourtId}
                   onChange={(e) => setLessonCourtId(e.target.value)}
-                  className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                  className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
                 >
                   <option value="">Sem campo fixo</option>
                   {activeLessonCourts.map((court) => (
@@ -8181,7 +8181,7 @@ export default function PadelHubClient({
                 <select
                   value={lessonWeekday}
                   onChange={(e) => setLessonWeekday(e.target.value)}
-                  className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                  className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
                 >
                   {LESSON_WEEKDAY_OPTIONS.map((option) => (
                     <option key={`lesson-weekday-${option.value}`} value={option.value}>
@@ -8194,28 +8194,28 @@ export default function PadelHubClient({
                   onChange={(e) => setLessonStartTime(e.target.value)}
                   placeholder="Hora (HH:MM)"
                   inputMode="numeric"
-                  className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                  className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
                 />
                 <input
                   value={lessonValidFrom}
                   onChange={(e) => setLessonValidFrom(e.target.value)}
                   placeholder="Início (AAAA-MM-DD)"
                   inputMode="numeric"
-                  className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                  className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
                 />
                 <input
                   value={lessonValidUntil}
                   onChange={(e) => setLessonValidUntil(e.target.value)}
                   placeholder="Fim opcional (AAAA-MM-DD)"
                   inputMode="numeric"
-                  className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                  className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
                 />
                 <input
                   value={lessonCapacity}
                   onChange={(e) => setLessonCapacity(e.target.value)}
                   placeholder="Capacidade"
                   inputMode="numeric"
-                  className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                  className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
                 />
               </div>
               {lessonTrainerOptions.length === 0 && (
@@ -8301,7 +8301,7 @@ export default function PadelHubClient({
                   value={clubForm.name}
                   onChange={(e) => setClubForm((p) => ({ ...p, name: e.target.value }))}
                   placeholder="Nome do clube"
-                  className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                  className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
                 />
                 <div className="rounded-xl border border-white/12 bg-black/35 p-3">
                   <AddressCombobox
@@ -8342,7 +8342,7 @@ export default function PadelHubClient({
                   value={clubForm.courtsCount}
                   onChange={(e) => setClubForm((p) => ({ ...p, courtsCount: e.target.value }))}
                   placeholder="Nº de campos"
-                  className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                  className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
                 />
                 <div className="flex flex-wrap items-center gap-2 text-[12px] text-white/70">
                   {clubError && <span className="text-red-300">{clubError}</span>}
@@ -8469,7 +8469,7 @@ export default function PadelHubClient({
                       <select
                         value={incidentStatusFilter}
                         onChange={(e) => setIncidentStatusFilter(e.target.value as LiveIncidentStatusFilter)}
-                        className="w-full rounded-lg border border-white/15 bg-black/35 px-2 py-1.5 text-[12px] text-white outline-none focus:border-[#6BFFFF]"
+                        className="w-full rounded-lg border border-white/15 bg-black/35 px-2 py-1.5 text-[12px] text-white outline-none focus:border-[#22D3EE]"
                       >
                         {LIVE_INCIDENT_STATUS_OPTIONS.map((opt) => (
                           <option key={`incident-status-${opt.value}`} value={opt.value}>
@@ -8483,7 +8483,7 @@ export default function PadelHubClient({
                       <select
                         value={incidentCategoryFilter}
                         onChange={(e) => setIncidentCategoryFilter(e.target.value)}
-                        className="w-full rounded-lg border border-white/15 bg-black/35 px-2 py-1.5 text-[12px] text-white outline-none focus:border-[#6BFFFF]"
+                        className="w-full rounded-lg border border-white/15 bg-black/35 px-2 py-1.5 text-[12px] text-white outline-none focus:border-[#22D3EE]"
                       >
                         <option value="ALL">Todas</option>
                         {liveIncidentCategoryOptions.map((opt) => (
@@ -8498,7 +8498,7 @@ export default function PadelHubClient({
                       <select
                         value={incidentFormatFilter}
                         onChange={(e) => setIncidentFormatFilter(e.target.value)}
-                        className="w-full rounded-lg border border-white/15 bg-black/35 px-2 py-1.5 text-[12px] text-white outline-none focus:border-[#6BFFFF]"
+                        className="w-full rounded-lg border border-white/15 bg-black/35 px-2 py-1.5 text-[12px] text-white outline-none focus:border-[#22D3EE]"
                       >
                         <option value="ALL">Todos</option>
                         {liveIncidentFormatOptions.map((opt) => (

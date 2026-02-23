@@ -98,12 +98,9 @@ Use `withApiEnvelope` + `respondOk` / `respondError` from `lib/http/envelope.ts`
 
 The following routes return raw/stream/file responses and must **not** be wrapped automatically:
 
-- SSE: `app/api/padel/live/route.ts`
 - Uploads/formData: `app/api/upload/route.ts`
-- ICS/downloads: `app/api/me/reservas/[id]/calendar.ics/route.ts`
 - Webhooks (raw body): `app/api/stripe/webhook/route.ts`, `app/api/webhooks/stripe/route.ts`, `app/api/org-system/payouts/webhook/route.ts`
 - Binary assets: `app/api/org/[orgId]/store/products/[id]/digital-assets/route.ts`
-- Imports: `app/api/org/[orgId]/padel/imports/inscritos/route.ts`
 - Internal ops (raw/outbox): `app/api/internal/worker/operations/route.ts`
 
 ### Webhooks fail-closed

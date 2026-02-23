@@ -177,8 +177,6 @@ function parsePositiveOrgId(raw: string | null | undefined) {
   return parsed;
 }
 
-const LEGACY_DOCS_URL = "/docs/org-canonical-migration";
-
 function isLegacyApiRoute(pathname: string) {
   return pathname === "/api/organizacao" || pathname.startsWith("/api/organizacao/");
 }
@@ -293,18 +291,8 @@ function hasInvalidOrgContextSources(req: NextRequest) {
   );
 }
 
-function buildLegacyRemovedResponse(pathname: string, namespace: "web" | "api") {
-  return NextResponse.json(
-    {
-      ok: false,
-      error: "LEGACY_ROUTE_REMOVED",
-      errorCode: "LEGACY_ROUTE_REMOVED",
-      namespace,
-      pathname,
-      canonicalDocsUrl: LEGACY_DOCS_URL,
-    },
-    { status: 410 },
-  );
+function buildHardRemovedResponse() {
+  return new NextResponse(null, { status: 404 });
 }
 
 function buildInvalidOrgContextResponse() {
@@ -318,7 +306,7 @@ function buildInvalidOrgContextResponse() {
   );
 }
 
-function logProxyMetric(metric: "analytics_route_hits" | "finance_route_hits" | "legacy_410_hits" | "cross_domain_call_blocked", context: {
+function logProxyMetric(metric: "analytics_route_hits" | "finance_route_hits" | "legacy_404_hits" | "cross_domain_call_blocked", context: {
   pathname: string;
   namespace: "web" | "api";
   requestId: string;
@@ -405,20 +393,20 @@ export async function proxy(req: NextRequest) {
     isLegacyApiRoute(req.nextUrl.pathname) ||
     isRemovedCanonicalOrgApiRoute(req.nextUrl.pathname)
   ) {
-    logProxyMetric("legacy_410_hits", {
+    logProxyMetric("legacy_404_hits", {
       pathname: req.nextUrl.pathname,
       namespace: "api",
       requestId: requestContext.requestId,
     });
     console.warn(
-      `[proxy][legacy_removed] ${JSON.stringify({
-        errorCode: "LEGACY_ROUTE_REMOVED",
+      `[proxy][hard_removed] ${JSON.stringify({
+        errorCode: "ROUTE_HARD_REMOVED_404",
         namespace: "api",
         pathname: req.nextUrl.pathname,
         requestId: requestContext.requestId,
       })}`,
     );
-    const res = buildLegacyRemovedResponse(req.nextUrl.pathname, "api");
+    const res = buildHardRemovedResponse();
     applyRequestContextHeaders(res.headers, requestContext);
     return res;
   }
@@ -433,7 +421,7 @@ export async function proxy(req: NextRequest) {
     isLegacyOrgShorthandRoute(req.nextUrl.pathname) ||
     removedFinanceAnalyticsLegacyQuery
   ) {
-    logProxyMetric("legacy_410_hits", {
+    logProxyMetric("legacy_404_hits", {
       pathname: req.nextUrl.pathname,
       namespace: "web",
       requestId: requestContext.requestId,
@@ -446,14 +434,14 @@ export async function proxy(req: NextRequest) {
       });
     }
     console.warn(
-      `[proxy][legacy_removed] ${JSON.stringify({
-        errorCode: "LEGACY_ROUTE_REMOVED",
+      `[proxy][hard_removed] ${JSON.stringify({
+        errorCode: "ROUTE_HARD_REMOVED_404",
         namespace: "web",
         pathname: req.nextUrl.pathname,
         requestId: requestContext.requestId,
       })}`,
     );
-    const res = buildLegacyRemovedResponse(req.nextUrl.pathname, "web");
+    const res = buildHardRemovedResponse();
     applyRequestContextHeaders(res.headers, requestContext);
     return res;
   }

@@ -1319,7 +1319,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
                 ? `/org/${organizationId}/analytics?view=buyers&eventId=${event.id}`
                 : `/org/analytics?view=buyers&eventId=${event.id}`
             }
-            className="text-[11px] text-[#6BFFFF]"
+            className="text-[11px] text-[#22D3EE]"
           >
             Ver vendas →
           </Link>
@@ -1757,7 +1757,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
           <div className="space-y-3">
             <div className="relative h-1 rounded-full bg-white/10">
               <div
-                className="absolute left-0 top-0 h-1 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#6BFFFF] to-[#1646F5]"
+                className="absolute left-0 top-0 h-1 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#22D3EE] to-[#1646F5]"
                 style={{ width: `${progress}%` }}
               />
             </div>

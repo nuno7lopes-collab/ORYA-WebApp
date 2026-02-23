@@ -21,9 +21,4 @@ CSV: reports/v9_api_frontend_mapping_v1.csv
 
 ## Endpoints referenced in p0_endpoints manifest without frontend usage
 - Nota: lista calculada por strings `/api/...` no frontend; endpoints aqui podem ser mobile/server-only.
-- /api/servicos/[id]/creditos/checkout
-- /api/org/[orgId]/payouts/status
-- /api/org/[orgId]/payouts/list
-- /api/org/[orgId]/payouts/summary
-- /api/org/[orgId]/payouts/settings
-- /api/org/[orgId]/payouts/connect
+- none

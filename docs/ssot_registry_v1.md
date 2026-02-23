@@ -1,6 +1,6 @@
 # ORYA SSOT Registry
 
-Atualizado: 2026-02-22
+Atualizado: 2026-02-23
 
 ## 00 Authority
 
@@ -81,9 +81,9 @@ Atualizado: 2026-02-22
 #### 00.6.1 Ledger de transição (forward-only)
 | decisionId | owner | approvedAt | scope | status | rationale | migrationImpact |
 | --- | --- | --- | --- | --- | --- | --- |
-| SSOT-2026-02-12-ORG-ROUTING | Nuno | 2026-02-12 | routing web/api org namespaces | FECHADO | eliminar ambiguidade entre alias e canónico | hard-cut estrito: web/API legacy passam a `410`; `/org/<non-numeric>` passa a `410`; consumo frontend/mobile fica apenas em `/org/:orgId/*` e `/api/org*` |
-| SSOT-2026-02-13-ORG-HARDCUT-SUBNAV | Nuno | 2026-02-13 | hard-cut de legacy web + subnav dedicada por ferramenta | FECHADO | remover superfície legacy `/organizacao/*` e eliminar subnav partilhada no dashboard | `/organizacao/*` passa a `410`; slugs PT legacy em `/org/:orgId/*` passam a `410`; topbar resolve `toolKey -> subnav` 1:1; padel dividido em club/tournaments |
-| SSOT-2026-02-14-MULTIORG-GOVERNANCE | Nuno | 2026-02-14 | Group governance, onboarding atómico e owner transfer por Group | FECHADO | fechar contratos multi-org sem dupla verdade e com enforcement transacional | `Group.ownerUserId` vira fonte única; join/exit/transfer por `/api/org-hub/groups/*`; `/api/org-hub/become` e owner transfer por org ficam `410` |
+| SSOT-2026-02-12-ORG-ROUTING | Nuno | 2026-02-12 | routing web/api org namespaces | FECHADO | eliminar ambiguidade entre alias e canónico | hard-cut estrito: web/API legacy passam a `404`; `/org/<non-numeric>` passa a `404`; consumo frontend/mobile fica apenas em `/org/:orgId/*` e `/api/org*` |
+| SSOT-2026-02-13-ORG-HARDCUT-SUBNAV | Nuno | 2026-02-13 | hard-cut de legacy web + subnav dedicada por ferramenta | FECHADO | remover superfície legacy `/organizacao/*` e eliminar subnav partilhada no dashboard | `/organizacao/*` passa a `404`; slugs PT legacy em `/org/:orgId/*` passam a `404`; topbar resolve `toolKey -> subnav` 1:1; padel dividido em club/tournaments |
+| SSOT-2026-02-14-MULTIORG-GOVERNANCE | Nuno | 2026-02-14 | Group governance, onboarding atómico e owner transfer por Group | FECHADO | fechar contratos multi-org sem dupla verdade e com enforcement transacional | `Group.ownerUserId` vira fonte única; join/exit/transfer por `/api/org-hub/groups/*`; `/api/org-hub/become` e owner transfer por org ficam `404` |
 | SSOT-2026-02-14-SUPPORT-V1 | Nuno | 2026-02-14 | suporte v1 (form público + consola admin) | FECHADO | padronizar operação de suporte e trilha auditável | `POST /api/support/tickets`; admin em `/admin/suporte`; assunto canónico `[TICKET-<numero>] ...`; inbound email direto não abre ticket |
 | SSOT-2026-02-14-LEGACY-HARDCUT-GLOBAL | Nuno | 2026-02-14 | hard-cut físico global de namespaces legacy org | FECHADO | eliminar convivência física legacy e fechar canonicidade end-to-end | remover `app/api/organizacao/**` e `app/organizacao/**`; consumo interno só em `/api/org*`, `/api/org-hub/*`, `/api/org-system/*`, `/org/*`, `/org-hub/*` |
 | SSOT-2026-02-15-DASH-TOOLS-SETTINGS | Nuno | 2026-02-15 | dashboard ferramentas (visibilidade UI) + settings/nav + papéis PT | FECHADO | unificar linguagem de produto e separar capacidade de domínio vs visibilidade do dashboard | dashboard passa a "Ferramentas"; ocultar é só UI (não desativa backend) com preferência persistida por organização; `Settings` subnav remove `verify`; gestão de email oficial fica em `general`; rótulos de papel em PT (`Dono`, `Co-dono`) |
@@ -93,6 +93,7 @@ Atualizado: 2026-02-22
 | SSOT-2026-02-15-ADDRESS-AUTOCOMPLETE-UX-V1 | Nuno | 2026-02-15 | D11 UX operacional de procura de moradas (Address Service) | FECHADO | fechar consistência UX de topo sem quebrar invariantes canónicos de morada | dropdown passa a overlay em portal (sem empurrar layout), ranking visual em secções, confirmação obrigatória por seleção normalizada (`addressId`); texto livre sem seleção não pode virar morada canónica |
 | SSOT-2026-02-21-RESERVAS-AULAS-TORNEIOS-HARDCUT | Nuno | 2026-02-21 | Fecho canónico de reservas de campos, aulas, torneios e serviços associados | FECHADO | eliminar ambiguidade de produto e execução, com regras únicas para grid, duração, modelação, conflitos, calendário e cutover | hard-cut sem feature flags; migrações forward-only; `CLASS_SESSION` canónico na agenda; validação server-side de grid por organização; sync 1:1 treinador-profissional obrigatório |
 | SSOT-2026-02-22-COURT-DURATION-CATALOG-PRICING | Nuno | 2026-02-22 | Política de duração e preço por duração em reservas de campos (web+mobile+API) | FECHADO | remover ambiguidade final de pricing/duração em campos e garantir paridade operacional | catálogo fixo `30/60/90/120` com subset ativo por organização; preço por duração em `ServiceDurationPrice`; `allowCustomDuration=true` inválido para campos; `ServicePackage` deixa de ser fonte de preço em booking público de `COURT` |
+| SSOT-2026-02-23-LEGACY-HARDCUT-404 | Nuno | 2026-02-23 | hard-cut final de legacy/tombstones | FECHADO | eliminar compatibilidade residual e consolidar semântica de inexistência | rotas legacy removidas fisicamente devolvem `404`; edge fail-closed em `404`; `410` reservado apenas para estados de negócio legítimos (ex.: expirado) |
 ---
 
 
@@ -1634,8 +1635,8 @@ D05.01) Resolução de organização é determinística
 	•	Cookie pode existir apenas como conveniência (redirect inicial), não como base de autorização.
 	•	RBAC avalia sempre com orgId explícito.
 	•	Qualquer fallback (cookie/lastUsedAt) é permitido apenas para redirect/UI. Nunca para autorização.
-	•	Alias legado web removido (hard-cut): `/organizacao/*` → `410 LEGACY_ROUTE_REMOVED`.
-	•	Namespace legado API: `/api/organizacao/*` → `410 LEGACY_ROUTE_REMOVED`.
+	•	Alias legado web removido (hard-cut): `/organizacao/*` → `404 Not Found`.
+	•	Namespace legado API: `/api/organizacao/*` → `404 Not Found`.
 
 
 #### G04.004 (origem: D05.02)
@@ -2956,7 +2957,7 @@ D03.02) Operação de Calendário do Clube/Reservas (FECHADO)
 			–	reversão permitida até `T+24h` por `OWNER/CO_OWNER/ADMIN`, sem motivo obrigatório, com auditoria.
 		•	Disponibilidade pública:
 			–	contrato público canónico de disponibilidade de serviço: `GET /api/servicos/:id/calendario`.
-			–	rotas legadas de disponibilidade (`GET /api/servicos/:id/slots` e `GET /api/servicos/:id/disponibilidade`) devolvem `410 LEGACY_ROUTE_REMOVED`.
+			–	rotas legadas de disponibilidade (`GET /api/servicos/:id/slots` e `GET /api/servicos/:id/disponibilidade`) devolvem `404 Not Found`.
 
 
 #### G07.006 (origem: D11)
@@ -3818,9 +3819,9 @@ Regra de canonicidade (FECHADO):
 - Web org-scoped: **`/org/:orgId/*`**
 - API org-scoped: **`/api/org/:orgId/*`**
 - API hub/sistema: **`/api/org-hub/*`** e **`/api/org-system/*`**
-- Alias web legado removido: **`/organizacao/*`** responde com **`410 LEGACY_ROUTE_REMOVED`**.
-- Namespace API legado: **`/api/organizacao/*`** responde com **`410 LEGACY_ROUTE_REMOVED`**.
-- Hard-cut adicional obrigatório: **`/org/<non-numeric>`** responde com **`410 LEGACY_ROUTE_REMOVED`** (sem rewrite/redirect de compatibilidade).
+- Alias web legado removido: **`/organizacao/*`** responde com **`404 Not Found`**.
+- Namespace API legado: **`/api/organizacao/*`** responde com **`404 Not Found`**.
+- Hard-cut adicional obrigatório: **`/org/<non-numeric>`** responde com **`404 Not Found`** (sem rewrite/redirect de compatibilidade).
 - Implementação física canónica:
   - handlers ativos devem residir em namespace canónico;
   - re-export de handlers legacy para write-path canónico não é estado final aceitável.
@@ -3847,7 +3848,7 @@ Matriz canónica final (web):
 - Padel Club: `/org/:orgId/padel/clubs` (`clubs`, `courts`, `players`, `community`, `trainers`, `lessons`)
 - Padel Tournaments: `/org/:orgId/padel/tournaments` (`tournaments`, `create`, `calendar`, `categories`, `teams`, `players`)
 - Marketing: `/org/:orgId/marketing` (`overview`, `promos`, `promoters`, `content`)
-- Profile legacy: `/org/:orgId/profile*` removido com `410 LEGACY_ROUTE_REMOVED` (sem redirect)
+- Profile legacy: `/org/:orgId/profile*` removido com `404 Not Found` (sem redirect)
 - Settings: `/org/:orgId/settings` (`general`)
 - Settings verify route: `/org/:orgId/settings/verify` existe para confirmação por token, sem item dedicado na subnav.
 - Official email em settings: gestão em `general`; ação permitida a `OWNER` e `CO_OWNER`.
@@ -3877,12 +3878,12 @@ Matriz canónica final (web):
     - eliminação definitiva (`DELETE /api/org-hub/organizations/:id`) só pode ocorrer após suspensão e com janela de reativação encerrada.
 
 Hard-cut de slugs legacy em `/org/:orgId/*`:
-- Slugs PT/legacy (ex.: `financas`, `loja`, `checkin`, `eventos`, `reservas`, `treinadores`, `crm/clientes`, `manage`, `promote`, `tournaments`, `padel/clube`, `padel/torneios`) respondem com **`410 LEGACY_ROUTE_REMOVED`**.
+- Slugs PT/legacy (ex.: `financas`, `loja`, `checkin`, `eventos`, `reservas`, `treinadores`, `crm/clientes`, `manage`, `promote`, `tournaments`, `padel/clube`, `padel/torneios`) respondem com **`404 Not Found`**.
 - Sem redirects internos para slugs legacy (política single-route-only).
 - Hard-cut de bookings legacy:
-  - `/org/:orgId/bookings/services` responde com **`410 LEGACY_ROUTE_REMOVED`**.
-  - `/org/:orgId/bookings?tab=availability` responde com **`410 LEGACY_ROUTE_REMOVED`**.
-  - `/org/:orgId/bookings?bookings=availability|prices|integrations` responde com **`410 LEGACY_ROUTE_REMOVED`**.
+  - `/org/:orgId/bookings/services` responde com **`404 Not Found`**.
+  - `/org/:orgId/bookings?tab=availability` responde com **`404 Not Found`**.
+  - `/org/:orgId/bookings?bookings=availability|prices|integrations` responde com **`404 Not Found`**.
 
 10.1 Multi-Organizações & Group Governance (FECHADO v1)
 - O contrato normativo deste domínio está integralmente neste SSOT.
@@ -3904,8 +3905,8 @@ Hard-cut de slugs legacy em `/org/:orgId/*`:
   - `officialEmailVerifiedAt` nasce preenchido;
   - troca posterior de official email mantém fluxo de confirmação dedicado.
 - Deprecações/hard-cut deste escopo:
-  - `/api/org-hub/become` -> `410`;
-  - owner transfer por organização (`/organizations/owner/*`) -> `410` com endpoint canónico de Group.
+  - `/api/org-hub/become` -> `404`;
+  - owner transfer por organização (`/organizations/owner/*`) -> `404` com endpoint canónico de Group.
 - D-MO-10 (chave global de recurso partilhado cross-org):
   - `resourceKey` canónica obrigatória no formato `resourceType:authorityOrgId:resourceId`.
   - claims, locks e arbitragem de conflitos usam `resourceKey` como fonte única (não `organizationId` local).
@@ -3950,7 +3951,7 @@ Hard-cut de slugs legacy em `/org/:orgId/*`:
 - Email direto para `admin@orya.pt` não cria ticket automaticamente.
 
 10.3 Nota de Higienização (global)
-- O hard-cut runtime global de legacy mantém-se no edge (`410 LEGACY_ROUTE_REMOVED`).
+- O hard-cut runtime global de legacy mantém-se no edge (`404 Not Found`).
 - O hard-cut físico é global e imediato para namespaces legacy org:
   - remover `app/api/organizacao/**`;
   - remover `app/organizacao/**`;
@@ -5125,7 +5126,7 @@ B.1) Matriz canónica por `sourceType` (v1.0)
 C) Regra de execução (hard)
 	•	Tudo o que está OUT é tratado como fora de escopo: não implementar e não fazer deploy nesta fase DEV.
 	•	Não usar mecanismos runtime de ativação de funcionalidades.
-	•	Quando existir rota/superfície legada correspondente, responder com `410 LEGACY_ROUTE_REMOVED` (não `403` por gating de ativação).
+	•	Quando existir rota/superfície legada correspondente, responder com `404 Not Found` (não `403` por gating de ativação).
 	•	Qualquer inclusão futura no escopo exige revisão normativa explícita + aprovação do owner.
 
 D) Critério para futura abertura de produção v1.0

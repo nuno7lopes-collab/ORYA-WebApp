@@ -12,7 +12,6 @@ type ApiEntry = {
   route: string;
   file: string;
   type: string;
-  tombstone410: boolean;
   uiFiles: string[];
   uiStatus: "covered" | "orphan" | "exempt";
 };
@@ -31,14 +30,18 @@ const ORPHAN_BASELINE_PATH = path.join(
   "manifests",
   "api_ui_orphan_baseline_v1.json",
 );
+const FRONTEND_USAGE_HINTS_PATH = path.join(
+  ROOT,
+  "scripts",
+  "manifests",
+  "frontend_api_usage_hints_v1.json",
+);
 const ROUTE_REGEX = /\/route\.(ts|tsx|js|jsx)$/;
 const MAX_EXPR_CANDIDATES = 24;
 
-const MISSING_API_ALLOWLIST = new Set([
-  "/api/organizacao",
-]);
+const MISSING_API_ALLOWLIST = new Set<string>([]);
 
-const P0_MISSING_UI_ALLOWLIST = new Set([
+const P0_MISSING_UI_ALLOWLIST = new Set<string>([
   // Placeholder para exceções transitórias de P0 sem UI.
 ]);
 
@@ -136,22 +139,7 @@ function routeType(route: string) {
   return "public";
 }
 
-function isTombstone410(content: string) {
-  const statusCodes = Array.from(content.matchAll(/\bstatus\s*:\s*(\d{3})\b/g))
-    .map((match) => Number(match[1]))
-    .filter((value) => Number.isFinite(value));
-  if (statusCodes.length === 0) return false;
-  const hasGone = statusCodes.includes(410);
-  const hasExplicitSuccess = statusCodes.some((code) => code >= 200 && code < 300);
-  const hasImplicitSuccess =
-    /\bok\s*:\s*true\b/.test(content) ||
-    /\brespondOk\s*\(/.test(content);
-  const hasSuccess = hasExplicitSuccess || hasImplicitSuccess;
-  return hasGone && !hasSuccess;
-}
-
-function isUiExempt(route: string, tombstone410: boolean) {
-  if (tombstone410) return true;
+function isUiExempt(route: string) {
   const type = routeType(route);
   return type === "internal" || type === "cron" || type === "webhook";
 }
@@ -459,6 +447,34 @@ function extractFrontendUsage() {
   return usage;
 }
 
+function loadFrontendUsageHints() {
+  const usage = new Map<string, Set<string>>();
+  if (!fs.existsSync(FRONTEND_USAGE_HINTS_PATH)) return usage;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(FRONTEND_USAGE_HINTS_PATH, "utf8")) as {
+      entries?: Array<{ route?: unknown; files?: unknown[] }>;
+    };
+    const entries = Array.isArray(parsed?.entries) ? parsed.entries : [];
+    for (const entry of entries) {
+      const rawRoute = typeof entry?.route === "string" ? entry.route : "";
+      const route = normalizeEndpoint(rawRoute);
+      if (!route.startsWith("/api/")) continue;
+      const files = Array.isArray(entry?.files)
+        ? entry.files.filter((value): value is string => typeof value === "string")
+        : [];
+      if (!usage.has(route)) usage.set(route, new Set<string>());
+      for (const file of files) {
+        const normalizedFile = file.trim().replace(/\\/g, "/");
+        if (!normalizedFile) continue;
+        usage.get(route)?.add(normalizedFile);
+      }
+    }
+  } catch {
+    return usage;
+  }
+  return usage;
+}
+
 function buildUsageEntries(usage: Map<string, Set<string>>): UsageEntry[] {
   return Array.from(usage.entries()).map(([route, files]) => ({
     route,
@@ -582,20 +598,22 @@ function main() {
 
   const apiFiles = listFiles(API_ROOT).filter((file) => ROUTE_REGEX.test(file));
   const usage = extractFrontendUsage();
+  const usageHints = loadFrontendUsageHints();
+  for (const [route, files] of usageHints.entries()) {
+    if (!usage.has(route)) usage.set(route, new Set<string>());
+    for (const file of files) usage.get(route)?.add(file);
+  }
   const usageEntries = buildUsageEntries(usage);
 
   const apiEntries: ApiEntry[] = apiFiles.map((file) => {
-    const content = fs.readFileSync(file, "utf8");
     const route = apiRouteFromFile(file);
-    const tombstone410 = isTombstone410(content);
     const uiFiles = matchUsageFiles(route, usage, usageEntries);
-    const type = tombstone410 ? "tombstone" : routeType(route);
-    const exempt = isUiExempt(route, tombstone410);
+    const type = routeType(route);
+    const exempt = isUiExempt(route);
     return {
       route,
       file: path.relative(ROOT, file),
       type,
-      tombstone410,
       uiFiles,
       uiStatus: exempt ? "exempt" : uiFiles.length > 0 ? "covered" : "orphan",
     };
@@ -638,9 +656,7 @@ function main() {
       !isOrphanAllowlisted(entry.route) &&
       !orphanBaseline.has(normalizeEndpoint(entry.route)),
   );
-  const exemptApi = apiEntries.filter((entry) => entry.uiStatus === "exempt");
-  const tombstone410Routes = exemptApi.filter((entry) => entry.tombstone410);
-  const exemptOperational = exemptApi.filter((entry) => !entry.tombstone410);
+  const exemptOperational = apiEntries.filter((entry) => entry.uiStatus === "exempt");
   const coveredApi = apiEntries.filter((entry) => entry.uiStatus === "covered");
 
   const rows = [
@@ -660,6 +676,14 @@ function main() {
       entry.uiFiles.length,
       entry.uiFiles.join("; "),
     ]),
+    ...missingApi.map((entry) => [
+      entry.endpoint,
+      "__missing_api__",
+      "missing_api",
+      "missing_api",
+      entry.files.length,
+      entry.files.join("; "),
+    ]),
   ];
   const csv = rows.map((row) => row.map(csvEscape).join(",")).join("\n") + "\n";
   fs.writeFileSync(CSV_PATH, csv, "utf8");
@@ -678,9 +702,9 @@ function main() {
     `- Orphan baseline: ${orphanApiBaseline.length}`,
     `- Orphan (new): ${orphanApi.length}`,
     `- Orphan allowlisted: ${orphanApiAllowed.length}`,
-    `- Exempt (tombstone 410): ${tombstone410Routes.length}`,
     `- Exempt (internal/cron/webhook): ${exemptOperational.length}`,
     `- UI endpoints missing API: ${missingApi.length}`,
+    `- UI coverage hints (routes): ${usageHints.size}`,
     "",
     "## UI endpoints missing API routes",
     ...(missingApi.length
@@ -691,6 +715,16 @@ function main() {
     ...(missingApiTemplateBase.length
       ? missingApiTemplateBase.map(
           (entry) => `- ${entry.endpoint} (files: ${entry.files.join(", ")})`,
+        )
+      : ["- none"]),
+    "",
+    "## UI coverage hints applied",
+    ...(usageHints.size > 0
+      ? Array.from(usageHints.entries())
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(
+          ([route, files]) =>
+            `- ${route} (files: ${Array.from(files).sort().join(", ") || "-"})`,
         )
       : ["- none"]),
     "",
@@ -709,11 +743,6 @@ function main() {
       ? orphanApiAllowed.map((entry) => `- ${entry.route} (${entry.file})`)
       : ["- none"]),
     "",
-    "## Exempt routes (tombstone 410)",
-    ...(tombstone410Routes.length
-      ? tombstone410Routes.map((entry) => `- ${entry.route} (${entry.file})`)
-      : ["- none"]),
-    "",
     "## Exempt routes (internal/cron/webhook)",
     ...(exemptOperational.length
       ? exemptOperational.map((entry) => `- ${entry.route} (${entry.file})`)
@@ -729,7 +758,13 @@ function main() {
       const route = exists ? apiRouteFromFile(absPath) : "";
       const uiFiles = exists ? matchUsageFiles(route, usage, usageEntries) : [];
       const exempt = exists ? isUiExempt(route) : false;
-      return { relPath, route, exists, uiFiles, exempt };
+      return {
+        relPath,
+        route,
+        exists,
+        uiFiles,
+        exempt,
+      };
     });
 
     const p0MissingFiles = p0Entries.filter((entry) => !entry.exists);
@@ -749,6 +784,7 @@ function main() {
 
     reportLines.push("## P0 endpoints coverage (scripts/manifests/p0_endpoints.json)");
     reportLines.push(`- Total: ${p0Entries.length}`);
+    reportLines.push(`- Active (UI expected): ${p0Entries.length}`);
     reportLines.push("");
     reportLines.push("### P0 missing files");
     reportLines.push(

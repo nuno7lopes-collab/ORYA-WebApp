@@ -645,7 +645,7 @@ export default function InscricaoDetailPage() {
               className={cn(
                 "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[12px] font-semibold transition",
                 isActive
-                  ? "border-white/30 bg-white/15 text-white shadow-[0_12px_30px_rgba(107,255,255,0.2)]"
+                  ? "border-white/30 bg-white/15 text-white shadow-[0_12px_30px_rgba(34,211,238,0.2)]"
                   : "border-white/10 text-white/70 hover:bg-white/10",
               )}
             >
@@ -666,7 +666,7 @@ export default function InscricaoDetailPage() {
             <div className="space-y-2">
               <label className="text-[12px] text-white/70">Título</label>
               <input
-                className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
               />
@@ -675,7 +675,7 @@ export default function InscricaoDetailPage() {
             <div className="space-y-2">
               <label className="text-[12px] text-white/70">Descrição</label>
               <textarea
-                className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] min-h-[96px]"
+                className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#22D3EE] min-h-[96px]"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
               />
@@ -708,13 +708,13 @@ export default function InscricaoDetailPage() {
                 <div key={field.key} className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3">
                   <div className="flex flex-wrap gap-3">
                     <input
-                      className="flex-1 rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                      className="flex-1 rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
                       value={field.label}
                       disabled={!canEditFields}
                       onChange={(e) => updateField(field.key, { label: e.target.value })}
                     />
                     <select
-                      className="rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                      className="rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
                       value={field.fieldType}
                       disabled={!canEditFields}
                       onChange={(e) => updateField(field.key, { fieldType: e.target.value as FieldType })}
@@ -728,7 +728,7 @@ export default function InscricaoDetailPage() {
                     <label className="flex items-center gap-2 text-sm text-white/70">
                       <input
                         type="checkbox"
-                        className="h-4 w-4 rounded border-white/30 bg-black/40 text-[#6BFFFF]"
+                        className="h-4 w-4 rounded border-white/30 bg-black/40 text-[#22D3EE]"
                         checked={field.required}
                         disabled={!canEditFields}
                         onChange={(e) => updateField(field.key, { required: e.target.checked })}
@@ -738,14 +738,14 @@ export default function InscricaoDetailPage() {
                   </div>
                   <div className="grid gap-3 md:grid-cols-2">
                     <input
-                      className="rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                      className="rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
                       placeholder="Placeholder"
                       value={field.placeholder}
                       disabled={!canEditFields}
                       onChange={(e) => updateField(field.key, { placeholder: e.target.value })}
                     />
                     <input
-                      className="rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                      className="rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
                       placeholder="Texto de ajuda"
                       value={field.helpText}
                       disabled={!canEditFields}
@@ -754,7 +754,7 @@ export default function InscricaoDetailPage() {
                   </div>
                   {field.fieldType === "SELECT" && (
                     <input
-                      className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                      className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
                       placeholder="Opções separadas por vírgula"
                       value={field.options}
                       disabled={!canEditFields}
@@ -800,7 +800,7 @@ export default function InscricaoDetailPage() {
                   className={cn(
                     "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[12px] font-semibold transition",
                     isActive
-                      ? "border-white/30 bg-white/15 text-white shadow-[0_12px_30px_rgba(107,255,255,0.2)]"
+                      ? "border-white/30 bg-white/15 text-white shadow-[0_12px_30px_rgba(34,211,238,0.2)]"
                       : "border-white/10 text-white/70 hover:bg-white/10",
                   )}
                 >
@@ -1073,7 +1073,7 @@ export default function InscricaoDetailPage() {
                   className={cn(
                     "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[12px] font-semibold transition",
                     isActive
-                      ? "border-white/30 bg-white/15 text-white shadow-[0_12px_30px_rgba(107,255,255,0.2)]"
+                      ? "border-white/30 bg-white/15 text-white shadow-[0_12px_30px_rgba(34,211,238,0.2)]"
                       : "border-white/10 text-white/70 hover:bg-white/10",
                   )}
                 >
@@ -1089,7 +1089,7 @@ export default function InscricaoDetailPage() {
                 <div className="space-y-2">
                   <label className="text-[12px] text-white/70">Estado</label>
                   <select
-                    className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                    className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
                     value={status}
                     onChange={(e) => setStatus(e.target.value as FormStatus)}
                   >
@@ -1138,7 +1138,7 @@ export default function InscricaoDetailPage() {
                       <div className="space-y-2">
                         <label className="text-[12px] text-white/70">Número de vagas</label>
                         <input
-                          className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                          className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
                           type="number"
                           min={0}
                           step="1"
@@ -1362,7 +1362,7 @@ function Toggle({
       onClick={() => onChange(!enabled)}
       className={`relative inline-flex h-6 w-11 items-center rounded-full border transition ${
         enabled
-          ? "border-[#6BFFFF]/60 bg-gradient-to-r from-[#6BFFFF]/40 via-[#7FE0FF]/20 to-[#1646F5]/40 shadow-[0_0_12px_rgba(107,255,255,0.35)]"
+          ? "border-[#22D3EE]/60 bg-gradient-to-r from-[#22D3EE]/40 via-[#7FE0FF]/20 to-[#1646F5]/40 shadow-[0_0_12px_rgba(34,211,238,0.35)]"
           : "border-white/20 bg-white/10"
       }`}
     >

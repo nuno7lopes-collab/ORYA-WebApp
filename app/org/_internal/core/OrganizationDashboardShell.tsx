@@ -298,7 +298,7 @@ export default function OrganizationDashboardShell({
   };
 
   return (
-    <div className="flex min-h-screen w-full min-w-0 flex-col text-white">
+    <div data-org-dashboard-shell className="flex min-h-screen w-full min-w-0 flex-col text-white">
       <OrganizationLinkInterceptor organizationId={activeOrg?.id ?? null} />
       <OrganizationTopBar
         activeOrg={activeOrg}

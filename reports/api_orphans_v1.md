@@ -1,18 +1,18 @@
 # API <-> UI Coverage Report
 
-Generated: 2026-02-23T13:01:53.014Z
+Generated: 2026-02-23T14:01:07.000Z
 CSV: reports/api_ui_coverage_v1.csv
 
 ## Summary
-- API routes total: 551
-- Covered by UI: 403
-- Orphan (no UI): 83
-- Orphan baseline: 83
+- API routes total: 488
+- Covered by UI: 434
+- Orphan (no UI): 3
+- Orphan baseline: 3
 - Orphan (new): 0
 - Orphan allowlisted: 3
-- Exempt (tombstone 410): 14
 - Exempt (internal/cron/webhook): 48
 - UI endpoints missing API: 0
+- UI coverage hints (routes): 30
 
 ## UI endpoints missing API routes
 - none
@@ -22,114 +22,50 @@ CSV: reports/api_ui_coverage_v1.csv
 - /api/org-system (files: lib/canonicalOrgApiPath.ts)
 - /api/public/store (files: apps/mobile/lib/api.ts)
 
+## UI coverage hints applied
+- /api/org/[param]/store/bundles (files: app/org/[orgId]/store/OrgStoreToolClient.tsx, components/store/StoreBundleItemsPanel.tsx, components/store/StoreBundlesPanel.tsx)
+- /api/org/[param]/store/bundles/[param] (files: components/store/StoreBundlesPanel.tsx)
+- /api/org/[param]/store/bundles/[param]/items (files: components/store/StoreBundleItemsPanel.tsx, components/store/StoreBundlesPanel.tsx)
+- /api/org/[param]/store/bundles/[param]/items/[param] (files: components/store/StoreBundleItemsPanel.tsx)
+- /api/org/[param]/store/categories (files: app/org/[orgId]/store/OrgStoreToolClient.tsx, components/store/StoreCategoriesPanel.tsx, components/store/StoreProductsPanel.tsx)
+- /api/org/[param]/store/categories/[param] (files: components/store/StoreCategoriesPanel.tsx)
+- /api/org/[param]/store/orders (files: app/org/[orgId]/store/OrgStoreToolClient.tsx, components/store/StoreOrdersPanel.tsx)
+- /api/org/[param]/store/orders/[param] (files: components/store/StoreOrdersPanel.tsx)
+- /api/org/[param]/store/orders/[param]/shipments (files: components/store/StoreOrdersPanel.tsx)
+- /api/org/[param]/store/overview (files: app/org/[orgId]/store/OrgStoreToolClient.tsx, components/store/StoreOverviewPanel.tsx)
+- /api/org/[param]/store/products (files: app/org/[orgId]/store/OrgStoreToolClient.tsx, components/store/StoreProductDigitalAssetsPanel.tsx, components/store/StoreProductImagesPanel.tsx, components/store/StoreProductOptionValuesPanel.tsx, components/store/StoreProductOptionsPanel.tsx, components/store/StoreProductVariantsPanel.tsx, components/store/StoreProductsPanel.tsx)
+- /api/org/[param]/store/products/[param] (files: components/store/StoreProductsPanel.tsx)
+- /api/org/[param]/store/products/[param]/digital-assets (files: components/store/StoreProductDigitalAssetsPanel.tsx, components/store/StoreProductsPanel.tsx)
+- /api/org/[param]/store/products/[param]/digital-assets/[param] (files: components/store/StoreProductDigitalAssetsPanel.tsx)
+- /api/org/[param]/store/products/[param]/images (files: components/store/StoreProductImagesPanel.tsx, components/store/StoreProductsPanel.tsx)
+- /api/org/[param]/store/products/[param]/images/[param] (files: components/store/StoreProductImagesPanel.tsx)
+- /api/org/[param]/store/products/[param]/options (files: components/store/StoreProductOptionsPanel.tsx, components/store/StoreProductsPanel.tsx)
+- /api/org/[param]/store/products/[param]/options/[param] (files: components/store/StoreProductOptionsPanel.tsx, components/store/StoreProductsPanel.tsx)
+- /api/org/[param]/store/products/[param]/options/[param]/values (files: components/store/StoreProductOptionValuesPanel.tsx)
+- /api/org/[param]/store/products/[param]/options/[param]/values/[param] (files: components/store/StoreProductOptionValuesPanel.tsx)
+- /api/org/[param]/store/products/[param]/variants (files: components/store/StoreBundleItemsPanel.tsx, components/store/StoreProductVariantsPanel.tsx, components/store/StoreProductsPanel.tsx)
+- /api/org/[param]/store/products/[param]/variants/[param] (files: components/store/StoreProductVariantsPanel.tsx, components/store/StoreProductsPanel.tsx)
+- /api/org/[param]/store/shipments/[param] (files: components/store/StoreOrdersPanel.tsx)
+- /api/org/[param]/store/shipping/methods/[param] (files: components/store/StoreShippingMethodsPanel.tsx, components/store/StoreShippingSettingsPanel.tsx)
+- /api/org/[param]/store/shipping/methods/[param]/tiers (files: components/store/StoreShippingTiersPanel.tsx)
+- /api/org/[param]/store/shipping/settings (files: app/org/[orgId]/store/OrgStoreToolClient.tsx, components/store/StoreShippingSettingsPanel.tsx)
+- /api/org/[param]/store/shipping/tiers/[param] (files: components/store/StoreShippingTiersPanel.tsx)
+- /api/org/[param]/store/shipping/zones (files: app/org/[orgId]/store/OrgStoreToolClient.tsx, components/store/StoreShippingMethodsPanel.tsx, components/store/StoreShippingSettingsPanel.tsx, components/store/StoreShippingTiersPanel.tsx, components/store/StoreShippingZonesPanel.tsx)
+- /api/org/[param]/store/shipping/zones/[param] (files: components/store/StoreShippingSettingsPanel.tsx, components/store/StoreShippingZonesPanel.tsx)
+- /api/org/[param]/store/shipping/zones/[param]/methods (files: components/store/StoreShippingMethodsPanel.tsx, components/store/StoreShippingSettingsPanel.tsx, components/store/StoreShippingTiersPanel.tsx)
+
 ## API routes without UI usage (new, excluding internal/cron/webhook)
 - none
 
 ## API orphan baseline matches
 - /api/me/dsar/export (app/api/me/dsar/export/route.ts)
-- /api/me/inscricoes (app/api/me/inscricoes/route.ts)
-- /api/me/loyalty/carteira (app/api/me/loyalty/carteira/route.ts)
-- /api/me/notifications/[id]/read (app/api/me/notifications/[id]/read/route.ts)
-- /api/me/reservas/[id]/calendar.ics (app/api/me/reservas/[id]/calendar.ics/route.ts)
-- /api/me/settings/delete/cancel (app/api/me/settings/delete/cancel/route.ts)
 - /api/me/wallet/[entitlementId]/pass (app/api/me/wallet/[entitlementId]/pass/route.ts)
-- /api/messages/conversations/[conversationId]/threads/[messageId] (app/api/messages/conversations/[conversationId]/threads/[messageId]/route.ts)
-- /api/messages/grants/[grantId]/cancel (app/api/messages/grants/[grantId]/cancel/route.ts)
-- /api/org/[orgId]/avaliacoes (app/api/org/[orgId]/avaliacoes/route.ts)
-- /api/org/[orgId]/crm/campanhas/[campaignId] (app/api/org/[orgId]/crm/campanhas/[campaignId]/route.ts)
-- /api/org/[orgId]/padel/analytics (app/api/org/[orgId]/padel/analytics/route.ts)
-- /api/org/[orgId]/padel/audit (app/api/org/[orgId]/padel/audit/route.ts)
-- /api/org/[orgId]/padel/broadcast (app/api/org/[orgId]/padel/broadcast/route.ts)
-- /api/org/[orgId]/padel/courts (app/api/org/[orgId]/padel/courts/route.ts)
-- /api/org/[orgId]/padel/exports/analytics (app/api/org/[orgId]/padel/exports/analytics/route.ts)
-- /api/org/[orgId]/padel/exports/bracket (app/api/org/[orgId]/padel/exports/bracket/route.ts)
-- /api/org/[orgId]/padel/exports/calendario (app/api/org/[orgId]/padel/exports/calendario/route.ts)
-- /api/org/[orgId]/padel/exports/inscritos (app/api/org/[orgId]/padel/exports/inscritos/route.ts)
-- /api/org/[orgId]/padel/exports/resultados (app/api/org/[orgId]/padel/exports/resultados/route.ts)
-- /api/org/[orgId]/padel/imports/inscritos (app/api/org/[orgId]/padel/imports/inscritos/route.ts)
-- /api/org/[orgId]/padel/pairings/swap (app/api/org/[orgId]/padel/pairings/swap/route.ts)
-- /api/org/[orgId]/padel/waitlist (app/api/org/[orgId]/padel/waitlist/route.ts)
-- /api/org/[orgId]/padel/waitlist/promote (app/api/org/[orgId]/padel/waitlist/promote/route.ts)
-- /api/org/[orgId]/reservas/disponibilidade/[overrideId] (app/api/org/[orgId]/reservas/disponibilidade/[overrideId]/route.ts)
-- /api/org/[orgId]/servicos/[id]/duration-prices (app/api/org/[orgId]/servicos/[id]/duration-prices/route.ts)
-- /api/org/[orgId]/store/bundles (app/api/org/[orgId]/store/bundles/route.ts)
-- /api/org/[orgId]/store/bundles/[id] (app/api/org/[orgId]/store/bundles/[id]/route.ts)
-- /api/org/[orgId]/store/bundles/[id]/items (app/api/org/[orgId]/store/bundles/[id]/items/route.ts)
-- /api/org/[orgId]/store/bundles/[id]/items/[itemId] (app/api/org/[orgId]/store/bundles/[id]/items/[itemId]/route.ts)
-- /api/org/[orgId]/store/categories (app/api/org/[orgId]/store/categories/route.ts)
-- /api/org/[orgId]/store/categories/[id] (app/api/org/[orgId]/store/categories/[id]/route.ts)
-- /api/org/[orgId]/store/orders (app/api/org/[orgId]/store/orders/route.ts)
-- /api/org/[orgId]/store/orders/[orderId] (app/api/org/[orgId]/store/orders/[orderId]/route.ts)
-- /api/org/[orgId]/store/orders/[orderId]/shipments (app/api/org/[orgId]/store/orders/[orderId]/shipments/route.ts)
-- /api/org/[orgId]/store/overview (app/api/org/[orgId]/store/overview/route.ts)
-- /api/org/[orgId]/store/preview (app/api/org/[orgId]/store/preview/route.ts)
-- /api/org/[orgId]/store/products (app/api/org/[orgId]/store/products/route.ts)
-- /api/org/[orgId]/store/products/[id] (app/api/org/[orgId]/store/products/[id]/route.ts)
-- /api/org/[orgId]/store/products/[id]/digital-assets (app/api/org/[orgId]/store/products/[id]/digital-assets/route.ts)
-- /api/org/[orgId]/store/products/[id]/digital-assets/[assetId] (app/api/org/[orgId]/store/products/[id]/digital-assets/[assetId]/route.ts)
-- /api/org/[orgId]/store/products/[id]/images (app/api/org/[orgId]/store/products/[id]/images/route.ts)
-- /api/org/[orgId]/store/products/[id]/images/[imageId] (app/api/org/[orgId]/store/products/[id]/images/[imageId]/route.ts)
-- /api/org/[orgId]/store/products/[id]/options (app/api/org/[orgId]/store/products/[id]/options/route.ts)
-- /api/org/[orgId]/store/products/[id]/options/[optionId] (app/api/org/[orgId]/store/products/[id]/options/[optionId]/route.ts)
-- /api/org/[orgId]/store/products/[id]/options/[optionId]/values (app/api/org/[orgId]/store/products/[id]/options/[optionId]/values/route.ts)
-- /api/org/[orgId]/store/products/[id]/options/[optionId]/values/[valueId] (app/api/org/[orgId]/store/products/[id]/options/[optionId]/values/[valueId]/route.ts)
-- /api/org/[orgId]/store/products/[id]/variants (app/api/org/[orgId]/store/products/[id]/variants/route.ts)
-- /api/org/[orgId]/store/products/[id]/variants/[variantId] (app/api/org/[orgId]/store/products/[id]/variants/[variantId]/route.ts)
-- /api/org/[orgId]/store/settings (app/api/org/[orgId]/store/settings/route.ts)
-- /api/org/[orgId]/store/shipments/[shipmentId] (app/api/org/[orgId]/store/shipments/[shipmentId]/route.ts)
-- /api/org/[orgId]/store/shipping/methods/[methodId] (app/api/org/[orgId]/store/shipping/methods/[methodId]/route.ts)
-- /api/org/[orgId]/store/shipping/methods/[methodId]/tiers (app/api/org/[orgId]/store/shipping/methods/[methodId]/tiers/route.ts)
-- /api/org/[orgId]/store/shipping/settings (app/api/org/[orgId]/store/shipping/settings/route.ts)
-- /api/org/[orgId]/store/shipping/tiers/[tierId] (app/api/org/[orgId]/store/shipping/tiers/[tierId]/route.ts)
-- /api/org/[orgId]/store/shipping/zones (app/api/org/[orgId]/store/shipping/zones/route.ts)
-- /api/org/[orgId]/store/shipping/zones/[zoneId] (app/api/org/[orgId]/store/shipping/zones/[zoneId]/route.ts)
-- /api/org/[orgId]/store/shipping/zones/[zoneId]/methods (app/api/org/[orgId]/store/shipping/zones/[zoneId]/methods/route.ts)
-- /api/org/[orgId]/trainers (app/api/org/[orgId]/trainers/route.ts)
-- /api/padel/community/posts (app/api/padel/community/posts/route.ts)
-- /api/padel/community/posts/[id]/comments (app/api/padel/community/posts/[id]/comments/route.ts)
-- /api/padel/community/posts/[id]/reactions (app/api/padel/community/posts/[id]/reactions/route.ts)
-- /api/padel/live (app/api/padel/live/route.ts)
-- /api/padel/live/raw (app/api/padel/live/raw/route.ts)
-- /api/padel/matches/[id]/delay (app/api/padel/matches/[id]/delay/route.ts)
-- /api/padel/matches/[id]/undo (app/api/padel/matches/[id]/undo/route.ts)
-- /api/padel/pairings/[id]/assume (app/api/padel/pairings/[id]/assume/route.ts)
-- /api/padel/pairings/[id]/cancel (app/api/padel/pairings/[id]/cancel/route.ts)
-- /api/padel/pairings/[id]/invite (app/api/padel/pairings/[id]/invite/route.ts)
-- /api/padel/pairings/[id]/public (app/api/padel/pairings/[id]/public/route.ts)
-- /api/padel/pairings/[id]/regularize (app/api/padel/pairings/[id]/regularize/route.ts)
-- /api/padel/pairings/[id]/reopen (app/api/padel/pairings/[id]/reopen/route.ts)
-- /api/padel/pairings/[id]/swap (app/api/padel/pairings/[id]/swap/route.ts)
-- /api/padel/pairings/my (app/api/padel/pairings/my/route.ts)
-- /api/padel/public/calendar (app/api/padel/public/calendar/route.ts)
-- /api/padel/rankings/rebuild (app/api/padel/rankings/rebuild/route.ts)
-- /api/padel/rankings/sanctions (app/api/padel/rankings/sanctions/route.ts)
-- /api/padel/teams/[id]/members (app/api/padel/teams/[id]/members/route.ts)
-- /api/padel/tournaments/tier-approvals/[id]/approve (app/api/padel/tournaments/tier-approvals/[id]/approve/route.ts)
-- /api/padel/tournaments/tier-approvals/[id]/reject (app/api/padel/tournaments/tier-approvals/[id]/reject/route.ts)
-- /api/padel/tournaments/tier-approvals/request (app/api/padel/tournaments/tier-approvals/request/route.ts)
-- /api/servicos/[id]/booking-status (app/api/servicos/[id]/booking-status/route.ts)
 - /api/upload/delete (app/api/upload/delete/route.ts)
 
 ## API orphan allowlist matches
 - /api/auth/clear (app/api/auth/clear/route.ts)
 - /api/messages/attachments/presign (app/api/messages/attachments/presign/route.ts)
 - /api/messages/messages/[messageId]/report (app/api/messages/messages/[messageId]/report/route.ts)
-
-## Exempt routes (tombstone 410)
-- /api/me/creditos (app/api/me/creditos/route.ts)
-- /api/messages/grants/[grantId]/accept (app/api/messages/grants/[grantId]/accept/route.ts)
-- /api/org-hub/become (app/api/org-hub/become/route.ts)
-- /api/org-hub/organizations/owner/confirm (app/api/org-hub/organizations/owner/confirm/route.ts)
-- /api/org-hub/organizations/owner/transfer (app/api/org-hub/organizations/owner/transfer/route.ts)
-- /api/org/[orgId]/payouts/connect (app/api/org/[orgId]/payouts/connect/route.ts)
-- /api/org/[orgId]/payouts/list (app/api/org/[orgId]/payouts/list/route.ts)
-- /api/org/[orgId]/payouts/settings (app/api/org/[orgId]/payouts/settings/route.ts)
-- /api/org/[orgId]/payouts/status (app/api/org/[orgId]/payouts/status/route.ts)
-- /api/org/[orgId]/payouts/summary (app/api/org/[orgId]/payouts/summary/route.ts)
-- /api/servicos/[id]/creditos (app/api/servicos/[id]/creditos/route.ts)
-- /api/servicos/[id]/creditos/checkout (app/api/servicos/[id]/creditos/checkout/route.ts)
-- /api/servicos/[id]/disponibilidade (app/api/servicos/[id]/disponibilidade/route.ts)
-- /api/servicos/[id]/slots (app/api/servicos/[id]/slots/route.ts)
 
 ## Exempt routes (internal/cron/webhook)
 - /api/cron/analytics/rollup (app/api/cron/analytics/rollup/route.ts)
@@ -182,7 +118,8 @@ CSV: reports/api_ui_coverage_v1.csv
 - /api/webhooks/stripe (app/api/webhooks/stripe/route.ts)
 
 ## P0 endpoints coverage (scripts/manifests/p0_endpoints.json)
-- Total: 36
+- Total: 35
+- Active (UI expected): 35
 
 ### P0 missing files
 - none
@@ -227,7 +164,7 @@ CSV: reports/api_ui_coverage_v1.csv
 - /api/org/[orgId]/finance/payouts/connect (files: app/org/_internal/core/DashboardClient.tsx)
 
 ### P0 missing UI usage allowlisted
-- /api/servicos/[id]/creditos/checkout (app/api/servicos/[id]/creditos/checkout/route.ts)
+- none
 
 ### P0 missing UI usage
 - none

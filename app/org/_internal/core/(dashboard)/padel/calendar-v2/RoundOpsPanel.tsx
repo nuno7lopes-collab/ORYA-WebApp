@@ -30,7 +30,7 @@ export function RoundOpsPanel(props: {
         <select
           value={props.categoryKey}
           onChange={(event) => props.onCategoryChange(event.target.value)}
-          className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+          className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
           disabled={disabled}
         >
           {props.categoryOptions.map((option) => (

@@ -287,14 +287,14 @@ export function ClubsManagementPanel(props: {
                   value={props.courtForm.name}
                   onChange={(event) => props.onCourtFormPatch({ name: event.target.value })}
                   disabled={props.courtsPanelReadOnly}
-                  className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] disabled:opacity-60"
+                  className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#22D3EE] disabled:opacity-60"
                   placeholder="Nome do campo"
                 />
                 <input
                   value={props.courtForm.description}
                   onChange={(event) => props.onCourtFormPatch({ description: event.target.value })}
                   disabled={props.courtsPanelReadOnly}
-                  className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] disabled:opacity-60"
+                  className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#22D3EE] disabled:opacity-60"
                   placeholder="Descrição / patrocinador (opcional)"
                 />
                 <div className="col-span-2 flex flex-wrap items-center gap-2 text-sm text-white/80">
@@ -495,14 +495,14 @@ export function ClubsManagementPanel(props: {
                         value={props.staffSearch}
                         onChange={(event) => props.onStaffSearchChange(event.target.value)}
                         disabled={props.courtsPanelReadOnly}
-                        className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                        className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
                         placeholder="Pesquisar membro (nome, email, username)"
                       />
                       <select
                         value={props.staffForm.staffMemberId}
                         onChange={(event) => props.onStaffFormPatch({ staffMemberId: event.target.value })}
                         disabled={props.courtsPanelReadOnly}
-                        className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                        className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
                       >
                         <option value="">Escolhe membro</option>
                         {props.staffOptions.map((member) => (
@@ -529,7 +529,7 @@ export function ClubsManagementPanel(props: {
                         value={props.staffForm.email}
                         onChange={(event) => props.onStaffFormPatch({ email: event.target.value })}
                         disabled={props.courtsPanelReadOnly}
-                        className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                        className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
                         placeholder="Email do contacto"
                       />
                       <div className="rounded-lg border border-white/15 bg-black/25 px-3 py-2 text-[12px] text-white/70">
@@ -544,7 +544,7 @@ export function ClubsManagementPanel(props: {
                     value={props.staffForm.role}
                     onChange={(event) => props.onStaffFormPatch({ role: event.target.value })}
                     disabled={props.courtsPanelReadOnly}
-                    className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                    className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
                   >
                     <option value="ADMIN_CLUBE">Admin clube</option>
                     <option value="DIRETOR_PROVA">Diretor / Árbitro</option>

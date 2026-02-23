@@ -43,7 +43,7 @@ const STATUS_META: Record<string, { label: string; tone: string }> = {
   },
   CHECKED_IN: {
     label: "Check-in",
-    tone: "border-[#6BFFFF]/50 bg-[#6BFFFF]/10 text-[#E6FFFF]",
+    tone: "border-[#22D3EE]/50 bg-[#22D3EE]/10 text-[#E6FFFF]",
   },
   PENDING: {
     label: "Pendente",

@@ -88,25 +88,29 @@ function classifyDomain(route) {
 function defaultsForDomain(domain) {
   switch (domain) {
     case "org.store":
-      return { owner: "commerce-core", expiresAt: "2026-05-15" };
+      return { owner: "commerce-core", expiresAt: "2026-05-15", wave: "wave-1" };
     case "org.padel":
     case "padel.public":
-      return { owner: "padel-core", expiresAt: "2026-05-30" };
+      return { owner: "padel-core", expiresAt: "2026-05-30", wave: "wave-2" };
     case "org.finance":
-      return { owner: "finance-core", expiresAt: "2026-04-30" };
+      return { owner: "finance-core", expiresAt: "2026-04-30", wave: "wave-2" };
     case "messages":
-      return { owner: "messaging-core", expiresAt: "2026-04-15" };
+      return { owner: "messaging-core", expiresAt: "2026-04-15", wave: "wave-3" };
     case "me":
-      return { owner: "identity-core", expiresAt: "2026-04-15" };
+      return { owner: "identity-core", expiresAt: "2026-04-15", wave: "wave-3" };
     case "org-hub":
-      return { owner: "org-platform", expiresAt: "2026-04-30" };
+      return { owner: "org-platform", expiresAt: "2026-04-30", wave: "wave-3" };
     case "servicos":
-      return { owner: "reservas-core", expiresAt: "2026-05-15" };
+      return { owner: "reservas-core", expiresAt: "2026-05-15", wave: "wave-3" };
     case "org.other":
-      return { owner: "org-platform", expiresAt: "2026-05-30" };
+      return { owner: "org-platform", expiresAt: "2026-05-30", wave: "wave-3" };
     default:
-      return { owner: "org-platform", expiresAt: "2026-05-30" };
+      return { owner: "org-platform", expiresAt: "2026-05-30", wave: "wave-3" };
   }
+}
+
+function isKnownWave(value) {
+  return value === "wave-1" || value === "wave-2" || value === "wave-3";
 }
 
 function readCurrentBaseline() {
@@ -179,6 +183,10 @@ const nextEntries = Array.from(orphanRoutes)
         : "";
     const shouldReplaceGenericOwner = !currentOwner || currentOwner === policyOwner;
     const shouldReplaceGenericExpiry = !currentExpiresAt || currentExpiresAt === policyExpiresAt;
+    const currentWave =
+      typeof current.wave === "string" && current.wave.trim()
+        ? current.wave.trim()
+        : "";
     return {
       route,
       domain,
@@ -188,6 +196,7 @@ const nextEntries = Array.from(orphanRoutes)
           ? current.reason.trim()
           : "baseline_preexisting_orphan",
       expiresAt: shouldReplaceGenericExpiry ? defaults.expiresAt : currentExpiresAt,
+      wave: isKnownWave(currentWave) ? currentWave : defaults.wave,
     };
   });
 

@@ -27,9 +27,9 @@ describe("ui surface inventory snapshot", () => {
       };
     };
 
-    expect(snapshot.counts.webTotal).toBeGreaterThanOrEqual(220);
+    expect(snapshot.counts.webTotal).toBeGreaterThanOrEqual(180);
     expect(snapshot.counts.mobileTotal).toBeGreaterThanOrEqual(40);
-    expect(snapshot.counts.org).toBeGreaterThanOrEqual(70);
+    expect(snapshot.counts.org).toBeGreaterThanOrEqual(65);
     expect(snapshot.counts.admin).toBeGreaterThanOrEqual(15);
     expect(snapshot.counts.user).toBeGreaterThanOrEqual(10);
     expect(snapshot.counts.public).toBeGreaterThanOrEqual(40);

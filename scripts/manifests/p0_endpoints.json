@@ -1,17 +1,6 @@
 {
   "version": 1,
   "description": "Canonical P0 endpoint file list used by gates and SSOT sync.",
-  "policies": {
-    "disabledByPolicy": [
-      {
-        "path": "app/api/servicos/[id]/creditos/checkout/route.ts",
-        "label": "DISABLED_BY_POLICY",
-        "errorCode": "CREDITS_DISABLED",
-        "status": 410,
-        "reason": "Credito de servicos desativado por decisao de produto; endpoint mantido apenas como tombstone contratual."
-      }
-    ]
-  },
   "endpoints": [
     "app/api/payments/intent/route.ts",
     "app/api/checkout/status/route.ts",
@@ -19,7 +8,6 @@
     "app/api/convites/[token]/checkout/route.ts",
     "app/api/cobrancas/[token]/checkout/route.ts",
     "app/api/servicos/[id]/checkout/route.ts",
-    "app/api/servicos/[id]/creditos/checkout/route.ts",
     "app/api/org/[orgId]/reservas/[id]/checkout/route.ts",
     "app/api/padel/pairings/[id]/checkout/route.ts",
     "app/api/public/store/checkout/route.ts",

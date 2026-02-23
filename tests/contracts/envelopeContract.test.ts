@@ -42,7 +42,6 @@ describe("p0 guardrails", () => {
     "app/api/payments/intent/route.ts",
     "app/api/checkout/status/route.ts",
     "app/api/servicos/[id]/checkout/route.ts",
-    "app/api/servicos/[id]/creditos/checkout/route.ts",
     "app/api/org/[orgId]/reservas/[id]/checkout/route.ts",
     "app/api/padel/pairings/[id]/checkout/route.ts",
     "app/api/admin/payments/refund/route.ts",

@@ -1,6 +1,6 @@
 # V9 Inventory — Frontend API Usage
 
-Total endpoints referenced: 385
+Total endpoints referenced: 453
 
 ## /api/address/autocomplete
 - apps/mobile/features/discover/location.ts
@@ -12,6 +12,9 @@ Total endpoints referenced: 385
 
 ## /api/address/reverse
 - lib/geo/client.ts
+
+## /api/admin/audit/list
+- app/admin/(protected)/audit/page.tsx
 
 ## /api/admin/config/platform-email
 - app/admin/(protected)/config/platform-email/page.tsx
@@ -142,13 +145,13 @@ Total endpoints referenced: 385
 ## /api/admin/refunds/retry
 - app/admin/(protected)/finance/page.tsx
 
-## /api/admin/support/tickets/[param]
+## /api/admin/support/tickets/[id]
 - app/admin/(protected)/suporte/[id]/page.tsx
 
-## /api/admin/support/tickets/[param]/events
+## /api/admin/support/tickets/[id]/events
 - app/admin/(protected)/suporte/[id]/page.tsx
 
-## /api/admin/support/tickets/[param]/status
+## /api/admin/support/tickets/[id]/status
 - app/admin/(protected)/suporte/[id]/page.tsx
 
 ## /api/admin/support/tickets/list
@@ -208,16 +211,16 @@ Total endpoints referenced: 385
 - app/components/checkout/Step3Sucesso.tsx
 - apps/mobile/features/checkout/api.ts
 
-## /api/cobrancas/[param]
+## /api/cobrancas/[token]
 - app/cobrancas/[token]/ChargeClient.tsx
 
-## /api/cobrancas/[param]/checkout
+## /api/cobrancas/[token]/checkout
 - app/cobrancas/[token]/ChargeClient.tsx
 
-## /api/convites/[param]
+## /api/convites/[token]
 - app/convites/[token]/InviteClient.tsx
 
-## /api/convites/[param]/checkout
+## /api/convites/[token]/checkout
 - app/convites/[token]/InviteClient.tsx
 
 ## /api/crm/engagement
@@ -284,16 +287,19 @@ Total endpoints referenced: 385
 ## /api/email/verified
 - app/components/autenticação/AuthModal.tsx
 
-## /api/eventos/[param]/invite-token
+## /api/eventos/[slug]/invite-token
 - app/eventos/[slug]/InviteGateClient.tsx
 - apps/mobile/app/event/[slug].tsx
 
-## /api/eventos/[param]/invites/check
+## /api/eventos/[slug]/invites/check
 - app/eventos/[slug]/InviteGateClient.tsx
 - apps/mobile/app/event/[slug].tsx
 
-## /api/eventos/[param]/public
+## /api/eventos/[slug]/public
 - apps/mobile/features/events/api.ts
+
+## /api/eventos/[slug]/resales
+- app/eventos/[slug]/page.tsx
 
 ## /api/eventos/list
 - apps/mobile/features/agora/api.ts
@@ -310,15 +316,16 @@ Total endpoints referenced: 385
 ## /api/events/favorites/toggle
 - apps/mobile/features/favorites/api.ts
 
-## /api/explorar/eventos/[param]
+## /api/explorar/eventos/[slug]
 - apps/mobile/features/profile/api.ts
 
 ## /api/explorar/list
 - app/components/Navbar.tsx
 - app/descobrir/_explorar/ExplorarContent.tsx
+- apps/mobile/__tests__/discover-pagination.contract.test.ts
 - apps/mobile/features/discover/api.ts
 
-## /api/inscricoes/[param]/submit
+## /api/inscricoes/[id]/submit
 - app/inscricoes/[id]/FormSubmissionClient.tsx
 
 ## /api/location/ip
@@ -354,7 +361,7 @@ Total endpoints referenced: 385
 - app/descobrir/_explorar/eventSignals.ts
 - apps/mobile/features/events/signals.ts
 
-## /api/me/inscricoes/[param]
+## /api/me/inscricoes/[id]
 - apps/mobile/features/tournaments/api.ts
 
 ## /api/me/location/consent
@@ -363,7 +370,7 @@ Total endpoints referenced: 385
 ## /api/me/loyalty/recompensas
 - app/me/carteira/WalletHubClient.tsx
 
-## /api/me/loyalty/recompensas/[param]/resgatar
+## /api/me/loyalty/recompensas/[rewardId]/resgatar
 - app/me/carteira/WalletHubClient.tsx
 
 ## /api/me/notifications
@@ -388,53 +395,54 @@ Total endpoints referenced: 385
 - app/me/compras/loja/page.tsx
 - apps/mobile/features/store/api.ts
 
-## /api/me/purchases/store/[param]
+## /api/me/purchases/store/[orderId]
 - app/me/compras/loja/[orderId]/page.tsx
 - apps/mobile/features/store/api.ts
 
-## /api/me/purchases/store/[param]/invoice
+## /api/me/purchases/store/[orderId]/invoice
 - app/me/compras/loja/[orderId]/page.tsx
 - app/me/compras/loja/page.tsx
 
-## /api/me/purchases/store/[param]/receipt
+## /api/me/purchases/store/[orderId]/receipt
 - app/me/compras/loja/[orderId]/page.tsx
 - app/me/compras/loja/page.tsx
 - apps/mobile/features/store/api.ts
 
 ## /api/me/push-tokens
+- apps/mobile/__tests__/push-sync.test.ts
 - apps/mobile/lib/push.ts
 
 ## /api/me/reservas
 - app/me/reservas/page.tsx
 - apps/mobile/features/bookings/api.ts
 
-## /api/me/reservas/[param]
+## /api/me/reservas/[id]
 - app/[username]/_components/ReservasBookingClient.tsx
 - apps/mobile/app/checkout/index.tsx
 
-## /api/me/reservas/[param]/cancel
+## /api/me/reservas/[id]/cancel
 - app/[username]/_components/ReservasBookingClient.tsx
 - app/me/reservas/page.tsx
 - apps/mobile/features/bookings/api.ts
 
-## /api/me/reservas/[param]/cancel/preview
+## /api/me/reservas/[id]/cancel/preview
 - app/me/reservas/page.tsx
 - apps/mobile/features/bookings/api.ts
 
-## /api/me/reservas/[param]/invites
+## /api/me/reservas/[id]/invites
 - app/me/reservas/page.tsx
 
-## /api/me/reservas/[param]/reschedule
+## /api/me/reservas/[id]/reschedule
 - app/me/reservas/page.tsx
 
-## /api/me/reservas/[param]/reschedule/respond
+## /api/me/reservas/[id]/reschedule/respond
 - app/me/reservas/page.tsx
 - apps/mobile/features/bookings/api.ts
 
-## /api/me/reservas/[param]/review
+## /api/me/reservas/[id]/review
 - app/me/reservas/page.tsx
 
-## /api/me/reservas/[param]/split
+## /api/me/reservas/[id]/split
 - app/me/reservas/page.tsx
 
 ## /api/me/settings/delete
@@ -454,7 +462,7 @@ Total endpoints referenced: 385
 - app/components/wallet/useWallet.ts
 - apps/mobile/features/wallet/api.ts
 
-## /api/me/wallet/[param]
+## /api/me/wallet/[entitlementId]
 - app/me/bilhetes/[id]/TicketDetailClient.tsx
 - apps/mobile/features/wallet/api.ts
 
@@ -466,27 +474,27 @@ Total endpoints referenced: 385
 - app/org/_internal/core/(dashboard)/chat/preview/useChatPreviewData.ts
 - apps/mobile/features/messages/api.ts
 
-## /api/messages/conversations/[param]
+## /api/messages/conversations/[conversationId]
 - app/org/_internal/core/(dashboard)/chat/preview/useChatPreviewData.ts
 
-## /api/messages/conversations/[param]/leave
+## /api/messages/conversations/[conversationId]/leave
 - app/org/_internal/core/(dashboard)/chat/ChatInternoV2Client.tsx
 - app/org/_internal/core/(dashboard)/chat/preview/useChatPreviewData.ts
 
-## /api/messages/conversations/[param]/messages
-- app/org/_internal/core/(dashboard)/chat/ChatInternoV2Client.tsx
-- app/org/_internal/core/(dashboard)/chat/preview/useChatPreviewData.ts
-- apps/mobile/features/messages/api.ts
-
-## /api/messages/conversations/[param]/messages/[param]
-- apps/mobile/features/messages/api.ts
-
-## /api/messages/conversations/[param]/notifications
+## /api/messages/conversations/[conversationId]/messages
 - app/org/_internal/core/(dashboard)/chat/ChatInternoV2Client.tsx
 - app/org/_internal/core/(dashboard)/chat/preview/useChatPreviewData.ts
 - apps/mobile/features/messages/api.ts
 
-## /api/messages/conversations/[param]/read
+## /api/messages/conversations/[conversationId]/messages/[messageId]
+- apps/mobile/features/messages/api.ts
+
+## /api/messages/conversations/[conversationId]/notifications
+- app/org/_internal/core/(dashboard)/chat/ChatInternoV2Client.tsx
+- app/org/_internal/core/(dashboard)/chat/preview/useChatPreviewData.ts
+- apps/mobile/features/messages/api.ts
+
+## /api/messages/conversations/[conversationId]/read
 - app/org/_internal/core/(dashboard)/chat/ChatInternoV2Client.tsx
 - app/org/_internal/core/(dashboard)/chat/preview/useChatPreviewData.ts
 - apps/mobile/features/messages/api.ts
@@ -499,12 +507,12 @@ Total endpoints referenced: 385
 - app/org/_internal/core/(dashboard)/chat/ChatInternoV2Client.tsx
 - apps/mobile/features/messages/api.ts
 
-## /api/messages/grants/[param]/accept
+## /api/messages/grants/[grantId]/accept
 - app/org/_internal/core/(dashboard)/chat/ChannelRequestsPanel.tsx
 - app/org/_internal/core/(dashboard)/chat/ChatInternoV2Client.tsx
 - apps/mobile/features/messages/api.ts
 
-## /api/messages/grants/[param]/decline
+## /api/messages/grants/[grantId]/decline
 - app/org/_internal/core/(dashboard)/chat/ChannelRequestsPanel.tsx
 - app/org/_internal/core/(dashboard)/chat/ChatInternoV2Client.tsx
 - apps/mobile/features/messages/api.ts
@@ -514,14 +522,14 @@ Total endpoints referenced: 385
 - app/org/_internal/core/(dashboard)/chat/preview/useChatPreviewData.ts
 - app/org/_internal/core/(dashboard)/reservas/page.tsx
 
-## /api/messages/messages/[param]
+## /api/messages/messages/[messageId]
 - app/org/_internal/core/(dashboard)/chat/ChatInternoV2Client.tsx
 - app/org/_internal/core/(dashboard)/chat/preview/useChatPreviewData.ts
 
-## /api/messages/messages/[param]/pins
+## /api/messages/messages/[messageId]/pins
 - app/org/_internal/core/(dashboard)/chat/preview/useChatPreviewData.ts
 
-## /api/messages/messages/[param]/reactions
+## /api/messages/messages/[messageId]/reactions
 - app/org/_internal/core/(dashboard)/chat/ChatInternoV2Client.tsx
 - app/org/_internal/core/(dashboard)/chat/preview/useChatPreviewData.ts
 
@@ -542,43 +550,59 @@ Total endpoints referenced: 385
 - apps/mobile/app/settings/index.tsx
 - apps/mobile/features/settings/api.ts
 
-## /api/org-hub/groups/[param]/[param]/email/confirm
-- app/org/_internal/core/organizations/GroupsHubClient.tsx
-- app/org/_internal/core/organizations/RequestEmailConfirmClient.tsx
+## /api/org-hub
+- lib/canonicalOrgApiPath.ts
 
-## /api/org-hub/groups/[param]/[param]/email/resend
-- app/org/_internal/core/organizations/GroupsHubClient.tsx
-
-## /api/org-hub/groups/[param]/[param]/generate-code
-- app/org/_internal/core/organizations/GroupsHubClient.tsx
-
-## /api/org-hub/groups/[param]/[param]/verify-codes
-- app/org/_internal/core/organizations/GroupsHubClient.tsx
-
-## /api/org-hub/groups/[param]/dashboard/agenda
+## /api/org-hub/groups/[groupId]/dashboard/agenda
 - app/org/_internal/core/organizations/GroupDashboardClient.tsx
 
-## /api/org-hub/groups/[param]/governance
+## /api/org-hub/groups/[groupId]/governance
 - app/org/_internal/core/organizations/GroupsHubClient.tsx
 
-## /api/org-hub/groups/[param]/governance/members
+## /api/org-hub/groups/[groupId]/governance/members
 - app/org/_internal/core/organizations/GroupsHubClient.tsx
 
-## /api/org-hub/groups/[param]/owner/transfer/cancel
+## /api/org-hub/groups/[groupId]/owner/transfer/cancel
 - app/org/_internal/core/organizations/GroupsHubClient.tsx
 
-## /api/org-hub/groups/[param]/owner/transfer/confirm
+## /api/org-hub/groups/[groupId]/owner/transfer/confirm
 - app/org/_internal/core/organizations/GroupsHubClient.tsx
 - app/org/_internal/core/organizations/OwnerTransferConfirmClient.tsx
 
-## /api/org-hub/groups/[param]/owner/transfer/start
+## /api/org-hub/groups/[groupId]/owner/transfer/start
 - app/org/_internal/core/(dashboard)/staff/page.tsx
 - app/org/_internal/core/organizations/GroupsHubClient.tsx
 
 ## /api/org-hub/groups/exit-requests
 - app/org/_internal/core/organizations/GroupsHubClient.tsx
 
+## /api/org-hub/groups/exit-requests/[id]/email/confirm
+- app/org/_internal/core/organizations/GroupsHubClient.tsx
+- app/org/_internal/core/organizations/RequestEmailConfirmClient.tsx
+
+## /api/org-hub/groups/exit-requests/[id]/email/resend
+- app/org/_internal/core/organizations/GroupsHubClient.tsx
+
+## /api/org-hub/groups/exit-requests/[id]/generate-code
+- app/org/_internal/core/organizations/GroupsHubClient.tsx
+
+## /api/org-hub/groups/exit-requests/[id]/verify-codes
+- app/org/_internal/core/organizations/GroupsHubClient.tsx
+
 ## /api/org-hub/groups/join-requests
+- app/org/_internal/core/organizations/GroupsHubClient.tsx
+
+## /api/org-hub/groups/join-requests/[id]/email/confirm
+- app/org/_internal/core/organizations/GroupsHubClient.tsx
+- app/org/_internal/core/organizations/RequestEmailConfirmClient.tsx
+
+## /api/org-hub/groups/join-requests/[id]/email/resend
+- app/org/_internal/core/organizations/GroupsHubClient.tsx
+
+## /api/org-hub/groups/join-requests/[id]/generate-code
+- app/org/_internal/core/organizations/GroupsHubClient.tsx
+
+## /api/org-hub/groups/join-requests/[id]/verify-codes
 - app/org/_internal/core/organizations/GroupsHubClient.tsx
 
 ## /api/org-hub/invites
@@ -590,10 +614,10 @@ Total endpoints referenced: 385
 - components/organization/BecomeOrganizationForm.tsx
 - lib/canonicalOrgUiEndpointRegistry.ts
 
-## /api/org-hub/organizations/[param]
+## /api/org-hub/organizations/[id]
 - app/org/_internal/core/(dashboard)/settings/page.tsx
 
-## /api/org-hub/organizations/[param]/suspend
+## /api/org-hub/organizations/[id]/suspend
 - app/org/_internal/core/(dashboard)/settings/page.tsx
 - app/org/_internal/core/DashboardClient.tsx
 - app/org/_internal/core/OrganizationDashboardShell.tsx
@@ -633,7 +657,7 @@ Total endpoints referenced: 385
 - app/org/_internal/core/organizations/OrganizationsHubClient.tsx
 - components/organization/BecomeOrganizationForm.tsx
 
-## /api/org/[param]
+## /api/org/[orgId]
 - app/components/checkin/CheckinScanner.tsx
 - app/org/[orgId]/analytics/AnalyticsToolClient.tsx
 - app/org/[orgId]/finance/FinanceToolClient.tsx
@@ -642,141 +666,222 @@ Total endpoints referenced: 385
 - app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
 - app/org/_internal/core/DashboardClient.tsx
 
-## /api/org/[param]/agenda
+## /api/org/[orgId]/agenda
 - app/org/[orgId]/calendar/_components/WeekCalendarReadClient.tsx
+- app/org/[orgId]/calendar/_components/day/DayCalendarReadClient.tsx
 - lib/canonicalOrgUiEndpointRegistry.ts
 
-## /api/org/[param]/agenda/soft-blocks
+## /api/org/[orgId]/agenda/soft-blocks
 - lib/canonicalOrgUiEndpointRegistry.ts
 
-## /api/org/[param]/audit
-- app/org/_internal/core/(dashboard)/staff/page.tsx
-
-## /api/org/[param]/checkin/manual
-- app/org/[orgId]/check-in/OrgCheckInOperationsClient.tsx
-
-## /api/org/[param]/club/finance/overview
-- app/org/_internal/core/(dashboard)/clube/caixa/page.tsx
-
-## /api/org/[param]/consentimentos
-- lib/canonicalOrgUiEndpointRegistry.ts
-
-## /api/org/[param]/consentimentos/[param]
-- app/org/_internal/core/(dashboard)/crm/clientes/[customerId]/page.tsx
-
-## /api/org/[param]/crm/campanhas
-- app/org/_internal/core/(dashboard)/crm/campanhas/page.tsx
-
-## /api/org/[param]/crm/campanhas/[param]/[param]
-- app/org/_internal/core/(dashboard)/crm/campanhas/page.tsx
-
-## /api/org/[param]/crm/campanhas/[param]/enviar
-- app/org/_internal/core/(dashboard)/crm/campanhas/page.tsx
-
-## /api/org/[param]/crm/clientes
-- app/org/_internal/core/(dashboard)/crm/clientes/page.tsx
-
-## /api/org/[param]/crm/clientes/[param]
-- app/org/_internal/core/(dashboard)/crm/clientes/[customerId]/page.tsx
-
-## /api/org/[param]/crm/clientes/[param]/notas
-- app/org/_internal/core/(dashboard)/crm/clientes/[customerId]/page.tsx
-
-## /api/org/[param]/crm/clientes/[param]/tags
-- app/org/_internal/core/(dashboard)/crm/clientes/[customerId]/page.tsx
-
-## /api/org/[param]/crm/config
-- app/org/_internal/core/(dashboard)/crm/journeys/page.tsx
-
-## /api/org/[param]/crm/journeys
-- app/org/_internal/core/(dashboard)/crm/journeys/page.tsx
-
-## /api/org/[param]/crm/journeys/[param]
-- app/org/_internal/core/(dashboard)/crm/journeys/page.tsx
-
-## /api/org/[param]/crm/journeys/[param]/[param]
-- app/org/_internal/core/(dashboard)/crm/journeys/page.tsx
-
-## /api/org/[param]/crm/relatorios
-- app/org/_internal/core/(dashboard)/crm/relatorios/page.tsx
-
-## /api/org/[param]/crm/saved-views
-- app/org/_internal/core/(dashboard)/crm/clientes/page.tsx
-- app/org/_internal/core/(dashboard)/crm/segmentos/page.tsx
-
-## /api/org/[param]/crm/saved-views/[param]
-- app/org/_internal/core/(dashboard)/crm/clientes/page.tsx
-- app/org/_internal/core/(dashboard)/crm/segmentos/page.tsx
-
-## /api/org/[param]/crm/segmentos
-- app/org/_internal/core/(dashboard)/crm/campanhas/page.tsx
-- app/org/_internal/core/(dashboard)/crm/segmentos/page.tsx
-
-## /api/org/[param]/crm/segmentos/[param]
-- app/org/_internal/core/(dashboard)/crm/segmentos/[segmentId]/page.tsx
-
-## /api/org/[param]/crm/segmentos/[param]/preview
-- app/org/_internal/core/(dashboard)/crm/segmentos/[segmentId]/page.tsx
-
-## /api/org/[param]/dashboard/tools/visibility
+## /api/org/[orgId]/analytics/buyers
+- app/org/[orgId]/analytics/AnalyticsToolClient.tsx
 - app/org/_internal/core/DashboardClient.tsx
 
-## /api/org/[param]/events/[param]/attendees
+## /api/org/[orgId]/analytics/cohorts
+- app/org/[orgId]/analytics/AnalyticsToolClient.tsx
+
+## /api/org/[orgId]/analytics/conversion
+- app/org/[orgId]/analytics/AnalyticsToolClient.tsx
+
+## /api/org/[orgId]/analytics/dimensoes
+- app/org/[orgId]/analytics/AnalyticsToolClient.tsx
+- app/org/_internal/core/DashboardClient.tsx
+
+## /api/org/[orgId]/analytics/events
+- app/org/[orgId]/analytics/AnalyticsToolClient.tsx
+
+## /api/org/[orgId]/analytics/overview
+- app/org/[orgId]/analytics/AnalyticsToolClient.tsx
+- app/org/_internal/core/DashboardClient.tsx
+
+## /api/org/[orgId]/analytics/time-series
+- app/org/[orgId]/analytics/AnalyticsToolClient.tsx
+- app/org/_internal/core/DashboardClient.tsx
+
+## /api/org/[orgId]/audit
+- app/org/_internal/core/(dashboard)/staff/page.tsx
+
+## /api/org/[orgId]/checkin
+- app/components/checkin/CheckinScanner.tsx
+
+## /api/org/[orgId]/checkin/manual
+- app/org/[orgId]/check-in/OrgCheckInOperationsClient.tsx
+
+## /api/org/[orgId]/checkin/preview
+- app/components/checkin/CheckinScanner.tsx
+
+## /api/org/[orgId]/consentimentos
+- lib/canonicalOrgUiEndpointRegistry.ts
+
+## /api/org/[orgId]/consentimentos/[userId]
+- app/org/_internal/core/(dashboard)/crm/clientes/[customerId]/page.tsx
+
+## /api/org/[orgId]/crm/campanhas
+- app/org/_internal/core/(dashboard)/crm/campanhas/page.tsx
+
+## /api/org/[orgId]/crm/campanhas/[campaignId]/approve
+- app/org/_internal/core/(dashboard)/crm/campanhas/page.tsx
+
+## /api/org/[orgId]/crm/campanhas/[campaignId]/cancel
+- app/org/_internal/core/(dashboard)/crm/campanhas/page.tsx
+
+## /api/org/[orgId]/crm/campanhas/[campaignId]/enviar
+- app/org/_internal/core/(dashboard)/crm/campanhas/page.tsx
+
+## /api/org/[orgId]/crm/campanhas/[campaignId]/reject
+- app/org/_internal/core/(dashboard)/crm/campanhas/page.tsx
+
+## /api/org/[orgId]/crm/campanhas/[campaignId]/submit
+- app/org/_internal/core/(dashboard)/crm/campanhas/page.tsx
+
+## /api/org/[orgId]/crm/clientes
+- app/org/_internal/core/(dashboard)/crm/clientes/page.tsx
+
+## /api/org/[orgId]/crm/clientes/[customerId]
+- app/org/_internal/core/(dashboard)/crm/clientes/[customerId]/page.tsx
+
+## /api/org/[orgId]/crm/clientes/[customerId]/notas
+- app/org/_internal/core/(dashboard)/crm/clientes/[customerId]/page.tsx
+
+## /api/org/[orgId]/crm/clientes/[customerId]/tags
+- app/org/_internal/core/(dashboard)/crm/clientes/[customerId]/page.tsx
+
+## /api/org/[orgId]/crm/config
+- app/org/[orgId]/policies/PoliciesToolClient.tsx
+- app/org/_internal/core/(dashboard)/crm/journeys/page.tsx
+
+## /api/org/[orgId]/crm/journeys
+- app/org/_internal/core/(dashboard)/crm/journeys/page.tsx
+
+## /api/org/[orgId]/crm/journeys/[id]
+- app/org/_internal/core/(dashboard)/crm/journeys/page.tsx
+
+## /api/org/[orgId]/crm/journeys/[id]/pause
+- app/org/_internal/core/(dashboard)/crm/journeys/page.tsx
+
+## /api/org/[orgId]/crm/journeys/[id]/publish
+- app/org/_internal/core/(dashboard)/crm/journeys/page.tsx
+
+## /api/org/[orgId]/crm/relatorios
+- app/org/_internal/core/(dashboard)/crm/relatorios/page.tsx
+
+## /api/org/[orgId]/crm/saved-views
+- app/org/_internal/core/(dashboard)/crm/clientes/page.tsx
+- app/org/_internal/core/(dashboard)/crm/segmentos/page.tsx
+
+## /api/org/[orgId]/crm/saved-views/[id]
+- app/org/_internal/core/(dashboard)/crm/clientes/page.tsx
+- app/org/_internal/core/(dashboard)/crm/segmentos/page.tsx
+
+## /api/org/[orgId]/crm/segmentos
+- app/org/_internal/core/(dashboard)/crm/campanhas/page.tsx
+- app/org/_internal/core/(dashboard)/crm/segmentos/page.tsx
+
+## /api/org/[orgId]/crm/segmentos/[segmentId]
+- app/org/_internal/core/(dashboard)/crm/segmentos/[segmentId]/page.tsx
+
+## /api/org/[orgId]/crm/segmentos/[segmentId]/preview
+- app/org/_internal/core/(dashboard)/crm/segmentos/[segmentId]/page.tsx
+
+## /api/org/[orgId]/dashboard/tools/visibility
+- app/org/_internal/core/DashboardClient.tsx
+
+## /api/org/[orgId]/events/[id]/attendees
 - app/org/[orgId]/check-in/OrgCheckInOperationsClient.tsx
 - app/org/_internal/core/(dashboard)/eventos/[id]/EventAttendeesPanel.tsx
 
-## /api/org/[param]/events/[param]/invite-token
+## /api/org/[orgId]/events/[id]/invite-token
 - lib/canonicalOrgUiEndpointRegistry.ts
 
-## /api/org/[param]/events/[param]/invites
+## /api/org/[orgId]/events/[id]/invites
 - app/org/_internal/core/(dashboard)/eventos/EventEditClient.tsx
 
-## /api/org/[param]/events/[param]/refund
+## /api/org/[orgId]/events/[id]/refund
 - app/org/_internal/core/(dashboard)/eventos/[id]/EventAttendeesPanel.tsx
 
-## /api/org/[param]/events/create
+## /api/org/[orgId]/events/create
 - app/org/_internal/core/(dashboard)/eventos/novo/page.tsx
 
-## /api/org/[param]/events/list
+## /api/org/[orgId]/events/list
+- app/components/checkin/CheckinScanner.tsx
 - app/org/[orgId]/check-in/OrgCheckInOperationsClient.tsx
-- app/org/_internal/core/(dashboard)/categorias/page.tsx
+- app/org/_internal/core/DashboardClient.tsx
 
-## /api/org/[param]/events/update
+## /api/org/[orgId]/events/summary
+- app/org/_internal/core/DashboardClient.tsx
+
+## /api/org/[orgId]/events/update
 - app/org/_internal/core/(dashboard)/eventos/EventEditClient.tsx
 - app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
+- app/org/_internal/core/DashboardClient.tsx
 
-## /api/org/[param]/faturacao
+## /api/org/[orgId]/faturacao
 - lib/canonicalOrgUiEndpointRegistry.ts
 
-## /api/org/[param]/finance/payouts/list
+## /api/org/[orgId]/finance/exports/fees
+- app/org/[orgId]/finance/FinanceToolClient.tsx
+
+## /api/org/[orgId]/finance/exports/ledger
+- app/org/[orgId]/finance/FinanceToolClient.tsx
+
+## /api/org/[orgId]/finance/exports/payouts
+- app/org/[orgId]/finance/FinanceToolClient.tsx
+
+## /api/org/[orgId]/finance/invoicing
+- app/org/_internal/core/DashboardClient.tsx
+
+## /api/org/[orgId]/finance/overview
+- app/org/[orgId]/finance/FinanceToolClient.tsx
+- app/org/_internal/core/DashboardClient.tsx
+
+## /api/org/[orgId]/finance/payouts/connect
+- app/org/_internal/core/DashboardClient.tsx
+
+## /api/org/[orgId]/finance/payouts/list
 - app/org/_internal/core/pagamentos/PayoutsPanel.tsx
 
-## /api/org/[param]/inscricoes
+## /api/org/[orgId]/finance/payouts/settings
+- app/org/_internal/core/DashboardClient.tsx
+
+## /api/org/[orgId]/finance/payouts/status
+- app/org/_internal/core/DashboardClient.tsx
+
+## /api/org/[orgId]/finance/payouts/summary
+- app/org/_internal/core/DashboardClient.tsx
+
+## /api/org/[orgId]/finance/reconciliation
+- app/org/[orgId]/finance/FinanceToolClient.tsx
+
+## /api/org/[orgId]/inscricoes
 - app/org/_internal/core/(dashboard)/inscricoes/page.tsx
 
-## /api/org/[param]/inscricoes/[param]
+## /api/org/[orgId]/inscricoes/[id]
 - app/org/_internal/core/(dashboard)/inscricoes/[id]/page.tsx
 - app/org/_internal/core/(dashboard)/inscricoes/page.tsx
 
-## /api/org/[param]/inscricoes/[param]/export
+## /api/org/[orgId]/inscricoes/[id]/export
 - app/org/_internal/core/(dashboard)/inscricoes/[id]/page.tsx
 
-## /api/org/[param]/inscricoes/[param]/submissions
+## /api/org/[orgId]/inscricoes/[id]/submissions
 - app/org/_internal/core/(dashboard)/inscricoes/[id]/page.tsx
 
-## /api/org/[param]/inscricoes/[param]/summary
+## /api/org/[orgId]/inscricoes/[id]/summary
 - app/org/_internal/core/(dashboard)/inscricoes/[id]/page.tsx
 
-## /api/org/[param]/loyalty/programa
+## /api/org/[orgId]/loyalty/programa
 - app/org/_internal/core/(dashboard)/crm/loyalty/page.tsx
 
-## /api/org/[param]/loyalty/recompensas
+## /api/org/[orgId]/loyalty/recompensas
 - app/org/_internal/core/(dashboard)/crm/loyalty/page.tsx
 
-## /api/org/[param]/loyalty/regras
+## /api/org/[orgId]/loyalty/regras
 - app/org/_internal/core/(dashboard)/crm/loyalty/page.tsx
 
-## /api/org/[param]/me
+## /api/org/[orgId]/marketing/overview
+- app/org/_internal/core/DashboardClient.tsx
+
+## /api/org/[orgId]/me
 - app/org/_internal/core/(dashboard)/eventos/EventEditClient.tsx
 - app/org/_internal/core/(dashboard)/eventos/novo/page.tsx
 - app/org/_internal/core/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx
@@ -788,81 +893,99 @@ Total endpoints referenced: 385
 - app/org/_internal/core/OrganizationDashboardShell.tsx
 - app/org/_internal/core/OrganizationTopBar.tsx
 
-## /api/org/[param]/pagamentos/invoices
+## /api/org/[orgId]/ops/feed
+- app/org/[orgId]/finance/FinanceToolClient.tsx
+- app/org/_internal/core/DashboardClient.tsx
+
+## /api/org/[orgId]/pagamentos/invoices
 - app/org/_internal/core/pagamentos/invoices/invoices-client.tsx
 
-## /api/org/[param]/policies
+## /api/org/[orgId]/policies
+- app/org/[orgId]/policies/PoliciesToolClient.tsx
 - app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
 
-## /api/org/[param]/promo
+## /api/org/[orgId]/policies/[id]
+- app/org/[orgId]/policies/PoliciesToolClient.tsx
+
+## /api/org/[orgId]/policies/padel
+- app/org/[orgId]/policies/PoliciesToolClient.tsx
+
+## /api/org/[orgId]/policies/store
+- app/org/[orgId]/policies/PoliciesToolClient.tsx
+
+## /api/org/[orgId]/promo
+- app/org/_internal/core/DashboardClient.tsx
 - app/org/_internal/core/promo/PromoCodesClient.tsx
 
-## /api/org/[param]/promo/[param]
+## /api/org/[orgId]/promo/[id]
 - app/org/_internal/core/promo/PromoCodesClient.tsx
 
-## /api/org/[param]/refunds/list
+## /api/org/[orgId]/refunds/list
 - app/org/_internal/core/pagamentos/RefundsPanel.tsx
 
-## /api/org/[param]/reservas
+## /api/org/[orgId]/reservas
+- app/org/[orgId]/calendar/_components/day/DayCalendarReadClient.tsx
+- app/org/_internal/core/(dashboard)/reservas/page.tsx
+- app/org/_internal/core/DashboardClient.tsx
+
+## /api/org/[orgId]/reservas/[id]/cancel
 - app/org/_internal/core/(dashboard)/reservas/page.tsx
 
-## /api/org/[param]/reservas/[param]/cancel
-- app/org/_internal/core/(dashboard)/reservas/page.tsx
-
-## /api/org/[param]/reservas/[param]/charges
+## /api/org/[orgId]/reservas/[id]/charges
 - app/org/_internal/core/(dashboard)/reservas/_components/BookingChargesPanel.tsx
 
-## /api/org/[param]/reservas/[param]/checkout
+## /api/org/[orgId]/reservas/[id]/checkout
 - app/org/_internal/core/(dashboard)/reservas/page.tsx
 
-## /api/org/[param]/reservas/[param]/invites
+## /api/org/[orgId]/reservas/[id]/invites
 - app/org/_internal/core/(dashboard)/reservas/page.tsx
 
-## /api/org/[param]/reservas/[param]/no-show
+## /api/org/[orgId]/reservas/[id]/no-show
 - app/org/_internal/core/(dashboard)/reservas/page.tsx
 
-## /api/org/[param]/reservas/[param]/participants
+## /api/org/[orgId]/reservas/[id]/participants
 - app/org/_internal/core/(dashboard)/reservas/page.tsx
 
-## /api/org/[param]/reservas/[param]/reschedule
+## /api/org/[orgId]/reservas/[id]/reschedule
 - app/org/_internal/core/(dashboard)/reservas/page.tsx
 
-## /api/org/[param]/reservas/[param]/split
+## /api/org/[orgId]/reservas/[id]/split
 - app/org/_internal/core/(dashboard)/reservas/page.tsx
 
-## /api/org/[param]/reservas/clientes
+## /api/org/[orgId]/reservas/clientes
 - app/org/_internal/core/(dashboard)/reservas/clientes/page.tsx
 - app/org/_internal/core/(dashboard)/reservas/page.tsx
 
-## /api/org/[param]/reservas/config
+## /api/org/[orgId]/reservas/config
 - app/[username]/_components/ReservasBookingClient.tsx
 - app/org/_internal/core/(dashboard)/reservas/page.tsx
 - app/org/_internal/core/(dashboard)/settings/page.tsx
 - lib/canonicalOrgUiEndpointRegistry.ts
 
-## /api/org/[param]/reservas/delays
+## /api/org/[orgId]/reservas/delays
 - app/org/_internal/core/(dashboard)/reservas/page.tsx
 
-## /api/org/[param]/reservas/disponibilidade
+## /api/org/[orgId]/reservas/disponibilidade
 - app/org/[orgId]/calendar/_components/WeekCalendarReadClient.tsx
 - app/org/[orgId]/calendar/_components/day/DayCalendarReadClient.tsx
-
-## /api/org/[param]/reservas/disponibilidade/changesets
 - app/org/_internal/core/(dashboard)/reservas/_components/AvailabilityEditor.tsx
 
-## /api/org/[param]/reservas/disponibilidade/changesets/[param]
+## /api/org/[orgId]/reservas/disponibilidade/changesets
+- app/org/_internal/core/(dashboard)/reservas/_components/AvailabilityEditor.tsx
+
+## /api/org/[orgId]/reservas/disponibilidade/changesets/[changeSetId]
 - app/org/[orgId]/bookings/availability/conflicts/[changeSetId]/page.tsx
 
-## /api/org/[param]/reservas/disponibilidade/changesets/[param]/apply
+## /api/org/[orgId]/reservas/disponibilidade/changesets/[changeSetId]/apply
 - app/org/[orgId]/bookings/availability/conflicts/[changeSetId]/page.tsx
 
-## /api/org/[param]/reservas/disponibilidade/changesets/[param]/cancel
+## /api/org/[orgId]/reservas/disponibilidade/changesets/[changeSetId]/cancel
 - app/org/[orgId]/bookings/availability/conflicts/[changeSetId]/page.tsx
 
-## /api/org/[param]/reservas/disponibilidade/changesets/[param]/conflicts/[param]/resolve
+## /api/org/[orgId]/reservas/disponibilidade/changesets/[changeSetId]/conflicts/[conflictId]/resolve
 - app/org/[orgId]/bookings/availability/conflicts/[changeSetId]/page.tsx
 
-## /api/org/[param]/reservas/profissionais
+## /api/org/[orgId]/reservas/profissionais
 - app/org/[orgId]/bookings/availability/page.tsx
 - app/org/[orgId]/calendar/_components/WeekCalendarReadClient.tsx
 - app/org/[orgId]/calendar/_components/day/DayCalendarReadClient.tsx
@@ -870,74 +993,202 @@ Total endpoints referenced: 385
 - app/org/_internal/core/(dashboard)/reservas/page.tsx
 - app/org/_internal/core/(dashboard)/reservas/profissionais/page.tsx
 
-## /api/org/[param]/reservas/profissionais/[param]
+## /api/org/[orgId]/reservas/profissionais/[id]
 - app/org/_internal/core/(dashboard)/reservas/profissionais/page.tsx
 
-## /api/org/[param]/reservas/recursos
+## /api/org/[orgId]/reservas/recursos
 - app/org/[orgId]/bookings/availability/page.tsx
+- app/org/[orgId]/calendar/_components/WeekCalendarReadClient.tsx
+- app/org/[orgId]/calendar/_components/day/DayCalendarReadClient.tsx
 - app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
 - app/org/_internal/core/(dashboard)/reservas/page.tsx
 - app/org/_internal/core/(dashboard)/reservas/recursos/page.tsx
 
-## /api/org/[param]/reservas/recursos/[param]
+## /api/org/[orgId]/reservas/recursos/[id]
 - app/org/_internal/core/(dashboard)/reservas/recursos/page.tsx
 
-## /api/org/[param]/servicos
+## /api/org/[orgId]/reservas/summary
+- app/org/_internal/core/DashboardClient.tsx
+
+## /api/org/[orgId]/servicos
 - app/org/[orgId]/calendar/_components/day/DayCalendarReadClient.tsx
 - app/org/_internal/core/(dashboard)/reservas/novo/page.tsx
 - app/org/_internal/core/(dashboard)/reservas/page.tsx
 - app/org/_internal/core/(dashboard)/reservas/servicos/page.tsx
+- app/org/_internal/core/DashboardClient.tsx
 
-## /api/org/[param]/servicos/[param]
+## /api/org/[orgId]/servicos/[id]
 - app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
 
-## /api/org/[param]/servicos/[param]/addons
+## /api/org/[orgId]/servicos/[id]/addons
 - app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
 
-## /api/org/[param]/servicos/[param]/addons/[param]
+## /api/org/[orgId]/servicos/[id]/addons/[addonId]
 - app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
 
-## /api/org/[param]/servicos/[param]/class-series
+## /api/org/[orgId]/servicos/[id]/class-series
 - app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
 
-## /api/org/[param]/servicos/[param]/class-series/[param]
+## /api/org/[orgId]/servicos/[id]/class-series/[seriesId]
 - app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
 
-## /api/org/[param]/servicos/[param]/class-sessions
+## /api/org/[orgId]/servicos/[id]/class-sessions
 - app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
 
-## /api/org/[param]/servicos/[param]/packages
+## /api/org/[orgId]/servicos/[id]/packages
 - app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
 
-## /api/org/[param]/servicos/[param]/packages/[param]
+## /api/org/[orgId]/servicos/[id]/packages/[packageId]
 - app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
 
-## /api/org/[param]/servicos/[param]/packs
+## /api/org/[orgId]/servicos/[id]/packs
 - app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
 
-## /api/org/[param]/servicos/[param]/packs/[param]
+## /api/org/[orgId]/servicos/[id]/packs/[packId]
 - app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
 
-## /api/org/[param]/store
+## /api/org/[orgId]/store
 - app/org/[orgId]/store/OrgStoreToolClient.tsx
 
-## /api/org/[param]/tournaments/blocks/bulk
+## /api/org/[orgId]/store/bundles
+- app/org/[orgId]/store/OrgStoreToolClient.tsx
+- components/store/StoreBundleItemsPanel.tsx
+- components/store/StoreBundlesPanel.tsx
+
+## /api/org/[orgId]/store/bundles/[id]
+- components/store/StoreBundlesPanel.tsx
+
+## /api/org/[orgId]/store/bundles/[id]/items
+- components/store/StoreBundleItemsPanel.tsx
+- components/store/StoreBundlesPanel.tsx
+
+## /api/org/[orgId]/store/bundles/[id]/items/[itemId]
+- components/store/StoreBundleItemsPanel.tsx
+
+## /api/org/[orgId]/store/categories
+- app/org/[orgId]/store/OrgStoreToolClient.tsx
+- components/store/StoreCategoriesPanel.tsx
+- components/store/StoreProductsPanel.tsx
+
+## /api/org/[orgId]/store/categories/[id]
+- components/store/StoreCategoriesPanel.tsx
+
+## /api/org/[orgId]/store/orders
+- app/org/[orgId]/store/OrgStoreToolClient.tsx
+- components/store/StoreOrdersPanel.tsx
+
+## /api/org/[orgId]/store/orders/[orderId]
+- components/store/StoreOrdersPanel.tsx
+
+## /api/org/[orgId]/store/orders/[orderId]/shipments
+- components/store/StoreOrdersPanel.tsx
+
+## /api/org/[orgId]/store/overview
+- app/org/[orgId]/store/OrgStoreToolClient.tsx
+- components/store/StoreOverviewPanel.tsx
+
+## /api/org/[orgId]/store/preview
+- app/org/[orgId]/store/OrgStoreToolClient.tsx
+
+## /api/org/[orgId]/store/products
+- app/org/[orgId]/store/OrgStoreToolClient.tsx
+- components/store/StoreProductDigitalAssetsPanel.tsx
+- components/store/StoreProductImagesPanel.tsx
+- components/store/StoreProductOptionValuesPanel.tsx
+- components/store/StoreProductOptionsPanel.tsx
+- components/store/StoreProductVariantsPanel.tsx
+- components/store/StoreProductsPanel.tsx
+
+## /api/org/[orgId]/store/products/[id]
+- components/store/StoreProductsPanel.tsx
+
+## /api/org/[orgId]/store/products/[id]/digital-assets
+- components/store/StoreProductDigitalAssetsPanel.tsx
+- components/store/StoreProductsPanel.tsx
+
+## /api/org/[orgId]/store/products/[id]/digital-assets/[assetId]
+- components/store/StoreProductDigitalAssetsPanel.tsx
+
+## /api/org/[orgId]/store/products/[id]/images
+- components/store/StoreProductImagesPanel.tsx
+- components/store/StoreProductsPanel.tsx
+
+## /api/org/[orgId]/store/products/[id]/images/[imageId]
+- components/store/StoreProductImagesPanel.tsx
+
+## /api/org/[orgId]/store/products/[id]/options
+- components/store/StoreProductOptionsPanel.tsx
+- components/store/StoreProductsPanel.tsx
+
+## /api/org/[orgId]/store/products/[id]/options/[optionId]
+- components/store/StoreProductOptionsPanel.tsx
+- components/store/StoreProductsPanel.tsx
+
+## /api/org/[orgId]/store/products/[id]/options/[optionId]/values
+- components/store/StoreProductOptionValuesPanel.tsx
+
+## /api/org/[orgId]/store/products/[id]/options/[optionId]/values/[valueId]
+- components/store/StoreProductOptionValuesPanel.tsx
+
+## /api/org/[orgId]/store/products/[id]/variants
+- components/store/StoreBundleItemsPanel.tsx
+- components/store/StoreProductVariantsPanel.tsx
+- components/store/StoreProductsPanel.tsx
+
+## /api/org/[orgId]/store/products/[id]/variants/[variantId]
+- components/store/StoreProductVariantsPanel.tsx
+- components/store/StoreProductsPanel.tsx
+
+## /api/org/[orgId]/store/shipments/[shipmentId]
+- components/store/StoreOrdersPanel.tsx
+
+## /api/org/[orgId]/store/shipping/methods/[methodId]
+- components/store/StoreShippingMethodsPanel.tsx
+- components/store/StoreShippingSettingsPanel.tsx
+
+## /api/org/[orgId]/store/shipping/methods/[methodId]/tiers
+- components/store/StoreShippingTiersPanel.tsx
+
+## /api/org/[orgId]/store/shipping/settings
+- app/org/[orgId]/store/OrgStoreToolClient.tsx
+- components/store/StoreShippingSettingsPanel.tsx
+
+## /api/org/[orgId]/store/shipping/tiers/[tierId]
+- components/store/StoreShippingTiersPanel.tsx
+
+## /api/org/[orgId]/store/shipping/zones
+- app/org/[orgId]/store/OrgStoreToolClient.tsx
+- components/store/StoreShippingMethodsPanel.tsx
+- components/store/StoreShippingSettingsPanel.tsx
+- components/store/StoreShippingTiersPanel.tsx
+- components/store/StoreShippingZonesPanel.tsx
+
+## /api/org/[orgId]/store/shipping/zones/[zoneId]
+- components/store/StoreShippingSettingsPanel.tsx
+- components/store/StoreShippingZonesPanel.tsx
+
+## /api/org/[orgId]/store/shipping/zones/[zoneId]/methods
+- components/store/StoreShippingMethodsPanel.tsx
+- components/store/StoreShippingSettingsPanel.tsx
+- components/store/StoreShippingTiersPanel.tsx
+
+## /api/org/[orgId]/tournaments/blocks/bulk
 - lib/canonicalOrgUiEndpointRegistry.ts
 
-## /api/org/[param]/tournaments/blocks/overrides
+## /api/org/[orgId]/tournaments/blocks/overrides
 - lib/canonicalOrgUiEndpointRegistry.ts
 
-## /api/org/[param]/tournaments/create
+## /api/org/[orgId]/tournaments/create
 - app/org/_internal/core/(dashboard)/eventos/novo/page.tsx
 - app/org/_internal/core/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx
 
-## /api/org/[param]/trainers/profile
+## /api/org/[orgId]/trainers/profile
 - app/org/_internal/core/(dashboard)/treinadores/page.tsx
 
-## /api/org/[param]/username
+## /api/org/[orgId]/username
 - app/org/_internal/core/(dashboard)/settings/page.tsx
 
-## /api/org/[param]/venues/recent
+## /api/org/[orgId]/venues/recent
 - lib/canonicalOrgUiEndpointRegistry.ts
 
 ## /api/organizations/search
@@ -951,7 +1202,7 @@ Total endpoints referenced: 385
 ## /api/padel/calendar/auto-schedule
 - app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
 
-## /api/padel/calendar/auto-schedule/runs/[param]
+## /api/padel/calendar/auto-schedule/runs/[runId]
 - app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
 
 ## /api/padel/calendar/auto-schedule/undo
@@ -980,19 +1231,19 @@ Total endpoints referenced: 385
 - app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
 - app/org/_internal/core/(dashboard)/reservas/page.tsx
 
-## /api/padel/clubs/[param]/courts
+## /api/padel/clubs/[id]/courts
 - app/org/_internal/core/(dashboard)/eventos/novo/page.tsx
 - app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
 - app/org/_internal/core/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx
 - app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
 - app/org/_internal/core/(dashboard)/reservas/page.tsx
 
-## /api/padel/clubs/[param]/staff
+## /api/padel/clubs/[id]/staff
 - app/org/_internal/core/(dashboard)/eventos/novo/page.tsx
 - app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
 - app/org/_internal/core/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx
 
-## /api/padel/clubs/[param]/staff/invites
+## /api/padel/clubs/[id]/staff/invites
 - app/convites/organizacoes/OrganizationInvitesClient.tsx
 - app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
 - app/social/page.tsx
@@ -1016,28 +1267,28 @@ Total endpoints referenced: 385
 - app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
 - apps/mobile/features/tournaments/api.ts
 
-## /api/padel/matches/[param]/dispute
+## /api/padel/matches/[id]/dispute
 - app/[username]/padel/PadelDisputeButton.tsx
 - app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
 - app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
 
-## /api/padel/matches/[param]/result/[param]
+## /api/padel/matches/[id]/result/confirm
+- app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
+
+## /api/padel/matches/[id]/result/override
 - app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
 
-## /api/padel/matches/[param]/result/confirm
+## /api/padel/matches/[id]/result/reject
 - app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
 
-## /api/padel/matches/[param]/result/reject
+## /api/padel/matches/[id]/result/reset-pending
 - app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
 
-## /api/padel/matches/[param]/result/reset-pending
-- app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
-
-## /api/padel/matches/[param]/result/submit
+## /api/padel/matches/[id]/result/submit
 - app/[username]/padel/PadelResultSubmitCard.tsx
 - app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
 
-## /api/padel/matches/[param]/walkover
+## /api/padel/matches/[id]/walkover
 - app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
 
 ## /api/padel/matches/assign
@@ -1074,16 +1325,16 @@ Total endpoints referenced: 385
 - app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
 - apps/mobile/features/tournaments/api.ts
 
-## /api/padel/pairings/[param]/accept
+## /api/padel/pairings/[id]/accept
 - apps/mobile/features/tournaments/api.ts
 
-## /api/padel/pairings/[param]/checkout
+## /api/padel/pairings/[id]/checkout
 - apps/mobile/features/checkout/api.ts
 
-## /api/padel/pairings/[param]/decline
+## /api/padel/pairings/[id]/decline
 - apps/mobile/features/tournaments/api.ts
 
-## /api/padel/pairings/claim/[param]
+## /api/padel/pairings/claim/[token]
 - app/eventos/[slug]/EventPageClient.tsx
 
 ## /api/padel/pairings/invite-status
@@ -1097,13 +1348,19 @@ Total endpoints referenced: 385
 ## /api/padel/partnerships/agreements
 - app/org/_internal/core/(dashboard)/padel/parcerias/PartnershipsPageClient.tsx
 
-## /api/padel/partnerships/agreements/[param]/[param]
+## /api/padel/partnerships/agreements/[id]/approve
 - app/org/_internal/core/(dashboard)/padel/parcerias/[agreementId]/PartnershipWorkspaceClient.tsx
 
-## /api/padel/partnerships/agreements/[param]/grants
+## /api/padel/partnerships/agreements/[id]/grants
 - app/org/_internal/core/(dashboard)/padel/parcerias/[agreementId]/PartnershipWorkspaceClient.tsx
 
-## /api/padel/partnerships/agreements/[param]/windows
+## /api/padel/partnerships/agreements/[id]/pause
+- app/org/_internal/core/(dashboard)/padel/parcerias/[agreementId]/PartnershipWorkspaceClient.tsx
+
+## /api/padel/partnerships/agreements/[id]/revoke
+- app/org/_internal/core/(dashboard)/padel/parcerias/[agreementId]/PartnershipWorkspaceClient.tsx
+
+## /api/padel/partnerships/agreements/[id]/windows
 - app/org/_internal/core/(dashboard)/padel/parcerias/[agreementId]/PartnershipWorkspaceClient.tsx
 
 ## /api/padel/partnerships/compensation-cases
@@ -1115,14 +1372,20 @@ Total endpoints referenced: 385
 ## /api/padel/partnerships/overrides
 - app/org/_internal/core/(dashboard)/padel/parcerias/[agreementId]/PartnershipWorkspaceClient.tsx
 
-## /api/padel/partnerships/overrides/[param]/execute
+## /api/padel/partnerships/overrides/[id]/execute
 - app/org/_internal/core/(dashboard)/padel/parcerias/[agreementId]/PartnershipWorkspaceClient.tsx
 
 ## /api/padel/partnerships/tournament-requests
 - app/org/_internal/core/(dashboard)/padel/parcerias/PartnershipsPageClient.tsx
 
-## /api/padel/partnerships/tournament-requests/[param]/[param]
+## /api/padel/partnerships/tournament-requests/[id]/approve
 - app/org/_internal/core/(dashboard)/padel/parcerias/PartnershipsPageClient.tsx
+
+## /api/padel/partnerships/tournament-requests/[id]/reject
+- app/org/_internal/core/(dashboard)/padel/parcerias/PartnershipsPageClient.tsx
+
+## /api/padel/partnerships/workspace/[id]/calendar
+- app/org/_internal/core/(dashboard)/padel/parcerias/[agreementId]/PartnershipWorkspaceClient.tsx
 
 ## /api/padel/players
 - app/org/_internal/core/(dashboard)/padel/PadelHubSection.tsx
@@ -1131,6 +1394,7 @@ Total endpoints referenced: 385
 - app/org/_internal/core/(dashboard)/eventos/novo/page.tsx
 
 ## /api/padel/public/live
+- app/eventos/[slug]/PadelMatchesByCategoryClient.tsx
 - app/eventos/[slug]/monitor/MonitorClient.tsx
 
 ## /api/padel/public/open-pairings
@@ -1155,7 +1419,7 @@ Total endpoints referenced: 385
 ## /api/padel/teams
 - app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
 
-## /api/padel/teams/[param]/invites
+## /api/padel/teams/[id]/invites
 - app/convites/organizacoes/OrganizationInvitesClient.tsx
 - app/social/page.tsx
 - apps/mobile/features/notifications/api.ts
@@ -1202,9 +1466,6 @@ Total endpoints referenced: 385
 ## /api/public/profile/events
 - apps/mobile/features/profile/api.ts
 
-## /api/public/store
-- apps/mobile/lib/api.ts
-
 ## /api/public/store/bundles
 - apps/mobile/features/store/api.ts
 
@@ -1218,7 +1479,7 @@ Total endpoints referenced: 385
 - apps/mobile/features/store/api.ts
 - components/storefront/StorefrontBundleCard.tsx
 
-## /api/public/store/cart/bundles/[param]
+## /api/public/store/cart/bundles/[bundleKey]
 - apps/mobile/features/store/api.ts
 - components/storefront/StorefrontCartClient.tsx
 - components/storefront/StorefrontCartOverlay.tsx
@@ -1228,7 +1489,7 @@ Total endpoints referenced: 385
 - components/storefront/StorefrontCartOverlay.tsx
 - components/storefront/StorefrontProductClient.tsx
 
-## /api/public/store/cart/items/[param]
+## /api/public/store/cart/items/[itemId]
 - apps/mobile/features/store/api.ts
 - components/storefront/StorefrontCartClient.tsx
 - components/storefront/StorefrontCartOverlay.tsx
@@ -1279,7 +1540,7 @@ Total endpoints referenced: 385
 ## /api/public/store/shipping/quote
 - apps/mobile/features/store/api.ts
 
-## /api/qr/[param]
+## /api/qr/[token]
 - app/components/tickets/TicketCard.tsx
 - app/components/tickets/TicketDynamicQr.tsx
 - app/components/tickets/TicketQrBox.tsx
@@ -1287,30 +1548,27 @@ Total endpoints referenced: 385
 ## /api/search
 - lib/globalSearch.ts
 
-## /api/servicos/[param]
+## /api/servicos/[id]
 - apps/mobile/features/services/api.ts
 
-## /api/servicos/[param]/calendario
+## /api/servicos/[id]/calendario
 - app/[username]/_components/ReservasBookingClient.tsx
 - app/me/reservas/page.tsx
 - apps/mobile/app/service/[id]/booking.tsx
 
-## /api/servicos/[param]/checkout
+## /api/servicos/[id]/checkout
 - app/[username]/_components/ReservasBookingClient.tsx
 - apps/mobile/app/checkout/index.tsx
 
-## /api/servicos/[param]/reservar
+## /api/servicos/[id]/reservar
 - app/[username]/_components/ReservasBookingClient.tsx
 - apps/mobile/app/service/[id]/booking.tsx
 
 ## /api/servicos/list
 - app/descobrir/_explorar/ExplorarContent.tsx
 - app/servicos/page.tsx
+- apps/mobile/__tests__/discover-pagination.contract.test.ts
 - apps/mobile/features/discover/api.ts
-
-## /api/social/[param]
-- app/components/mobile/MobileProfileOverview.tsx
-- app/components/profile/ProfileHeader.tsx
 
 ## /api/social/feed
 - apps/mobile/features/social/api.ts
@@ -1332,10 +1590,8 @@ Total endpoints referenced: 385
 - app/social/page.tsx
 - apps/mobile/features/network/api.ts
 
-## /api/social/follow-requests/[param]
-- app/social/page.tsx
-
 ## /api/social/follow-requests/accept
+- app/social/page.tsx
 - apps/mobile/features/network/api.ts
 
 ## /api/social/follow-requests/cancel
@@ -1344,6 +1600,7 @@ Total endpoints referenced: 385
 - app/social/page.tsx
 
 ## /api/social/follow-requests/decline
+- app/social/page.tsx
 - apps/mobile/features/network/api.ts
 
 ## /api/social/follow-status

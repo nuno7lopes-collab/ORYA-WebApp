@@ -1013,7 +1013,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                                 onChange={(e) =>
                                   handlePermissionUpdate(selectedMember.userId, moduleKey, e.target.value)
                                 }
-                                className="rounded-full border border-white/15 bg-black/40 px-4 py-2 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,0.35)] outline-none focus:border-[#6BFFFF] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)] disabled:opacity-60"
+                                className="rounded-full border border-white/15 bg-black/40 px-4 py-2 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,0.35)] outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)] disabled:opacity-60"
                               >
                                 <option value="DEFAULT">Por defeito ({ACCESS_LABELS[baseLevel]})</option>
                                 <option value="NONE">Sem acesso</option>
@@ -1070,7 +1070,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                                         perm.scopeId,
                                       )
                                     }
-                                    className="rounded-full border border-white/15 bg-black/40 px-4 py-2 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,0.35)] outline-none focus:border-[#6BFFFF] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)] disabled:opacity-60"
+                                    className="rounded-full border border-white/15 bg-black/40 px-4 py-2 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,0.35)] outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)] disabled:opacity-60"
                                   >
                                     <option value="DEFAULT">Remover</option>
                                     <option value="VIEW">Ver</option>
@@ -1085,7 +1085,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                           <select
                             value={scopeDraftType}
                             onChange={(e) => setScopeDraftType(e.target.value)}
-                            className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)]"
+                            className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
                           >
                             <option value="COURT">COURT</option>
                             <option value="RESOURCE">RESOURCE</option>
@@ -1095,12 +1095,12 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                             value={scopeDraftId}
                             onChange={(e) => setScopeDraftId(e.target.value)}
                             placeholder="ID"
-                            className="min-w-[120px] flex-1 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)]"
+                            className="min-w-[120px] flex-1 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
                           />
                           <select
                             value={scopeDraftLevel}
                             onChange={(e) => setScopeDraftLevel(e.target.value)}
-                            className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)]"
+                            className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
                           >
                             <option value="VIEW">Ver</option>
                             <option value="EDIT">Editar</option>
@@ -1301,7 +1301,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                         value={m.role}
                         disabled={roleDisabled || memberActionLoading === m.userId}
                         onChange={(e) => handleRoleChange(m, e.target.value as MemberRole)}
-                        className="rounded-full border border-white/15 bg-black/40 px-4 py-2 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,0.35)] outline-none focus:border-[#6BFFFF] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)] disabled:opacity-60"
+                        className="rounded-full border border-white/15 bg-black/40 px-4 py-2 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,0.35)] outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)] disabled:opacity-60"
                       >
                         <option value="OWNER" disabled={!canAssignRole(viewerRole, m.role, "OWNER")}>
                           Dono
@@ -1328,7 +1328,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                             const nextPack = value ? (value as OrganizationRolePack) : null;
                             applyRoleChange(m.userId, m.role, nextPack);
                           }}
-                          className="rounded-full border border-white/15 bg-black/40 px-4 py-2 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,0.35)] outline-none focus:border-[#6BFFFF] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)] disabled:opacity-60"
+                          className="rounded-full border border-white/15 bg-black/40 px-4 py-2 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,0.35)] outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)] disabled:opacity-60"
                         >
                           <option value="" disabled>
                             Selecionar pacote
@@ -1546,7 +1546,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                   type="text"
                   value={inviteIdentifier}
                   onChange={(e) => setInviteIdentifier(e.target.value)}
-                  className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                  className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
                   placeholder="email@dominio.com ou @username"
                 />
               </div>
@@ -1555,7 +1555,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                 <select
                   value={inviteRole}
                   onChange={(e) => setInviteRole(e.target.value as MemberRole)}
-                  className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                  className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
                 >
                   <option value="OWNER" disabled={!canAssignRole(viewerRole, inviteRole, "OWNER")}>
                     Dono
@@ -1583,7 +1583,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                       const value = e.target.value.trim();
                       setInviteRolePack(value ? (value as OrganizationRolePack) : null);
                     }}
-                    className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                    className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
                   >
                     {getRolePackOptions(inviteRole).map((pack) => (
                       <option key={pack} value={pack}>
@@ -1633,7 +1633,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                   type="text"
                   value={transferTarget}
                   onChange={(e) => setTransferTarget(e.target.value)}
-                  className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                  className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
                   placeholder="@destino ou email@dominio.com"
                 />
               </div>
@@ -1643,7 +1643,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                   type="text"
                   value={transferConfirm}
                   onChange={(e) => setTransferConfirm(e.target.value)}
-                  className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                  className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
                   placeholder="Escreve novamente para confirmar"
                 />
               </div>

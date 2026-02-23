@@ -77,7 +77,6 @@ describe("finance read-model guardrails", () => {
         "rg -n",
         "\"purchaseId\\\\s*=.*Date\\\\.now\\\\(\"",
         "app/api/servicos/[id]/checkout/route.ts",
-        "app/api/servicos/[id]/creditos/checkout/route.ts",
         "app/api/org/[orgId]/reservas/[id]/checkout/route.ts",
         "domain/padelSecondCharge.ts",
         "-S",

@@ -215,7 +215,7 @@ export default function PartnershipsPageClient({ organizationId, embedded = fals
 
   const wrapperClass = embedded ? "space-y-4 text-white" : "mx-auto w-full max-w-6xl space-y-5 px-4 py-6 text-white";
   const sectionClass =
-    "rounded-2xl border border-white/12 bg-[linear-gradient(145deg,rgba(107,255,255,0.08),rgba(10,16,28,0.78))] p-4";
+    "rounded-2xl border border-white/12 bg-[linear-gradient(145deg,rgba(34,211,238,0.08),rgba(10,16,28,0.78))] p-4";
 
   return (
     <div className={wrapperClass}>

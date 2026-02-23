@@ -38,26 +38,6 @@ const REQUIRED_MARKERS = [
   "requireAdminUser",
 ];
 
-function isLegacyTombstoneRoute(content) {
-  const hasLegacyGoneHandler = /function\s+legacyGone\s*\(/.test(content);
-  const hasRemovedMessage = /Endpoint legado removido\./.test(content);
-  const hasGoneStatusLiteral = /\{\s*status:\s*410\s*\}/.test(content);
-  if (hasLegacyGoneHandler && hasRemovedMessage && hasGoneStatusLiteral) return true;
-
-  const hasGoneStatusVariable = /\bconst\s+status\s*=\s*410\b/.test(content);
-  const hasGoneStatus = hasGoneStatusLiteral || hasGoneStatusVariable;
-  if (!hasGoneStatus) return false;
-
-  // Legacy tombstones can be represented either by explicit LEGACY_ROUTE_REMOVED
-  // payloads or by a generic GONE envelope with migration copy.
-  const hasLegacyRemovedCode = /LEGACY_ROUTE_REMOVED/.test(content);
-  if (hasLegacyRemovedCode) return true;
-
-  const hasGoneErrorCode = /errorCode:\s*"GONE"/.test(content) || /errorCodeForStatus\(status\)/.test(content);
-  const hasMigrationCopy = /foram movidas para|legado removido/i.test(content);
-  return hasGoneErrorCode && hasMigrationCopy;
-}
-
 function listFiles(dir) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   const files = [];
@@ -80,7 +60,6 @@ for (const file of files) {
   const rel = path.relative(ROOT, file);
   if (ALLOWLIST.has(rel)) continue;
   const content = fs.readFileSync(file, "utf8");
-  if (isLegacyTombstoneRoute(content)) continue;
   const hasMarker = REQUIRED_MARKERS.some((marker) => content.includes(marker));
   if (!hasMarker) {
     violations.push(rel);

@@ -195,6 +195,21 @@ export default function Step2Pagamento() {
     safeDados?.additional && typeof safeDados.additional === "object"
       ? (safeDados.additional as Record<string, unknown>).ticketTypeId
       : undefined;
+  const pairingCategoryLinkIdRaw =
+    safeDados?.additional && typeof safeDados.additional === "object"
+      ? (safeDados.additional as Record<string, unknown>).padelCategoryLinkId
+      : undefined;
+  const pairingCategoryLinkId =
+    typeof pairingCategoryLinkIdRaw === "number" && Number.isFinite(pairingCategoryLinkIdRaw)
+      ? pairingCategoryLinkIdRaw
+      : safeDados?.additional && typeof safeDados.additional === "object"
+        ? (() => {
+            const meta = (safeDados.additional as Record<string, unknown>).padelMeta;
+            if (!meta || typeof meta !== "object") return undefined;
+            const categoryLink = (meta as Record<string, unknown>).categoryLinkId;
+            return typeof categoryLink === "number" && Number.isFinite(categoryLink) ? categoryLink : undefined;
+          })()
+        : undefined;
   const inviteToken =
     safeDados?.additional && typeof safeDados.additional === "object"
       ? (safeDados.additional as Record<string, unknown>).inviteToken
@@ -382,7 +397,13 @@ export default function Step2Pagamento() {
       slotId: typeof pairingSlotId === "number" ? pairingSlotId : undefined,
       ticketTypeId: typeof pairingTicketTypeId === "number" ? pairingTicketTypeId : undefined,
       padelCategoryLinkId:
-        isPadelFlow && typeof pairingTicketTypeId === "number" ? pairingTicketTypeId : undefined,
+        isPadelFlow
+          ? typeof pairingCategoryLinkId === "number"
+            ? pairingCategoryLinkId
+            : typeof pairingTicketTypeId === "number"
+              ? pairingTicketTypeId
+              : undefined
+          : undefined,
       sourceType: isPadelFlow ? "PADEL_REGISTRATION" : undefined,
       eventId: safeDados.eventId ? Number(safeDados.eventId) : undefined,
       inviteToken: typeof inviteToken === "string" && inviteToken.trim() ? inviteToken.trim() : undefined,
@@ -394,6 +415,7 @@ export default function Step2Pagamento() {
     paymentMethod,
     pairingId,
     pairingSlotId,
+    pairingCategoryLinkId,
     pairingTicketTypeId,
     inviteToken,
     checkoutVariant,

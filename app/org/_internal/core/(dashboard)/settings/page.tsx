@@ -947,7 +947,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
                 disabled={!isOwnerOrCoOwner || officialEmailSaving || isOrganizationSuspended}
                 className={`w-full rounded-xl border bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35 ${
                   isOwnerOrCoOwner && !isOrganizationSuspended
-                    ? "border-white/20 hover:border-white/35 focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]/40"
+                    ? "border-white/20 hover:border-white/35 focus:border-[#22D3EE] focus:ring-1 focus:ring-[#22D3EE]/40"
                     : "cursor-not-allowed border-white/10 text-white/60"
                 }`}
                 placeholder="equipa@organização.pt"
@@ -1025,7 +1025,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
                 setOrgFormDirty(true);
               }}
               type="email"
-              className="w-full rounded-xl border border-white/15 bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35 hover:border-white/30 focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]/40"
+              className="w-full rounded-xl border border-white/15 bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35 hover:border-white/30 focus:border-[#22D3EE] focus:ring-1 focus:ring-[#22D3EE]/40"
               placeholder="suporte@organizacao.pt"
               disabled={!canEditOperational}
             />
@@ -1050,7 +1050,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
               className={`w-full rounded-xl border bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35 ${
                 supportPhoneError
                   ? "border-red-400/60 focus:border-red-300/80 focus:ring-1 focus:ring-red-300/40"
-                  : "border-white/15 hover:border-white/30 focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]/40"
+                  : "border-white/15 hover:border-white/30 focus:border-[#22D3EE] focus:ring-1 focus:ring-[#22D3EE]/40"
               }`}
               placeholder="+351912345678"
               disabled={!canEditOperational}
@@ -1079,7 +1079,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
               className={`w-full rounded-xl border bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35 ${
                 phoneError
                   ? "border-red-400/60 focus:border-red-300/80 focus:ring-1 focus:ring-red-300/40"
-                  : "border-white/15 hover:border-white/30 focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]/40"
+                  : "border-white/15 hover:border-white/30 focus:border-[#22D3EE] focus:ring-1 focus:ring-[#22D3EE]/40"
               }`}
               placeholder="+351912345678"
               disabled={!canEditOperational}
@@ -1113,7 +1113,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
                   setShowAddressPublicly(e.target.checked);
                   setOrgFormDirty(true);
                 }}
-                className="h-4 w-4 accent-[#6BFFFF]"
+                className="h-4 w-4 accent-[#22D3EE]"
                 disabled={!canEditOperational}
               />
               Mostrar na página pública
@@ -1145,7 +1145,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
               value={bookingGridMinutes}
               onChange={(event) => setBookingGridMinutes(event.target.value)}
               inputMode="numeric"
-              className="w-full rounded-xl border border-white/15 bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35 hover:border-white/30 focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]/40"
+              className="w-full rounded-xl border border-white/15 bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35 hover:border-white/30 focus:border-[#22D3EE] focus:ring-1 focus:ring-[#22D3EE]/40"
               placeholder="30"
               disabled={!canEditOperational}
             />
@@ -1172,7 +1172,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
                     disabled={!canEditOperational}
                     className={`rounded-full border px-3 py-2 text-[12px] transition ${
                       active
-                        ? "border-[#6BFFFF]/70 bg-[#6BFFFF]/15 text-white"
+                        ? "border-[#22D3EE]/70 bg-[#22D3EE]/15 text-white"
                         : "border-white/15 bg-white/5 text-white/70 hover:border-white/30 hover:bg-white/10"
                     }`}
                   >
@@ -1249,7 +1249,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
               disabled={!canEditPublicBranding}
               className={`w-full rounded-xl border bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35 ${
                 canEditPublicBranding
-                  ? "border-white/15 hover:border-white/30 focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]/40"
+                  ? "border-white/15 hover:border-white/30 focus:border-[#22D3EE] focus:ring-1 focus:ring-[#22D3EE]/40"
                   : "cursor-not-allowed border-white/10 text-white/60"
               }`}
               placeholder="Top Padel"
@@ -1434,7 +1434,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
             disabled={!canEditPublicProfile}
             className={`min-h-[90px] w-full rounded-xl border bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35 ${
               canEditPublicProfile
-                ? "border-white/15 hover:border-white/30 focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]/40"
+                ? "border-white/15 hover:border-white/30 focus:border-[#22D3EE] focus:ring-1 focus:ring-[#22D3EE]/40"
                 : "cursor-not-allowed border-white/10 text-white/60"
             }`}
             placeholder="Descrição pública da organização."
@@ -1453,7 +1453,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
               disabled={!canEditPublicProfile}
               className={`w-full rounded-xl border bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35 ${
                 canEditPublicProfile
-                  ? "border-white/15 hover:border-white/30 focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]/40"
+                  ? "border-white/15 hover:border-white/30 focus:border-[#22D3EE] focus:ring-1 focus:ring-[#22D3EE]/40"
                   : "cursor-not-allowed border-white/10 text-white/60"
               }`}
               placeholder="https://..."

@@ -55,6 +55,65 @@ type InvitePairing = {
   }>;
 };
 
+type PairingTicketType = {
+  id: number;
+  name: string;
+  price: number;
+  currency?: string | null;
+  padelCategoryId?: number | null;
+};
+
+function resolvePairingTicketSelection(params: {
+  waves: WaveTicket[];
+  ticketTypes: PairingTicketType[];
+  pairingCategoryId: number | null;
+  defaultPadelTicketId: number | null | undefined;
+  fallbackTicketLabel: string;
+}) {
+  const { waves, ticketTypes, pairingCategoryId, defaultPadelTicketId, fallbackTicketLabel } = params;
+  const hasPairingCategory = typeof pairingCategoryId === "number";
+  const wavesByCategory = hasPairingCategory
+    ? waves.filter((wave) => wave.padelCategoryId === pairingCategoryId)
+    : waves;
+  const purchasableByCategory = wavesByCategory.filter(
+    (wave) => wave.status === "on_sale" || wave.status === "upcoming",
+  );
+  const purchasable = waves.filter((wave) => wave.status === "on_sale" || wave.status === "upcoming");
+
+  const preferredWave =
+    typeof defaultPadelTicketId === "number"
+      ? wavesByCategory.find((wave) => Number(wave.id) === defaultPadelTicketId) ??
+        waves.find((wave) => Number(wave.id) === defaultPadelTicketId)
+      : null;
+
+  const selectedWave = preferredWave ?? purchasableByCategory[0] ?? wavesByCategory[0] ?? purchasable[0] ?? waves[0] ?? null;
+
+  const preferredTicketType =
+    (hasPairingCategory
+      ? ticketTypes.find((ticketType) => ticketType.padelCategoryId === pairingCategoryId)
+      : null) ??
+    (selectedWave?.padelCategoryLinkId
+      ? ticketTypes.find((ticketType) => ticketType.id === selectedWave.padelCategoryLinkId)
+      : null) ??
+    (typeof defaultPadelTicketId === "number"
+      ? ticketTypes.find((ticketType) => ticketType.id === defaultPadelTicketId)
+      : null) ??
+    ticketTypes[0] ??
+    null;
+
+  const ticketId = selectedWave ? Number(selectedWave.id) : preferredTicketType?.id ?? null;
+  const categoryLinkId = selectedWave?.padelCategoryLinkId ?? preferredTicketType?.id ?? null;
+  const unitPrice = selectedWave?.price ?? (typeof preferredTicketType?.price === "number" ? preferredTicketType.price : 0);
+  const ticketName = selectedWave?.name ?? preferredTicketType?.name ?? fallbackTicketLabel;
+
+  return {
+    ticketId,
+    categoryLinkId,
+    unitPrice,
+    ticketName,
+  };
+}
+
 export default function EventPageClient({
   slug,
   uiTickets,
@@ -223,41 +282,20 @@ export default function EventPageClient({
           throw new Error(t("inviteSlotMissing", locale));
         }
 
-        const ticketTypes: Array<{ id: number; name: string; price: number; currency?: string | null }> =
-          Array.isArray(json.ticketTypes) ? json.ticketTypes : [];
+        const ticketTypes: PairingTicketType[] = Array.isArray(json.ticketTypes) ? json.ticketTypes : [];
+        const pairingCategoryId =
+          typeof json?.pairing?.categoryId === "number" ? json.pairing.categoryId : null;
+        const ticketSelection = resolvePairingTicketSelection({
+          waves: fallbackWaves,
+          ticketTypes,
+          pairingCategoryId,
+          defaultPadelTicketId,
+          fallbackTicketLabel,
+        });
 
-        const preferredTicketId =
-          typeof defaultPadelTicketId === "number" && ticketTypes.some((t) => t.id === defaultPadelTicketId)
-            ? defaultPadelTicketId
-            : ticketTypes.length > 0
-              ? ticketTypes[0].id
-              : null;
-
-        const fallbackTicket =
-          typeof preferredTicketId === "number"
-            ? ticketTypes.find((t) => t.id === preferredTicketId) ?? ticketTypes[0]
-            : ticketTypes[0];
-
-        const ticketFromWaves =
-          typeof preferredTicketId === "number"
-            ? fallbackWaves.find((w) => Number(w.id) === preferredTicketId)
-            : null;
-
-        const ticketId = ticketFromWaves
-          ? Number(ticketFromWaves.id)
-          : fallbackTicket?.id ?? null;
-
-        if (!ticketId) {
+        if (!ticketSelection.ticketId) {
           throw new Error(t("invalidTicketForInvite", locale));
         }
-
-        const unitPrice =
-          ticketFromWaves?.price ??
-          (typeof fallbackTicket?.price === "number" ? fallbackTicket.price : 0);
-
-        const ticketName =
-          ticketFromWaves?.name ??
-          (fallbackTicket?.name || fallbackTicketLabel);
 
         const waves =
           fallbackWaves.length > 0
@@ -273,18 +311,17 @@ export default function EventPageClient({
                 endsAt: null,
                 available: true,
                 isVisible: true,
+                padelCategoryId: typeof t.padelCategoryId === "number" ? t.padelCategoryId : null,
+                padelCategoryLinkId: t.id,
               }));
 
         const quantity = pairingMode === "GROUP_FULL" ? 2 : 1;
-        const total = unitPrice * quantity;
-
-        const pairingCategoryId =
-          typeof json?.pairing?.categoryId === "number" ? json.pairing.categoryId : null;
+        const total = ticketSelection.unitPrice * quantity;
         const metaFromInvite = {
           eventId: pairing.eventId,
           organizationId: json.organizationId ?? null,
           categoryId: pairingCategoryId,
-          categoryLinkId: ticketFromWaves?.padelCategoryLinkId ?? null,
+          categoryLinkId: ticketSelection.categoryLinkId,
         };
 
         if (pendingSlot.paymentStatus === "PAID") {
@@ -298,24 +335,25 @@ export default function EventPageClient({
           padelMeta: metaFromInvite,
           pairingId: pairing.id,
           pairingSlotId: pendingSlot.id,
-          ticketTypeId: ticketId,
+          ticketTypeId: ticketSelection.ticketId,
+          padelCategoryLinkId: ticketSelection.categoryLinkId,
           inviteToken,
-          quantidades: { [ticketId]: quantity },
+          quantidades: { [ticketSelection.ticketId]: quantity },
           total,
           promoCode: promoParam ?? undefined,
         };
 
         abrirCheckout({
           slug,
-          ticketId: String(ticketId),
-          price: unitPrice,
-          ticketName,
+          ticketId: String(ticketSelection.ticketId),
+          price: ticketSelection.unitPrice,
+          ticketName: ticketSelection.ticketName,
           eventId: String(pairing.eventId),
           waves,
           additional,
           pairingId: pairing.id,
           pairingSlotId: pendingSlot.id,
-          ticketTypeId: ticketId,
+          ticketTypeId: ticketSelection.ticketId,
         });
         atualizarDados({
           paymentScenario: pairingMode,
@@ -381,27 +419,20 @@ export default function EventPageClient({
           return;
         }
 
-        const ticketTypes: Array<{ id: number; name: string; price: number; currency?: string | null }> =
-          Array.isArray(json.ticketTypes) ? json.ticketTypes : [];
-        const preferredTicketId =
-          typeof defaultPadelTicketId === "number" && ticketTypes.some((t) => t.id === defaultPadelTicketId)
-            ? defaultPadelTicketId
-            : ticketTypes.length > 0
-              ? ticketTypes[0].id
-              : null;
-        const fallbackTicket =
-          typeof preferredTicketId === "number"
-            ? ticketTypes.find((t) => t.id === preferredTicketId) ?? ticketTypes[0]
-            : ticketTypes[0];
+        const ticketTypes: PairingTicketType[] = Array.isArray(json.ticketTypes) ? json.ticketTypes : [];
+        const pairingCategoryId =
+          typeof pairing.categoryId === "number" ? pairing.categoryId : null;
+        const ticketSelection = resolvePairingTicketSelection({
+          waves: fallbackWaves,
+          ticketTypes,
+          pairingCategoryId,
+          defaultPadelTicketId,
+          fallbackTicketLabel,
+        });
 
-        const ticketId = fallbackTicket?.id ?? null;
-        if (!ticketId) {
+        if (!ticketSelection.ticketId) {
           throw new Error(t("invalidTicketForCheckout", locale));
         }
-
-        const unitPrice =
-          typeof fallbackTicket?.price === "number" ? fallbackTicket.price : 0;
-        const ticketName = fallbackTicket?.name || fallbackTicketLabel;
         const waves =
           fallbackWaves.length > 0
             ? fallbackWaves
@@ -416,6 +447,8 @@ export default function EventPageClient({
                 endsAt: null,
                 available: true,
                 isVisible: true,
+                padelCategoryId: typeof t.padelCategoryId === "number" ? t.padelCategoryId : null,
+                padelCategoryLinkId: t.id,
               }));
 
         const pairingMode = pairing.paymentMode === "FULL" ? "GROUP_FULL" : "GROUP_SPLIT";
@@ -425,7 +458,7 @@ export default function EventPageClient({
           eventId: pairing.eventId,
           organizationId: json.padelEvent?.organizationId ?? padelMeta?.organizationId ?? null,
           categoryId: pairing.categoryId ?? padelMeta?.categoryId ?? null,
-          categoryLinkId: null,
+          categoryLinkId: ticketSelection.categoryLinkId,
         };
 
         const additional = {
@@ -433,23 +466,24 @@ export default function EventPageClient({
           padelMeta: metaFromPairing,
           pairingId: pairing.id,
           pairingSlotId: pendingSlot.id,
-          ticketTypeId: ticketId,
-          quantidades: { [ticketId]: quantity },
-          total: unitPrice * quantity,
+          ticketTypeId: ticketSelection.ticketId,
+          padelCategoryLinkId: ticketSelection.categoryLinkId,
+          quantidades: { [ticketSelection.ticketId]: quantity },
+          total: ticketSelection.unitPrice * quantity,
           promoCode: promoParam ?? undefined,
         };
 
         abrirCheckout({
           slug,
-          ticketId: String(ticketId),
-          price: unitPrice,
-          ticketName,
+          ticketId: String(ticketSelection.ticketId),
+          price: ticketSelection.unitPrice,
+          ticketName: ticketSelection.ticketName,
           eventId: String(pairing.eventId),
           waves,
           additional,
           pairingId: pairing.id,
           pairingSlotId: pendingSlot.id,
-          ticketTypeId: ticketId,
+          ticketTypeId: ticketSelection.ticketId,
         });
         atualizarDados({
           paymentScenario: pairingMode,

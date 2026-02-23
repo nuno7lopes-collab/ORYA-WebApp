@@ -260,9 +260,9 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
             handleCardClick();
           }
         }}
-        className={`group flex min-h-[214px] cursor-pointer flex-col justify-between rounded-3xl border p-5 shadow-[0_16px_52px_rgba(0,0,0,0.42)] transition hover:-translate-y-[2px] hover:border-[#6BFFFF]/45 hover:bg-white/[0.09] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/65 ${
+        className={`group flex min-h-[214px] cursor-pointer flex-col justify-between rounded-3xl border p-5 shadow-[0_16px_52px_rgba(0,0,0,0.42)] transition hover:-translate-y-[2px] hover:border-[#22D3EE]/45 hover:bg-white/[0.09] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/65 ${
           isActive
-            ? "border-[#6BFFFF]/60 bg-[linear-gradient(160deg,rgba(23,52,88,0.45),rgba(8,16,34,0.65))]"
+            ? "border-[#22D3EE]/60 bg-[linear-gradient(160deg,rgba(23,52,88,0.45),rgba(8,16,34,0.65))]"
             : "border-white/14 bg-[linear-gradient(160deg,rgba(12,20,36,0.52),rgba(7,11,21,0.45))]"
         }`}
       >
@@ -284,7 +284,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
               </div>
             </div>
             {isActive && (
-              <span className="rounded-full border border-[#6BFFFF]/65 bg-[#6BFFFF]/16 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#CCFCFF]">
+              <span className="rounded-full border border-[#22D3EE]/65 bg-[#22D3EE]/16 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#CCFCFF]">
                 Ativa
               </span>
             )}
@@ -312,7 +312,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
                 handleCardClick();
               }}
               disabled={loadingSwitch}
-              className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55 disabled:opacity-60"
+              className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55 disabled:opacity-60"
             >
               {isActive ? "Entrar" : "Ativar e entrar"}
             </button>
@@ -322,7 +322,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
                 event.stopPropagation();
                 router.push(groupHref);
               }}
-              className="rounded-full border border-white/20 bg-white/8 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/80 transition hover:bg-white/14 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55"
+              className="rounded-full border border-white/20 bg-white/8 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/80 transition hover:bg-white/14 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55"
             >
               Abrir grupo
             </button>
@@ -353,7 +353,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
             <button
               type="button"
               onClick={() => router.push(buildOrgHubHref("/groups"))}
-              className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55"
+              className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55"
             >
               Gestão de grupos
             </button>
@@ -375,7 +375,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
               <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Exit pendente</p>
               <p className="mt-1 text-xl font-semibold">{summary.pendingExit}</p>
             </div>
-            <div className="rounded-2xl border border-[#6BFFFF]/32 bg-[#6BFFFF]/10 p-3">
+            <div className="rounded-2xl border border-[#22D3EE]/32 bg-[#22D3EE]/10 p-3">
               <p className="text-[10px] uppercase tracking-[0.2em] text-[#B5F9FF]">Ação tua</p>
               <p className="mt-1 text-xl font-semibold text-[#DEFDFF]">{summary.actionable}</p>
             </div>
@@ -417,7 +417,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
                     </div>
                     <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.16em]">
                       {group.viewerIsGroupOwner ? (
-                        <span className="rounded-full border border-[#6BFFFF]/55 bg-[#6BFFFF]/14 px-2.5 py-1 text-[#CCFCFF]">
+                        <span className="rounded-full border border-[#22D3EE]/55 bg-[#22D3EE]/14 px-2.5 py-1 text-[#CCFCFF]">
                           Gestão tua
                         </span>
                       ) : (
@@ -434,21 +434,21 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
                         type="button"
                         onClick={() => router.push(createInGroupHref)}
                         disabled={!group.viewerIsGroupOwner}
-                        className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         Nova org neste grupo
                       </button>
                       <button
                         type="button"
                         onClick={() => router.push(groupDashboardHref)}
-                        className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55"
+                        className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55"
                       >
                         Dashboard do grupo
                       </button>
                       <button
                         type="button"
                         onClick={() => router.push(buildOrgHubHref("/groups"))}
-                        className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55"
+                        className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55"
                       >
 	                        Governança
 	                      </button>
@@ -463,7 +463,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
             <button
               type="button"
               onClick={() => router.push(buildOrgHubHref("/create"))}
-              className="flex min-h-[190px] w-full flex-col justify-between rounded-3xl border border-dashed border-white/24 bg-white/6 p-5 text-left shadow-[0_16px_50px_rgba(0,0,0,0.35)] transition hover:-translate-y-[2px] hover:border-[#6BFFFF]/45 hover:bg-white/10"
+              className="flex min-h-[190px] w-full flex-col justify-between rounded-3xl border border-dashed border-white/24 bg-white/6 p-5 text-left shadow-[0_16px_50px_rgba(0,0,0,0.35)] transition hover:-translate-y-[2px] hover:border-[#22D3EE]/45 hover:bg-white/10"
             >
               <div className="space-y-3">
                 <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/20 bg-white/10 text-2xl font-bold">

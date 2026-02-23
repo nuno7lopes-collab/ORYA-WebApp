@@ -115,7 +115,7 @@ export default function CrmRelatoriosPage() {
                   </div>
                   <div className="h-2 overflow-hidden rounded-full bg-white/8">
                     <div
-                      className="h-full rounded-full bg-gradient-to-r from-[#6BFFFF]/65 via-[#7FE0FF]/55 to-[#6A7BFF]/60"
+                      className="h-full rounded-full bg-gradient-to-r from-[#22D3EE]/65 via-[#7FE0FF]/55 to-[#6A7BFF]/60"
                       style={{ width: `${percent}%` }}
                     />
                   </div>

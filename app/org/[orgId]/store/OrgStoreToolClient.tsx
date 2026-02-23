@@ -33,6 +33,12 @@ type StoreSnapshot = {
   updatedAt: string;
 };
 
+type StorePreviewCounts = {
+  total: number;
+  public: number;
+  draft: number;
+};
+
 type OrgStoreToolClientProps = {
   orgId: number;
 };
@@ -109,12 +115,14 @@ export default function OrgStoreToolClient({ orgId }: OrgStoreToolClientProps) {
   }, [orgId]);
 
   const [store, setStore] = useState<StoreSnapshot | null>(null);
+  const [previewCounts, setPreviewCounts] = useState<StorePreviewCounts | null>(null);
   const [loadingStore, setLoadingStore] = useState(false);
   const [storeError, setStoreError] = useState<string | null>(null);
 
   const loadStore = useCallback(async () => {
     setLoadingStore(true);
     setStoreError(null);
+    setPreviewCounts(null);
     try {
       const res = await fetch(endpoints.base, { cache: "no-store" });
       const json = await res.json().catch(() => null);
@@ -122,6 +130,27 @@ export default function OrgStoreToolClient({ orgId }: OrgStoreToolClientProps) {
         throw new Error(json?.error || "Erro ao carregar a loja.");
       }
       setStore((json.store ?? null) as StoreSnapshot | null);
+      try {
+        const previewRes = await fetch(`/api/org/${orgId}/store/preview`, { cache: "no-store" });
+        const previewJson = await previewRes.json().catch(() => null);
+        const counts = previewJson?.counts;
+        if (
+          previewRes.ok &&
+          previewJson?.ok &&
+          counts &&
+          typeof counts.total === "number" &&
+          typeof counts.public === "number" &&
+          typeof counts.draft === "number"
+        ) {
+          setPreviewCounts({
+            total: counts.total,
+            public: counts.public,
+            draft: counts.draft,
+          });
+        }
+      } catch {
+        // Preview é informativo; falha não deve bloquear painel principal da loja.
+      }
     } catch (err) {
       setStoreError(err instanceof Error ? err.message : "Erro inesperado.");
     } finally {
@@ -280,6 +309,13 @@ export default function OrgStoreToolClient({ orgId }: OrgStoreToolClientProps) {
         />
       ) : null}
 
+      {view === "overview" && previewCounts ? (
+        <div className="rounded-2xl border border-cyan-400/30 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-100">
+          Preview da loja: {previewCounts.public} públicos, {previewCounts.draft} draft,{" "}
+          {previewCounts.total} total.
+        </div>
+      ) : null}
+
       {!hasStore ? (
         <div className="rounded-2xl border border-white/12 bg-black/35 px-4 py-4 text-sm text-white/75">
           {loadingStore ? "A carregar estado da loja..." : "Sem dados da loja de momento."}
@@ -298,7 +334,7 @@ export default function OrgStoreToolClient({ orgId }: OrgStoreToolClientProps) {
                       className={cn(
                         "inline-flex items-center rounded-full px-3 py-1.5 text-[12px] font-semibold whitespace-nowrap transition",
                         active
-                          ? "bg-white/15 text-white shadow-[0_10px_28px_rgba(107,255,255,0.25)]"
+                          ? "bg-white/15 text-white shadow-[0_10px_28px_rgba(34,211,238,0.25)]"
                           : "text-white/70 hover:bg-white/10",
                       )}
                       aria-current={active ? "page" : undefined}

@@ -428,7 +428,7 @@ export default function OrgCheckInOperationsClient({ orgId, mode }: OrgCheckInOp
           value={searchText}
           onChange={(event) => setSearchText(event.target.value)}
           placeholder="Pesquisar evento..."
-          className="w-full rounded-full border border-white/20 bg-black/25 px-4 py-2 text-sm text-white outline-none transition focus:border-[#6BFFFF] sm:w-72"
+          className="w-full rounded-full border border-white/20 bg-black/25 px-4 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE] sm:w-72"
         />
       </div>
 
@@ -452,7 +452,7 @@ export default function OrgCheckInOperationsClient({ orgId, mode }: OrgCheckInOp
             <article
               key={event.id}
               className={`rounded-2xl border px-4 py-4 transition ${
-                selected ? "border-[#6BFFFF]/45 bg-[#6BFFFF]/10" : "border-white/12 bg-white/5 hover:border-white/30"
+                selected ? "border-[#22D3EE]/45 bg-[#22D3EE]/10" : "border-white/12 bg-white/5 hover:border-white/30"
               }`}
             >
               <button
@@ -535,7 +535,7 @@ export default function OrgCheckInOperationsClient({ orgId, mode }: OrgCheckInOp
           value={listSearch}
           onChange={(event) => setListSearch(event.target.value)}
           placeholder="Pesquisar por nome, email ou título..."
-          className="w-full rounded-xl border border-white/20 bg-black/30 px-3 py-2 text-sm text-white outline-none transition focus:border-[#6BFFFF]"
+          className="w-full rounded-xl border border-white/20 bg-black/30 px-3 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE]"
         />
         <select
           value={selectedEventId ?? ""}
@@ -544,7 +544,7 @@ export default function OrgCheckInOperationsClient({ orgId, mode }: OrgCheckInOp
             setSelectedEventId(next);
             syncEventQuery(next);
           }}
-          className="w-full rounded-xl border border-white/20 bg-black/30 px-3 py-2 text-sm text-white outline-none transition focus:border-[#6BFFFF]"
+          className="w-full rounded-xl border border-white/20 bg-black/30 px-3 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE]"
         >
           <option value="">Seleciona um evento</option>
           {events.map((event) => (
@@ -565,7 +565,7 @@ export default function OrgCheckInOperationsClient({ orgId, mode }: OrgCheckInOp
               onClick={() => toggleListStatus(status.key)}
               className={`rounded-full border px-3 py-1 text-[11px] font-semibold transition ${
                 active
-                  ? "border-[#6BFFFF]/60 bg-[#6BFFFF]/15 text-[#C7FFFF]"
+                  ? "border-[#22D3EE]/60 bg-[#22D3EE]/15 text-[#C7FFFF]"
                   : "border-white/20 bg-white/5 text-white/70 hover:border-white/35"
               }`}
             >
@@ -620,7 +620,7 @@ export default function OrgCheckInOperationsClient({ orgId, mode }: OrgCheckInOp
             return (
               <article
                 key={item.entitlementId}
-                className={`rounded-2xl border px-4 py-3 ${selected ? "border-[#6BFFFF]/45 bg-[#6BFFFF]/10" : "border-white/12 bg-white/5"}`}
+                className={`rounded-2xl border px-4 py-3 ${selected ? "border-[#22D3EE]/45 bg-[#22D3EE]/10" : "border-white/12 bg-white/5"}`}
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-semibold text-white">{item.holder.name || "Participante"}</p>
@@ -704,7 +704,7 @@ export default function OrgCheckInOperationsClient({ orgId, mode }: OrgCheckInOp
                   value={manualReason}
                   onChange={(event) => setManualReason(event.target.value)}
                   placeholder="Ex.: QR ilegível no telemóvel do participante"
-                  className="min-h-[96px] w-full rounded-xl border border-white/20 bg-black/30 px-3 py-2 text-sm text-white outline-none transition focus:border-[#6BFFFF]"
+                  className="min-h-[96px] w-full rounded-xl border border-white/20 bg-black/30 px-3 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE]"
                 />
               </div>
 
@@ -803,7 +803,7 @@ export default function OrgCheckInOperationsClient({ orgId, mode }: OrgCheckInOp
             setSelectedEventId(next);
             syncEventQuery(next);
           }}
-          className="w-full rounded-xl border border-white/20 bg-black/30 px-3 py-2 text-sm text-white outline-none transition focus:border-[#6BFFFF]"
+          className="w-full rounded-xl border border-white/20 bg-black/30 px-3 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE]"
         >
           <option value="">Seleciona um evento</option>
           {events.map((event) => (

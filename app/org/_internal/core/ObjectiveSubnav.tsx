@@ -176,8 +176,8 @@ export default function ObjectiveSubnav({
     ? "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-semibold transition whitespace-nowrap"
     : "inline-flex items-center gap-2 rounded-xl px-3 py-2 font-semibold transition";
   const tabActiveClass = isTopbar
-    ? "bg-white/15 text-white shadow-[0_10px_28px_rgba(107,255,255,0.25)]"
-    : "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]";
+    ? "bg-white/15 text-white shadow-[0_10px_28px_rgba(34,211,238,0.25)]"
+    : "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(34,211,238,0.45)]";
   const tabInactiveClass = isTopbar ? "text-white/70 hover:bg-white/10" : "text-white/80 hover:bg-white/10";
   const disableScrollToTop = isTopbar || mode === "dashboard";
 

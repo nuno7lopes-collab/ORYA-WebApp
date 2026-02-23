@@ -26,7 +26,7 @@ export function CalendarExportPanel(props: {
               className={`inline-flex items-center justify-center rounded-full border px-4 py-2 text-[12px] font-semibold text-white transition ${
                 disabled
                   ? "pointer-events-none border-white/10 text-white/40"
-                  : "border-white/25 bg-white/[0.03] hover:border-[#6BFFFF]/70 hover:text-[#d8ffff]"
+                  : "border-white/25 bg-white/[0.03] hover:border-[#22D3EE]/70 hover:text-[#d8ffff]"
               }`}
             >
               {link.label}

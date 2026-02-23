@@ -261,7 +261,7 @@ export default function PayoutsPanel() {
                   <span className="text-[11px] text-white/60">A receber</span>
                   <span className="text-sm font-semibold text-white">{formatMoney(item.amountCents, item.currency)}</span>
                   {item.source?.href && (
-                    <Link href={item.source.href} className="text-[11px] text-[#6BFFFF] hover:underline">
+                    <Link href={item.source.href} className="text-[11px] text-[#22D3EE] hover:underline">
                       Ver origem
                     </Link>
                   )}

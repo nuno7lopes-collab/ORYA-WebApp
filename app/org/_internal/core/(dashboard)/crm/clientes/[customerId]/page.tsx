@@ -279,7 +279,7 @@ export default function CrmCustomerDetailPage() {
                       checked={isGranted}
                       onChange={(event) => handleConsentToggle(type, event.target.checked)}
                       disabled={isSaving}
-                      className="h-3 w-3 accent-[#6BFFFF]"
+                      className="h-3 w-3 accent-[#22D3EE]"
                     />
                     <span className="text-[12px] text-white/80">{label}</span>
                     {isSaving ? <span className="text-[11px] text-white/45">A guardar...</span> : null}

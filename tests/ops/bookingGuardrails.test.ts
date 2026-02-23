@@ -37,7 +37,6 @@ describe("booking access guardrails", () => {
         "-g '!app/api/messages/conversations/[[]conversationId[]]/messages/route.ts'",
         "-g '!app/api/org/[[]orgId[]]/reservas/summary/route.ts'",
         "-g '!app/api/org/[[]orgId[]]/reservas/[[]id[]]/charges/route.ts'",
-        "-g '!app/api/org/[[]orgId[]]/club/finance/overview/route.ts'",
         "-g '!app/api/org/[[]orgId[]]/agenda/soft-blocks/route.ts'",
         "-g '!app/api/padel/calendar/route.ts'",
         "-g '!app/api/padel/calendar/matches/bulk-reschedule/route.ts'",

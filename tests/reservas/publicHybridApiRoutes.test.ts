@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 
 const getAvailableSlotsForScope = vi.hoisted(() => vi.fn());
 const createBooking = vi.hoisted(() => vi.fn());
@@ -257,29 +259,9 @@ describe("GET /api/servicos/[id]/calendario (HYBRID)", () => {
 });
 
 describe("GET aliases /api/servicos/[id]/slots e /api/servicos/[id]/disponibilidade", () => {
-  it("devolvem 410 LEGACY_ROUTE_REMOVED", async () => {
-    const day = formatLisbonYmd(new Date(Date.now() + 24 * 60 * 60 * 1000));
-    const { GET: SlotsGet } = await import("@/app/api/servicos/[id]/slots/route");
-    const slotsReq = new NextRequest(`http://localhost/api/servicos/1/slots?day=${day}&partySize=2`);
-    const slotsRes = await SlotsGet(slotsReq, { params: Promise.resolve({ id: "1" }) });
-    const slotsBody = await slotsRes.json();
-
-    expect(slotsRes.status).toBe(410);
-    expect(slotsBody.ok).toBe(false);
-    expect(slotsBody.errorCode).toBe("LEGACY_ROUTE_REMOVED");
-
-    const { GET: DisponibilidadeGet } = await import("@/app/api/servicos/[id]/disponibilidade/route");
-    const disponibilidadeReq = new NextRequest(
-      `http://localhost/api/servicos/1/disponibilidade?day=${day}&partySize=2`,
-    );
-    const disponibilidadeRes = await DisponibilidadeGet(disponibilidadeReq, {
-      params: Promise.resolve({ id: "1" }),
-    });
-    const disponibilidadeBody = await disponibilidadeRes.json();
-
-    expect(disponibilidadeRes.status).toBe(410);
-    expect(disponibilidadeBody.ok).toBe(false);
-    expect(disponibilidadeBody.errorCode).toBe("LEGACY_ROUTE_REMOVED");
+  it("foram removidos fisicamente (hard-cut)", () => {
+    expect(existsSync(resolve(process.cwd(), "app/api/servicos/[id]/slots/route.ts"))).toBe(false);
+    expect(existsSync(resolve(process.cwd(), "app/api/servicos/[id]/disponibilidade/route.ts"))).toBe(false);
   });
 });
 
