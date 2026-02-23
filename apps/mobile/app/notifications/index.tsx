@@ -11,6 +11,7 @@ import { TopAppHeader } from "../../components/navigation/TopAppHeader";
 import { useTopHeaderPadding } from "../../components/navigation/useTopHeaderPadding";
 import { useTopBarScroll } from "../../components/navigation/useTopBarScroll";
 import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
+import { useFocusFrameMonitor } from "../../components/perf/useFocusFrameMonitor";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { Ionicons } from "../../components/icons/Ionicons";
@@ -177,6 +178,7 @@ export default function NotificationsScreen() {
   const topPadding = useTopHeaderPadding(20);
   const bottomPadding = useTabBarPadding();
   const topBar = useTopBarScroll({ hideOnScroll: false });
+  useFocusFrameMonitor("screen_notifications");
 
   const [pendingActionKey, setPendingActionKey] = useState<string | null>(null);
   const [followOverrides, setFollowOverrides] = useState<Record<string, boolean>>({});
@@ -958,6 +960,11 @@ export default function NotificationsScreen() {
         onScrollEndDrag={topBar.onScrollEndDrag}
         onMomentumScrollEnd={topBar.onMomentumScrollEnd}
         scrollEventThrottle={16}
+        removeClippedSubviews
+        initialNumToRender={6}
+        maxToRenderPerBatch={6}
+        updateCellsBatchingPeriod={16}
+        windowSize={5}
         ListEmptyComponent={emptyState}
         ListFooterComponent={
           feed.isFetchingNextPage ? (

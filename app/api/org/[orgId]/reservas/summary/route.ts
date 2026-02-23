@@ -72,7 +72,8 @@ async function _GET(req: NextRequest) {
     const [
       servicesTotal,
       servicesActive,
-      availabilityCount,
+      availabilityScheduleCount,
+      availabilityTemplateCount,
       upcoming,
       confirmed,
       pending,
@@ -80,9 +81,12 @@ async function _GET(req: NextRequest) {
     ] = await prisma.$transaction([
       prisma.service.count({ where: { organizationId: organization.id } }),
       prisma.service.count({ where: { organizationId: organization.id, isActive: true } }),
-      prisma.availability.count({
+      prisma.availabilitySchedule.count({
+        where: { organizationId: organization.id },
+      }),
+      prisma.weeklyAvailabilityTemplate.count({
         where: {
-          service: { organizationId: organization.id },
+          availability: { organizationId: organization.id },
         },
       }),
       prisma.booking.count({
@@ -118,7 +122,8 @@ async function _GET(req: NextRequest) {
       services: {
         total: servicesTotal,
         active: servicesActive,
-        availabilityCount,
+        availabilityCount: availabilityScheduleCount,
+        availabilityTemplateCount,
       },
       bookings: {
         upcoming,

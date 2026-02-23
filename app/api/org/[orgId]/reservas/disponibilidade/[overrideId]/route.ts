@@ -7,7 +7,7 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { OrganizationMemberRole } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
-import { respondError, respondOk } from "@/lib/http/envelope";
+import { respondError } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
@@ -67,31 +67,13 @@ async function _DELETE(
       return fail(ctx, 403, "RESERVAS_UNAVAILABLE", reservasAccess.error ?? "Reservas indisponíveis.");
     }
 
-    const override = await prisma.availabilityOverride.findFirst({
-      where: { id: overrideId, organizationId: organization.id },
-      select: { id: true, scopeType: true, scopeId: true },
-    });
-
-    if (!override) {
-      return fail(ctx, 404, "OVERRIDE_NOT_FOUND", "Override não encontrado.");
-    }
-
-    if (membership.role === OrganizationMemberRole.STAFF) {
-      if (override.scopeType === "ORGANIZATION" || override.scopeType === "RESOURCE") {
-        return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
-      }
-      const professional = await prisma.reservationProfessional.findFirst({
-        where: { id: override.scopeId, organizationId: organization.id, userId: profile.id },
-        select: { id: true },
-      });
-      if (!professional) {
-        return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
-      }
-    }
-
-    await prisma.availabilityOverride.delete({ where: { id: override.id } });
-
-    return respondOk(ctx, { deleted: true });
+    return fail(
+      ctx,
+      409,
+      "AVAILABILITY_CHANGESET_REQUIRED",
+      "A remoção de exceções por data é feita via changeset para garantir resolução de conflitos.",
+      { overrideId },
+    );
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return fail(ctx, 401, "UNAUTHENTICATED", "Não autenticado.");

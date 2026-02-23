@@ -136,7 +136,7 @@ async function _GET(req: NextRequest) {
         professionalLinks: { select: { professionalId: true } },
         resourceLinks: { select: { resourceId: true } },
         _count: {
-          select: { bookings: true, availabilities: true },
+          select: { bookings: true },
         },
       },
     });

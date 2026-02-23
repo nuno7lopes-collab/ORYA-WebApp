@@ -229,7 +229,7 @@ export default function ServiceDetailScreen() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false, animation: "slide_from_right" }} />
-      <LiquidBackground variant="solid">
+      <LiquidBackground>
         <View className="px-5 pt-12 pb-4">
           <Pressable
             onPress={handleBack}

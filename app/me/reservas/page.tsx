@@ -28,7 +28,6 @@ type BookingItem = {
   estimatedStartsAt?: string | null;
   delayMinutes?: number | null;
   delayReason?: string | null;
-  availabilityId: number | null;
   pendingExpiresAt: string | null;
   reviewId: number | null;
   assignmentMode?: string | null;

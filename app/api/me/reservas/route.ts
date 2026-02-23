@@ -60,7 +60,6 @@ async function _GET(req: NextRequest) {
       select: {
         id: true,
         organizationId: true,
-        availabilityId: true,
         startsAt: true,
         durationMinutes: true,
         status: true,
@@ -301,7 +300,6 @@ async function _GET(req: NextRequest) {
         price: booking.price,
         currency: booking.currency,
         createdAt: booking.createdAt,
-        availabilityId: booking.availabilityId,
         pendingExpiresAt: booking.pendingExpiresAt,
         assignmentMode: booking.assignmentMode,
         partySize: booking.partySize ?? null,

@@ -1,6 +1,6 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 
-type PrismaLike = Pick<PrismaClient, "service" | "availability"> | Prisma.TransactionClient;
+type PrismaLike = Pick<PrismaClient, "service"> | Prisma.TransactionClient;
 
 const DEFAULT_LIMIT = 200;
 const MAX_LIMIT = 1000;
@@ -24,37 +24,6 @@ const isClearlyClassByText = (service: { title: string; description: string | nu
   const haystack = `${normalizeText(service.title)} ${normalizeText(service.description)}`;
   return KEYWORDS.some((keyword) => haystack.includes(keyword));
 };
-
-type AvailabilityPoint = {
-  startsAt: Date;
-  durationMinutes: number;
-};
-
-function hasRecurringAvailabilityPattern(points: AvailabilityPoint[]) {
-  if (points.length < 3) return false;
-  const buckets = new Map<string, Set<number>>();
-
-  for (const point of points) {
-    const startsAt = point.startsAt;
-    if (!(startsAt instanceof Date) || Number.isNaN(startsAt.getTime())) continue;
-    const duration = Number.isFinite(point.durationMinutes) ? Math.max(0, Math.floor(point.durationMinutes)) : 0;
-    if (duration <= 0) continue;
-
-    const weekday = startsAt.getUTCDay();
-    const minute = startsAt.getUTCHours() * 60 + startsAt.getUTCMinutes();
-    const weekBucket = Math.floor(startsAt.getTime() / (7 * 24 * 60 * 60 * 1000));
-    const key = `${weekday}:${minute}:${duration}`;
-    if (!buckets.has(key)) {
-      buckets.set(key, new Set<number>());
-    }
-    buckets.get(key)?.add(weekBucket);
-  }
-
-  for (const weeks of buckets.values()) {
-    if (weeks.size >= 3) return true;
-  }
-  return false;
-}
 
 export type BackfillServicesAulasToClassOptions = {
   dryRun?: boolean;
@@ -102,7 +71,6 @@ export async function backfillServicesAulasToClass(
         select: {
           classSeries: true,
           classSessions: true,
-          availabilities: true,
         },
       },
     },
@@ -134,19 +102,7 @@ export async function backfillServicesAulasToClass(
 
       eligible += 1;
 
-      let recurring = service._count.classSeries > 0 || service._count.classSessions > 0;
-      if (!recurring && service._count.availabilities >= 3) {
-        const availabilities = await prisma.availability.findMany({
-          where: { serviceId: service.id },
-          orderBy: [{ startsAt: "asc" }],
-          take: 300,
-          select: {
-            startsAt: true,
-            durationMinutes: true,
-          },
-        });
-        recurring = hasRecurringAvailabilityPattern(availabilities);
-      }
+      const recurring = service._count.classSeries > 0 || service._count.classSessions > 0;
 
       const clearlyClass = isClearlyClassByText(service);
       const shouldConvert = recurring || clearlyClass;

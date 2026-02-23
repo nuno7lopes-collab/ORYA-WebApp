@@ -72,7 +72,6 @@ async function _GET(req: NextRequest) {
         serviceId: true,
         userId: true,
         guestEmail: true,
-        availabilityId: true,
         price: true,
         currency: true,
       },
@@ -112,7 +111,6 @@ async function _GET(req: NextRequest) {
           metadata: {
             bookingId: booking.id,
             serviceId: booking.serviceId,
-            availabilityId: booking.availabilityId ?? null,
           },
         });
       } catch (err) {

@@ -2803,7 +2803,6 @@ model PadelClubCourt {
   club                          PadelClub              @relation(fields: [padelClubId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   calendarBlocks                CalendarBlock[]
   eventMatchSlots               EventMatchSlot[]       @relation("EventMatchSlotCourt")
-  availabilities                Availability[]
   reservationResource           ReservationResource?
   bookings                      Booking[]
   bookingChangeRequestsProposed BookingChangeRequest[]
@@ -4580,7 +4579,6 @@ model Service {
   packs             ServicePack[]
   packages          ServicePackage[]
   durationPrices    ServiceDurationPrice[]
-  availabilities    Availability[]
   bookings          Booking[]
   classSeries       ClassSeries[]
   classSessions     ClassSession[]
@@ -4780,8 +4778,59 @@ model AvailabilityOverride {
   organization   Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, date])
-  @@index([organizationId, scopeType, scopeId, date])
+  @@unique([organizationId, scopeType, scopeId, date], map: "availability_override_scope_date_unique")
   @@map("availability_overrides")
+  @@schema("app_v3")
+}
+
+model AvailabilityChangeSet {
+  env               String                      @default("prod")
+  id                Int                         @id @default(autoincrement())
+  organizationId    Int                         @map("organization_id")
+  scopeType         AvailabilityScopeType       @default(ORGANIZATION) @map("scope_type")
+  scopeId           Int                         @default(0) @map("scope_id")
+  scheduleId        Int?                        @map("schedule_id")
+  status            AvailabilityChangeSetStatus @default(PENDING)
+  requestedByUserId String?                     @map("requested_by_user_id") @db.Uuid
+  draftPayload      Json
+  preflightSummary  Json?                       @map("preflight_summary")
+  appliedAt         DateTime?                   @map("applied_at") @db.Timestamptz(6)
+  cancelledAt       DateTime?                   @map("cancelled_at") @db.Timestamptz(6)
+  createdAt         DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime                    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  conflicts         AvailabilityChangeConflict[]
+
+  @@index([organizationId, status], map: "availability_change_sets_org_status_idx")
+  @@index([organizationId, scopeType, scopeId], map: "availability_change_sets_org_scope_idx")
+  @@index([createdAt], map: "availability_change_sets_created_idx")
+  @@map("availability_change_sets")
+  @@schema("app_v3")
+}
+
+model AvailabilityChangeConflict {
+  env              String                                @default("prod")
+  id               Int                                   @id @default(autoincrement())
+  changeSetId      Int                                   @map("change_set_id")
+  organizationId   Int                                   @map("organization_id")
+  status           AvailabilityConflictStatus            @default(OPEN)
+  entityType       AvailabilityConflictEntityType        @map("entity_type")
+  entityId         Int                                   @map("entity_id")
+  scopeType        AvailabilityScopeType                 @default(ORGANIZATION) @map("scope_type")
+  scopeId          Int                                   @default(0) @map("scope_id")
+  startsAt         DateTime                              @map("starts_at") @db.Timestamptz(6)
+  endsAt           DateTime                              @map("ends_at") @db.Timestamptz(6)
+  reasonCode       String?                               @map("reason_code")
+  resolutionAction AvailabilityConflictResolutionAction? @map("resolution_action")
+  resolvedAt       DateTime?                             @map("resolved_at") @db.Timestamptz(6)
+  details          Json?
+  createdAt        DateTime                              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime                              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  changeSet        AvailabilityChangeSet                 @relation(fields: [changeSetId], references: [id], onDelete: Cascade)
+
+  @@index([changeSetId, status], map: "availability_change_conflicts_set_status_idx")
+  @@index([organizationId, status], map: "availability_change_conflicts_org_status_idx")
+  @@index([entityType, entityId], map: "availability_change_conflicts_entity_idx")
+  @@map("availability_change_conflicts")
   @@schema("app_v3")
 }
 
@@ -4848,29 +4897,6 @@ model TrainerProfile {
   @@schema("app_v3")
 }
 
-model Availability {
-  env             String             @default("prod")
-  id              Int                @id @default(autoincrement())
-  serviceId       Int                @map("service_id")
-  courtId         Int?               @map("court_id")
-  startsAt        DateTime           @map("starts_at") @db.Timestamptz(6)
-  durationMinutes Int                @map("duration_minutes")
-  capacity        Int                @default(1)
-  status          AvailabilityStatus @default(OPEN)
-  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  service         Service            @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-  court           PadelClubCourt?    @relation(fields: [courtId], references: [id], onDelete: SetNull)
-  bookings        Booking[]
-
-  @@index([serviceId])
-  @@index([courtId])
-  @@index([startsAt])
-  @@index([status])
-  @@map("availabilities")
-  @@schema("app_v3")
-}
-
 model Booking {
   env                           String                           @default("prod")
   id                            Int                              @id @default(autoincrement())
@@ -4880,7 +4906,6 @@ model Booking {
   guestEmail                    String?                          @map("guest_email") @db.Citext
   guestName                     String?                          @map("guest_name")
   guestPhone                    String?                          @map("guest_phone")
-  availabilityId                Int?                             @map("availability_id")
   courtId                       Int?                             @map("court_id")
   assignmentMode                ReservationAssignmentMode        @default(PROFESSIONAL_ONLY) @map("assignment_mode")
   professionalId                Int?                             @map("professional_id")
@@ -4904,7 +4929,6 @@ model Booking {
   service                       Service                          @relation(fields: [serviceId], references: [id], onDelete: Cascade)
   organization                  Organization                     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user                          Profile?                         @relation(fields: [userId], references: [id], onDelete: SetNull)
-  availability                  Availability?                    @relation(fields: [availabilityId], references: [id], onDelete: SetNull)
   court                         PadelClubCourt?                  @relation(fields: [courtId], references: [id], onDelete: SetNull)
   professional                  ReservationProfessional?         @relation(fields: [professionalId], references: [id], onDelete: SetNull)
   resource                      ReservationResource?             @relation(fields: [resourceId], references: [id], onDelete: SetNull)
@@ -4926,7 +4950,6 @@ model Booking {
   @@index([serviceId])
   @@index([organizationId])
   @@index([userId])
-  @@index([availabilityId])
   @@index([courtId])
   @@index([professionalId])
   @@index([resourceId])
@@ -7395,9 +7418,31 @@ enum OrganizationPolicyType {
   @@schema("app_v3")
 }
 
-enum AvailabilityStatus {
+enum AvailabilityChangeSetStatus {
+  PENDING
+  READY_TO_APPLY
+  APPLIED
+  CANCELLED
+
+  @@schema("app_v3")
+}
+
+enum AvailabilityConflictStatus {
   OPEN
-  FULL
+  RESOLVED
+
+  @@schema("app_v3")
+}
+
+enum AvailabilityConflictEntityType {
+  BOOKING
+  CLASS_SESSION
+
+  @@schema("app_v3")
+}
+
+enum AvailabilityConflictResolutionAction {
+  RESCHEDULED
   CANCELLED
 
   @@schema("app_v3")

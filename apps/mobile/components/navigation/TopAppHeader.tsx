@@ -1,6 +1,15 @@
 import type { ReactNode } from "react";
-import { useMemo, useRef } from "react";
-import { Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Animated,
+  InteractionManager,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useIsFocused } from "@react-navigation/native";
 import { useRouter } from "expo-router";
@@ -13,12 +22,11 @@ import { safePush } from "../../lib/navigation";
 import type { TopBarScrollState } from "./useTopBarScroll";
 import { TOP_APP_HEADER_HEIGHT } from "./topBarTokens";
 import {
-  NAV_TOP_SOLID,
-  navRgba,
+  NAV_BAR_BLUR_INTENSITY,
+  NAV_BAR_MILK_ALPHA,
+  sampleBackgroundColor,
+  sampleBackgroundColorAlpha,
 } from "./navColors";
-
-const NAV_MILK_OVERLAY = navRgba(0.78);
-const BLUR_INTENSITY = 24;
 
 type TopAppHeaderVariant = "brand" | "title" | "custom";
 
@@ -48,21 +56,52 @@ export function TopAppHeader({
   showMessages,
 }: TopAppHeaderProps) {
   const insets = useSafeAreaInsets();
+  const { height: screenHeight } = useWindowDimensions();
   const router = useRouter();
   const isFocused = useIsFocused();
   const { session } = useAuth();
+  const [isReadyForUnread, setIsReadyForUnread] = useState(false);
   const renderNotifications = showNotifications ?? variant === "brand";
   const renderMessages = showMessages ?? variant === "brand";
+
+  useEffect(() => {
+    let active = true;
+    const task = InteractionManager.runAfterInteractions(() => {
+      if (active) setIsReadyForUnread(true);
+    });
+    return () => {
+      active = false;
+      task.cancel();
+    };
+  }, []);
+
   const unreadQuery = useNotificationsUnread(
     session?.access_token ?? null,
     session?.user?.id ?? null,
-    renderNotifications && Boolean(session?.user?.id) && isFocused,
+    renderNotifications &&
+      Boolean(session?.user?.id) &&
+      isFocused &&
+      isReadyForUnread,
   );
   const unreadCount = unreadQuery.data?.unreadCount ?? 0;
   const showBadge = unreadCount > 0;
   const badgeLabel = unreadCount > 9 ? "9+" : String(unreadCount);
   const defaultTranslate = useRef(new Animated.Value(0)).current;
   const translateY = scrollState?.translateY ?? defaultTranslate;
+  const topBreakProgress = useMemo(() => {
+    if (screenHeight <= 0) {
+      return 0;
+    }
+    return Math.min(1, Math.max(0, (insets.top + TOP_APP_HEADER_HEIGHT) / screenHeight));
+  }, [insets.top, screenHeight]);
+  const topBreakColor = useMemo(
+    () => sampleBackgroundColor(topBreakProgress),
+    [topBreakProgress],
+  );
+  const topOverlayColor = useMemo(
+    () => sampleBackgroundColorAlpha(topBreakProgress, NAV_BAR_MILK_ALPHA),
+    [topBreakProgress],
+  );
 
   const containerStyle = useMemo(
     () => [
@@ -177,13 +216,16 @@ export function TopAppHeader({
   return (
     <Animated.View style={containerStyle} pointerEvents="box-none">
       <View pointerEvents="none" style={styles.backdrop}>
-        <BlurView
-          tint="default"
-          intensity={BLUR_INTENSITY}
-          style={StyleSheet.absoluteFill}
-          {...(Platform.OS === "android" ? { experimentalBlurMethod: "dimezisBlurView" as const } : null)}
-        />
-        <View style={styles.milkOverlay} />
+        {Platform.OS === "ios" ? (
+          <BlurView
+            tint="default"
+            intensity={NAV_BAR_BLUR_INTENSITY}
+            style={[StyleSheet.absoluteFill, { backgroundColor: topBreakColor }]}
+          />
+        ) : (
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: topBreakColor }]} />
+        )}
+        <View style={[styles.milkOverlay, { backgroundColor: topOverlayColor }]} />
       </View>
       <View style={styles.inner}>
         <View style={leftStyle}>{leftContent}</View>
@@ -219,11 +261,9 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: NAV_TOP_SOLID,
   },
   milkOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: NAV_MILK_OVERLAY,
   },
   inner: {
     height: TOP_APP_HEADER_HEIGHT,

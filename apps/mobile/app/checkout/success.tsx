@@ -166,7 +166,7 @@ export default function CheckoutSuccessScreen() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <LiquidBackground variant="solid">
+      <LiquidBackground>
         <View className="px-5 pt-12 pb-6">
           <Pressable
             onPress={() =>

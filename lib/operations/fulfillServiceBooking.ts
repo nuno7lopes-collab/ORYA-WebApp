@@ -160,7 +160,6 @@ async function fulfillSplitParticipantIntent(intent: Stripe.PaymentIntent): Prom
                   userId: true,
                   guestEmail: true,
                   serviceId: true,
-                  availabilityId: true,
                   startsAt: true,
                   snapshotTimezone: true,
                 addressRef: { select: { formattedAddress: true } },
@@ -350,7 +349,6 @@ async function fulfillSplitParticipantIntent(intent: Stripe.PaymentIntent): Prom
       metadata: {
         bookingId: booking.id,
         serviceId: booking.serviceId ?? null,
-        availabilityId: booking.availabilityId ?? null,
         policyId: parseId(meta.policyId) ?? null,
       },
     });
@@ -891,13 +889,10 @@ export async function fulfillServiceBookingIntent(
   const isServiceBooking =
     meta.serviceBooking === "1" ||
     meta.serviceBooking === "true" ||
-    Boolean(meta.bookingId) ||
-    Boolean(meta.serviceId);
+    Boolean(meta.bookingId);
   if (!isServiceBooking) return false;
 
   const bookingId = parseId(meta.bookingId);
-  const serviceId = parseId(meta.serviceId);
-  const availabilityId = parseId(meta.availabilityId);
   const organizationId = parseId(meta.organizationId);
   const policyId = parseId(meta.policyId);
   const userId = typeof meta.userId === "string" ? meta.userId : null;
@@ -939,7 +934,6 @@ export async function fulfillServiceBookingIntent(
         amountCents: number;
         currency: string;
         serviceId?: number | null;
-        availabilityId?: number | null;
         guestEmail?: string | null;
       }
     | null = null;
@@ -955,7 +949,6 @@ export async function fulfillServiceBookingIntent(
             amountCents: number;
             currency: string;
             serviceId?: number | null;
-            availabilityId?: number | null;
             guestEmail?: string | null;
           }
         | null = null;
@@ -994,7 +987,6 @@ export async function fulfillServiceBookingIntent(
             organizationId: true,
             userId: true,
             guestEmail: true,
-            availabilityId: true,
             paymentIntentId: true,
             startsAt: true,
             snapshotTimezone: true,
@@ -1048,7 +1040,6 @@ export async function fulfillServiceBookingIntent(
           metadata: {
             bookingId: booking.id,
             serviceId: booking.serviceId,
-            availabilityId: booking.availabilityId,
             policyId: policyId ?? null,
           },
         });
@@ -1061,243 +1052,11 @@ export async function fulfillServiceBookingIntent(
           amountCents,
           currency: (intent.currency ?? "eur").toUpperCase(),
           serviceId: booking.serviceId ?? null,
-          availabilityId: booking.availabilityId ?? null,
           guestEmail: booking.guestEmail ?? null,
         };
         return { crmPayload };
       }
-
-      let booking = bookingId
-        ? await tx.booking.findUnique({
-            where: { id: bookingId },
-            select: {
-              id: true,
-              organizationId: true,
-              userId: true,
-              guestEmail: true,
-              serviceId: true,
-              availabilityId: true,
-              startsAt: true,
-              status: true,
-              paymentIntentId: true,
-              addressRef: { select: { formattedAddress: true } },
-              snapshotTimezone: true,
-              availability: {
-                select: { id: true, capacity: true, status: true },
-              },
-              policyRef: { select: { policyId: true } },
-              service: { select: { title: true, coverImageUrl: true, addressRef: { select: { formattedAddress: true } } } },
-            },
-          })
-        : null;
-
-      const availabilityWithService = availabilityId
-        ? await tx.availability.findUnique({
-            where: { id: availabilityId },
-            select: {
-              id: true,
-              serviceId: true,
-              courtId: true,
-              status: true,
-              capacity: true,
-              startsAt: true,
-              durationMinutes: true,
-              service: {
-                select: {
-                  unitPriceCents: true,
-                  currency: true,
-                },
-              },
-            },
-          })
-        : null;
-
-      const availability = booking?.availability ?? availabilityWithService;
-
-      if (!booking && availabilityWithService && serviceId && organizationId && userId) {
-        if (availabilityWithService.serviceId !== serviceId) {
-          throw new Error("SERVICE_BOOKING_MISMATCH");
-        }
-        if (availabilityWithService.status === "CANCELLED") {
-          throw new Error("SERVICE_BOOKING_CANCELLED");
-        }
-
-        const activeCount = await tx.booking.count({
-          where: {
-            availabilityId: availabilityWithService.id,
-            status: { notIn: ["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG"] },
-          },
-        });
-        if (activeCount >= availabilityWithService.capacity) {
-          throw new Error("SERVICE_BOOKING_FULL");
-        }
-
-        const linkedCourtResource =
-          availabilityWithService.courtId != null
-            ? await tx.reservationResource.findFirst({
-                where: {
-                  organizationId,
-                  courtId: availabilityWithService.courtId,
-                  isActive: true,
-                },
-                select: { id: true },
-              })
-            : null;
-
-        booking = await tx.booking.create({
-          data: {
-            serviceId,
-            organizationId,
-            userId,
-            availabilityId: availabilityWithService.id,
-            courtId: availabilityWithService.courtId ?? null,
-            resourceId: linkedCourtResource?.id ?? null,
-            startsAt: availabilityWithService.startsAt,
-            durationMinutes: availabilityWithService.durationMinutes,
-            price: availabilityWithService.service.unitPriceCents,
-            currency: availabilityWithService.service.currency,
-            status: "CONFIRMED",
-            paymentIntentId: intent.id,
-          },
-          include: {
-            availability: true,
-            policyRef: { select: { policyId: true } },
-            service: { select: { title: true, coverImageUrl: true, addressRef: { select: { formattedAddress: true } } } },
-            addressRef: { select: { formattedAddress: true } },
-          },
-        });
-      }
-
-      if (!booking || !availability) {
-        throw new Error("SERVICE_BOOKING_NOT_FOUND");
-      }
-
-      const isCancelled = ["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG"].includes(booking.status);
-      const confirmedNow = !isCancelled && booking.status !== "CONFIRMED";
-      if (confirmedNow) {
-        await tx.booking.update({
-          where: { id: booking.id },
-          data: { status: "CONFIRMED", paymentIntentId: intent.id },
-        });
-      } else if (!booking.paymentIntentId) {
-        await tx.booking.update({
-          where: { id: booking.id },
-          data: { paymentIntentId: intent.id },
-        });
-      }
-
-      if (!booking.policyRef) {
-        const policy =
-          (policyId
-            ? await tx.organizationPolicy.findFirst({
-                where: { id: policyId, organizationId: organizationId ?? booking.organizationId },
-                select: { id: true },
-              })
-            : null) ??
-          (await tx.organizationPolicy.findFirst({
-            where: { organizationId: organizationId ?? booking.organizationId, policyType: "MODERATE" },
-            select: { id: true },
-          })) ??
-          (await tx.organizationPolicy.findFirst({
-            where: { organizationId: organizationId ?? booking.organizationId },
-            orderBy: { createdAt: "asc" },
-            select: { id: true },
-          }));
-
-        if (policy) {
-          await tx.bookingPolicyRef.create({
-            data: { bookingId: booking.id, policyId: policy.id },
-          });
-        }
-      }
-
-      if (!isCancelled) {
-        await ensureConfirmationSnapshot({
-          tx,
-          bookingId: booking.id,
-          now,
-          policyIdHint: policyId,
-          paymentMeta,
-        });
-
-        const purchaseIdResolved = await resolveBookingPurchaseId({
-          tx,
-          intent,
-          bookingId: booking.id,
-        });
-        await upsertBookingEntitlement({
-          tx,
-          booking,
-          purchaseId: purchaseIdResolved,
-          ownerUserId: userId ?? booking.userId,
-          guestEmail: booking.guestEmail ?? null,
-        });
-      }
-      const resolvedUserId = userId ?? booking.userId;
-      if (!isCancelled && resolvedUserId) {
-        crmPayload = {
-          organizationId: booking.organizationId,
-          userId: resolvedUserId,
-          bookingId: booking.id,
-          amountCents,
-          currency: (intent.currency ?? "eur").toUpperCase(),
-        };
-      }
-
-      if (confirmedNow && resolvedUserId) {
-        await tx.userActivity.create({
-          data: {
-            userId: resolvedUserId,
-            type: "BOOKING_CREATED",
-            visibility: "PRIVATE",
-            metadata: {
-              bookingId: booking.id,
-              serviceId: booking.serviceId,
-              availabilityId: booking.availabilityId,
-              organizationId: organizationId ?? booking.organizationId,
-            },
-          },
-        });
-
-        await recordOrganizationAudit(tx, {
-          organizationId: organizationId ?? booking.organizationId,
-          actorUserId: userId ?? booking.userId,
-          action: "BOOKING_CREATED",
-          metadata: {
-            bookingId: booking.id,
-            serviceId: booking.serviceId,
-            availabilityId: booking.availabilityId,
-            policyId: policyId ?? null,
-          },
-        });
-      } else if (isCancelled) {
-        await recordOrganizationAudit(tx, {
-          organizationId: organizationId ?? booking.organizationId,
-          actorUserId: userId ?? booking.userId,
-          action: "BOOKING_PAYMENT_AFTER_CANCEL",
-          metadata: {
-            bookingId: booking.id,
-            serviceId: booking.serviceId,
-            availabilityId: booking.availabilityId,
-            paymentIntentId: intent.id,
-          },
-        });
-      }
-
-      const activeCount = await tx.booking.count({
-        where: {
-          availabilityId: availability.id,
-          status: { notIn: ["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG"] },
-        },
-      });
-      if (activeCount >= availability.capacity && availability.status !== "FULL") {
-        await tx.availability.update({
-          where: { id: availability.id },
-          data: { status: "FULL" },
-        });
-      }
-
-      return { crmPayload };
+      throw new Error("SERVICE_BOOKING_LEGACY_AVAILABILITY_REMOVED");
     });
     crmPayload = txnResult?.crmPayload ?? null;
   } catch (err) {
@@ -1341,7 +1100,6 @@ export async function fulfillServiceBookingIntent(
         metadata: {
           bookingId: crmPayload.bookingId,
           serviceId: crmPayload.serviceId ?? null,
-          availabilityId: crmPayload.availabilityId ?? null,
         },
       });
     } catch (err) {

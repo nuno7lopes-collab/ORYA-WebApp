@@ -24,7 +24,7 @@ export default function StoreCheckoutSuccessScreen() {
   const currency = typeof params.currency === "string" ? params.currency : "EUR";
 
   return (
-    <LiquidBackground variant="solid">
+    <LiquidBackground>
       <View className="flex-1 justify-center px-5">
         <View className="gap-2 border-b border-white/14 pb-5">
           <Text className="text-white text-2xl font-semibold">Compra confirmada</Text>

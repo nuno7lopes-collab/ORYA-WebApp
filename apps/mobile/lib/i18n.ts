@@ -27,6 +27,7 @@ try {
 }
 
 const LOCALE_STORAGE_KEY = "orya.locale";
+let didSyncStoredLocale = false;
 
 const normalizeLocale = (tag?: string | null): Locale | null => {
   if (!tag) return null;
@@ -59,10 +60,19 @@ export const getStoredLocale = async (): Promise<Locale | null> => {
 };
 
 export const initMobileI18n = async (): Promise<void> => {
-  if (i18n.isInitialized) return;
-  const stored = await getStoredLocale();
-  const initialLocale = stored ?? resolveDeviceLocale();
-  await initI18n(initialLocale);
+  if (!i18n.isInitialized) {
+    const initialLocale = resolveDeviceLocale();
+    await initI18n(initialLocale);
+  }
+  if (didSyncStoredLocale) return;
+  didSyncStoredLocale = true;
+  getStoredLocale()
+    .then((stored) => {
+      if (!stored) return;
+      if (stored === i18n.language) return;
+      i18n.changeLanguage(stored).catch(() => undefined);
+    })
+    .catch(() => undefined);
 };
 
 export const setLocale = async (locale: Locale): Promise<void> => {

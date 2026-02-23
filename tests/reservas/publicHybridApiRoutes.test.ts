@@ -257,54 +257,16 @@ describe("GET /api/servicos/[id]/calendario (HYBRID)", () => {
 });
 
 describe("GET aliases /api/servicos/[id]/slots e /api/servicos/[id]/disponibilidade", () => {
-  it("delegam para o calendário e devolvem items", async () => {
+  it("devolvem 410 LEGACY_ROUTE_REMOVED", async () => {
     const day = formatLisbonYmd(new Date(Date.now() + 24 * 60 * 60 * 1000));
-    const slot = new Date(`${day}T11:00:00.000Z`);
-    prisma.service.findFirst.mockResolvedValue({
-      id: 1,
-      organizationId: 10,
-      kind: "COURT",
-      assignmentMode: "PROFESSIONAL_AND_RESOURCE",
-      partySizeRequired: true,
-      partySizeMin: 2,
-      partySizeMax: 4,
-      partySizeStep: 1,
-      durationMinutes: 90,
-      unitPriceCents: 0,
-      currency: "EUR",
-      locationMode: "FIXED",
-      addressId: "addr_1",
-      organization: {
-        id: 10,
-        status: "ACTIVE",
-        timezone: "Europe/Lisbon",
-        reservationAssignmentMode: null,
-        orgType: "CLUB",
-      },
-      professionalLinks: [],
-      resourceLinks: [],
-    });
-    prisma.reservationProfessional.findMany.mockResolvedValue([{ id: 1, priority: 1 }]);
-    prisma.reservationResource.findMany.mockResolvedValue([{ id: 2, capacity: 4, priority: 1, courtId: 99 }]);
-    getAvailableSlotsForScope.mockImplementation((args: any) => {
-      if (args.scopeType === "PROFESSIONAL" && args.scopeId === 1) {
-        return [{ startsAt: slot, durationMinutes: 90 }];
-      }
-      if (args.scopeType === "RESOURCE" && args.scopeId === 2) {
-        return [{ startsAt: slot, durationMinutes: 90 }];
-      }
-      return [];
-    });
-
     const { GET: SlotsGet } = await import("@/app/api/servicos/[id]/slots/route");
     const slotsReq = new NextRequest(`http://localhost/api/servicos/1/slots?day=${day}&partySize=2`);
     const slotsRes = await SlotsGet(slotsReq, { params: Promise.resolve({ id: "1" }) });
     const slotsBody = await slotsRes.json();
 
-    expect(slotsRes.status).toBe(200);
-    expect(slotsBody.ok).toBe(true);
-    expect(slotsBody.items.length).toBe(1);
-    expect(slotsBody.items[0].startsAt).toBe(slot.toISOString());
+    expect(slotsRes.status).toBe(410);
+    expect(slotsBody.ok).toBe(false);
+    expect(slotsBody.errorCode).toBe("LEGACY_ROUTE_REMOVED");
 
     const { GET: DisponibilidadeGet } = await import("@/app/api/servicos/[id]/disponibilidade/route");
     const disponibilidadeReq = new NextRequest(
@@ -315,10 +277,9 @@ describe("GET aliases /api/servicos/[id]/slots e /api/servicos/[id]/disponibilid
     });
     const disponibilidadeBody = await disponibilidadeRes.json();
 
-    expect(disponibilidadeRes.status).toBe(200);
-    expect(disponibilidadeBody.ok).toBe(true);
-    expect(disponibilidadeBody.items.length).toBe(1);
-    expect(disponibilidadeBody.items[0].startsAt).toBe(slot.toISOString());
+    expect(disponibilidadeRes.status).toBe(410);
+    expect(disponibilidadeBody.ok).toBe(false);
+    expect(disponibilidadeBody.errorCode).toBe("LEGACY_ROUTE_REMOVED");
   });
 });
 

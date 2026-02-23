@@ -647,7 +647,7 @@ export default function ServiceBookingScreen() {
     return (
       <>
         <Stack.Screen options={{ headerShown: false }} />
-        <LiquidBackground variant="solid">
+        <LiquidBackground>
           <View className="flex-1 items-center justify-center">
             <ActivityIndicator color="white" />
           </View>
@@ -660,7 +660,7 @@ export default function ServiceBookingScreen() {
     return (
       <>
         <Stack.Screen options={{ headerShown: false }} />
-        <LiquidBackground variant="solid">
+        <LiquidBackground>
           <View className="px-5 pt-12 pb-6">
             <Pressable
               onPress={handleBack}
@@ -706,7 +706,7 @@ export default function ServiceBookingScreen() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <LiquidBackground variant="solid">
+      <LiquidBackground>
         <View className="px-5 pt-12 pb-4">
           <Pressable
             onPress={handleBack}

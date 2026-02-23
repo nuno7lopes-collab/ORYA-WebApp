@@ -3,6 +3,7 @@
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useRouter } from "next/navigation";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
 import { normalizeStepMinutes } from "@/lib/datetime/localInput";
@@ -45,7 +46,7 @@ type AvailabilityOverride = {
   intervals: Array<{ startMinute: number; endMinute: number }>;
 };
 
-type IntervalDraft = { startMinute: number; endMinute: number };
+type IntervalDraft = { id: string; startMinute: number; endMinute: number };
 type TimeDraft = { start: string; end: string };
 
 type AvailabilityResponse = {
@@ -60,6 +61,7 @@ type AvailabilityResponse = {
 };
 
 type AvailabilityEditorProps = {
+  orgId: number;
   scopeType: "ORGANIZATION" | "PROFESSIONAL" | "RESOURCE";
   scopeId?: number | null;
   title?: string;
@@ -94,7 +96,7 @@ function timeToMinutes(value: string) {
   return hours * 60 + mins;
 }
 
-function buildTemplateDrafts(templates: AvailabilityTemplate[]) {
+function buildTemplateDrafts(templates: AvailabilityTemplate[], createId: () => string) {
   const drafts: Record<number, IntervalDraft[]> = {};
   DAY_LABELS.forEach((_, idx) => {
     drafts[idx] = [];
@@ -102,6 +104,7 @@ function buildTemplateDrafts(templates: AvailabilityTemplate[]) {
   templates.forEach((template) => {
     const normalized = normalizeIntervals(template.intervals ?? []);
     drafts[template.dayOfWeek] = normalized.map((interval) => ({
+      id: createId(),
       startMinute: interval.startMinute,
       endMinute: interval.endMinute,
     }));
@@ -133,6 +136,7 @@ function formatIntervals(intervals: AvailabilityOverride["intervals"]) {
 }
 
 export default function AvailabilityEditor({
+  orgId,
   scopeType,
   scopeId,
   title = "Disponibilidade semanal",
@@ -140,6 +144,7 @@ export default function AvailabilityEditor({
   hourHeight = 56,
   gridMinutes = DEFAULT_SLOT_MINUTES,
 }: AvailabilityEditorProps) {
+  const router = useRouter();
   const scopeParams = useMemo(() => {
     const params = new URLSearchParams({ scopeType });
     if (scopeId) params.set("scopeId", String(scopeId));
@@ -147,16 +152,19 @@ export default function AvailabilityEditor({
   }, [scopeType, scopeId]);
 
   const [selectedScheduleId, setSelectedScheduleId] = useState<number | null>(null);
+  const [isDirty, setIsDirty] = useState(false);
   const availabilityKey = resolveCanonicalOrgApiPath(
     `/api/org/[orgId]/reservas/disponibilidade?${scopeParams}${selectedScheduleId ? `&scheduleId=${selectedScheduleId}` : ""}`,
   );
-  const { data: availabilityData, mutate: mutateAvailability } = useSWR<AvailabilityResponse>(availabilityKey, fetcher);
+  const { data: availabilityData, mutate: mutateAvailability } = useSWR<AvailabilityResponse>(availabilityKey, fetcher, {
+    revalidateOnFocus: !isDirty,
+    revalidateOnReconnect: !isDirty,
+  });
 
   const schedules = availabilityData?.schedules ?? [];
   const activeScheduleId = availabilityData?.activeScheduleId ?? null;
   const selectedSchedule = schedules.find((schedule) => schedule.id === (selectedScheduleId ?? availabilityData?.selectedScheduleId ?? null)) ?? null;
   const templates = availabilityData?.templates ?? [];
-  const overrides = availabilityData?.overrides ?? [];
   const inheritsOrganization = availabilityData?.inheritsOrganization ?? false;
   const hasAvailability = availabilityData
     ? templates.some((template) => normalizeIntervals(template.intervals ?? []).length > 0)
@@ -178,6 +186,11 @@ export default function AvailabilityEditor({
   const minScheduleDate = `${todayParts.year}-${padTime(todayParts.month)}-${padTime(todayParts.day)}`;
 
   const [templateDrafts, setTemplateDrafts] = useState<Record<number, IntervalDraft[]>>({});
+  const nextDraftIdRef = useRef(0);
+  const createDraftId = () => {
+    nextDraftIdRef.current += 1;
+    return `availability-draft-${nextDraftIdRef.current}`;
+  };
   const [availabilityError, setAvailabilityError] = useState<string | null>(null);
   const [templateSavingAll, setTemplateSavingAll] = useState(false);
   const [scheduleStartDate, setScheduleStartDate] = useState("");
@@ -189,23 +202,47 @@ export default function AvailabilityEditor({
   const [overrideDate, setOverrideDate] = useState("");
   const [overrideKind, setOverrideKind] = useState<AvailabilityOverride["kind"]>("CLOSED");
   const [overrideIntervals, setOverrideIntervals] = useState<TimeDraft[]>([]);
+  const [overrideDrafts, setOverrideDrafts] = useState<AvailabilityOverride[]>([]);
+  const nextOverrideIdRef = useRef(0);
+  const createLocalOverrideId = () => {
+    nextOverrideIdRef.current -= 1;
+    return nextOverrideIdRef.current;
+  };
   const [overrideSaving, setOverrideSaving] = useState(false);
+  const [hasUnsavedBarDismissed, setHasUnsavedBarDismissed] = useState(false);
+  const hydrationSignatureRef = useRef<string | null>(null);
   const dragStateRef = useRef<{
     dayIdx: number;
-    index: number;
+    blockId: string;
     mode: "create" | "move" | "resize-start" | "resize-end";
     anchorMinute: number;
     durationMinutes: number;
     offsetMinutes: number;
     rectTop: number;
     rectHeight: number;
+    pointerId: number;
+    captureElement: HTMLElement | null;
   } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => {
     if (!availabilityData?.templates) return;
-    setTemplateDrafts(buildTemplateDrafts(availabilityData.templates));
-  }, [availabilityData?.templates]);
+    const signature = JSON.stringify({
+      selectedScheduleId: availabilityData.selectedScheduleId ?? null,
+      templates: availabilityData.templates,
+    });
+    if (isDirty && hydrationSignatureRef.current && hydrationSignatureRef.current !== signature) {
+      return;
+    }
+    setTemplateDrafts(buildTemplateDrafts(availabilityData.templates, createDraftId));
+    hydrationSignatureRef.current = signature;
+  }, [availabilityData?.selectedScheduleId, availabilityData?.templates, isDirty]);
+
+  useEffect(() => {
+    if (!availabilityData?.overrides) return;
+    if (isDirty) return;
+    setOverrideDrafts(availabilityData.overrides);
+  }, [availabilityData?.overrides, isDirty]);
 
   useEffect(() => {
     if (!availabilityData) return;
@@ -219,28 +256,60 @@ export default function AvailabilityEditor({
     }
   }, [availabilityData, schedules, selectedScheduleId]);
 
+  useEffect(() => {
+    if (!isDirty) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    const handleAnchorNavigation = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      const anchor = target?.closest("a[href]") as HTMLAnchorElement | null;
+      if (!anchor) return;
+      const href = anchor.getAttribute("href");
+      if (!href || href.startsWith("#") || href.startsWith("javascript:")) return;
+      if (anchor.target === "_blank") return;
+      const confirmed = window.confirm("Tens alterações por aplicar. Queres sair sem guardar?");
+      if (!confirmed) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    document.addEventListener("click", handleAnchorNavigation, true);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      document.removeEventListener("click", handleAnchorNavigation, true);
+    };
+  }, [isDirty]);
+
   const handleTemplateAdd = (dayIdx: number) => {
     setTemplateDrafts((prev) => ({
       ...prev,
       [dayIdx]: [
         ...(prev[dayIdx] ?? []),
-        { startMinute: 9 * 60, endMinute: 10 * 60 },
+        { id: createDraftId(), startMinute: 9 * 60, endMinute: 10 * 60 },
       ],
     }));
+    setIsDirty(true);
+    setHasUnsavedBarDismissed(false);
   };
 
-  const handleTemplateRemove = (dayIdx: number, idx: number) => {
+  const handleTemplateRemove = (dayIdx: number, blockId: string) => {
     setTemplateDrafts((prev) => {
-      const list = [...(prev[dayIdx] ?? [])];
-      list.splice(idx, 1);
+      const list = (prev[dayIdx] ?? []).filter((item) => item.id !== blockId);
       return { ...prev, [dayIdx]: list };
     });
+    setIsDirty(true);
+    setHasUnsavedBarDismissed(false);
   };
 
-  const handleSplitInterval = (dayIdx: number, idx: number) => {
+  const handleSplitInterval = (dayIdx: number, blockId: string) => {
     setTemplateDrafts((prev) => {
       const list = [...(prev[dayIdx] ?? [])];
-      const current = list[idx];
+      const idx = list.findIndex((item) => item.id === blockId);
+      const current = idx >= 0 ? list[idx] : null;
       if (!current) return prev;
       const duration = current.endMinute - current.startMinute;
       if (duration < slotMinutes * 2) return prev;
@@ -251,11 +320,13 @@ export default function AvailabilityEditor({
       list.splice(
         idx,
         1,
-        { startMinute: current.startMinute, endMinute: midpoint },
-        { startMinute: midpoint, endMinute: current.endMinute },
+        { id: createDraftId(), startMinute: current.startMinute, endMinute: midpoint },
+        { id: createDraftId(), startMinute: midpoint, endMinute: current.endMinute },
       );
       return { ...prev, [dayIdx]: list };
     });
+    setIsDirty(true);
+    setHasUnsavedBarDismissed(false);
   };
 
   const handleTemplateSaveAll = async () => {
@@ -263,35 +334,85 @@ export default function AvailabilityEditor({
       setAvailabilityError("Cria ou seleciona uma disponibilidade base primeiro.");
       return;
     }
+    if (!selectedSchedule) {
+      setAvailabilityError("Seleciona uma disponibilidade ativa para aplicar alterações.");
+      return;
+    }
     setTemplateSavingAll(true);
     setAvailabilityError(null);
     try {
-      for (const dayIdx of DAY_ORDER) {
-        const drafts = templateDrafts[dayIdx] ?? [];
-        const parsed = normalizeIntervals(drafts);
-        const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/disponibilidade"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            mode: "TEMPLATE",
-            scopeType,
-            scopeId,
-            scheduleId: selectedScheduleId,
-            dayOfWeek: dayIdx,
-            intervals: parsed,
-          }),
-        });
-        const json = await res.json().catch(() => null);
-        if (!res.ok || !json?.ok) {
-          throw new Error(json?.error || `Erro ao guardar ${DAY_LABELS[dayIdx]}.`);
+      const templatePayload = DAY_ORDER.reduce<Record<string, Array<{ startMinute: number; endMinute: number }>>>((acc, dayIdx) => {
+        acc[String(dayIdx)] = normalizeIntervals(
+          (templateDrafts[dayIdx] ?? []).map((block) => ({
+            startMinute: block.startMinute,
+            endMinute: block.endMinute,
+          })),
+        );
+        return acc;
+      }, {});
+
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/disponibilidade/changesets"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scopeType,
+          scopeId,
+          scheduleId: selectedScheduleId,
+          startDate: toDateInput(selectedSchedule.startDate),
+          endDate: toDateInput(selectedSchedule.endDate) || null,
+          templates: templatePayload,
+          overrides: (overrideDrafts ?? []).map((override) => ({
+            date: toDateInput(override.date),
+            kind: override.kind,
+            intervals: override.intervals ?? [],
+          })),
+          autoApply: true,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      const payload = json?.data ?? json;
+      if (!res.ok || !json?.ok) {
+        const errorCode = String(json?.errorCode ?? json?.code ?? "");
+        const details = (json?.details ?? json?.data ?? null) as { changeSetId?: number } | null;
+        if (errorCode === "AVAILABILITY_CONFLICTS_FOUND" && Number.isFinite(details?.changeSetId)) {
+          const changeSetId = Number(details?.changeSetId);
+          setIsDirty(false);
+          setHasUnsavedBarDismissed(false);
+          router.push(`/org/${orgId}/bookings/availability/conflicts/${changeSetId}`);
+          return;
         }
+        throw new Error(String(json?.message ?? json?.error ?? "Erro ao aplicar alterações."));
       }
-      mutateAvailability();
+
+      if (payload?.changeSetId && payload?.status === "PENDING") {
+        router.push(`/org/${orgId}/bookings/availability/conflicts/${payload.changeSetId}`);
+        return;
+      }
+
+      setIsDirty(false);
+      setHasUnsavedBarDismissed(false);
+      await mutateAvailability();
     } catch (err) {
-      setAvailabilityError(err instanceof Error ? err.message : "Erro ao guardar disponibilidade.");
+      setAvailabilityError(err instanceof Error ? err.message : "Erro ao aplicar disponibilidade.");
     } finally {
       setTemplateSavingAll(false);
     }
+  };
+
+  const handleDiscardDraft = () => {
+    if (!isDirty) return;
+    const confirmed = window.confirm("Descartar rascunho desta semana?");
+    if (!confirmed) return;
+    const nextTemplates = availabilityData?.templates ?? [];
+    setTemplateDrafts(buildTemplateDrafts(nextTemplates, createDraftId));
+    setOverrideDrafts(availabilityData?.overrides ?? []);
+    hydrationSignatureRef.current = JSON.stringify({
+      selectedScheduleId: availabilityData?.selectedScheduleId ?? null,
+      templates: nextTemplates,
+    });
+    setIsDirty(false);
+    setHasUnsavedBarDismissed(false);
+    setAvailabilityError(null);
   };
 
   const resetScheduleForm = () => {
@@ -322,25 +443,50 @@ export default function AvailabilityEditor({
     setScheduleSaving(true);
     setAvailabilityError(null);
     try {
-      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/disponibilidade"), {
+      const templatePayload = DAY_ORDER.reduce<Record<string, Array<{ startMinute: number; endMinute: number }>>>((acc, dayIdx) => {
+        acc[String(dayIdx)] = normalizeIntervals(
+          (templateDrafts[dayIdx] ?? []).map((block) => ({
+            startMinute: block.startMinute,
+            endMinute: block.endMinute,
+          })),
+        );
+        return acc;
+      }, {});
+
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/disponibilidade/changesets"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            mode: "SCHEDULE",
-            scopeType,
-            scopeId,
-            scheduleId: scheduleFormMode === "edit" ? scheduleDraftId : undefined,
-            startDate: scheduleStartDate,
-            endDate: scheduleNoEnd ? null : scheduleEndDate,
-          }),
-        });
+        body: JSON.stringify({
+          scopeType,
+          scopeId,
+          scheduleId: scheduleFormMode === "edit" ? scheduleDraftId : null,
+          startDate: scheduleStartDate,
+          endDate: scheduleNoEnd ? null : scheduleEndDate,
+          templates: templatePayload,
+          overrides: (overrideDrafts ?? []).map((override) => ({
+            date: toDateInput(override.date),
+            kind: override.kind,
+            intervals: override.intervals ?? [],
+          })),
+          autoApply: true,
+        }),
+      });
       const json = await res.json().catch(() => null);
+      const payload = json?.data ?? json;
       if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "Erro ao guardar disponibilidade.");
+        const errorCode = String(json?.errorCode ?? json?.code ?? "");
+        const details = (json?.details ?? json?.data ?? null) as { changeSetId?: number } | null;
+        if (errorCode === "AVAILABILITY_CONFLICTS_FOUND" && Number.isFinite(details?.changeSetId)) {
+          router.push(`/org/${orgId}/bookings/availability/conflicts/${Number(details?.changeSetId)}`);
+          return;
+        }
+        throw new Error(String(json?.message ?? json?.error ?? "Erro ao guardar disponibilidade."));
       }
-      const nextId = json?.schedule?.id ?? null;
+      const nextId = Number(payload?.scheduleId) > 0 ? Number(payload?.scheduleId) : null;
       resetScheduleForm();
-      mutateAvailability();
+      setIsDirty(false);
+      setHasUnsavedBarDismissed(false);
+      await mutateAvailability();
       if (nextId) {
         setSelectedScheduleId(nextId);
       }
@@ -352,30 +498,10 @@ export default function AvailabilityEditor({
   };
 
   const handleScheduleDelete = async (scheduleId: number) => {
-    if (!window.confirm("Remover esta disponibilidade?")) return;
-    setAvailabilityError(null);
-    try {
-      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/disponibilidade"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mode: "SCHEDULE_DELETE",
-          scopeType,
-          scopeId,
-          scheduleId,
-        }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "Erro ao remover disponibilidade.");
-      }
-      mutateAvailability();
-      if (selectedScheduleId === scheduleId) {
-        setSelectedScheduleId(activeScheduleId ?? null);
-      }
-    } catch (err) {
-      setAvailabilityError(err instanceof Error ? err.message : "Erro ao remover disponibilidade.");
-    }
+    void scheduleId;
+    setAvailabilityError(
+      "A remoção direta foi desativada. Ajusta o período (data fim) e aplica alterações via changeset.",
+    );
   };
 
   const handleOverrideAdd = () => {
@@ -409,25 +535,28 @@ export default function AvailabilityEditor({
     setOverrideSaving(true);
     setAvailabilityError(null);
     try {
-      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/disponibilidade"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mode: "OVERRIDE",
-          scopeType,
-          scopeId,
-          date: overrideDate,
+      const dateIso = new Date(`${overrideDate}T00:00:00.000Z`).toISOString();
+      setOverrideDrafts((prev) => {
+        const next = [...prev];
+        const existingIdx = next.findIndex((item) => toDateInput(item.date) === overrideDate);
+        const payload: AvailabilityOverride = {
+          id: existingIdx >= 0 ? next[existingIdx].id : createLocalOverrideId(),
+          date: dateIso,
           kind: overrideKind,
-          intervals: parsed.intervals,
-        }),
+          intervals: parsed.intervals ?? [],
+        };
+        if (existingIdx >= 0) {
+          next[existingIdx] = payload;
+        } else {
+          next.push(payload);
+        }
+        next.sort((a, b) => toDateInput(a.date).localeCompare(toDateInput(b.date)));
+        return next;
       });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "Erro ao guardar exceção.");
-      }
       setOverrideDate("");
       setOverrideIntervals([]);
-      mutateAvailability();
+      setIsDirty(true);
+      setHasUnsavedBarDismissed(false);
     } catch (err) {
       setAvailabilityError(err instanceof Error ? err.message : "Erro ao guardar exceção.");
     } finally {
@@ -437,16 +566,9 @@ export default function AvailabilityEditor({
 
   const handleOverrideDelete = async (overrideId: number) => {
     setAvailabilityError(null);
-    try {
-      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas/disponibilidade/${overrideId}`), { method: "DELETE" });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "Erro ao remover exceção.");
-      }
-      mutateAvailability();
-    } catch (err) {
-      setAvailabilityError(err instanceof Error ? err.message : "Erro ao remover exceção.");
-    }
+    setOverrideDrafts((prev) => prev.filter((override) => override.id !== overrideId));
+    setIsDirty(true);
+    setHasUnsavedBarDismissed(false);
   };
 
   const clampMinute = (value: number) => Math.min(DAY_MINUTES, Math.max(0, value));
@@ -457,11 +579,12 @@ export default function AvailabilityEditor({
     return clampMinute(snapMinute(ratio * DAY_MINUTES));
   };
 
-  const updateInterval = (dayIdx: number, index: number, startMinute: number, endMinute: number) => {
+  const updateInterval = (dayIdx: number, blockId: string, startMinute: number, endMinute: number) => {
     setTemplateDrafts((prev) => {
       const list = [...(prev[dayIdx] ?? [])];
-      if (!list[index]) return prev;
-      list[index] = { startMinute, endMinute };
+      const index = list.findIndex((item) => item.id === blockId);
+      if (index < 0 || !list[index]) return prev;
+      list[index] = { ...list[index], startMinute, endMinute };
       return { ...prev, [dayIdx]: list };
     });
   };
@@ -470,6 +593,7 @@ export default function AvailabilityEditor({
     setTemplateDrafts((prev) => {
       const list = prev[dayIdx] ?? [];
       const normalized = normalizeIntervals(list).map((interval) => ({
+        id: createDraftId(),
         startMinute: interval.startMinute,
         endMinute: interval.endMinute,
       }));
@@ -480,13 +604,14 @@ export default function AvailabilityEditor({
   const startDragCreate = (dayIdx: number, event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
     const rect = event.currentTarget.getBoundingClientRect();
     const startMinute = getMinuteFromPointer(event.clientY, rect.top, rect.height);
-    let index = 0;
+    const blockId = createDraftId();
     setTemplateDrafts((prev) => {
       const list = [...(prev[dayIdx] ?? [])];
-      index = list.length;
       list.push({
+        id: blockId,
         startMinute,
         endMinute: Math.min(startMinute + slotMinutes, DAY_MINUTES),
       });
@@ -494,65 +619,73 @@ export default function AvailabilityEditor({
     });
     dragStateRef.current = {
       dayIdx,
-      index,
+      blockId,
       mode: "create",
       anchorMinute: startMinute,
       durationMinutes: slotMinutes,
       offsetMinutes: 0,
       rectTop: rect.top,
       rectHeight: rect.height,
+      pointerId: event.pointerId,
+      captureElement: event.currentTarget,
     };
     setIsDragging(true);
   };
 
   const startDragResize = (
     dayIdx: number,
-    index: number,
+    blockId: string,
     mode: "resize-start" | "resize-end",
     event: ReactPointerEvent<HTMLDivElement>,
   ) => {
     event.preventDefault();
     event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
     const column = event.currentTarget.closest("[data-day-column]") as HTMLDivElement | null;
     const rect = column?.getBoundingClientRect();
     if (!rect) return;
-    const interval = templateDrafts[dayIdx]?.[index];
+    const interval = (templateDrafts[dayIdx] ?? []).find((item) => item.id === blockId);
     if (!interval) return;
     dragStateRef.current = {
       dayIdx,
-      index,
+      blockId,
       mode,
       anchorMinute: interval.startMinute,
       durationMinutes: interval.endMinute - interval.startMinute,
       offsetMinutes: 0,
       rectTop: rect.top,
       rectHeight: rect.height,
+      pointerId: event.pointerId,
+      captureElement: event.currentTarget,
     };
     setIsDragging(true);
   };
 
   const startDragMove = (
     dayIdx: number,
-    index: number,
+    blockId: string,
     event: ReactPointerEvent<HTMLDivElement>,
   ) => {
     event.preventDefault();
     event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
     const column = event.currentTarget.closest("[data-day-column]") as HTMLDivElement | null;
     const rect = column?.getBoundingClientRect();
     if (!rect) return;
-    const interval = templateDrafts[dayIdx]?.[index];
+    const interval = (templateDrafts[dayIdx] ?? []).find((item) => item.id === blockId);
     if (!interval) return;
     const minute = getMinuteFromPointer(event.clientY, rect.top, rect.height);
     dragStateRef.current = {
       dayIdx,
-      index,
+      blockId,
       mode: "move",
       anchorMinute: interval.startMinute,
       durationMinutes: interval.endMinute - interval.startMinute,
       offsetMinutes: minute - interval.startMinute,
       rectTop: rect.top,
       rectHeight: rect.height,
+      pointerId: event.pointerId,
+      captureElement: event.currentTarget,
     };
     setIsDragging(true);
   };
@@ -593,15 +726,20 @@ export default function AvailabilityEditor({
         }
       }
 
-      updateInterval(state.dayIdx, state.index, startMinute, endMinute);
+      updateInterval(state.dayIdx, state.blockId, startMinute, endMinute);
     };
 
     const handleUp = () => {
       const state = dragStateRef.current;
+      if (state?.captureElement && state.captureElement.hasPointerCapture(state.pointerId)) {
+        state.captureElement.releasePointerCapture(state.pointerId);
+      }
       dragStateRef.current = null;
       setIsDragging(false);
       if (state) {
         normalizeDayDrafts(state.dayIdx);
+        setIsDirty(true);
+        setHasUnsavedBarDismissed(false);
       }
     };
 
@@ -613,7 +751,7 @@ export default function AvailabilityEditor({
       window.removeEventListener("pointerup", handleUp);
       window.removeEventListener("pointercancel", handleUp);
     };
-  }, [isDragging]);
+  }, [isDragging, slotMinutes]);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const scrollInitRef = useRef(false);
@@ -700,7 +838,15 @@ export default function AvailabilityEditor({
                   <button
                     type="button"
                     className="text-left"
-                    onClick={() => setSelectedScheduleId(schedule.id)}
+                    onClick={() => {
+                      if (schedule.id === selectedScheduleId) return;
+                      if (isDirty) {
+                        const confirmed = window.confirm("Existem alterações por aplicar. Queres descartá-las e trocar de disponibilidade?");
+                        if (!confirmed) return;
+                        setIsDirty(false);
+                      }
+                      setSelectedScheduleId(schedule.id);
+                    }}
                   >
                     <p className="text-sm font-semibold text-white">
                       {labelStart} → {labelEnd}
@@ -774,6 +920,34 @@ export default function AvailabilityEditor({
         </div>
       )}
 
+      {isDirty && !hasUnsavedBarDismissed && (
+        <div className="rounded-xl border border-amber-300/35 bg-amber-500/10 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-amber-100">Alterações por aplicar</p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className={CTA_PRIMARY}
+                onClick={handleTemplateSaveAll}
+                disabled={templateSavingAll}
+              >
+                {templateSavingAll ? "A aplicar..." : "Aplicar alterações"}
+              </button>
+              <button type="button" className={CTA_DANGER} onClick={handleDiscardDraft}>
+                Descartar rascunho
+              </button>
+              <button
+                type="button"
+                className={CTA_NEUTRAL}
+                onClick={() => setHasUnsavedBarDismissed(true)}
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="rounded-2xl border border-white/12 bg-[linear-gradient(165deg,rgba(255,255,255,0.08),rgba(255,255,255,0.01))] shadow-[0_30px_90px_rgba(3,8,20,0.55)] backdrop-blur-xl overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
           <div>
@@ -787,9 +961,9 @@ export default function AvailabilityEditor({
               type="button"
               className={cn(CTA_NEUTRAL, "text-[11px]")}
               onClick={handleTemplateSaveAll}
-              disabled={templateSavingAll}
+              disabled={templateSavingAll || !isDirty}
             >
-              {templateSavingAll ? "A guardar semana..." : "Guardar semana"}
+              {templateSavingAll ? "A aplicar..." : "Aplicar alterações"}
             </button>
             <div className="text-[10px] uppercase tracking-[0.22em] text-white/45">Grelha {slotMinutes} min</div>
           </div>
@@ -874,24 +1048,24 @@ export default function AvailabilityEditor({
                             Dia fechado
                           </div>
                         )}
-                        {dayDrafts.map((interval, idx) => {
+                        {dayDrafts.map((interval) => {
                           const top = interval.startMinute * minuteHeight;
                           const height = Math.max(12, (interval.endMinute - interval.startMinute) * minuteHeight);
                           const labelText = `${minutesToTime(interval.startMinute)}-${minutesToTime(interval.endMinute)}`;
                           return (
                             <div
-                              key={`${label}-${idx}`}
+                              key={interval.id}
                               className="group absolute left-1 right-1 rounded-xl border border-white/25 bg-[linear-gradient(135deg,rgba(255,255,255,0.14),rgba(255,255,255,0.05))] px-2.5 py-2 text-[10px] text-white shadow-[0_18px_40px_rgba(0,0,0,0.5)] backdrop-blur-2xl"
                               style={{ top, height }}
-                              onPointerDown={(event) => startDragMove(dayIdx, idx, event)}
+                              onPointerDown={(event) => startDragMove(dayIdx, interval.id, event)}
                             >
                               <div
                                 className="absolute inset-x-1 top-0 h-2 cursor-ns-resize"
-                                onPointerDown={(event) => startDragResize(dayIdx, idx, "resize-start", event)}
+                                onPointerDown={(event) => startDragResize(dayIdx, interval.id, "resize-start", event)}
                               />
                               <div
                                 className="absolute inset-x-1 bottom-0 h-2 cursor-ns-resize"
-                                onPointerDown={(event) => startDragResize(dayIdx, idx, "resize-end", event)}
+                                onPointerDown={(event) => startDragResize(dayIdx, interval.id, "resize-end", event)}
                               />
                               <div className="flex items-center justify-between gap-1">
                                 <span className="font-semibold">{labelText}</span>
@@ -901,7 +1075,7 @@ export default function AvailabilityEditor({
                                     className="rounded-full border border-white/20 px-2 text-[10px] text-white/80"
                                     onClick={(event) => {
                                       event.stopPropagation();
-                                      handleSplitInterval(dayIdx, idx);
+                                      handleSplitInterval(dayIdx, interval.id);
                                     }}
                                   >
                                     Dividir
@@ -911,7 +1085,7 @@ export default function AvailabilityEditor({
                                     className="rounded-full border border-white/20 px-2 text-[10px] text-white/80"
                                     onClick={(event) => {
                                       event.stopPropagation();
-                                      handleTemplateRemove(dayIdx, idx);
+                                      handleTemplateRemove(dayIdx, interval.id);
                                     }}
                                   >
                                     Remover
@@ -1001,10 +1175,10 @@ export default function AvailabilityEditor({
         )}
 
         <div className="space-y-2">
-          {overrides.length === 0 && (
+          {overrideDrafts.length === 0 && (
             <p className="text-[12px] text-white/50">Sem exceções.</p>
           )}
-          {overrides.map((override) => {
+          {overrideDrafts.map((override) => {
             const dateLabel = new Date(override.date).toLocaleDateString("pt-PT", {
               day: "2-digit",
               month: "short",

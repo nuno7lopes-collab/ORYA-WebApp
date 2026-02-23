@@ -192,6 +192,7 @@ export default function OrgBookingsAvailabilityPage() {
       </section>
 
       <AvailabilityEditor
+        orgId={organizationId}
         scopeType={resolvedScope.scopeType as ScopeType}
         scopeId={resolvedScope.scopeId}
         title={scopeMeta.title}

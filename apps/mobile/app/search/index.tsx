@@ -31,6 +31,7 @@ import { SearchOrganization, SearchUser } from "../../features/search/types";
 import { EventCardSquare } from "../../components/events/EventCardSquare";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
+import { useFocusFrameMonitor } from "../../components/perf/useFocusFrameMonitor";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -125,6 +126,7 @@ export default function SearchScreen() {
   const insets = useSafeAreaInsets();
   const tabBarPadding = useTabBarPadding();
   const bottomPadding = Math.max(tabBarPadding, insets.bottom + 24);
+  useFocusFrameMonitor("screen_search");
   const queryLength = debounced.trim().length;
   const showOffers = activeTab === "all" || activeTab === "padel" || activeTab === "events" || activeTab === "services";
   const showUsers = activeTab === "all" || activeTab === "people";
@@ -662,11 +664,11 @@ export default function SearchScreen() {
         ListFooterComponent={listFooter}
         contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: bottomPadding }}
         keyboardShouldPersistTaps="handled"
-        removeClippedSubviews={Platform.OS === "android"}
+        removeClippedSubviews
         initialNumToRender={6}
         maxToRenderPerBatch={6}
-        updateCellsBatchingPeriod={40}
-        windowSize={7}
+        updateCellsBatchingPeriod={16}
+        windowSize={5}
         stickySectionHeadersEnabled={false}
       />
     </LiquidBackground>

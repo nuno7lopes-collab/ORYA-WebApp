@@ -2088,7 +2088,7 @@ export default function EventDetail() {
           gestureEnabled: false,
         }}
       />
-      <LiquidBackground variant="solid">
+      <LiquidBackground>
         <View pointerEvents="none" style={styles.pageGlobalBase} />
         <Animated.ScrollView
           showsVerticalScrollIndicator={false}

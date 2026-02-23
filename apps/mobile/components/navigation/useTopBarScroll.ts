@@ -5,7 +5,6 @@ import { TOP_APP_HEADER_HEIGHT } from "./topBarTokens";
 
 type TopBarScrollOptions = {
   hideOnScroll?: boolean;
-  elevationOffset?: number;
   hideOffset?: number;
   showOffset?: number;
 };
@@ -15,14 +14,12 @@ export type TopBarScrollState = {
   onScrollEndDrag: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
   onMomentumScrollEnd: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
   translateY: Animated.Value;
-  isElevated: boolean;
   isHidden: boolean;
   height: number;
 };
 
 const DEFAULT_OPTIONS: Required<TopBarScrollOptions> = {
   hideOnScroll: true,
-  elevationOffset: 12,
   hideOffset: 18,
   showOffset: 24,
 };
@@ -40,12 +37,10 @@ export const useTopBarScroll = (options: TopBarScrollOptions = {}): TopBarScroll
   const insets = useSafeAreaInsets();
   const opts = { ...DEFAULT_OPTIONS, ...options };
   const translateY = useRef(new Animated.Value(0)).current;
-  const [isElevated, setIsElevated] = useState(false);
   const [isHidden, setIsHidden] = useState(false);
 
   const lastOffsetRef = useRef(0);
   const isHiddenRef = useRef(false);
-  const isElevatedRef = useRef(false);
   const lastDirectionRef = useRef<"up" | "down" | "none">("none");
   const translateValueRef = useRef(0);
   const upTravelRef = useRef(0);
@@ -82,12 +77,6 @@ export const useTopBarScroll = (options: TopBarScrollOptions = {}): TopBarScroll
     },
     [headerHeight, translateY],
   );
-
-  const applyElevated = useCallback((next: boolean) => {
-    if (isElevatedRef.current === next) return;
-    isElevatedRef.current = next;
-    setIsElevated(next);
-  }, []);
 
   useEffect(() => {
     if (!isHiddenRef.current) return;
@@ -167,15 +156,8 @@ export const useTopBarScroll = (options: TopBarScrollOptions = {}): TopBarScroll
       }
 
       if (offsetY <= 2) {
-        applyElevated(false);
         if (opts.hideOnScroll) applyHidden(false, offsetY, true);
         return;
-      }
-
-      if (offsetY > opts.elevationOffset) {
-        applyElevated(true);
-      } else if (offsetY <= 4) {
-        applyElevated(false);
       }
 
       if (!opts.hideOnScroll) return;
@@ -208,7 +190,7 @@ export const useTopBarScroll = (options: TopBarScrollOptions = {}): TopBarScroll
         }
       }
     },
-    [applyElevated, applyHidden, opts.elevationOffset, opts.hideOffset, opts.hideOnScroll, opts.showOffset],
+    [applyHidden, opts.hideOffset, opts.hideOnScroll, opts.showOffset],
   );
 
   const onScrollEndDrag = useCallback(
@@ -246,7 +228,6 @@ export const useTopBarScroll = (options: TopBarScrollOptions = {}): TopBarScroll
     onScrollEndDrag,
     onMomentumScrollEnd,
     translateY,
-    isElevated,
     isHidden,
     height: headerHeight,
   };

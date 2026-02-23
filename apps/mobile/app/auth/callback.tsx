@@ -181,7 +181,7 @@ export default function AuthCallbackScreen() {
   }
 
   return (
-    <LiquidBackground variant="deep">
+    <LiquidBackground>
       <View style={styles.container}>
         {status === "loading" ? (
           <>

@@ -1,7 +1,7 @@
 import { Redirect, withLayoutContext } from "expo-router";
 import { useAuth } from "../../lib/auth";
 import { useProfileSummary } from "../../features/profile/hooks";
-import { ActivityIndicator, Animated, Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Animated, InteractionManager, Linking, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { useCallback, useEffect, useState } from "react";
 import { FloatingTabBar } from "../../components/navigation/FloatingTabBar";
 import { getOnboardingDone } from "../../lib/onboardingState";
@@ -36,12 +36,8 @@ const VISIBLE_TAB_KEYS: ReadonlyArray<TabKey> = ["agora", "index", "network", "m
 
 export default function TabsLayout() {
   const { t } = useTranslation();
+  const { width } = useWindowDimensions();
   const { loading, session } = useAuth();
-  const profileQuery = useProfileSummary(
-    Boolean(session),
-    session?.access_token ?? null,
-    session?.user?.id ?? null,
-  );
   const [localOnboardingDone, setLocalOnboardingDone] = useState<boolean | null>(null);
   const [hasDraft, setHasDraft] = useState<boolean | null>(null);
   const [cachedProfile, setCachedProfileState] = useState<CachedProfile | null>(null);
@@ -49,6 +45,17 @@ export default function TabsLayout() {
   const [locationModalBusy, setLocationModalBusy] = useState(false);
   const [locationModalError, setLocationModalError] = useState<string | null>(null);
   const [locationCanAskAgain, setLocationCanAskAgain] = useState(true);
+  const [tabPreloadDistance, setTabPreloadDistance] = useState(0);
+  const [backgroundTasksReady, setBackgroundTasksReady] = useState(false);
+  const shouldFetchProfileSummary =
+    Boolean(session) &&
+    localOnboardingDone !== null &&
+    !(localOnboardingDone === true && hasDraft !== true);
+  const profileQuery = useProfileSummary(
+    shouldFetchProfileSummary,
+    session?.access_token ?? null,
+    session?.user?.id ?? null,
+  );
 
   useEffect(() => {
     let mounted = true;
@@ -105,12 +112,42 @@ export default function TabsLayout() {
     cachedProfile,
   });
 
-  useFavoritesSync(Boolean(session?.user?.id) && gateStatus === "ready");
+  useFavoritesSync(
+    Boolean(session?.user?.id) &&
+      gateStatus === "ready" &&
+      backgroundTasksReady,
+  );
+
+  useEffect(() => {
+    if (gateStatus !== "ready") {
+      setTabPreloadDistance(0);
+      setBackgroundTasksReady(false);
+      return () => undefined;
+    }
+    let active = true;
+    let preloadTimer: ReturnType<typeof setTimeout> | null = null;
+    let backgroundTimer: ReturnType<typeof setTimeout> | null = null;
+    const interactionTask = InteractionManager.runAfterInteractions(() => {
+      preloadTimer = setTimeout(() => {
+        if (active) setTabPreloadDistance(1);
+      }, 220);
+      backgroundTimer = setTimeout(() => {
+        if (active) setBackgroundTasksReady(true);
+      }, 420);
+    });
+    return () => {
+      active = false;
+      if (preloadTimer) clearTimeout(preloadTimer);
+      if (backgroundTimer) clearTimeout(backgroundTimer);
+      interactionTask.cancel();
+    };
+  }, [gateStatus]);
 
   useEffect(() => {
     let mounted = true;
     const userId = session?.user?.id ?? null;
-    if (gateStatus !== "ready" || !userId) return () => undefined;
+    if (gateStatus !== "ready" || !backgroundTasksReady || !userId)
+      return () => undefined;
     hasSeenLocationPrompt(userId)
       .then(async (seen) => {
         if (!mounted || seen) return;
@@ -125,7 +162,7 @@ export default function TabsLayout() {
     return () => {
       mounted = false;
     };
-  }, [gateStatus, session?.user?.id]);
+  }, [backgroundTasksReady, gateStatus, session?.user?.id]);
 
   const handleLocationAllow = useCallback(async () => {
     if (locationModalBusy) return;
@@ -255,6 +292,7 @@ export default function TabsLayout() {
         tabBarPosition="bottom"
         backBehavior="history"
         initialRouteName="agora"
+        initialLayout={{ width }}
         tabBar={renderTabBar}
         screenOptions={{
           swipeEnabled: !isBlocked,
@@ -263,7 +301,8 @@ export default function TabsLayout() {
           tabBarShowIcon: false,
           tabBarIndicatorStyle: { height: 0 },
           tabBarStyle: { backgroundColor: "transparent" },
-          lazy: false,
+          lazy: true,
+          lazyPreloadDistance: tabPreloadDistance,
         }}
       >
         <ExpoTopTabs.Screen name="padel" options={{ title: "Padel" }} />

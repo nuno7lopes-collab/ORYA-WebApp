@@ -49,11 +49,13 @@ export const resolveOnboardingGate = ({
   cachedProfile?: CachedProfile | null;
 }): OnboardingGateStatus => {
   if (!session) return "sign-in";
-  if (localOnboardingDone === null || hasDraft === null) return "loading";
+  if (localOnboardingDone === null) return "loading";
 
   if (localOnboardingDone === true && hasDraft !== true) {
     return "ready";
   }
+
+  if (hasDraft === null) return "loading";
 
   const hasRemoteData = Boolean(profileQuery.data);
   const hasCached = Boolean(cachedProfile);

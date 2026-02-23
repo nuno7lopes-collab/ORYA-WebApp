@@ -1,11 +1,14 @@
+import { useMemo } from "react";
 import { Ionicons } from "../icons/Ionicons";
-import { Platform, Pressable, StyleSheet, View } from "react-native";
+import { Platform, Pressable, StyleSheet, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BlurView } from "expo-blur";
 import type { TabKey } from "./tabOrder";
 import {
-  NAV_BOTTOM_SOLID,
-  navDeepRgba,
+  NAV_BAR_BLUR_INTENSITY,
+  NAV_BAR_MILK_ALPHA,
+  sampleBackgroundColor,
+  sampleBackgroundColorAlpha,
 } from "./navColors";
 
 const TABS: Array<{
@@ -32,8 +35,6 @@ const ICON_NUDGE_Y = -0.5;
 const ACTIVE_ICON_COLOR = "rgba(248,252,255,1)";
 const INACTIVE_ICON_COLOR = "rgba(228,240,255,0.8)";
 const TAB_SLOT_SIZE = 44;
-const NAV_MILK_OVERLAY = navDeepRgba(0.78);
-const BLUR_INTENSITY = 24;
 
 type FloatingTabBarProps = {
   activeKey: TabKey;
@@ -42,19 +43,38 @@ type FloatingTabBarProps = {
 
 export function FloatingTabBar({ activeKey, onSelect }: FloatingTabBarProps) {
   const insets = useSafeAreaInsets();
+  const { height: screenHeight } = useWindowDimensions();
   const safeBottom = Math.max(insets.bottom, 8);
+  const bottomBreakProgress = useMemo(() => {
+    if (screenHeight <= 0) {
+      return 1;
+    }
+    const barStartY = screenHeight - (TAB_BAR_HEIGHT + safeBottom);
+    return Math.min(1, Math.max(0, barStartY / screenHeight));
+  }, [safeBottom, screenHeight]);
+  const bottomBreakColor = useMemo(
+    () => sampleBackgroundColor(bottomBreakProgress),
+    [bottomBreakProgress],
+  );
+  const bottomOverlayColor = useMemo(
+    () => sampleBackgroundColorAlpha(bottomBreakProgress, NAV_BAR_MILK_ALPHA),
+    [bottomBreakProgress],
+  );
 
   return (
     <View pointerEvents="box-none" style={styles.wrapper}>
       <View style={[styles.bar, { paddingBottom: safeBottom }]}>
         <View pointerEvents="none" style={styles.backdrop}>
-          <BlurView
-            tint="default"
-            intensity={BLUR_INTENSITY}
-            style={StyleSheet.absoluteFill}
-            {...(Platform.OS === "android" ? { experimentalBlurMethod: "dimezisBlurView" as const } : null)}
-          />
-          <View style={styles.milkOverlay} />
+          {Platform.OS === "ios" ? (
+            <BlurView
+              tint="default"
+              intensity={NAV_BAR_BLUR_INTENSITY}
+              style={[StyleSheet.absoluteFill, { backgroundColor: bottomBreakColor }]}
+            />
+          ) : (
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: bottomBreakColor }]} />
+          )}
+          <View style={[styles.milkOverlay, { backgroundColor: bottomOverlayColor }]} />
         </View>
         <View style={styles.slotsRow}>
           {TABS.map((tab) => {
@@ -114,11 +134,9 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: NAV_BOTTOM_SOLID,
   },
   milkOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: NAV_MILK_OVERLAY,
   },
   slotsRow: {
     height: TAB_BAR_HEIGHT,

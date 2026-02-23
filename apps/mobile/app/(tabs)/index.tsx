@@ -43,6 +43,7 @@ import { useGlobalSearchParams, useRouter } from "expo-router";
 import { useScopedTabSwipeBlocker } from "../../components/navigation/TabSwipeProvider";
 import { useIsFocused } from "@react-navigation/native";
 import { safePush } from "../../lib/navigation";
+import { useFocusFrameMonitor } from "../../components/perf/useFocusFrameMonitor";
 
 if (
   Platform.OS === "android" &&
@@ -118,6 +119,7 @@ export default function DiscoverScreen() {
   const tabBarPadding = useTabBarPadding();
   const topPadding = useTopHeaderPadding(12);
   const topBar = useTopBarScroll();
+  useFocusFrameMonitor("screen_discover");
   const locationResolveRef = useRef(false);
   const { width: screenWidth } = useWindowDimensions();
 
@@ -582,11 +584,11 @@ export default function DiscoverScreen() {
           estimatedItemSize={gridItemHeight + GRID_GAP}
           refreshing={isRefetching}
           onRefresh={handleRefresh}
-          removeClippedSubviews={Platform.OS === "android"}
-          initialNumToRender={8}
-          maxToRenderPerBatch={8}
-          updateCellsBatchingPeriod={40}
-          windowSize={7}
+          removeClippedSubviews
+          initialNumToRender={6}
+          maxToRenderPerBatch={6}
+          updateCellsBatchingPeriod={16}
+          windowSize={5}
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.35}
           onScrollBeginDrag={handleScrollBeginDrag}

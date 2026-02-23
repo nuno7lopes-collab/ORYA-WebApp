@@ -401,7 +401,7 @@ export default function WalletDetailScreen() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false, animation: "slide_from_right" }} />
-      <LiquidBackground variant="solid">
+      <LiquidBackground>
         <ScrollView
           contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 34 }}
           refreshControl={<RefreshControl refreshing={isFetching} onRefresh={() => refetch()} tintColor="#fff" />}

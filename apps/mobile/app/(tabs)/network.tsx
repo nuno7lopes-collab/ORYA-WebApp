@@ -18,6 +18,7 @@ import { useRouter } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
 import { NetworkPeopleDeck } from "../../features/network/NetworkPeopleDeck";
 import { safePush } from "../../lib/navigation";
+import { useFocusFrameMonitor } from "../../components/perf/useFocusFrameMonitor";
 
 const SECTION_SPACING = 24;
 
@@ -57,6 +58,7 @@ export default function NetworkScreen() {
   const tabBarPadding = useTabBarPadding();
   const topPadding = useTopHeaderPadding(12);
   const topBar = useTopBarScroll();
+  useFocusFrameMonitor("screen_network");
 
   const feedItems = useMemo(
     () => socialFeed.data?.pages.flatMap((page) => page.items) ?? [],
@@ -298,11 +300,11 @@ export default function NetworkScreen() {
         scrollEventThrottle={16}
         refreshing={suggestions.isFetching || socialFeed.isFetching}
         onRefresh={handleRefresh}
-        removeClippedSubviews={Platform.OS === "android"}
-        initialNumToRender={6}
-        maxToRenderPerBatch={6}
-        updateCellsBatchingPeriod={40}
-        windowSize={6}
+        removeClippedSubviews
+        initialNumToRender={5}
+        maxToRenderPerBatch={5}
+        updateCellsBatchingPeriod={16}
+        windowSize={5}
         stickySectionHeadersEnabled={false}
       />
     </LiquidBackground>

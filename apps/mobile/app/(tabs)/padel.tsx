@@ -315,7 +315,7 @@ export default function PadelTabScreen() {
   const [activeSection, setActiveSection] = useState<PadelSectionKey>("tournaments");
   const topPadding = useTopHeaderPadding(12);
   const contentBottomPadding = Math.max(insets.bottom, 12) + 22;
-  const topBar = useTopBarScroll({ hideOnScroll: false, elevationOffset: 8 });
+  const topBar = useTopBarScroll({ hideOnScroll: false });
   const { data: ipLocation } = useIpLocation(dataReady);
   const userLat = ipLocation?.approxLatLon?.lat ?? null;
   const userLon = ipLocation?.approxLatLon?.lon ?? null;

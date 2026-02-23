@@ -97,7 +97,6 @@ async function _POST(
           paymentIntentId: true,
           organizationId: true,
           serviceId: true,
-          availabilityId: true,
           snapshotTimezone: true,
           confirmationSnapshot: true,
           splitPayment: {
@@ -245,7 +244,6 @@ async function _POST(
         metadata: {
           bookingId: booking.id,
           serviceId: booking.serviceId,
-          availabilityId: booking.availabilityId,
           source: "USER",
           reason,
           deadline: decision.deadline?.toISOString() ?? null,

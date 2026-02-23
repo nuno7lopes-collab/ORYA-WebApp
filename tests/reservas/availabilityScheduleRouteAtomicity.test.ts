@@ -73,7 +73,7 @@ beforeEach(async () => {
 });
 
 describe("POST /api/org/[orgId]/reservas/disponibilidade", () => {
-  it("nao cria schedule quando cloneFromScheduleId e invalido", async () => {
+  it("bloqueia writes diretos e exige changeset", async () => {
     const req = new NextRequest("http://localhost/api/org/21/reservas/disponibilidade", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -88,9 +88,9 @@ describe("POST /api/org/[orgId]/reservas/disponibilidade", () => {
     const res = await POST(req);
     const body = await res.json();
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(409);
     expect(body.ok).toBe(false);
-    expect(body.errorCode).toBe("SCHEDULE_NOT_FOUND");
+    expect(body.errorCode).toBe("AVAILABILITY_CHANGESET_REQUIRED");
     expect(prisma.availabilitySchedule.create).not.toHaveBeenCalled();
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });

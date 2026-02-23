@@ -18,6 +18,13 @@ const AuthContext = createContext<AuthState>({
   user: null,
 });
 
+const refreshSessionIfNeeded = (candidate: any | null) => {
+  const expiresAtMs = candidate?.expires_at ? candidate.expires_at * 1000 : 0;
+  if (!expiresAtMs) return;
+  if (expiresAtMs - Date.now() >= 60_000) return;
+  supabase.auth.refreshSession().catch(() => undefined);
+};
+
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState<any | null>(null);
@@ -31,12 +38,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     let mounted = true;
     const hydrate = async () => {
       perfMark("auth_get_session");
-      const nextSession = await getActiveSession();
+      const nextSession = await getActiveSession({
+        refreshIfNearExpiry: false,
+      });
 
       if (mounted) {
         setSession(nextSession);
         setLoading(false);
         perfMeasure("auth_session_ready", "auth_get_session");
+        refreshSessionIfNeeded(nextSession);
       }
     };
 
@@ -52,11 +62,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     const subscription = AppState.addEventListener("change", (state) => {
       if (state !== "active") return;
-      getActiveSession()
+      getActiveSession({ refreshIfNearExpiry: false })
         .then((nextSession) => {
           if (!mounted) return;
           if (!nextSession && sessionRef.current) return;
           setSession(nextSession);
+          refreshSessionIfNeeded(nextSession);
         })
         .catch(() => undefined);
     });

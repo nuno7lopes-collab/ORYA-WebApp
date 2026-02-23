@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
+  InteractionManager,
   Platform,
   Pressable,
   StyleSheet,
@@ -32,6 +33,7 @@ import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeFlashList } from "../../components/lists/SafeFlashList";
 import { safePush } from "../../lib/navigation";
+import { useFocusFrameMonitor } from "../../components/perf/useFocusFrameMonitor";
 
 const MAP_BUTTON_SIZE = 50;
 const MAP_ICON_SIZE = 20;
@@ -45,6 +47,7 @@ export default function AgoraScreen() {
   const navigation = useNavigation();
   const isFocused = useIsFocused();
   const [dataReady, setDataReady] = useState(true);
+  const [locationReady, setLocationReady] = useState(false);
   const {
     items,
     isLoading,
@@ -55,12 +58,13 @@ export default function AgoraScreen() {
     fetchNextPage,
     refetch,
   } = useAgoraFeed(dataReady);
-  const { data: ipLocation } = useIpLocation(dataReady);
+  const { data: ipLocation } = useIpLocation(dataReady && locationReady);
   const userLat = ipLocation?.approxLatLon?.lat ?? null;
   const userLon = ipLocation?.approxLatLon?.lon ?? null;
   const tabBarPadding = useTabBarPadding();
   const topPadding = useTopHeaderPadding(16);
   const topBar = useTopBarScroll({ hideOffset: 16, showOffset: 50 });
+  useFocusFrameMonitor("screen_agora");
   const insets = useSafeAreaInsets();
   const floatingMapBottom = TAB_BAR_HEIGHT + Math.max(insets.bottom, 8) + 32;
   const [hiddenEventIds, setHiddenEventIds] = useState<number[]>([]);
@@ -146,7 +150,24 @@ export default function AgoraScreen() {
   );
 
   useEffect(() => {
-    setDataReady(isFocused);
+    if (!isFocused) {
+      setDataReady(false);
+      setLocationReady(false);
+      return () => undefined;
+    }
+    setDataReady(true);
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const interactionTask = InteractionManager.runAfterInteractions(() => {
+      timer = setTimeout(() => {
+        if (active) setLocationReady(true);
+      }, 360);
+    });
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+      interactionTask.cancel();
+    };
   }, [isFocused]);
 
   useEffect(() => {
@@ -191,10 +212,10 @@ export default function AgoraScreen() {
           onScrollEndDrag={topBar.onScrollEndDrag}
           onMomentumScrollEnd={topBar.onMomentumScrollEnd}
           scrollEventThrottle={16}
-          removeClippedSubviews={Platform.OS === "android"}
+          removeClippedSubviews
           initialNumToRender={4}
           maxToRenderPerBatch={4}
-          updateCellsBatchingPeriod={40}
+          updateCellsBatchingPeriod={16}
           windowSize={5}
           ListHeaderComponent={
             <View>

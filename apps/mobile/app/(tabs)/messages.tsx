@@ -34,6 +34,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getUserFacingError } from "../../lib/errors";
 import type { SearchOrganization, SearchUser } from "../../features/search/types";
+import { useFocusFrameMonitor } from "../../components/perf/useFocusFrameMonitor";
 
 const formatInboxTimestamp = (value?: string | null) => {
   if (!value) return "";
@@ -58,6 +59,7 @@ export default function MessagesTabScreen() {
   const tabBarPadding = useTabBarPadding();
   const insets = useSafeAreaInsets();
   const topBar = useTopBarScroll({ hideOnScroll: false });
+  useFocusFrameMonitor("screen_messages");
   const router = useRouter();
   const openAuth = () => {
     safePush(router, { pathname: "/auth", params: { next: "/messages" } });
@@ -524,6 +526,11 @@ export default function MessagesTabScreen() {
           );
         }}
         estimatedItemSize={98}
+        removeClippedSubviews
+        initialNumToRender={6}
+        maxToRenderPerBatch={6}
+        updateCellsBatchingPeriod={16}
+        windowSize={5}
       />
 
       <Modal

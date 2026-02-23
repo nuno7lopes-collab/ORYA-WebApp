@@ -51,6 +51,7 @@ import { resolveMediaUri } from "../../lib/media";
 import { safeBack, safePush } from "../../lib/navigation";
 import type { PublicEventCard } from "@orya/shared";
 import { MapFiltersBar, type MapTemplateFilter } from "../../components/discover/MapFiltersBar";
+import { useFocusFrameMonitor } from "../../components/perf/useFocusFrameMonitor";
 
 const DEFAULT_REGION: Region = {
   latitude: 38.7223,
@@ -77,6 +78,10 @@ const MAP_CARD_SPACING = 18;
 const MAP_CLUSTER_MIN_EVENTS = 10;
 const MAP_CLUSTER_MIN_DELTA = 0.18;
 const MAP_CLUSTER_MIN_POINTS_PER_CELL = 3;
+const MAP_LIST_INITIAL_RENDER = 5;
+const MAP_LIST_BATCH_RENDER = 5;
+const MAP_LIST_WINDOW_SIZE = 4;
+const MAP_LIST_BATCHING_PERIOD_MS = 16;
 
 const MapPressable = (props: ComponentProps<typeof Pressable>) => (
   <Pressable unstable_pressDelay={0} {...props} />
@@ -234,6 +239,7 @@ export default function MapScreen() {
   const headerPadding = useTopHeaderPadding(18);
   const topPadding = Platform.OS === "ios" ? insets.top + 10 : headerPadding;
   const { height } = useWindowDimensions();
+  useFocusFrameMonitor("screen_map");
   const bottomPadding = Math.max(insets.bottom + 24, 24);
 
   const [dataReady, setDataReady] = useState(false);
@@ -1175,10 +1181,10 @@ export default function MapScreen() {
           data={listData}
           keyExtractor={keyExtractor}
           renderItem={renderItem}
-          initialNumToRender={8}
-          maxToRenderPerBatch={8}
-          windowSize={7}
-          updateCellsBatchingPeriod={40}
+          initialNumToRender={MAP_LIST_INITIAL_RENDER}
+          maxToRenderPerBatch={MAP_LIST_BATCH_RENDER}
+          windowSize={MAP_LIST_WINDOW_SIZE}
+          updateCellsBatchingPeriod={MAP_LIST_BATCHING_PERIOD_MS}
           contentContainerStyle={{ paddingHorizontal: 20, paddingTop: topPadding, paddingBottom: bottomPadding }}
           ListHeaderComponent={
             <View>
@@ -1284,7 +1290,7 @@ export default function MapScreen() {
           }
           refreshing={discoverQuery.isFetching}
           onRefresh={() => discoverQuery.refetch()}
-          removeClippedSubviews={Platform.OS === "android"}
+          removeClippedSubviews
           showsVerticalScrollIndicator={false}
         />
         <LocationPermissionModal
@@ -1472,10 +1478,10 @@ export default function MapScreen() {
                     justifyContent: isEmpty ? "center" : "flex-start",
                   }}
                   showsVerticalScrollIndicator={false}
-                  initialNumToRender={8}
-                  maxToRenderPerBatch={8}
-                  windowSize={7}
-                  updateCellsBatchingPeriod={40}
+                  initialNumToRender={MAP_LIST_INITIAL_RENDER}
+                  maxToRenderPerBatch={MAP_LIST_BATCH_RENDER}
+                  windowSize={MAP_LIST_WINDOW_SIZE}
+                  updateCellsBatchingPeriod={MAP_LIST_BATCHING_PERIOD_MS}
                   removeClippedSubviews
                   ListHeaderComponent={sheetHeader}
                   stickyHeaderIndices={[0]}

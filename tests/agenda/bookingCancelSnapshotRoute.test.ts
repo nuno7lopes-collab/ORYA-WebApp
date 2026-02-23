@@ -146,7 +146,6 @@ describe("booking cancel snapshot route", () => {
       paymentIntentId: "pi_1",
       organizationId: 10,
       serviceId: 20,
-      availabilityId: null,
       snapshotTimezone: "Europe/Lisbon",
       confirmationSnapshot: snapshot,
     } as any);
@@ -185,7 +184,6 @@ describe("booking cancel snapshot route", () => {
       paymentIntentId: "pi_2",
       organizationId: 10,
       serviceId: 21,
-      availabilityId: null,
       snapshotTimezone: "Europe/Lisbon",
       confirmationSnapshot: null,
     } as any);

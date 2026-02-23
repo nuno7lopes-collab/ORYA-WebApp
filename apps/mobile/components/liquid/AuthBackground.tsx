@@ -5,7 +5,7 @@ import { LiquidBackground } from "./LiquidBackground";
 
 export function AuthBackground({ children }: PropsWithChildren) {
   return (
-    <LiquidBackground variant="deep">
+    <LiquidBackground>
       <View style={styles.backgroundLayer} pointerEvents="none">
         <LinearGradient
           colors={["rgba(40, 60, 120, 0.28)", "transparent"]}

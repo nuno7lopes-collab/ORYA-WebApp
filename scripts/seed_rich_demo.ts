@@ -2565,17 +2565,6 @@ async function main() {
             ? service.partySizeMin ?? 1
             : randInt(service.partySizeMin ?? 2, service.partySizeMax ?? 4);
 
-        const availability = await prisma.availability.create({
-          data: {
-            serviceId: service.id,
-            courtId: resource?.courtId ?? null,
-            startsAt,
-            durationMinutes: duration,
-            capacity: service.partySizeMax ?? (service.id === serviceCourt.id ? 4 : 1),
-            status: "OPEN",
-          },
-        });
-
         const status: "CONFIRMED" | "COMPLETED" | "PENDING" =
           startsAt.getTime() < now.getTime() - 2 * 60 * 60 * 1000 ? (maybe(0.82) ? "COMPLETED" : "CONFIRMED") : maybe(0.75) ? "CONFIRMED" : "PENDING";
 
@@ -2584,7 +2573,6 @@ async function main() {
             serviceId: service.id,
             organizationId: topPadelOrg.id,
             userId: user.id,
-            availabilityId: availability.id,
             courtId: resource?.courtId ?? null,
             assignmentMode: service.assignmentMode,
             professionalId: professional?.id ?? null,

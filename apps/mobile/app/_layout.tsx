@@ -15,7 +15,7 @@ import { useFonts } from "expo-font";
 import { Ionicons } from "../components/icons/Ionicons";
 import { useEffect, useState } from "react";
 import * as WebBrowser from "expo-web-browser";
-import { perfMark, perfMeasure, perfLog } from "../lib/perf";
+import { perfMark, perfMeasure, perfLog, startFrameMonitor } from "../lib/perf";
 import { TabSwipeProvider } from "../components/navigation/TabSwipeProvider";
 import { I18nProvider } from "../components/i18n/I18nProvider";
 import { Manrope_500Medium, Manrope_700Bold } from "@expo-google-fonts/manrope";
@@ -90,14 +90,7 @@ export default function RootLayout() {
   const [fontTimeout, setFontTimeout] = useState(false);
 
   useEffect(() => {
-    if (!__DEV__) return;
-    Ionicons.loadFont().catch((error) => {
-      console.warn("Ionicons.loadFont failed", error);
-    });
-  }, []);
-
-  useEffect(() => {
-    const timer = setTimeout(() => setFontTimeout(true), 1500);
+    const timer = setTimeout(() => setFontTimeout(true), 700);
     return () => clearTimeout(timer);
   }, []);
 
@@ -114,6 +107,14 @@ export default function RootLayout() {
   useEffect(() => {
     perfLog("api_base_url", { apiBaseUrl: env.apiBaseUrl, appEnv: env.appEnv });
   }, [env.apiBaseUrl, env.appEnv]);
+
+  useEffect(() => {
+    if (!__DEV__) return;
+    const stopFrameMonitor = startFrameMonitor("mobile_global", { sampleWindowMs: 5000 });
+    return () => {
+      stopFrameMonitor();
+    };
+  }, []);
 
   const loadingFallback = (
     <View

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Constants from "expo-constants";
+import { InteractionManager } from "react-native";
 import { useAuth } from "../../lib/auth";
 import { registerForPushToken } from "../../lib/push";
 import { api } from "../../lib/api";
@@ -23,10 +24,27 @@ export function PushGate() {
   const authFailedRef = useRef(false);
   const lastErrorRef = useRef<string | null>(null);
   const [registering, setRegistering] = useState(false);
+  const [bootReady, setBootReady] = useState(false);
   const unreadQuery = useNotificationsUnread(
     session?.access_token ?? null,
     session?.user?.id ?? null,
+    bootReady,
   );
+
+  useEffect(() => {
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const interactionTask = InteractionManager.runAfterInteractions(() => {
+      timer = setTimeout(() => {
+        if (active) setBootReady(true);
+      }, 250);
+    });
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+      interactionTask.cancel();
+    };
+  }, []);
 
   const loadNotifications = useCallback(async () => {
     if (notificationsRef.current) return notificationsRef.current;
@@ -36,7 +54,7 @@ export function PushGate() {
   }, []);
 
   useEffect(() => {
-    if (isExpoGo) return;
+    if (isExpoGo || !bootReady) return;
     let active = true;
     loadNotifications()
       .then((Notifications) => {
@@ -55,7 +73,7 @@ export function PushGate() {
     return () => {
       active = false;
     };
-  }, [isExpoGo, loadNotifications]);
+  }, [bootReady, isExpoGo, loadNotifications]);
 
   useEffect(() => {
     if (session?.access_token && session.access_token !== lastAccessTokenRef.current) {
@@ -65,7 +83,7 @@ export function PushGate() {
   }, [session?.access_token]);
 
   useEffect(() => {
-    if (isExpoGo) return;
+    if (isExpoGo || !bootReady) return;
     const register = async () => {
       if (!session?.user?.id || !session?.access_token || registering) return;
       if (authFailedRef.current) return;
@@ -98,10 +116,10 @@ export function PushGate() {
     };
 
     register();
-  }, [isExpoGo, session?.user?.id, session?.access_token, registering]);
+  }, [bootReady, isExpoGo, session?.user?.id, session?.access_token, registering]);
 
   useEffect(() => {
-    if (isExpoGo) return;
+    if (isExpoGo || !bootReady) return;
     const count = unreadQuery.data?.unreadCount ?? 0;
     let active = true;
     loadNotifications()
@@ -113,10 +131,10 @@ export function PushGate() {
     return () => {
       active = false;
     };
-  }, [isExpoGo, loadNotifications, unreadQuery.data?.unreadCount]);
+  }, [bootReady, isExpoGo, loadNotifications, unreadQuery.data?.unreadCount]);
 
   useEffect(() => {
-    if (isExpoGo || !session?.user?.id) return;
+    if (isExpoGo || !bootReady || !session?.user?.id) return;
     let active = true;
     let receiveSub: { remove: () => void } | null = null;
     let responseSub: { remove: () => void } | null = null;
@@ -154,7 +172,7 @@ export function PushGate() {
       receiveSub?.remove();
       responseSub?.remove();
     };
-  }, [isExpoGo, loadNotifications, queryClient, router, session?.user?.id]);
+  }, [bootReady, isExpoGo, loadNotifications, queryClient, router, session?.user?.id]);
 
   return null;
 }

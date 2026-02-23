@@ -286,6 +286,11 @@ export default function OrganizationInvitesScreen() {
             data={invites}
             keyExtractor={(item) => item.id}
             renderItem={renderInvite}
+            removeClippedSubviews
+            initialNumToRender={6}
+            maxToRenderPerBatch={6}
+            updateCellsBatchingPeriod={16}
+            windowSize={5}
             showsVerticalScrollIndicator={false}
           />
         )}

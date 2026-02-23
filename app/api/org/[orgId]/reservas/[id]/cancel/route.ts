@@ -67,7 +67,6 @@ async function _POST(
               bookingId: number;
               guestEmail?: string | null;
               serviceId?: number | null;
-              availabilityId?: number | null;
               courtId?: number | null;
               resourceId?: number | null;
               professionalId?: number | null;
@@ -146,7 +145,6 @@ async function _POST(
           paymentIntentId: true,
           organizationId: true,
           serviceId: true,
-          availabilityId: true,
           snapshotTimezone: true,
           confirmationSnapshot: true,
           courtId: true,
@@ -298,7 +296,6 @@ async function _POST(
         metadata: {
           bookingId: booking.id,
           serviceId: booking.serviceId,
-          availabilityId: booking.availabilityId,
           source: "ORG",
           actorRole: membership.role,
           reason,
@@ -328,7 +325,6 @@ async function _POST(
               bookingId: booking.id,
               guestEmail: booking.guestEmail ?? null,
               serviceId: booking.serviceId ?? null,
-              availabilityId: booking.availabilityId ?? null,
               courtId: booking.courtId ?? null,
               resourceId: booking.resourceId ?? null,
               professionalId: booking.professionalId ?? null,
@@ -403,7 +399,6 @@ async function _POST(
           metadata: {
             bookingId: crmPayload.bookingId,
             serviceId: crmPayload.serviceId ?? null,
-            availabilityId: crmPayload.availabilityId ?? null,
             courtId: crmPayload.courtId ?? null,
             resourceId: crmPayload.resourceId ?? null,
             professionalId: crmPayload.professionalId ?? null,

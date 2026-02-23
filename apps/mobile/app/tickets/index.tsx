@@ -17,6 +17,7 @@ import { useIsFocused, useNavigation } from "@react-navigation/native";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { safeBack, safePush } from "../../lib/navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useFocusFrameMonitor } from "../../components/perf/useFocusFrameMonitor";
 
 type TicketsScreenProps = {
   showBackButton?: boolean;
@@ -45,6 +46,7 @@ export default function TicketsScreen({ showBackButton = true, embedded = false 
   const storePurchases = useStorePurchases(dataReady && mode === "store");
   const topPadding = useTopHeaderPadding(12);
   const topBar = useTopBarScroll();
+  useFocusFrameMonitor("screen_tickets");
   const ticketItems = useMemo(() => feed.data?.pages.flatMap((page) => page.items) ?? [], [feed.data?.pages]);
   const storeItems = storePurchases.data?.items ?? [];
   const showSkeleton =
@@ -171,10 +173,10 @@ export default function TicketsScreen({ showBackButton = true, embedded = false 
       onScrollEndDrag={embedded ? undefined : topBar.onScrollEndDrag}
       onMomentumScrollEnd={embedded ? undefined : topBar.onMomentumScrollEnd}
       scrollEventThrottle={16}
-      removeClippedSubviews={Platform.OS === "android"}
+      removeClippedSubviews
       initialNumToRender={4}
       maxToRenderPerBatch={4}
-      updateCellsBatchingPeriod={40}
+      updateCellsBatchingPeriod={16}
       windowSize={5}
       ListHeaderComponent={
         <View style={{ paddingBottom: 8 }}>
