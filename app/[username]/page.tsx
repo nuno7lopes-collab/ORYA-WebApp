@@ -155,6 +155,21 @@ function formatTimeLabel(date: Date | null, timezone: string) {
   }).format(date);
 }
 
+function parseAmenityTags(...values: Array<string | null | undefined>) {
+  const tags: string[] = [];
+  for (const value of values) {
+    if (!value) continue;
+    const parts = value
+      .split(/[,;|•\n]+/g)
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    for (const part of parts) {
+      if (!tags.includes(part)) tags.push(part);
+    }
+  }
+  return tags.slice(0, 4);
+}
+
 type OrganizationEvent = {
   id: number;
   slug: string;

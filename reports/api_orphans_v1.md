@@ -1,14 +1,14 @@
 # API <-> UI Coverage Report
 
-Generated: 2026-02-23T14:01:07.000Z
+Generated: 2026-02-23T14:08:53.930Z
 CSV: reports/api_ui_coverage_v1.csv
 
 ## Summary
-- API routes total: 488
+- API routes total: 499
 - Covered by UI: 434
-- Orphan (no UI): 3
+- Orphan (no UI): 14
 - Orphan baseline: 3
-- Orphan (new): 0
+- Orphan (new): 11
 - Orphan allowlisted: 3
 - Exempt (internal/cron/webhook): 48
 - UI endpoints missing API: 0
@@ -55,7 +55,17 @@ CSV: reports/api_ui_coverage_v1.csv
 - /api/org/[param]/store/shipping/zones/[param]/methods (files: components/store/StoreShippingMethodsPanel.tsx, components/store/StoreShippingSettingsPanel.tsx, components/store/StoreShippingTiersPanel.tsx)
 
 ## API routes without UI usage (new, excluding internal/cron/webhook)
-- none
+- /api/org/[orgId]/padel/broadcast (app/api/org/[orgId]/padel/broadcast/route.ts)
+- /api/org/[orgId]/padel/courts (app/api/org/[orgId]/padel/courts/route.ts)
+- /api/org/[orgId]/padel/pairings/swap (app/api/org/[orgId]/padel/pairings/swap/route.ts)
+- /api/padel/live (app/api/padel/live/route.ts)
+- /api/padel/matches/[id]/delay (app/api/padel/matches/[id]/delay/route.ts)
+- /api/padel/pairings/[id]/cancel (app/api/padel/pairings/[id]/cancel/route.ts)
+- /api/padel/pairings/[id]/reopen (app/api/padel/pairings/[id]/reopen/route.ts)
+- /api/padel/public/calendar (app/api/padel/public/calendar/route.ts)
+- /api/padel/tournaments/tier-approvals/[id]/approve (app/api/padel/tournaments/tier-approvals/[id]/approve/route.ts)
+- /api/padel/tournaments/tier-approvals/[id]/reject (app/api/padel/tournaments/tier-approvals/[id]/reject/route.ts)
+- /api/padel/tournaments/tier-approvals/request (app/api/padel/tournaments/tier-approvals/request/route.ts)
 
 ## API orphan baseline matches
 - /api/me/dsar/export (app/api/me/dsar/export/route.ts)

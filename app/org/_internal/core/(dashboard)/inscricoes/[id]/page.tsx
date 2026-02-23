@@ -11,7 +11,17 @@ import { cn } from "@/lib/utils";
 import { OryaDateTimeField } from "@/components/ui/datetime";
 import { appendOrganizationIdToHref, parseOrganizationId, parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
 
-type FieldType = "TEXT" | "TEXTAREA" | "EMAIL" | "PHONE" | "NUMBER" | "DATE" | "SELECT" | "CHECKBOX";
+type FieldType =
+  | "TEXT"
+  | "TEXTAREA"
+  | "EMAIL"
+  | "PHONE"
+  | "NUMBER"
+  | "DATE"
+  | "SELECT"
+  | "MULTI_SELECT"
+  | "TIME"
+  | "CHECKBOX";
 
 type FormField = {
   id: number;
@@ -87,6 +97,8 @@ const FIELD_TYPES: { value: FieldType; label: string }[] = [
   { value: "NUMBER", label: "Número" },
   { value: "DATE", label: "Data" },
   { value: "SELECT", label: "Escolha única" },
+  { value: "MULTI_SELECT", label: "Escolha múltipla" },
+  { value: "TIME", label: "Hora" },
   { value: "CHECKBOX", label: "Confirmação" },
 ];
 
@@ -298,7 +310,7 @@ export default function InscricaoDetailPage() {
         helpText: field.helpText,
         placeholder: field.placeholder,
         options:
-          field.fieldType === "SELECT"
+          field.fieldType === "SELECT" || field.fieldType === "MULTI_SELECT"
             ? field.options
                 .split(",")
                 .map((opt) => opt.trim())
@@ -752,7 +764,7 @@ export default function InscricaoDetailPage() {
                       onChange={(e) => updateField(field.key, { helpText: e.target.value })}
                     />
                   </div>
-                  {field.fieldType === "SELECT" && (
+                  {(field.fieldType === "SELECT" || field.fieldType === "MULTI_SELECT") && (
                     <input
                       className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
                       placeholder="Opções separadas por vírgula"

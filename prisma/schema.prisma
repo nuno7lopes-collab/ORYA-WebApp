@@ -6699,6 +6699,8 @@ enum OrganizationFormFieldType {
   NUMBER
   DATE
   SELECT
+  MULTI_SELECT
+  TIME
   CHECKBOX
 
   @@schema("app_v3")

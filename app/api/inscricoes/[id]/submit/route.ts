@@ -8,6 +8,7 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const TIME_REGEX = /^([01]\d|2[0-3]):([0-5]\d)(:[0-5]\d)?$/;
 const COUNTED_STATUSES: OrganizationFormSubmissionStatus[] = [
   "SUBMITTED",
   "IN_REVIEW",
@@ -28,6 +29,25 @@ function parseCheckbox(value: unknown) {
     return normalized === "true" || normalized === "on" || normalized === "1";
   }
   return false;
+}
+
+function parseMultiSelect(value: unknown) {
+  const rawItems = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(",")
+      : [];
+  const normalized = rawItems
+    .map((entry) => String(entry).trim())
+    .filter((entry) => entry.length > 0);
+  if (normalized.length === 0) return [] as string[];
+  return Array.from(new Set(normalized));
+}
+
+function parseTimeValue(value: string) {
+  const trimmed = value.trim();
+  if (!TIME_REGEX.test(trimmed)) return null;
+  return trimmed.slice(0, 5);
 }
 
 async function _POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
@@ -196,6 +216,41 @@ async function _POST(req: NextRequest, context: { params: Promise<{ id: string }
             return jsonWrap({ ok: false, error: `Opção inválida em "${field.label}".` }, { status: 400 });
           }
           normalizedAnswers[key] = trimmedString;
+          break;
+        }
+        case "MULTI_SELECT": {
+          const options = Array.isArray(field.options) ? field.options.map((o) => String(o)) : [];
+          const selected = parseMultiSelect(raw);
+          if (selected.length === 0) {
+            if (field.required) {
+              return jsonWrap(
+                { ok: false, error: `Escolhe pelo menos uma opção em "${field.label}".` },
+                { status: 400 },
+              );
+            }
+            break;
+          }
+          if (options.length > 0) {
+            const invalid = selected.find((option) => !options.includes(option));
+            if (invalid) {
+              return jsonWrap({ ok: false, error: `Opção inválida em "${field.label}".` }, { status: 400 });
+            }
+          }
+          normalizedAnswers[key] = selected;
+          break;
+        }
+        case "TIME": {
+          if (!trimmedString) {
+            if (field.required) {
+              return jsonWrap({ ok: false, error: `Preenche o campo "${field.label}".` }, { status: 400 });
+            }
+            break;
+          }
+          const parsed = parseTimeValue(trimmedString);
+          if (!parsed) {
+            return jsonWrap({ ok: false, error: `Hora inválida em "${field.label}".` }, { status: 400 });
+          }
+          normalizedAnswers[key] = parsed;
           break;
         }
         case "CHECKBOX": {

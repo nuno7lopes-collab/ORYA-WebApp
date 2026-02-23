@@ -27,6 +27,8 @@ const FIELD_TYPES = new Set<OrganizationFormFieldType>([
   "NUMBER",
   "DATE",
   "SELECT",
+  "MULTI_SELECT",
+  "TIME",
   "CHECKBOX",
 ]);
 
@@ -270,7 +272,7 @@ async function _PATCH(req: NextRequest, context: { params: Promise<{ id: string 
           required,
           helpText: helpText || null,
           placeholder: placeholder || null,
-          options: fieldType === "SELECT" ? options : null,
+          options: fieldType === "SELECT" || fieldType === "MULTI_SELECT" ? options : null,
           order: index,
         });
       });

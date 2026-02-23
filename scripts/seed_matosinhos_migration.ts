@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { config } from "dotenv";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { PrismaPg } from "@prisma/adapter-pg";
 import {
   AnalyticsDimensionKey,
@@ -32,6 +32,8 @@ type SeedEvent = {
   grossCents: number;
   sourceUrl: string;
 };
+
+type SupabaseAdminClient = SupabaseClient<any, any, any, any, any>;
 
 const USER_EMAIL = "nelsonorya@gmail.com";
 const USER_PASSWORD = "NelsonORYA#2026";
@@ -159,7 +161,7 @@ function plusDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
 }
 
-async function listAllAuthUsers(supabase: ReturnType<typeof createClient>) {
+async function listAllAuthUsers(supabase: SupabaseAdminClient) {
   const users: Array<{ id: string; email: string | null }> = [];
   let page = 1;
   const perPage = 200;
@@ -237,7 +239,7 @@ async function upsertAddress(
 }
 
 async function ensureAuthUser(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseAdminClient,
   input: { email: string; password: string; fullName: string },
 ) {
   const allAuthUsers = await listAllAuthUsers(supabase);

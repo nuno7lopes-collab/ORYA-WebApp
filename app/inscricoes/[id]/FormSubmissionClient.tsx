@@ -4,7 +4,19 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useUser } from "@/app/hooks/useUser";
 
-type FieldType = "TEXT" | "TEXTAREA" | "EMAIL" | "PHONE" | "NUMBER" | "DATE" | "SELECT" | "CHECKBOX";
+type FieldType =
+  | "TEXT"
+  | "TEXTAREA"
+  | "EMAIL"
+  | "PHONE"
+  | "NUMBER"
+  | "DATE"
+  | "SELECT"
+  | "MULTI_SELECT"
+  | "TIME"
+  | "CHECKBOX";
+
+type AnswerValue = string | number | boolean | string[];
 
 type FormField = {
   id: number;
@@ -45,7 +57,7 @@ const formatDateTime = (value: string | null | undefined) => {
 
 export function FormSubmissionClient({ form }: { form: FormPayload }) {
   const { isLoggedIn } = useUser();
-  const [answers, setAnswers] = useState<Record<string, string | number | boolean>>({});
+  const [answers, setAnswers] = useState<Record<string, AnswerValue>>({});
   const [guestEmail, setGuestEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -112,8 +124,20 @@ export function FormSubmissionClient({ form }: { form: FormPayload }) {
   const dateLabel =
     !hasStart && !hasEnd ? "Disponível sempre" : startLabel ?? (endLabel ? `Disponível até ${endLabel}` : null);
 
-  const updateAnswer = (fieldId: number, value: string | number | boolean) => {
+  const updateAnswer = (fieldId: number, value: AnswerValue) => {
     setAnswers((prev) => ({ ...prev, [String(fieldId)]: value }));
+  };
+
+  const toggleMultiSelectAnswer = (fieldId: number, option: string, checked: boolean) => {
+    const key = String(fieldId);
+    const previous = answers[key];
+    const currentValues = Array.isArray(previous)
+      ? previous.map((entry) => String(entry))
+      : [];
+    const nextValues = checked
+      ? Array.from(new Set([...currentValues, option]))
+      : currentValues.filter((entry) => entry !== option);
+    updateAnswer(fieldId, nextValues);
   };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -267,6 +291,25 @@ export function FormSubmissionClient({ form }: { form: FormPayload }) {
                       </option>
                     ))}
                   </select>
+                ) : field.fieldType === "MULTI_SELECT" ? (
+                  <div className="space-y-2">
+                    {(field.options ?? []).map((opt) => {
+                      const checked = Array.isArray(value)
+                        ? value.map((entry) => String(entry)).includes(opt)
+                        : false;
+                      return (
+                        <label key={opt} className="flex items-center gap-2 text-sm text-white/80">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-white/30 bg-black/40 text-[#6BFFFF]"
+                            checked={checked}
+                            onChange={(e) => toggleMultiSelectAnswer(field.id, opt, e.target.checked)}
+                          />
+                          {opt}
+                        </label>
+                      );
+                    })}
+                  </div>
                 ) : field.fieldType === "CHECKBOX" ? (
                   <label className="flex items-center gap-2 text-sm text-white/80">
                     <input
@@ -289,6 +332,8 @@ export function FormSubmissionClient({ form }: { form: FormPayload }) {
                             ? "number"
                             : field.fieldType === "DATE"
                               ? "date"
+                              : field.fieldType === "TIME"
+                                ? "time"
                               : "text"
                     }
                     placeholder={field.placeholder ?? ""}

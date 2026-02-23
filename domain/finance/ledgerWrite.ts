@@ -34,13 +34,13 @@ async function insertLedgerEntriesWithTx(
 
   const existing =
     keyTuples.length > 0 && typeof txUnsafe.$queryRaw === "function"
-      ? await txUnsafe.$queryRaw<Array<{ paymentId: string; causationId: string }>>(Prisma.sql`
+      ? (await txUnsafe.$queryRaw(Prisma.sql`
           SELECT
             payment_id AS "paymentId",
             causation_id AS "causationId"
           FROM app_v3.ledger_entries
           WHERE (payment_id, causation_id) IN (${Prisma.join(keyTuples)})
-        `)
+        `)) as Array<{ paymentId: string; causationId: string }>
       : [];
 
   const existingKeys = new Set(
