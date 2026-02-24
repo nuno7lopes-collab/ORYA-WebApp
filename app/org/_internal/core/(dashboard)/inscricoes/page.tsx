@@ -92,7 +92,7 @@ export default function InscricoesPage({ embedded }: InscricoesPageProps) {
   const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
 
   const items = useMemo(() => (data?.ok ? data.items : []), [data]);
-  const moduleDisabled = data?.ok === false && data?.error?.includes("Módulo");
+  const moduleDisabled = data?.ok === false && data?.error?.includes("Ferramenta");
   const loadError = data?.ok === false && !moduleDisabled ? data?.error : null;
   const viewParam = searchParams?.get("view") ?? "ativos";
   const activeView =

@@ -1,6 +1,6 @@
 # V9 Inventory — API Routes
 
-Total: 489
+Total: 496
 
 | Route | File | Methods | Type | Auth | Payloads | Status codes | Runtime | Cache | Envelope | Legacy |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -193,6 +193,10 @@ Total: 489
 | /api/notifications/prefs | app/api/notifications/prefs/route.ts | GET, POST | public | none detected | json | 401 | default/default/default | default | withApiEnvelope | - |
 | /api/org-hub | app/api/org-hub/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
 | /api/org-hub/groups/[groupId]/dashboard/agenda | app/api/org-hub/groups/[groupId]/dashboard/agenda/route.ts | GET | public | user | query | 200, 400, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/org-hub/groups/[groupId]/dashboard/crm | app/api/org-hub/groups/[groupId]/dashboard/crm/route.ts | GET | public | user | query | 200, 400, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/org-hub/groups/[groupId]/dashboard/finance | app/api/org-hub/groups/[groupId]/dashboard/finance/route.ts | GET | public | user | query | 200, 400, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/org-hub/groups/[groupId]/dashboard/rankings | app/api/org-hub/groups/[groupId]/dashboard/rankings/route.ts | GET | public | user | query | 200, 400, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/org-hub/groups/[groupId]/dashboard/reservas | app/api/org-hub/groups/[groupId]/dashboard/reservas/route.ts | GET | public | user | query | 200, 400, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/org-hub/groups/[groupId]/governance | app/api/org-hub/groups/[groupId]/governance/route.ts | GET, PATCH | public | user | json | 200, 400, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/org-hub/groups/[groupId]/governance/members | app/api/org-hub/groups/[groupId]/governance/members/route.ts | DELETE, PATCH, POST | public | user | json | 200, 400, 403, 404, 409, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/org-hub/groups/[groupId]/owner/transfer/cancel | app/api/org-hub/groups/[groupId]/owner/transfer/cancel/route.ts | POST | public | user | json | 200 | default/default/default | default | withApiEnvelope | - |
@@ -365,7 +369,9 @@ Total: 489
 | /api/org/[orgId]/store/shipping/zones/[zoneId]/methods | app/api/org/[orgId]/store/shipping/zones/[zoneId]/methods/route.ts | GET, POST | public | org, user | json | 201 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/tournaments/blocks/bulk | app/api/org/[orgId]/tournaments/blocks/bulk/route.ts | POST | public | org, orgEmail, user | json | 201 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/tournaments/blocks/overrides | app/api/org/[orgId]/tournaments/blocks/overrides/route.ts | GET, POST | public | org, orgEmail, user | json, query | 201 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/tournaments/broadcast | app/api/org/[orgId]/tournaments/broadcast/route.ts | POST | public | org, orgEmail | json | 200, 403 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/tournaments/create | app/api/org/[orgId]/tournaments/create/route.ts | POST | public | admin, org, orgEmail, user | json | 201, 403 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/tournaments/pairings/swap | app/api/org/[orgId]/tournaments/pairings/swap/route.ts | POST | public | org, orgEmail | json | 200, 403 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/trainers/profile | app/api/org/[orgId]/trainers/profile/route.ts | GET, PATCH | public | org, orgEmail | json | 200, 403 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/username | app/api/org/[orgId]/username/route.ts | PATCH | public | org, orgEmail | json | 200, 403 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/venues/recent | app/api/org/[orgId]/venues/recent/route.ts | GET | public | org, user | query | 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
@@ -402,6 +408,8 @@ Total: 489
 | /api/padel/ops/summary | app/api/padel/ops/summary/route.ts | GET | public | org | query | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/padel/pairings | app/api/padel/pairings/route.ts | GET, POST | public | org | json, query | 200, 400, 401, 403, 404, 409, 423, 500 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/padel/pairings/[id]/accept | app/api/padel/pairings/[id]/accept/route.ts | POST | public | none detected | none detected | 200, 400, 401, 402, 403, 404, 409, 423, 500 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/pairings/[id]/actions/cancel | app/api/padel/pairings/[id]/actions/cancel/route.ts | POST | public | org | none detected | 200, 400, 401, 403, 404, 409, 500 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/pairings/[id]/actions/reopen | app/api/padel/pairings/[id]/actions/reopen/route.ts | POST | public | org | json | 200, 400, 401, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/padel/pairings/[id]/checkout | app/api/padel/pairings/[id]/checkout/route.ts | POST | public | none detected | json | unknown | nodejs/default/default | default | withApiEnvelope | - |
 | /api/padel/pairings/[id]/decline | app/api/padel/pairings/[id]/decline/route.ts | POST | public | none detected | none detected | 200, 400, 401, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/padel/pairings/claim/[token] | app/api/padel/pairings/claim/[token]/route.ts | GET, POST | public | none detected | none detected | 200, 400, 401, 402, 404, 409, 423, 500 | nodejs/default/default | default | withApiEnvelope | - |
@@ -492,7 +500,6 @@ Total: 489
 | /api/upload/delete | app/api/upload/delete/route.ts | POST | public | org, user | json | 400, 401, 403, 404, 409, 500, 502 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
 | /api/username/check | app/api/username/check/route.ts | GET | public | none detected | query | 200, 400, 403, 429, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/users/search | app/api/users/search/route.ts | GET | public | none detected | query | 200, 500 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/webhooks/stripe | app/api/webhooks/stripe/route.ts | POST | public | none detected | none detected | unknown | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
 
 Notas:
 - Auth/códigos/payloads foram inferidos por heurística; revisar manualmente endpoints críticos.

@@ -148,4 +148,22 @@ describe("withApiEnvelope", () => {
       errorCode: "AUTH_UNAVAILABLE",
     });
   });
+
+  it("não expõe mensagem interna em erros 500", async () => {
+    const handler = withApiEnvelope(async () => {
+      throw new Error("db connection timeout");
+    });
+
+    const res = await handler(new Request("http://localhost/internal-error"));
+    const body = await res.json();
+
+    expect(res.status).toBe(500);
+    expect(body).toMatchObject({
+      ok: false,
+      errorCode: "INTERNAL_ERROR",
+      message: "Erro interno.",
+    });
+    expect((body as any).details).toBeUndefined();
+    expect(JSON.stringify(body)).not.toContain("db connection timeout");
+  });
 });

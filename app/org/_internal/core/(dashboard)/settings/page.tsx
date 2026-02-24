@@ -60,7 +60,6 @@ type OrganizationMeResponse = {
     publicInstagram?: string | null;
     publicYoutube?: string | null;
     publicTiktok?: string | null;
-    publicLinkedin?: string | null;
     publicDescription?: string | null;
     publicHours?: string | null;
     infoRules?: string | null;
@@ -82,19 +81,6 @@ const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 type OrganizationSettingsPageProps = {
   embedded?: boolean;
-};
-
-type BookingConfigResponse = {
-  ok: boolean;
-  data?: {
-    gridMinutes: number;
-    durationCatalog?: number[];
-    activeDurations?: number[];
-    allowedDurations: number[];
-    allowCustomDuration: boolean;
-    presetDurations: number[];
-  };
-  errorCode?: string;
 };
 
 export default function OrganizationSettingsPage({ embedded }: OrganizationSettingsPageProps) {
@@ -121,6 +107,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
   const organization = data?.organization ?? null;
   const profile = data?.profile ?? null;
   const redirectTo = organizationId ? buildOrgHref(organizationId, "/settings") : "/org-hub/organizations";
+  const policiesHref = organizationId ? buildOrgHref(organizationId, "/policies") : "/org/policies";
 
   const [addressQuery, setAddressQuery] = useState("");
   const [addressId, setAddressId] = useState<string | null>(null);
@@ -128,10 +115,6 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
   const [contactPhone, setContactPhone] = useState("");
   const [supportEmail, setSupportEmail] = useState("");
   const [supportPhone, setSupportPhone] = useState("");
-  const [bookingGridMinutes, setBookingGridMinutes] = useState("30");
-  const [bookingActiveDurations, setBookingActiveDurations] = useState<number[]>([60, 90]);
-  const [bookingConfigLoading, setBookingConfigLoading] = useState(false);
-  const [bookingConfigMessage, setBookingConfigMessage] = useState<string | null>(null);
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [supportPhoneError, setSupportPhoneError] = useState<string | null>(null);
   const [orgMessage, setOrgMessage] = useState<string | null>(null);
@@ -146,7 +129,10 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
   const [publicInstagramHandle, setPublicInstagramHandle] = useState("");
   const [publicYoutubeHandle, setPublicYoutubeHandle] = useState("");
   const [publicTiktokHandle, setPublicTiktokHandle] = useState("");
-  const [publicLinkedinHandle, setPublicLinkedinHandle] = useState("");
+  const [isPublicIdentityEditing, setIsPublicIdentityEditing] = useState(false);
+  const [publicNameDraft, setPublicNameDraft] = useState("");
+  const [publicUsernameDraft, setPublicUsernameDraft] = useState("");
+  const [publicDescriptionDraft, setPublicDescriptionDraft] = useState("");
   const [brandingAvatarUrlInput, setBrandingAvatarUrlInput] = useState("");
   const [brandingCoverUrlInput, setBrandingCoverUrlInput] = useState("");
   const [savingPublicProfile, setSavingPublicProfile] = useState(false);
@@ -158,6 +144,8 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
   const [uploadingCover, setUploadingCover] = useState(false);
   const avatarFileRef = useRef<HTMLInputElement | null>(null);
   const coverFileRef = useRef<HTMLInputElement | null>(null);
+  const avatarActionsRef = useRef<HTMLDivElement | null>(null);
+  const coverActionsRef = useRef<HTMLDivElement | null>(null);
   const [avatarActionsOpen, setAvatarActionsOpen] = useState(false);
   const [coverActionsOpen, setCoverActionsOpen] = useState(false);
   const [coverCropFile, setCoverCropFile] = useState<File | null>(null);
@@ -209,11 +197,13 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
       setPublicNameInput(organization.publicName ?? "");
       setPublicUsernameInput(organization.username ?? "");
       setPublicDescriptionInput(organization.publicDescription ?? "");
+      setPublicNameDraft(organization.publicName ?? "");
+      setPublicUsernameDraft(organization.username ?? "");
+      setPublicDescriptionDraft(organization.publicDescription ?? "");
       setPublicWebsiteInput(organization.publicWebsite ?? "");
       setPublicInstagramHandle(extractPublicSocialHandle(organization.publicInstagram ?? null, "instagram"));
       setPublicYoutubeHandle(extractPublicSocialHandle(organization.publicYoutube ?? null, "youtube"));
       setPublicTiktokHandle(extractPublicSocialHandle(organization.publicTiktok ?? null, "tiktok"));
-      setPublicLinkedinHandle(extractPublicSocialHandle(organization.publicLinkedin ?? null, "linkedin"));
       setBrandingAvatarUrlInput(organization.brandingAvatarUrl ?? "");
       setBrandingCoverUrlInput(organization.brandingCoverUrl ?? "");
     }
@@ -221,44 +211,11 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
     if (organizationChanged) {
       setAvatarActionsOpen(false);
       setCoverActionsOpen(false);
+      setIsPublicIdentityEditing(false);
       setCoverCropFile(null);
       setShowCoverCropModal(false);
     }
   }, [organization, profile, orgFormDirty, officialEmailDirty, publicProfileDirty]);
-
-  useEffect(() => {
-    if (!organizationId || !Number.isFinite(organizationId)) return;
-    let cancelled = false;
-    setBookingConfigLoading(true);
-    fetch(`/api/org/${organizationId}/reservas/config`, { cache: "no-store" })
-      .then((res) => res.json() as Promise<BookingConfigResponse>)
-      .then((json) => {
-        if (cancelled) return;
-        if (!json?.ok || !json.data) {
-          throw new Error(json?.errorCode || "Não foi possível carregar a política de reservas.");
-        }
-        const durations = Array.isArray(json.data.activeDurations)
-          ? json.data.activeDurations
-          : Array.isArray(json.data.allowedDurations)
-            ? json.data.allowedDurations
-            : [60, 90];
-        setBookingGridMinutes(String(json.data.gridMinutes ?? 30));
-        setBookingActiveDurations(durations);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setBookingGridMinutes("30");
-        setBookingActiveDurations([60, 90]);
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setBookingConfigLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [organizationId]);
 
   const hasOrganization = useMemo(() => organization && data?.ok, [organization, data]);
   const bootstrappingSession = isUserLoading || (isLoading && !hasOrganization);
@@ -344,6 +301,58 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
   const hasAvatarImage = Boolean(publicPreviewAvatar);
   const hasCoverImage = Boolean(publicPreviewCover);
 
+  const startPublicIdentityEdit = () => {
+    if (!canEditPublicProfile) return;
+    setPublicNameDraft(publicNameInput);
+    setPublicUsernameDraft(publicUsernameInput);
+    setPublicDescriptionDraft(publicDescriptionInput);
+    setIsPublicIdentityEditing(true);
+  };
+
+  const cancelPublicIdentityEdit = () => {
+    setPublicNameDraft(publicNameInput);
+    setPublicUsernameDraft(publicUsernameInput);
+    setPublicDescriptionDraft(publicDescriptionInput);
+    setIsPublicIdentityEditing(false);
+  };
+
+  const applyPublicIdentityEdit = () => {
+    const nextName = publicNameDraft;
+    const nextUsername = publicUsernameDraft.replace(/^@+/, "");
+    const nextDescription = publicDescriptionDraft;
+    const changed =
+      nextName !== publicNameInput ||
+      nextUsername !== publicUsernameInput ||
+      nextDescription !== publicDescriptionInput;
+    setPublicNameInput(nextName);
+    setPublicUsernameInput(nextUsername);
+    setPublicDescriptionInput(nextDescription);
+    if (changed) setPublicProfileDirty(true);
+    setIsPublicIdentityEditing(false);
+  };
+
+  useEffect(() => {
+    if (!avatarActionsOpen && !coverActionsOpen) return;
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (avatarActionsRef.current?.contains(target) || coverActionsRef.current?.contains(target)) return;
+      setAvatarActionsOpen(false);
+      setCoverActionsOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setAvatarActionsOpen(false);
+      setCoverActionsOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [avatarActionsOpen, coverActionsOpen]);
+
   async function handleSaveOrg() {
     if (!user) {
       openModal({ mode: "login", redirectTo, showGoogle: true });
@@ -403,55 +412,6 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
     }
   }
 
-  async function handleSaveBookingConfig() {
-    if (!user) {
-      openModal({ mode: "login", redirectTo, showGoogle: true });
-      return;
-    }
-    if (!organizationId || Number.isNaN(organizationId)) {
-      setBookingConfigMessage("Seleciona uma organização primeiro.");
-      return;
-    }
-    const parsedGrid = Number(bookingGridMinutes);
-    const parsedDurations = bookingActiveDurations;
-    if (!Number.isFinite(parsedGrid) || parsedDurations.length === 0) {
-      setBookingConfigMessage("Configuração inválida.");
-      return;
-    }
-
-    setBookingConfigLoading(true);
-    setBookingConfigMessage(null);
-    try {
-      const res = await fetch(`/api/org/${organizationId}/reservas/config`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          gridMinutes: parsedGrid,
-          activeDurations: parsedDurations,
-        }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || json?.ok === false) {
-        const reason = json?.details?.reason ? ` (${json.details.reason})` : "";
-        setBookingConfigMessage(`Não foi possível guardar a política de reservas${reason}.`);
-        return;
-      }
-      const data = json?.data ?? {};
-      const durations = Array.isArray(data.activeDurations)
-        ? data.activeDurations
-        : Array.isArray(data.allowedDurations)
-          ? data.allowedDurations
-          : parsedDurations;
-      setBookingGridMinutes(String(data.gridMinutes ?? parsedGrid));
-      setBookingActiveDurations(durations);
-      setBookingConfigMessage("Política de reservas atualizada.");
-    } catch {
-      setBookingConfigMessage("Erro ao guardar política de reservas.");
-    } finally {
-      setBookingConfigLoading(false);
-    }
-  }
-
   async function handleSavePublicProfile() {
     if (!user) {
       openModal({ mode: "login", redirectTo, showGoogle: true });
@@ -463,6 +423,10 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
     }
     if (!canEditPublicProfile) {
       setPublicProfileMessage("Sem permissões para editar perfil público.");
+      return;
+    }
+    if (isPublicIdentityEditing) {
+      setPublicProfileMessage("Guarda ou cancela a edição de nome, username e bio antes de publicar.");
       return;
     }
 
@@ -481,7 +445,6 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
         publicInstagram: publicInstagramHandle,
         publicYoutube: publicYoutubeHandle,
         publicTiktok: publicTiktokHandle,
-        publicLinkedin: publicLinkedinHandle,
       };
       if (canEditPublicBranding) {
         payload.publicName = publicNameInput;
@@ -1123,79 +1086,25 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
         {orgMessage && <p className="text-[12px] text-white/70">{orgMessage}</p>}
       </section>
 
-      <section className="relative overflow-hidden rounded-3xl border border-white/15 bg-gradient-to-br from-white/10 via-[#0b1226]/80 to-[#050912]/92 p-6 space-y-4 shadow-[0_30px_100px_rgba(0,0,0,0.6)] backdrop-blur-3xl">
+      <section className="rounded-3xl border border-white/15 bg-gradient-to-br from-white/10 via-[#0b1226]/80 to-[#050912]/92 p-5 shadow-[0_30px_100px_rgba(0,0,0,0.6)] backdrop-blur-3xl">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold">Reservas de campos</h2>
-            <p className="text-[12px] text-white/65">Grelha e presets de duração por organização.</p>
+            <h2 className="text-lg font-semibold">Políticas operacionais</h2>
+            <p className="text-[12px] text-white/65">
+              A política de reservas de campos foi movida para a área de Políticas.
+            </p>
           </div>
-          <button
-            type="button"
-            onClick={handleSaveBookingConfig}
-            disabled={bookingConfigLoading || !canEditOperational}
-            className={`${CTA_PRIMARY} disabled:opacity-60 shadow-[0_10px_30px_rgba(0,0,0,0.45)]`}
-          >
-            {bookingConfigLoading ? "A guardar…" : "Guardar política de reservas"}
-          </button>
+          <a href={policiesHref} className={CTA_PRIMARY}>
+            Abrir políticas
+          </a>
         </div>
-        <div className="grid gap-3 md:grid-cols-3">
-          <label className="space-y-1">
-            <span className="text-[12px] text-white/70">Grelha (minutos)</span>
-            <input
-              value={bookingGridMinutes}
-              onChange={(event) => setBookingGridMinutes(event.target.value)}
-              inputMode="numeric"
-              className="w-full rounded-xl border border-white/15 bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35 hover:border-white/30 focus:border-[#22D3EE] focus:ring-1 focus:ring-[#22D3EE]/40"
-              placeholder="30"
-              disabled={!canEditOperational}
-            />
-          </label>
-          <div className="space-y-1 md:col-span-2">
-            <span className="text-[12px] text-white/70">Durações ativas (catálogo 30/60/90/120)</span>
-            <div className="flex flex-wrap gap-2">
-              {[30, 60, 90, 120].map((duration) => {
-                const active = bookingActiveDurations.includes(duration);
-                return (
-                  <button
-                    key={`duration-${duration}`}
-                    type="button"
-                    onClick={() => {
-                      if (!canEditOperational) return;
-                      setBookingActiveDurations((prev) => {
-                        if (prev.includes(duration)) {
-                          const next = prev.filter((value) => value !== duration);
-                          return next.length > 0 ? next : prev;
-                        }
-                        return [...prev, duration].sort((a, b) => a - b);
-                      });
-                    }}
-                    disabled={!canEditOperational}
-                    className={`rounded-full border px-3 py-2 text-[12px] transition ${
-                      active
-                        ? "border-[#22D3EE]/70 bg-[#22D3EE]/15 text-white"
-                        : "border-white/15 bg-white/5 text-white/70 hover:border-white/30 hover:bg-white/10"
-                    }`}
-                  >
-                    {duration} min
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-        <p className="text-[12px] text-white/60">
-          Duração custom está desativada por norma para reservas de campos.
-        </p>
-        {bookingConfigMessage && <p className="text-[12px] text-white/70">{bookingConfigMessage}</p>}
       </section>
 
       <section className="relative overflow-hidden rounded-3xl border border-white/15 bg-gradient-to-br from-white/10 via-[#0b1226]/80 to-[#050912]/92 p-6 space-y-4 shadow-[0_30px_100px_rgba(0,0,0,0.6)] backdrop-blur-3xl">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold">Perfil público</h2>
-            <p className="text-[12px] text-white/65">
-              Configuração fixa do perfil público. Hero/Sobre/Galeria/FAQ/Contacto foram removidos.
-            </p>
+            <p className="text-[12px] text-white/65">Edita diretamente no preview e publica quando estiver pronto.</p>
           </div>
           <button
             type="button"
@@ -1212,192 +1121,207 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
         <div className="overflow-hidden rounded-2xl border border-white/12 bg-white/[0.04] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
           <ProfileHeaderLayout
             coverUrl={publicPreviewCoverDisplay}
+            onCoverClick={
+              canEditPublicBranding
+                ? () => {
+                    setCoverActionsOpen((prev) => !prev);
+                    setAvatarActionsOpen(false);
+                  }
+                : null
+            }
+            coverActionsSlot={
+              canEditPublicBranding ? (
+                <div
+                  ref={coverActionsRef}
+                  className="relative"
+                  onClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => event.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCoverActionsOpen((prev) => !prev);
+                      setAvatarActionsOpen(false);
+                    }}
+                    disabled={!canEditPublicBranding}
+                    className="rounded-full border border-white/20 bg-black/55 px-3 py-1 text-[11px] font-semibold text-white/85 shadow-[0_10px_26px_rgba(0,0,0,0.35)] hover:bg-black/65 disabled:opacity-60"
+                  >
+                    {hasCoverImage ? "Editar capa" : "Adicionar capa"}
+                  </button>
+                  {coverActionsOpen && (
+                    <div className="absolute right-0 top-[calc(100%+8px)] z-30 w-44 rounded-2xl border border-white/20 bg-[rgba(8,10,18,0.95)] p-1.5 text-sm text-white shadow-[0_24px_70px_rgba(0,0,0,0.62)] backdrop-blur-2xl">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCoverActionsOpen(false);
+                          coverFileRef.current?.click();
+                        }}
+                        disabled={uploadingCover}
+                        className="block w-full rounded-xl px-3 py-2 text-left text-[12px] text-white/85 transition hover:bg-white/10 disabled:opacity-60"
+                      >
+                        {uploadingCover ? "A carregar..." : "Alterar"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBrandingCoverUrlInput("");
+                          setPublicProfileDirty(true);
+                          setCoverActionsOpen(false);
+                          setPublicProfileMessage("Capa removida. Guarda para publicar.");
+                        }}
+                        disabled={!hasCoverImage}
+                        className="block w-full rounded-xl px-3 py-2 text-left text-[12px] text-white/70 transition hover:bg-white/10 disabled:opacity-60"
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : null
+            }
             coverHeightClassName="aspect-[3/1] h-auto"
             contentWidthClassName="mx-auto w-full max-w-[640px]"
             avatarSlot={
-              <Avatar
-                src={publicPreviewAvatar}
-                name={publicPreviewName}
-                className="h-28 w-28"
-                textClassName="text-[10px] tracking-[0.14em]"
-              />
-            }
-            titleSlot={<h3 className="truncate text-[20px] font-semibold tracking-tight text-white">{publicPreviewName}</h3>}
-            metaSlot={
-              <div className="flex items-center gap-2 text-[12px] text-white/80">
-                <span className="rounded-full border border-white/15 bg-white/6 px-3 py-1 font-semibold text-white">
-                  @{publicPreviewUsername}
-                </span>
-              </div>
-            }
-            bioSlot={<p className="max-w-xl whitespace-pre-line text-sm leading-relaxed text-white/85">{publicPreviewBio}</p>}
-          />
-          <div className="-mt-4 px-4 pb-4 text-center">
-            <p className="text-[11px] text-white/55">Para mudar avatar e capa, clica nas fotos abaixo.</p>
-          </div>
-        </div>
-
-        <div className="grid gap-3 md:grid-cols-2">
-          <label className="space-y-1">
-            <span className="text-[12px] text-white/70">Nome público</span>
-            <input
-              value={publicNameInput}
-              onChange={(e) => {
-                setPublicNameInput(e.target.value);
-                setPublicProfileDirty(true);
-              }}
-              disabled={!canEditPublicBranding}
-              className={`w-full rounded-xl border bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35 ${
-                canEditPublicBranding
-                  ? "border-white/15 hover:border-white/30 focus:border-[#22D3EE] focus:ring-1 focus:ring-[#22D3EE]/40"
-                  : "cursor-not-allowed border-white/10 text-white/60"
-              }`}
-              placeholder="Top Padel"
-            />
-          </label>
-          <label className="space-y-1">
-            <span className="text-[12px] text-white/70">Username público</span>
-            <div className="flex items-center rounded-xl border border-white/15 bg-black/45 px-3 py-2">
-              <span className="pr-1 text-sm text-white/55">@</span>
-              <input
-                value={publicUsernameInput}
-                onChange={(e) => {
-                  setPublicUsernameInput(e.target.value.replace(/^@+/, ""));
-                  setPublicProfileDirty(true);
-                }}
-                disabled={!canEditPublicUsername}
-                className={`w-full bg-transparent text-sm outline-none placeholder:text-white/35 ${
-                  canEditPublicUsername ? "text-white" : "cursor-not-allowed text-white/60"
-                }`}
-                placeholder="username"
-              />
-            </div>
-          </label>
-        </div>
-
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className="space-y-2">
-            <p className="text-[12px] text-white/70">Avatar</p>
-            <button
-              type="button"
-              onClick={() => {
-                if (!canEditPublicBranding) return;
-                setAvatarActionsOpen((prev) => !prev);
-                setCoverActionsOpen(false);
-              }}
-              disabled={!canEditPublicBranding}
-              className={`group w-full rounded-2xl border bg-black/35 p-3 text-left transition ${
-                canEditPublicBranding
-                  ? "border-white/15 hover:border-white/35 hover:bg-black/45"
-                  : "cursor-not-allowed border-white/10 text-white/60"
-              }`}
-            >
-              <div className="relative flex h-28 items-center justify-center rounded-xl border border-white/12 bg-gradient-to-br from-[#101930] via-[#10172b] to-[#070b15]">
-                <Avatar
-                  src={publicPreviewAvatar}
-                  name={publicPreviewName}
-                  className="h-20 w-20"
-                  textClassName="text-[10px] tracking-[0.14em]"
-                />
-                {canEditPublicBranding && (
-                  <span className="absolute bottom-2 rounded-full border border-white/20 bg-black/55 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80">
-                    Clicar para gerir
-                  </span>
-                )}
-              </div>
-            </button>
-            {avatarActionsOpen && canEditPublicBranding && (
-              <div className="flex flex-wrap gap-2">
+              <div ref={avatarActionsRef} className="relative">
                 <button
                   type="button"
                   onClick={() => {
-                    setAvatarActionsOpen(false);
-                    avatarFileRef.current?.click();
+                    if (!canEditPublicBranding) return;
+                    setAvatarActionsOpen((prev) => !prev);
+                    setCoverActionsOpen(false);
                   }}
-                  disabled={!canEditPublicBranding || uploadingAvatar}
-                  className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[12px] font-semibold text-white/85 hover:bg-white/15 disabled:opacity-60"
+                  disabled={!canEditPublicBranding}
+                  className={cn(
+                    "relative inline-flex rounded-full",
+                    canEditPublicBranding
+                      ? "cursor-pointer transition-all hover:shadow-[0_0_24px_rgba(34,211,238,0.34)]"
+                      : "cursor-default",
+                  )}
                 >
-                  {uploadingAvatar ? "A carregar..." : "Alterar"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setBrandingAvatarUrlInput("");
-                    setPublicProfileDirty(true);
-                    setAvatarActionsOpen(false);
-                    setPublicProfileMessage("Logo removida. Guarda para publicar.");
-                  }}
-                  disabled={!canEditPublicBranding || !hasAvatarImage}
-                  className="rounded-full border border-white/20 bg-transparent px-3 py-1 text-[12px] font-semibold text-white/70 hover:bg-white/10 disabled:opacity-60"
-                >
-                  Remover
-                </button>
-              </div>
-            )}
-          </div>
-          <div className="space-y-2">
-            <p className="text-[12px] text-white/70">Capa</p>
-            <button
-              type="button"
-              onClick={() => {
-                if (!canEditPublicBranding) return;
-                setCoverActionsOpen((prev) => !prev);
-                setAvatarActionsOpen(false);
-              }}
-              disabled={!canEditPublicBranding}
-              className={`group w-full rounded-2xl border bg-black/35 p-3 text-left transition ${
-                canEditPublicBranding
-                  ? "border-white/15 hover:border-white/35 hover:bg-black/45"
-                  : "cursor-not-allowed border-white/10 text-white/60"
-              }`}
-            >
-              <div className="relative h-28 overflow-hidden rounded-xl border border-white/12 bg-gradient-to-br from-[#0f1f3b] via-[#121a33] to-[#060b14]">
-                {publicPreviewCover && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={publicPreviewCover}
-                    alt="Pré-visualização da capa"
-                    className="h-full w-full object-cover"
+                  <Avatar
+                    src={publicPreviewAvatar}
+                    name={publicPreviewName}
+                    className="h-28 w-28"
+                    textClassName="text-[10px] tracking-[0.14em]"
                   />
+                  {canEditPublicBranding && (
+                    <span className="pointer-events-none absolute -right-1 -top-1 inline-flex h-6 w-6 items-center justify-center rounded-full border border-white/30 bg-black/60 text-[12px] text-white/90">
+                      ✎
+                    </span>
+                  )}
+                </button>
+                {avatarActionsOpen && canEditPublicBranding && (
+                  <div className="absolute left-1/2 top-[calc(100%+10px)] z-30 w-44 -translate-x-1/2 rounded-2xl border border-white/20 bg-[rgba(8,10,18,0.95)] p-1.5 text-sm text-white shadow-[0_24px_70px_rgba(0,0,0,0.62)] backdrop-blur-2xl">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAvatarActionsOpen(false);
+                        avatarFileRef.current?.click();
+                      }}
+                      disabled={uploadingAvatar}
+                      className="block w-full rounded-xl px-3 py-2 text-left text-[12px] text-white/85 transition hover:bg-white/10 disabled:opacity-60"
+                    >
+                      {uploadingAvatar ? "A carregar..." : "Alterar"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBrandingAvatarUrlInput("");
+                        setPublicProfileDirty(true);
+                        setAvatarActionsOpen(false);
+                        setPublicProfileMessage("Logo removida. Guarda para publicar.");
+                      }}
+                      disabled={!hasAvatarImage}
+                      className="block w-full rounded-xl px-3 py-2 text-left text-[12px] text-white/70 transition hover:bg-white/10 disabled:opacity-60"
+                    >
+                      Remover
+                    </button>
+                  </div>
                 )}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/20 to-transparent" />
-                {canEditPublicBranding && (
-                  <span className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full border border-white/20 bg-black/55 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80">
-                    Clicar para gerir
+              </div>
+            }
+            titleSlot={
+              isPublicIdentityEditing && canEditPublicBranding ? (
+                <input
+                  value={publicNameDraft}
+                  onChange={(event) => setPublicNameDraft(event.target.value)}
+                  className="w-full rounded-xl border border-white/15 bg-black/45 px-3 py-2 text-[20px] font-semibold tracking-tight text-white outline-none transition-colors focus:border-[#22D3EE] focus:ring-1 focus:ring-[#22D3EE]/40"
+                  placeholder="Nome público"
+                  maxLength={80}
+                />
+              ) : (
+                <h3 className="truncate text-[20px] font-semibold tracking-tight text-white">{publicPreviewName}</h3>
+              )
+            }
+            metaSlot={
+              <div className="flex flex-wrap items-center gap-2 text-[12px] text-white/80">
+                {isPublicIdentityEditing && canEditPublicUsername ? (
+                  <div className="flex items-center rounded-full border border-white/20 bg-black/45 px-3 py-1">
+                    <span className="pr-1 text-white/60">@</span>
+                    <input
+                      value={publicUsernameDraft}
+                      onChange={(event) => setPublicUsernameDraft(event.target.value.replace(/^@+/, ""))}
+                      className="w-[200px] bg-transparent text-sm text-white outline-none placeholder:text-white/35"
+                      placeholder="username"
+                      maxLength={24}
+                    />
+                  </div>
+                ) : (
+                  <span className="rounded-full border border-white/15 bg-white/6 px-3 py-1 font-semibold text-white">
+                    @{publicPreviewUsername}
                   </span>
                 )}
+                {canEditPublicProfile && !isPublicIdentityEditing && (
+                  <button
+                    type="button"
+                    onClick={startPublicIdentityEdit}
+                    className="rounded-full border border-white/20 bg-white/8 px-3 py-1 text-[11px] font-semibold text-white/80 hover:bg-white/14"
+                  >
+                    Editar
+                  </button>
+                )}
               </div>
-            </button>
-            {coverActionsOpen && canEditPublicBranding && (
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCoverActionsOpen(false);
-                    coverFileRef.current?.click();
-                  }}
-                  disabled={!canEditPublicBranding || uploadingCover}
-                  className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[12px] font-semibold text-white/85 hover:bg-white/15 disabled:opacity-60"
-                >
-                  {uploadingCover ? "A carregar..." : "Alterar"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setBrandingCoverUrlInput("");
-                    setPublicProfileDirty(true);
-                    setCoverActionsOpen(false);
-                    setPublicProfileMessage("Capa removida. Guarda para publicar.");
-                  }}
-                  disabled={!canEditPublicBranding || !hasCoverImage}
-                  className="rounded-full border border-white/20 bg-transparent px-3 py-1 text-[12px] font-semibold text-white/70 hover:bg-white/10 disabled:opacity-60"
-                >
-                  Remover
-                </button>
-              </div>
-            )}
-          </div>
+            }
+            bioSlot={
+              isPublicIdentityEditing ? (
+                <div className="flex max-w-xl flex-col gap-2">
+                  <textarea
+                    value={publicDescriptionDraft}
+                    onChange={(event) => setPublicDescriptionDraft(event.target.value.slice(0, 280))}
+                    disabled={!canEditPublicProfile}
+                    className={cn(
+                      "min-h-[90px] w-full rounded-xl border bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35",
+                      canEditPublicProfile
+                        ? "border-white/15 hover:border-white/30 focus:border-[#22D3EE] focus:ring-1 focus:ring-[#22D3EE]/40"
+                        : "cursor-not-allowed border-white/10 text-white/60",
+                    )}
+                    placeholder="Descrição pública da organização."
+                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={applyPublicIdentityEdit}
+                      className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-black shadow"
+                    >
+                      Guardar edição
+                    </button>
+                    <button
+                      type="button"
+                      onClick={cancelPublicIdentityEdit}
+                      className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80"
+                    >
+                      Cancelar
+                    </button>
+                    <span className="text-[11px] text-white/55">{publicDescriptionDraft.length}/280</span>
+                  </div>
+                </div>
+              ) : (
+                <p className="max-w-xl whitespace-pre-line text-sm leading-relaxed text-white/85">{publicPreviewBio}</p>
+              )
+            }
+          />
         </div>
+
         <input
           ref={avatarFileRef}
           type="file"
@@ -1422,24 +1346,6 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
             setShowCoverCropModal(true);
           }}
         />
-
-        <label className="space-y-1">
-          <span className="text-[12px] text-white/70">Bio pública</span>
-          <textarea
-            value={publicDescriptionInput}
-            onChange={(e) => {
-              setPublicDescriptionInput(e.target.value);
-              setPublicProfileDirty(true);
-            }}
-            disabled={!canEditPublicProfile}
-            className={`min-h-[90px] w-full rounded-xl border bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35 ${
-              canEditPublicProfile
-                ? "border-white/15 hover:border-white/30 focus:border-[#22D3EE] focus:ring-1 focus:ring-[#22D3EE]/40"
-                : "cursor-not-allowed border-white/10 text-white/60"
-            }`}
-            placeholder="Descrição pública da organização."
-          />
-        </label>
 
         <div className="grid gap-3 md:grid-cols-2">
           <label className="space-y-1">
@@ -1517,25 +1423,6 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
             </div>
           </label>
         </div>
-
-        <label className="space-y-1">
-          <span className="text-[12px] text-white/70">LinkedIn</span>
-          <div className="flex items-center rounded-xl border border-white/15 bg-black/45 px-3 py-2">
-            <span className="pr-2 text-[11px] text-white/50">https://www.linkedin.com/company/</span>
-            <input
-              value={publicLinkedinHandle}
-              onChange={(e) => {
-                setPublicLinkedinHandle(e.target.value);
-                setPublicProfileDirty(true);
-              }}
-              disabled={!canEditPublicProfile}
-              className={`w-full bg-transparent text-sm outline-none placeholder:text-white/35 ${
-                canEditPublicProfile ? "text-white" : "cursor-not-allowed text-white/60"
-              }`}
-              placeholder="handle"
-            />
-          </div>
-        </label>
 
         <p className="text-[11px] text-white/55">
           Dono/Co-dono: edição completa. Admin: bio e links sociais/website. Equipa: leitura.

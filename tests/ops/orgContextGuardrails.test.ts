@@ -1,4 +1,4 @@
-import { describe, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { execSync } from "child_process";
 import { readFileSync } from "fs";
 
@@ -51,9 +51,7 @@ describe("org context guardrails", () => {
       if (!hasContext) offenders.push(route);
     }
 
-    if (offenders.length > 0) {
-      throw new Error(`Missing org context tokens:\n${offenders.join("\n")}`);
-    }
+    expect(offenders).toEqual([]);
   });
 
   it("allowlists account.metadata organizationId resolution", () => {
@@ -62,14 +60,12 @@ describe("org context guardrails", () => {
     })
       .toString()
       .trim();
-    if (!output) return;
     const offenders = output
       .split("\n")
       .map((line) => line.split(":")[0])
-      .filter((file) => file && !METADATA_ORG_ALLOWLIST.has(file));
+      .filter((file) => file && !METADATA_ORG_ALLOWLIST.has(file))
+      .filter((file, index, all) => all.indexOf(file) === index);
 
-    if (offenders.length > 0) {
-      throw new Error(`account.metadata org resolution outside allowlist:\n${offenders.join("\n")}`);
-    }
+    expect(offenders).toEqual([]);
   });
 });

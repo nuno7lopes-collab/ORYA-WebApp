@@ -20,6 +20,7 @@ import { OryaDateField, OryaDateTimeField, OryaTimeField } from "@/components/ui
 import { normalizeStepMinutes } from "@/lib/datetime/localInput";
 import type { GeoDetailsItem } from "@/lib/geo/types";
 import { getDateParts, makeUtcDateFromLocal } from "@/lib/reservas/availability";
+import { resolveOrganizationOperationalMode } from "@/lib/organizationOperationalMode";
 import {
   normalizeReservationAssignmentMode,
   requiresProfessionalForAssignmentMode,
@@ -441,6 +442,18 @@ export default function ReservasDashboardPage() {
   const operationalCalendarHref = organizationId
     ? buildOrgHref(organizationId, "/calendar")
     : buildOrgHubHref("/organizations");
+  const bookingsServicesHref = organizationId
+    ? buildOrgHref(organizationId, "/bookings")
+    : buildOrgHubHref("/organizations");
+  const bookingsAvailabilityHref = organizationId
+    ? buildOrgHref(organizationId, "/bookings/availability")
+    : buildOrgHubHref("/organizations");
+  const eventsCreateHref = organizationId
+    ? buildOrgHref(organizationId, "/events/new")
+    : buildOrgHubHref("/organizations");
+  const tournamentsCreateHref = organizationId
+    ? buildOrgHref(organizationId, "/padel/tournaments/create")
+    : buildOrgHubHref("/organizations");
   const orgMeUrl =
     organizationId && Number.isFinite(organizationId)
       ? `/api/org/${organizationId}/me`
@@ -517,7 +530,7 @@ export default function ReservasDashboardPage() {
     organization?: {
       reservationAssignmentMode?: string | null;
       timezone?: string | null;
-      modules?: string[] | null;
+      tools?: string[] | null;
       primaryModule?: string | null;
     };
     membershipRole?: string | null;
@@ -601,6 +614,25 @@ export default function ReservasDashboardPage() {
   const timezone = orgData?.organization?.timezone ?? "Europe/Lisbon";
   const membershipRole = orgData?.membershipRole ?? null;
   const isStaffMember = membershipRole === "STAFF";
+  const activeToolSet = useMemo(
+    () =>
+      new Set(
+        (orgData?.organization?.tools ?? [])
+          .map((tool) => (typeof tool === "string" ? tool.trim().toUpperCase() : ""))
+          .filter(Boolean),
+      ),
+    [orgData?.organization?.tools],
+  );
+  const operationalMode = useMemo(
+    () =>
+      resolveOrganizationOperationalMode({
+        primaryModule: orgData?.organization?.primaryModule ?? null,
+        tools: orgData?.organization?.tools ?? [],
+      }),
+    [orgData?.organization?.tools, orgData?.organization?.primaryModule],
+  );
+  const canCreateEvents = activeToolSet.has("EVENTOS");
+  const canCreateTournaments = activeToolSet.has("TORNEIOS");
 
   const handleSendChat = async () => {
     if (!drawerBooking?.id) return;
@@ -1036,6 +1068,34 @@ export default function ReservasDashboardPage() {
     (sum, booking) => (isConfirmedBooking(booking.status) ? sum + booking.price : sum),
     0,
   );
+  const confirmedRevenueCurrency =
+    operationalBookings.find((booking) => typeof booking.currency === "string" && booking.currency.trim())?.currency ??
+    "EUR";
+  const hasQueueStatusFilter = queueStatusFilter !== "ALL";
+  const hasQueueScopeFilter =
+    (filterMode === "PROFESSIONAL" && Boolean(selectedProfessionalId)) ||
+    (filterMode === "RESOURCE" && Boolean(selectedResourceId));
+  const queueEmptyDescription = hasQueueStatusFilter
+    ? "Não existem reservas com este estado no período selecionado."
+    : hasQueueScopeFilter
+      ? "Não existem reservas para o escopo selecionado nesta janela."
+      : "Sem reservas futuras nesta janela operacional.";
+  const operationsGuidance = useMemo(() => {
+    if (operationalMode === "HYBRID") {
+      return {
+        badge: "Modo híbrido",
+        title: "Operações focadas em reservas",
+        body:
+          "Esta área controla apenas serviços por slots. Eventos e torneios pontuais continuam no fluxo próprio.",
+      };
+    }
+    return {
+      badge: "Modo reservas",
+      title: "Operação diária de reservas",
+      body:
+        "Usa esta fila para confirmar, reagendar e resolver exceções. A disponibilidade define a base dos slots vendidos.",
+    };
+  }, [operationalMode]);
 
   const drawerBookingClosed = drawerBooking
     ? ["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG", "COMPLETED", "DISPUTED", "NO_SHOW"].includes(
@@ -1626,7 +1686,7 @@ export default function ReservasDashboardPage() {
             <p className={DASHBOARD_LABEL}>Reservas</p>
             <h1 className="text-xl font-semibold text-white">Operações de reservas</h1>
             <p className={DASHBOARD_MUTED}>
-              Fluxo transacional de reservas. Gestão de serviços em Serviços.
+              Fluxo transacional de reservas por slots. Configuração funcional em Serviços e Disponibilidade.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -1636,6 +1696,34 @@ export default function ReservasDashboardPage() {
             <Link href={operationalCalendarHref} className={CTA_SECONDARY}>
               Abrir calendário operacional
             </Link>
+            <Link href={bookingsServicesHref} className={CTA_SECONDARY}>
+              Abrir serviços
+            </Link>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-cyan-300/20 bg-[linear-gradient(145deg,rgba(34,211,238,0.12),rgba(10,18,34,0.82))] p-4 shadow-[0_16px_44px_rgba(0,0,0,0.35)]">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="max-w-3xl">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-cyan-100/75">{operationsGuidance.badge}</p>
+              <h2 className="mt-1 text-lg font-semibold text-white">{operationsGuidance.title}</h2>
+              <p className="mt-2 text-sm text-white/80">{operationsGuidance.body}</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Link href={bookingsAvailabilityHref} className={CTA_SECONDARY}>
+                Gerir disponibilidade
+              </Link>
+              {operationalMode === "HYBRID" && canCreateEvents ? (
+                <Link href={eventsCreateHref} className={CTA_SECONDARY}>
+                  Criar evento
+                </Link>
+              ) : null}
+              {operationalMode === "HYBRID" && !canCreateEvents && canCreateTournaments ? (
+                <Link href={tournamentsCreateHref} className={CTA_SECONDARY}>
+                  Criar torneio
+                </Link>
+              ) : null}
+            </div>
           </div>
         </div>
 
@@ -1902,7 +1990,62 @@ export default function ReservasDashboardPage() {
           </div>
           {upcomingLoading && <p className="text-[12px] text-white/60">A carregar...</p>}
           {!upcomingLoading && upcomingBookingsCount === 0 && (
-            <p className="text-[12px] text-white/50">Sem reservas futuras neste período.</p>
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+              <p className="text-[12px] text-white/70">{queueEmptyDescription}</p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {activeServices.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={handleQuickCreateBooking}
+                    className="rounded-full border border-cyan-300/45 bg-cyan-400/12 px-3 py-1 text-[11px] text-cyan-100 transition hover:border-cyan-300/75"
+                  >
+                    Criar reserva agora
+                  </button>
+                ) : (
+                  <Link
+                    href={appendOrganizationIdToHref("/org/bookings/new", organizationId)}
+                    className="rounded-full border border-cyan-300/45 bg-cyan-400/12 px-3 py-1 text-[11px] text-cyan-100 transition hover:border-cyan-300/75"
+                  >
+                    Criar primeiro serviço
+                  </Link>
+                )}
+                {(hasQueueStatusFilter || hasQueueScopeFilter) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQueueStatusFilter("ALL");
+                      setSelectedProfessionalId(null);
+                      setSelectedResourceId(null);
+                    }}
+                    className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 transition hover:border-white/35 hover:text-white"
+                  >
+                    Limpar filtros da fila
+                  </button>
+                )}
+                <Link
+                  href={bookingsAvailabilityHref}
+                  className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 transition hover:border-white/35 hover:text-white"
+                >
+                  Ver disponibilidade
+                </Link>
+                {operationalMode === "HYBRID" && canCreateEvents ? (
+                  <Link
+                    href={eventsCreateHref}
+                    className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 transition hover:border-white/35 hover:text-white"
+                  >
+                    Criar evento
+                  </Link>
+                ) : null}
+                {operationalMode === "HYBRID" && !canCreateEvents && canCreateTournaments ? (
+                  <Link
+                    href={tournamentsCreateHref}
+                    className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 transition hover:border-white/35 hover:text-white"
+                  >
+                    Criar torneio
+                  </Link>
+                ) : null}
+              </div>
+            </div>
           )}
           <div className="space-y-2">
             {upcomingBookings.map((booking) => {
@@ -1998,7 +2141,7 @@ export default function ReservasDashboardPage() {
             </div>
             <div className="flex items-center justify-between text-sm text-white/70">
               <span>Receita confirmada</span>
-              <span>{formatCurrency(confirmedRevenueCents, "EUR")}</span>
+              <span>{formatCurrency(confirmedRevenueCents, confirmedRevenueCurrency)}</span>
             </div>
           </section>
 

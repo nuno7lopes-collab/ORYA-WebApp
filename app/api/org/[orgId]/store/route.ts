@@ -43,23 +43,10 @@ function normalizeStore(store: {
 }
 
 async function ensureStoreForOrganization(organizationId: number) {
-  const existing = await prisma.store.findFirst({
+  return prisma.store.upsert({
     where: { ownerOrganizationId: organizationId },
-    select: {
-      id: true,
-      status: true,
-      catalogLocked: true,
-      checkoutEnabled: true,
-      showOnProfile: true,
-      createdAt: true,
-      updatedAt: true,
-    },
-  });
-  if (existing) {
-    return existing;
-  }
-  return prisma.store.create({
-    data: {
+    update: {},
+    create: {
       ownerOrganizationId: organizationId,
       status: StoreStatus.CLOSED,
       catalogLocked: false,
@@ -109,6 +96,25 @@ async function _GET(req: NextRequest) {
     const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
     return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
   };
+  const failLojaAccess = (
+    access: ReturnType<typeof ensureLojaModuleAccess> extends Promise<infer T> ? T : never,
+  ) => {
+    const payload = access.ok
+      ? null
+      : {
+          errorCode: access.errorCode,
+          message: access.message ?? access.error,
+          retryable: false,
+          details: {
+            reasonCode: access.reasonCode ?? null,
+            requestId: access.requestId ?? null,
+            correlationId: access.correlationId ?? null,
+          },
+        };
+    return payload
+      ? respondError(ctx, payload, { status: 403 })
+      : respondError(ctx, { errorCode: "FORBIDDEN", message: "Sem permissões.", retryable: false }, { status: 403 });
+  };
   try {
     if (!isStoreFeatureEnabled()) {
       return fail(403, "Loja desativada.");
@@ -133,7 +139,7 @@ async function _GET(req: NextRequest) {
     }
     const lojaAccess = await ensureLojaModuleAccess(organization);
     if (!lojaAccess.ok) {
-      return fail(403, lojaAccess.error);
+      return failLojaAccess(lojaAccess);
     }
 
     const store = await ensureStoreForOrganization(organization.id);
@@ -163,6 +169,25 @@ async function _POST(req: NextRequest) {
     const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
     return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
   };
+  const failLojaAccess = (
+    access: ReturnType<typeof ensureLojaModuleAccess> extends Promise<infer T> ? T : never,
+  ) => {
+    const payload = access.ok
+      ? null
+      : {
+          errorCode: access.errorCode,
+          message: access.message ?? access.error,
+          retryable: false,
+          details: {
+            reasonCode: access.reasonCode ?? null,
+            requestId: access.requestId ?? null,
+            correlationId: access.correlationId ?? null,
+          },
+        };
+    return payload
+      ? respondError(ctx, payload, { status: 403 })
+      : respondError(ctx, { errorCode: "FORBIDDEN", message: "Sem permissões.", retryable: false }, { status: 403 });
+  };
   try {
     if (!isStoreFeatureEnabled()) {
       return fail(403, "Loja desativada.");
@@ -187,7 +212,7 @@ async function _POST(req: NextRequest) {
     }
     const lojaAccess = await ensureLojaModuleAccess(organization);
     if (!lojaAccess.ok) {
-      return fail(403, lojaAccess.error);
+      return failLojaAccess(lojaAccess);
     }
 
     const store = await ensureStoreForOrganization(organization.id);
@@ -216,6 +241,25 @@ async function _PATCH(req: NextRequest) {
     const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
     return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
   };
+  const failLojaAccess = (
+    access: ReturnType<typeof ensureLojaModuleAccess> extends Promise<infer T> ? T : never,
+  ) => {
+    const payload = access.ok
+      ? null
+      : {
+          errorCode: access.errorCode,
+          message: access.message ?? access.error,
+          retryable: false,
+          details: {
+            reasonCode: access.reasonCode ?? null,
+            requestId: access.requestId ?? null,
+            correlationId: access.correlationId ?? null,
+          },
+        };
+    return payload
+      ? respondError(ctx, payload, { status: 403 })
+      : respondError(ctx, { errorCode: "FORBIDDEN", message: "Sem permissões.", retryable: false }, { status: 403 });
+  };
   try {
     if (!isStoreFeatureEnabled()) {
       return fail(403, "Loja desativada.");
@@ -240,7 +284,7 @@ async function _PATCH(req: NextRequest) {
     }
     const lojaAccess = await ensureLojaModuleAccess(organization);
     if (!lojaAccess.ok) {
-      return fail(403, lojaAccess.error);
+      return failLojaAccess(lojaAccess);
     }
 
     const store = await ensureStoreForOrganization(organization.id);

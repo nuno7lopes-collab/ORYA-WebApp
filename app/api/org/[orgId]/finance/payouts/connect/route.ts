@@ -26,6 +26,18 @@ function isStripeResourceMissing(err: unknown) {
   return anyErr?.code === "resource_missing" || anyErr?.statusCode === 404;
 }
 
+function buildStandardConnectAccountParams(organizationId: number, userId: string, userEmail?: string | null) {
+  return {
+    type: "standard" as const,
+    country: "PT",
+    email: userEmail ?? undefined,
+    metadata: {
+      organizationId: String(organizationId),
+      userId,
+    },
+  };
+}
+
 async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
   try {
@@ -158,20 +170,9 @@ async function _POST(req: NextRequest) {
     }
 
     if (!accountId) {
-      const account = await createStripeAccount({
-        type: "express",
-        country: "PT",
-        email: user.email ?? undefined,
-        business_type: "individual",
-        capabilities: {
-          card_payments: { requested: true },
-          transfers: { requested: true },
-        },
-        metadata: {
-          organizationId: String(organization.id),
-          userId: profile.id,
-        },
-      });
+      const account = await createStripeAccount(
+        buildStandardConnectAccountParams(organization.id, profile.id, user.email),
+      );
 
       accountId = account.id;
 
@@ -199,20 +200,9 @@ async function _POST(req: NextRequest) {
     } catch (err) {
       // Conta inválida/stale (ex.: apagada) não deve rebentar com 500.
       if (!isStripeResourceMissing(err)) throw err;
-      const account = await createStripeAccount({
-        type: "express",
-        country: "PT",
-        email: user.email ?? undefined,
-        business_type: "individual",
-        capabilities: {
-          card_payments: { requested: true },
-          transfers: { requested: true },
-        },
-        metadata: {
-          organizationId: String(organization.id),
-          userId: profile.id,
-        },
-      });
+      const account = await createStripeAccount(
+        buildStandardConnectAccountParams(organization.id, profile.id, user.email),
+      );
       accountId = account.id;
       await prisma.organization.update({
         where: { id: organization.id },

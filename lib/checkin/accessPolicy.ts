@@ -21,14 +21,14 @@ type PolicyLockClient = PolicyClient & {
   entitlement: {
     count: typeof prisma.entitlement.count;
   };
+  ticket: {
+    count: typeof prisma.ticket.count;
+  };
   event: {
     findUnique: typeof prisma.event.findUnique;
   };
   payment: {
     findFirst: typeof prisma.payment.findFirst;
-  };
-  ticketOrder: {
-    findMany: typeof prisma.ticketOrder.findMany;
   };
   padelRegistration: {
     findMany: typeof prisma.padelRegistration.findMany;
@@ -219,21 +219,8 @@ export async function isEventAccessPolicyLocked(
   const entitlements = await client.entitlement.count({ where: { eventId } });
   if (entitlements > 0) return true;
 
-  const ticketOrderIds = await client.ticketOrder.findMany({
-    where: { eventId },
-    select: { id: true },
-  });
-  if (ticketOrderIds.length > 0) {
-    const payment = await client.payment.findFirst({
-      where: {
-        status: PaymentStatus.SUCCEEDED,
-        sourceType: SourceType.TICKET_ORDER,
-        sourceId: { in: ticketOrderIds.map((row) => row.id) },
-      },
-      select: { id: true },
-    });
-    if (payment) return true;
-  }
+  const tickets = await client.ticket.count({ where: { eventId } });
+  if (tickets > 0) return true;
 
   const registrationIds = await client.padelRegistration.findMany({
     where: { eventId },

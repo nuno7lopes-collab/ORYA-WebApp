@@ -1,3 +1,5 @@
+import type { OrganizationOperationalMode } from "@/lib/organizationOperationalMode";
+
 export type CalendarEntityKind = "PROFESSIONAL" | "RESOURCE" | "COURT" | "GENERAL";
 
 export type CalendarEventKind = "EVENT" | "TOURNAMENT" | "RESERVATION" | "CLASS";
@@ -28,9 +30,17 @@ export type AgendaItem = {
   status: string;
 };
 
+export type AgendaCapabilities = {
+  reservas: boolean;
+  eventos: boolean;
+  torneios: boolean;
+};
+
 export type AgendaResponse = {
   ok: boolean;
   items: AgendaItem[];
+  capabilities?: AgendaCapabilities;
+  operationalMode?: OrganizationOperationalMode;
 };
 
 export type ResourceItem = {

@@ -22,6 +22,9 @@ jobs:
           cache: "npm"
       - run: sudo apt-get update && sudo apt-get install -y ripgrep
       - run: npm ci
+      - run: npm run gate:scripts-ops
+      - run: npm run gate:scripts-catalog
+      - run: npm run gate:test-hygiene
       - run: env -i PATH="$PATH" NODE_ENV=test DATABASE_URL="$DATABASE_URL" DIRECT_URL="$DIRECT_URL" PRISMA_GENERATE_NO_ENGINE="$PRISMA_GENERATE_NO_ENGINE" NEXT_PUBLIC_SUPABASE_URL="$NEXT_PUBLIC_SUPABASE_URL" NEXT_PUBLIC_SUPABASE_ANON_KEY="$NEXT_PUBLIC_SUPABASE_ANON_KEY" npm run build
       - run: env -i PATH="$PATH" NODE_ENV=test DATABASE_URL="$DATABASE_URL" DIRECT_URL="$DIRECT_URL" PRISMA_GENERATE_NO_ENGINE="$PRISMA_GENERATE_NO_ENGINE" NEXT_PUBLIC_SUPABASE_URL="$NEXT_PUBLIC_SUPABASE_URL" NEXT_PUBLIC_SUPABASE_ANON_KEY="$NEXT_PUBLIC_SUPABASE_ANON_KEY" npx vitest run
       - run: npm run db:gates:offline

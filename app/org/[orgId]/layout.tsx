@@ -1,11 +1,25 @@
 import type { ReactNode } from "react";
 import OrganizationAuthLayout from "@/app/org/_internal/core/layout";
 import OrganizationDashboardLayout from "@/app/org/_internal/core/(dashboard)/layout";
+import { parseOrganizationId } from "@/lib/organizationIdUtils";
 
-export default async function OrgScopedLayout({ children }: { children: ReactNode }) {
+type OrgScopedLayoutParams = Promise<{ orgId: string }> | { orgId: string };
+
+export default async function OrgScopedLayout({
+  children,
+  params,
+}: {
+  children: ReactNode;
+  params: OrgScopedLayoutParams;
+}) {
+  const resolvedParams = await Promise.resolve(params);
+  const requestedOrgId = parseOrganizationId(resolvedParams.orgId);
+
   return (
     <OrganizationAuthLayout>
-      <OrganizationDashboardLayout>{children}</OrganizationDashboardLayout>
+      <OrganizationDashboardLayout requestedOrgId={requestedOrgId}>
+        {children}
+      </OrganizationDashboardLayout>
     </OrganizationAuthLayout>
   );
 }

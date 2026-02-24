@@ -32,6 +32,12 @@ function parseNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function normalizeOptionalUuid(value: string | null | undefined) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function emitSplitRuntimeMetric(metric: string, payload: Record<string, unknown>) {
   logInfo("split.runtime.metric", {
     metric,
@@ -338,13 +344,13 @@ async function fulfillSplitParticipantIntent(intent: Stripe.PaymentIntent): Prom
       tx,
       booking,
       purchaseId: purchaseIdResolved,
-      ownerUserId: booking.userId,
+      ownerUserId: normalizeOptionalUuid(booking.userId),
       guestEmail: booking.guestEmail ?? null,
     });
 
     await recordOrganizationAudit(tx, {
       organizationId: organizationId ?? booking.organizationId,
-      actorUserId: userId ?? booking.userId,
+      actorUserId: normalizeOptionalUuid(userId) ?? normalizeOptionalUuid(booking.userId),
       action: "BOOKING_CREATED",
       metadata: {
         bookingId: booking.id,
@@ -499,7 +505,12 @@ async function fulfillBookingChangeIntent(intent: Stripe.PaymentIntent): Promise
     if (request.expiresAt.getTime() <= now.getTime()) {
       await tx.bookingChangeRequest.update({
         where: { id: request.id },
-        data: { status: "EXPIRED", respondedAt: now, respondedByUserId: request.respondedByUserId ?? booking.userId },
+        data: {
+          status: "EXPIRED",
+          respondedAt: now,
+          respondedByUserId:
+            normalizeOptionalUuid(request.respondedByUserId) ?? normalizeOptionalUuid(booking.userId),
+        },
       });
       return { status: "EXPIRED" as const, bookingId: booking.id, organizationId: booking.organizationId };
     }
@@ -507,13 +518,19 @@ async function fulfillBookingChangeIntent(intent: Stripe.PaymentIntent): Promise
     if (booking.status !== "CONFIRMED") {
       await tx.bookingChangeRequest.update({
         where: { id: request.id },
-        data: { status: "CANCELLED", respondedAt: now, respondedByUserId: request.respondedByUserId ?? booking.userId },
+        data: {
+          status: "CANCELLED",
+          respondedAt: now,
+          respondedByUserId:
+            normalizeOptionalUuid(request.respondedByUserId) ?? normalizeOptionalUuid(booking.userId),
+        },
       });
       return { status: "BOOKING_CLOSED" as const, bookingId: booking.id, organizationId: booking.organizationId };
     }
 
     const newPriceCents = Math.max(0, Math.round((booking.price ?? 0) + request.priceDeltaCents));
-    const actorUserId = request.respondedByUserId ?? booking.userId ?? null;
+    const actorUserId =
+      normalizeOptionalUuid(request.respondedByUserId) ?? normalizeOptionalUuid(booking.userId);
     const { booking: updated } = (await updateBooking({
       tx,
       bookingId: booking.id,
@@ -1029,13 +1046,13 @@ export async function fulfillServiceBookingIntent(
           tx,
           booking,
           purchaseId: purchaseIdResolved,
-          ownerUserId: userId ?? booking.userId,
+          ownerUserId: normalizeOptionalUuid(userId) ?? normalizeOptionalUuid(booking.userId),
           guestEmail: booking.guestEmail ?? null,
         });
 
         await recordOrganizationAudit(tx, {
           organizationId: organizationId ?? booking.organizationId,
-          actorUserId: userId ?? booking.userId,
+          actorUserId: normalizeOptionalUuid(userId) ?? normalizeOptionalUuid(booking.userId),
           action: "BOOKING_CREATED",
           metadata: {
             bookingId: booking.id,
@@ -1044,7 +1061,8 @@ export async function fulfillServiceBookingIntent(
           },
         });
 
-        const resolvedUserId = userId ?? booking.userId;
+        const resolvedUserId =
+          normalizeOptionalUuid(userId) ?? normalizeOptionalUuid(booking.userId);
         crmPayload = {
           organizationId: booking.organizationId,
           userId: resolvedUserId ?? undefined,

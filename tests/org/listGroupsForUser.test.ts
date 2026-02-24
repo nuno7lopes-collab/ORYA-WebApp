@@ -20,7 +20,7 @@ vi.mock("@/lib/organizationMembers", () => ({
 }));
 vi.mock("@/lib/prisma", () => ({ prisma }));
 
-import { listOrgHubGroupsForUser } from "@/lib/orgHub/listGroupsForUser";
+import { listOrgHubGroupsForUser, resolveGroupDisplayName } from "@/lib/orgHub/listGroupsForUser";
 
 describe("listOrgHubGroupsForUser", () => {
   beforeEach(() => {
@@ -76,6 +76,7 @@ describe("listOrgHubGroupsForUser", () => {
           id: 10,
           name: "Grupo Norte",
           ownerUserId: "u1",
+          showLinkedOrganizationsPublicly: true,
           _count: { organizations: 2 },
           organizations: [
             {
@@ -100,6 +101,7 @@ describe("listOrgHubGroupsForUser", () => {
           id: 20,
           name: null,
           ownerUserId: "u9",
+          showLinkedOrganizationsPublicly: false,
           _count: { organizations: 2 },
           organizations: [
             {
@@ -166,6 +168,7 @@ describe("listOrgHubGroupsForUser", () => {
 
     const group10 = byGroupId.get(10);
     expect(group10?.viewerIsGroupOwner).toBe(true);
+    expect(group10?.showLinkedOrganizationsPublicly).toBe(true);
     expect(group10?.organizations).toHaveLength(2);
     expect(group10?.joinCandidates).toEqual(
       expect.arrayContaining([
@@ -180,7 +183,82 @@ describe("listOrgHubGroupsForUser", () => {
 
     const group20 = byGroupId.get(20);
     expect(group20?.viewerIsGroupOwner).toBe(false);
+    expect(group20?.showLinkedOrganizationsPublicly).toBe(false);
     expect(group20?.organizations).toHaveLength(1);
     expect(group20?.organizations[0]?.organizationId).toBe(2);
+  });
+
+  it("aplica filtro por groupId quando pedido", async () => {
+    listEffectiveOrganizationMembershipsForUser.mockResolvedValue([
+      {
+        organizationId: 1,
+        role: OrganizationMemberRole.OWNER,
+        groupId: 10,
+        organization: {
+          id: 1,
+          publicName: "Org Norte",
+          businessName: "Org Norte",
+          username: "org-norte",
+          entityType: "CLUBE",
+          status: OrganizationStatus.ACTIVE,
+        },
+      },
+      {
+        organizationId: 2,
+        role: OrganizationMemberRole.OWNER,
+        groupId: 20,
+        organization: {
+          id: 2,
+          publicName: "Org Sul",
+          businessName: "Org Sul",
+          username: "org-sul",
+          entityType: "ACADEMIA",
+          status: OrganizationStatus.ACTIVE,
+        },
+      },
+    ] as any);
+
+    prisma.organizationGroup.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: 20,
+          name: "Grupo Sul",
+          ownerUserId: "u1",
+          showLinkedOrganizationsPublicly: true,
+          _count: { organizations: 1 },
+          organizations: [
+            {
+              id: 2,
+              publicName: "Org Sul",
+              businessName: "Org Sul",
+              username: "org-sul",
+              status: OrganizationStatus.ACTIVE,
+              entityType: "ACADEMIA",
+            },
+          ],
+        },
+      ]);
+
+    prisma.groupMembershipRequest.findMany.mockResolvedValue([]);
+    prisma.organizationGroupOwnerTransfer.findMany.mockResolvedValue([]);
+    prisma.organizationGroupMember.findMany.mockResolvedValue([]);
+
+    const result = await listOrgHubGroupsForUser({ userId: "u1", groupId: 20 });
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.groupId).toBe(20);
+    expect(prisma.organizationGroup.findMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: { id: { in: [20] } },
+      }),
+    );
+  });
+
+  it("resolveGroupDisplayName usa fallback consistente", () => {
+    expect(resolveGroupDisplayName("  Grupo Centro  ", 9)).toBe("Grupo Centro");
+    expect(resolveGroupDisplayName("", 9)).toBe("Grupo #9");
+    expect(resolveGroupDisplayName(null, 9)).toBe("Grupo #9");
   });
 });

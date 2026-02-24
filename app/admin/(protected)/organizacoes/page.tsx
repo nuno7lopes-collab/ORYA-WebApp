@@ -5,6 +5,7 @@ import { AdminLayout } from "@/app/admin/components/AdminLayout";
 import { AdminPageHeader } from "@/app/admin/components/AdminPageHeader";
 import { adminLoadOpsSummary, adminReplayOutboxEvents } from "./actions";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
+import { resolveConnectStatus } from "@/domain/finance/stripeConnectStatus";
 
 type OrganizationStatus = "PENDING" | "ACTIVE" | "SUSPENDED" | string;
 
@@ -258,9 +259,14 @@ function formatOwner(owner?: AdminOrganizationOwner | null) {
 
 function getPaymentsStatus(org: AdminOrganizationItem) {
   if (org.orgType === "PLATFORM") return "PLATFORM";
-  if (!org.stripeAccountId) return "NOT_CONNECTED";
-  if (org.stripeChargesEnabled && org.stripePayoutsEnabled) return "CONNECTED";
-  return "INCOMPLETE";
+  const status = resolveConnectStatus(
+    org.stripeAccountId ?? null,
+    org.stripeChargesEnabled ?? false,
+    org.stripePayoutsEnabled ?? false,
+  );
+  if (status === "READY") return "CONNECTED";
+  if (status === "INCOMPLETE") return "INCOMPLETE";
+  return "NOT_CONNECTED";
 }
 
 function makeRequestId() {

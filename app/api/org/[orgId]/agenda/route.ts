@@ -1,16 +1,17 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated } from "@/lib/security";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
-import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { OrganizationMemberRole, OrganizationModule, OrganizationRolePack, SourceType } from "@prisma/client";
 import { getAgendaItemsForOrganization } from "@/domain/agendaReadModel/query";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { prisma } from "@/lib/prisma";
 import { resolveReservasScopesForMember, resolveTrainerProfessionalIds, intersectIds } from "@/lib/reservas/memberScopes";
+import { getOrganizationActiveModules } from "@/lib/organizationModules";
+import { resolveOrganizationOperationalMode } from "@/lib/organizationOperationalMode";
 
 async function _GET(req: NextRequest) {
   const url = new URL(req.url);
@@ -48,10 +49,23 @@ async function _GET(req: NextRequest) {
     return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
-  const reservasAccess = await ensureReservasModuleAccess(organization);
-  if (!reservasAccess.ok) {
-    return jsonWrap({ ok: false, error: reservasAccess.error }, { status: 403 });
-  }
+  const { activeModules } = await getOrganizationActiveModules(
+    organization.id,
+    organization.primaryModule ?? null,
+  );
+  const operationalMode = resolveOrganizationOperationalMode({
+    primaryModule: organization.primaryModule ?? null,
+    tools: activeModules,
+  });
+
+  const reservasAccess = await ensureMemberModuleAccess({
+    organizationId: organization.id,
+    userId: user.id,
+    role: membership.role,
+    rolePack: membership.rolePack,
+    moduleKey: OrganizationModule.RESERVAS,
+    required: "VIEW",
+  });
 
   const tournamentsAccess = await ensureMemberModuleAccess({
     organizationId: organization.id,
@@ -70,15 +84,28 @@ async function _GET(req: NextRequest) {
     required: "VIEW",
   });
 
-  const sourceTypes: SourceType[] = [SourceType.BOOKING, SourceType.CLASS_SESSION];
-  if (eventsAccess.ok) sourceTypes.push(SourceType.EVENT);
-  if (tournamentsAccess.ok) sourceTypes.push(SourceType.TOURNAMENT);
+  const capabilities = {
+    reservas: reservasAccess.ok,
+    eventos: eventsAccess.ok,
+    torneios: tournamentsAccess.ok,
+  };
+
+  const sourceTypes: SourceType[] = [];
+  if (capabilities.reservas) {
+    sourceTypes.push(SourceType.BOOKING, SourceType.CLASS_SESSION);
+  }
+  if (capabilities.eventos) sourceTypes.push(SourceType.EVENT);
+  if (capabilities.torneios) sourceTypes.push(SourceType.TOURNAMENT);
+
+  if (sourceTypes.length === 0) {
+    return jsonWrap({ ok: true, items: [], capabilities, operationalMode }, { status: 200 });
+  }
 
   const now = new Date();
   const limitEnd = new Date(Date.UTC(now.getUTCFullYear() + 2, 11, 31, 23, 59, 59, 999));
   const boundedTo = to.getTime() > limitEnd.getTime() ? limitEnd : to;
   if (from.getTime() > boundedTo.getTime()) {
-    return jsonWrap({ ok: true, items: [] }, { status: 200 });
+    return jsonWrap({ ok: true, items: [], capabilities, operationalMode }, { status: 200 });
   }
 
   let resolvedClubId: number | null = padelClubId && Number.isFinite(padelClubId) ? padelClubId : null;
@@ -106,14 +133,14 @@ async function _GET(req: NextRequest) {
 
   let scopeFilter: { courtIds?: number[]; resourceIds?: number[]; professionalIds?: number[] } | null = null;
   let scopeMode: "OR" | "AND" = "OR";
-  if (membership.role === OrganizationMemberRole.STAFF) {
+  if (membership.role === OrganizationMemberRole.STAFF && capabilities.reservas) {
     const isCoach = membership.rolePack === OrganizationRolePack.COACH;
     const scopes = await resolveReservasScopesForMember({
       organizationId: organization.id,
       userId: user.id,
     });
     if (!scopes.hasAny) {
-      return jsonWrap({ ok: true, items: [] }, { status: 200 });
+      return jsonWrap({ ok: true, items: [], capabilities, operationalMode }, { status: 200 });
     }
     if (isCoach) {
       const trainerProfessionalIds = await resolveTrainerProfessionalIds({
@@ -121,7 +148,7 @@ async function _GET(req: NextRequest) {
         userId: user.id,
       });
       if (trainerProfessionalIds.length === 0) {
-        return jsonWrap({ ok: true, items: [] }, { status: 200 });
+        return jsonWrap({ ok: true, items: [], capabilities, operationalMode }, { status: 200 });
       }
       scopeFilter = {
         courtIds: scopes.courtIds,
@@ -148,6 +175,6 @@ async function _GET(req: NextRequest) {
     scopeFilter,
     scopeMode,
   });
-  return jsonWrap({ ok: true, items }, { status: 200 });
+  return jsonWrap({ ok: true, items, capabilities, operationalMode }, { status: 200 });
 }
 export const GET = withApiEnvelope(_GET);

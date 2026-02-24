@@ -17,18 +17,18 @@ import { requireOrganizationIdFromRequest } from "@/lib/organizationId";
 import { normalizePublicSocialUrl } from "@/lib/publicSocialLinks";
 import { ensureOrganizationEmailVerified, ensureOrganizationWriteAccess } from "@/lib/organizationWriteAccess";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+import { validateOrgRescheduleWindowMinutes } from "@/lib/policies/bookingPolicyGuardrails";
 import { getOrganizationSuspensionSnapshot } from "@/lib/organizationSuspension";
 import {
   DEFAULT_PRIMARY_MODULE,
   parsePrimaryModule,
-  parseOrganizationModules,
-  type OrganizationModule,
 } from "@/lib/organizationCategories";
 import { AddressSourceProvider, MediaOwnerType, OrganizationStatus } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { resolveConnectStatus } from "@/domain/finance/stripeConnectStatus";
 
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
@@ -330,7 +330,7 @@ async function _GET(req: NextRequest) {
             "PROFESSIONAL_ONLY",
           orgRescheduleWindowMinutes:
             (organization as { orgRescheduleWindowMinutes?: number | null }).orgRescheduleWindowMinutes ?? 240,
-          modules: organizationModules.map((module) => module.moduleKey),
+          tools: organizationModules.map((module) => module.moduleKey),
           publicName: organization.publicName,
           addressId: (organization as { addressId?: string | null }).addressId ?? null,
           addressRef: organizationAddressRef,
@@ -370,11 +370,16 @@ async function _GET(req: NextRequest) {
     const paymentsStatus = organization
       ? isPlatformAccount
         ? "READY"
-        : organization.stripeAccountId
-          ? organization.stripeChargesEnabled && organization.stripePayoutsEnabled
-            ? "READY"
-            : "PENDING"
-          : "NO_STRIPE"
+        : (() => {
+            const status = resolveConnectStatus(
+              organization.stripeAccountId ?? null,
+              organization.stripeChargesEnabled ?? false,
+              organization.stripePayoutsEnabled ?? false,
+            );
+            if (status === "READY") return "READY";
+            if (status === "INCOMPLETE") return "PENDING";
+            return "NO_STRIPE";
+          })()
       : "NO_STRIPE";
 
     return respondOk(
@@ -391,7 +396,7 @@ async function _GET(req: NextRequest) {
         paymentsMode: isPlatformAccount ? "PLATFORM" : "CONNECT",
         membershipRole: membership?.role ?? null,
         membershipRolePack: membership?.rolePack ?? null,
-        modulePermissions: memberPermissions,
+        toolPermissions: memberPermissions,
       },
       { status: 200 },
     );
@@ -479,10 +484,10 @@ async function _PATCH(req: NextRequest) {
     } = body as Record<string, unknown>;
     const primaryModuleRaw = (body as Record<string, unknown>).primaryModule;
     const reservationAssignmentModeRaw = (body as Record<string, unknown>).reservationAssignmentMode;
-    const modulesRaw = (body as Record<string, unknown>).modules;
 
     const primaryModuleProvided = Object.prototype.hasOwnProperty.call(body, "primaryModule");
     const reservationAssignmentModeProvided = Object.prototype.hasOwnProperty.call(body, "reservationAssignmentMode");
+    const toolsProvided = Object.prototype.hasOwnProperty.call(body, "tools");
     const modulesProvided = Object.prototype.hasOwnProperty.call(body, "modules");
     const orgRescheduleWindowMinutesProvided = Object.prototype.hasOwnProperty.call(body, "orgRescheduleWindowMinutes");
     const alertsSalesProvided = Object.prototype.hasOwnProperty.call(body, "alertsSalesEnabled");
@@ -514,12 +519,27 @@ async function _PATCH(req: NextRequest) {
       );
     }
 
-    const parsedModules = modulesProvided ? parseOrganizationModules(modulesRaw) : null;
-    if (modulesProvided && parsedModules === null) {
-      return fail(400, "modules inválido. Usa uma lista de módulos válidos.");
+    if (toolsProvided || modulesProvided) {
+      const legacyUsed = modulesProvided && !toolsProvided;
+      return fail(
+        400,
+        legacyUsed
+          ? "Campo legado 'modules' descontinuado. Usa o endpoint de ferramentas por acao direta."
+          : "A gestão de ferramentas usa o endpoint /api/org/:orgId/tools/:toolKey.",
+      );
     }
-    if (orgRescheduleWindowMinutesProvided && !Number.isFinite(Number(orgRescheduleWindowMinutes))) {
-      return fail(400, "orgRescheduleWindowMinutes inválido.");
+    let orgRescheduleWindowMinutesValidated: number | null = null;
+    if (orgRescheduleWindowMinutesProvided) {
+      const orgRescheduleValidation = validateOrgRescheduleWindowMinutes(orgRescheduleWindowMinutes);
+      if (!orgRescheduleValidation.ok) {
+        return fail(
+          422,
+          orgRescheduleValidation.message,
+          orgRescheduleValidation.errorCode,
+          false,
+        );
+      }
+      orgRescheduleWindowMinutesValidated = orgRescheduleValidation.value;
     }
 
     // Validação de telefone (opcional, mas consistente com checkout)
@@ -776,11 +796,8 @@ async function _PATCH(req: NextRequest) {
     if (reservationAssignmentModeProvided && reservationAssignmentMode) {
       organizationUpdates.reservationAssignmentMode = reservationAssignmentMode;
     }
-    if (orgRescheduleWindowMinutesProvided) {
-      organizationUpdates.orgRescheduleWindowMinutes = Math.max(
-        0,
-        Math.round(Number(orgRescheduleWindowMinutes)),
-      );
+    if (orgRescheduleWindowMinutesProvided && orgRescheduleWindowMinutesValidated !== null) {
+      organizationUpdates.orgRescheduleWindowMinutes = orgRescheduleWindowMinutesValidated;
     }
     if (typeof organizationKind === "string") {
       const kind = organizationKind.toUpperCase();
@@ -874,56 +891,19 @@ async function _PATCH(req: NextRequest) {
       );
     }
 
-    let previousModules: string[] | null = null;
-    if (modulesProvided) {
-      previousModules = (
-        await prisma.organizationModuleEntry.findMany({
-          where: { organizationId: organization.id, enabled: true },
-          select: { moduleKey: true },
-          orderBy: { moduleKey: "asc" },
-        })
-      ).map((module) => module.moduleKey);
-      await prisma.organizationModuleEntry.deleteMany({
-        where: { organizationId: organization.id },
-      });
-      if (parsedModules && parsedModules.length > 0) {
-        await prisma.organizationModuleEntry.createMany({
-          data: parsedModules.map((moduleKey) => ({
-            organizationId: organization.id,
-            moduleKey,
-            enabled: true,
-          })),
-        });
-      }
-    }
-
-    const nextModulesRaw = modulesProvided
-      ? parsedModules ?? []
-      : (
-          await prisma.organizationModuleEntry.findMany({
-            where: { organizationId: organization.id, enabled: true },
-            select: { moduleKey: true },
-            orderBy: { moduleKey: "asc" },
-          })
-        ).map((module) => module.moduleKey);
-    const nextModules = Array.from(
+    const nextToolsRaw = (
+      await prisma.organizationModuleEntry.findMany({
+        where: { organizationId: organization.id, enabled: true },
+        select: { moduleKey: true },
+        orderBy: { moduleKey: "asc" },
+      })
+    ).map((module) => module.moduleKey);
+    const nextTools = Array.from(
       new Set(
-        nextModulesRaw
-          .filter(
-            (module): module is OrganizationModule =>
-              typeof module === "string" && module.length > 0,
-          ),
+        nextToolsRaw
+          .filter((tool) => typeof tool === "string" && tool.length > 0),
       ),
     );
-
-    if (modulesProvided) {
-      await recordOrganizationAuditSafe({
-        organizationId: organization.id,
-        actorUserId: user.id,
-        action: "MODULES_UPDATED",
-        metadata: { previousModules, nextModules },
-      });
-    }
 
     const verifiedOfficialEmail =
       organization && (organization as { officialEmailVerifiedAt?: Date | null })?.officialEmailVerifiedAt
@@ -952,7 +932,7 @@ async function _PATCH(req: NextRequest) {
             primaryModule ??
             (organization as { primaryModule?: string | null }).primaryModule ??
             DEFAULT_PRIMARY_MODULE,
-          modules: nextModules,
+          tools: nextTools,
         },
       },
       { status: 200 },

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { RefObject } from "react";
 import Link from "next/link";
 import OrganizationFollowClient from "@/app/components/profile/OrganizationFollowClient";
 import ProfileHeaderLayout, { ProfileStatPill } from "@/app/components/profile/ProfileHeaderLayout";
@@ -13,7 +14,14 @@ type OrganizationProfileHeaderProps = {
   avatarUrl: string | null;
   coverUrl: string | null;
   bio: string | null;
-  city: string | null;
+  addressLabel?: string | null;
+  addressMapHref?: string | null;
+  linkedOrganizations?: Array<{
+    id: number;
+    username: string;
+    name: string;
+    avatarUrl?: string | null;
+  }>;
   followersCount?: number | null;
   organizationId: number;
   initialIsFollowing?: boolean;
@@ -35,13 +43,98 @@ type OrganizationFollowerItem = {
   avatarUrl: string | null;
 };
 
+function GroupOrganizationsChips({
+  organizations,
+  popoverOpen,
+  onTogglePopover,
+  onClosePopover,
+  containerRef,
+}: {
+  organizations: Array<{
+    id: number;
+    username: string;
+    name: string;
+    avatarUrl?: string | null;
+  }>;
+  popoverOpen: boolean;
+  onTogglePopover: () => void;
+  onClosePopover: () => void;
+  containerRef: RefObject<HTMLDivElement | null>;
+}) {
+  const visible = useMemo(() => organizations.slice(0, 3), [organizations]);
+  const hidden = useMemo(() => organizations.slice(3), [organizations]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <div className="flex flex-wrap items-center gap-2">
+        {visible.map((organization) => (
+          <Link
+            key={`group-chip-${organization.id}`}
+            href={`/${organization.username}`}
+            className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/8 px-2 py-1 text-[11px] text-white/85 transition hover:border-white/30 hover:bg-white/12"
+          >
+            <Avatar
+              src={organization.avatarUrl ?? null}
+              name={organization.name}
+              className="h-4 w-4"
+              textClassName="text-[6px] tracking-[0.06em] text-white/80"
+            />
+            @{organization.username}
+          </Link>
+        ))}
+        {hidden.length > 0 ? (
+          <button
+            type="button"
+            onClick={onTogglePopover}
+            className="inline-flex items-center rounded-full border border-white/20 bg-black/35 px-2.5 py-1 text-[11px] font-semibold text-white/80 transition hover:border-white/35 hover:text-white"
+            aria-expanded={popoverOpen}
+            aria-label={`Mostrar mais ${hidden.length} organizações associadas`}
+          >
+            +{hidden.length}
+          </button>
+        ) : null}
+      </div>
+      {hidden.length > 0 && popoverOpen ? (
+        <div
+          className="absolute left-0 top-[calc(100%+8px)] z-40 w-[min(22rem,92vw)] rounded-2xl border border-white/15 bg-[rgba(7,10,18,0.96)] p-2 shadow-[0_24px_70px_rgba(0,0,0,0.62)] backdrop-blur-2xl"
+        >
+          <p className="px-2 pb-1 text-[10px] uppercase tracking-[0.16em] text-white/55">Outras organizações do grupo</p>
+          <div className="max-h-64 space-y-1 overflow-auto pr-1">
+            {hidden.map((organization) => (
+              <Link
+                key={`group-popover-${organization.id}`}
+                href={`/${organization.username}`}
+                className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-2 py-2 transition hover:border-white/25 hover:bg-white/8"
+                onClick={onClosePopover}
+              >
+                <Avatar
+                  src={organization.avatarUrl ?? null}
+                  name={organization.name}
+                  className="h-8 w-8"
+                  textClassName="text-[9px] tracking-[0.12em] text-white/80"
+                />
+                <div className="min-w-0">
+                  <p className="truncate text-[12px] font-semibold text-white">{organization.name}</p>
+                  <p className="truncate text-[11px] text-white/65">@{organization.username}</p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function OrganizationProfileHeader({
   name,
   username,
   avatarUrl,
   coverUrl,
   bio,
-  city,
+  addressLabel,
+  addressMapHref,
+  linkedOrganizations = [],
   followersCount,
   organizationId,
   initialIsFollowing = false,
@@ -61,6 +154,8 @@ export default function OrganizationProfileHeader({
   const [isListModalOpen, setIsListModalOpen] = useState(false);
   const [listLoading, setListLoading] = useState(false);
   const [listItems, setListItems] = useState<OrganizationFollowerItem[]>([]);
+  const [linkedPopoverOpen, setLinkedPopoverOpen] = useState(false);
+  const linkedPopoverContainerRef = useRef<HTMLDivElement | null>(null);
   const mailtoHref = contactEmail ? `mailto:${contactEmail}` : null;
   const iconBaseClass =
     "inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/8 text-white/85 transition hover:border-white/40 hover:bg-white/12";
@@ -69,6 +164,27 @@ export default function OrganizationProfileHeader({
   useEffect(() => {
     setAvatar(avatarUrl);
   }, [avatarUrl]);
+
+  useEffect(() => {
+    if (!linkedPopoverOpen) return;
+    const handler = (event: MouseEvent) => {
+      if (!linkedPopoverContainerRef.current) return;
+      if (!linkedPopoverContainerRef.current.contains(event.target as Node)) {
+        setLinkedPopoverOpen(false);
+      }
+    };
+    const keyHandler = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setLinkedPopoverOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    document.addEventListener("keydown", keyHandler);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("keydown", keyHandler);
+    };
+  }, [linkedPopoverOpen]);
 
   const handleAvatarError = () => {
     if (!avatar) return;
@@ -118,16 +234,24 @@ export default function OrganizationProfileHeader({
     </div>
   );
 
-  const metaSlot = (
-    <div className="flex flex-wrap items-center gap-2 text-[12px] text-white/80">
-      {handle && (
+  const metaSlot = handle ? (
+    <div className="space-y-2 text-[12px] text-white/80">
+      <div className="flex flex-wrap items-center gap-2">
         <span className="rounded-full border border-white/15 bg-white/6 px-3 py-1 font-semibold text-white">
           @{handle}
         </span>
-      )}
-      {city && <span className="rounded-full border border-white/10 px-3 py-1 text-white/70">{city}</span>}
+      </div>
+      {linkedOrganizations.length > 0 ? (
+        <GroupOrganizationsChips
+          organizations={linkedOrganizations}
+          popoverOpen={linkedPopoverOpen}
+          onTogglePopover={() => setLinkedPopoverOpen((prev) => !prev)}
+          onClosePopover={() => setLinkedPopoverOpen(false)}
+          containerRef={linkedPopoverContainerRef}
+        />
+      ) : null}
     </div>
-  );
+  ) : null;
 
   const bioSlot = (
     <p className="max-w-xl text-sm text-white/85 leading-relaxed">
@@ -219,6 +343,33 @@ export default function OrganizationProfileHeader({
           </svg>
         </a>
       )}
+      {addressMapHref && addressLabel && (
+        <a
+          href={addressMapHref}
+          target="_blank"
+          rel="noreferrer"
+          className={`${iconBaseClass} border-emerald-300/45 bg-emerald-400/14 text-emerald-100`}
+          aria-label="Abrir morada no mapa"
+          title={addressLabel}
+        >
+          <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+            <path
+              d="M4 10.5L12 4l8 6.5V20H4V10.5Z"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinejoin="round"
+            />
+            <path
+              d="M9.5 20v-5.3c0-.66.54-1.2 1.2-1.2h2.6c.66 0 1.2.54 1.2 1.2V20"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </a>
+      )}
       {mailtoHref && (
         <a href={mailtoHref} className={iconBaseClass} aria-label="Email">
           <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
@@ -268,7 +419,7 @@ export default function OrganizationProfileHeader({
     <Avatar
       src={avatar}
       name={displayName}
-      className="h-24 w-24 sm:h-28 sm:w-28"
+      className="h-[clamp(5.8rem,10.8vw,9rem)] w-[clamp(5.8rem,10.8vw,9rem)]"
       textClassName="text-xs font-semibold uppercase tracking-[0.2em] text-white/80"
       onError={handleAvatarError}
     />

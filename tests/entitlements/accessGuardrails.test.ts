@@ -1,4 +1,4 @@
-import { describe, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { execSync } from "child_process";
 
 function assertNoMatches(command: string, label: string) {
@@ -17,33 +17,37 @@ function assertNoMatches(command: string, label: string) {
 
 describe("access entitlement guardrails", () => {
   it("blocks entitlement writes outside canonical modules", () => {
-    assertNoMatches(
-      [
-        "rg -n",
-        "\"entitlement\\\\.(create|update|upsert|updateMany|delete|deleteMany)\"",
-        "app domain lib -S",
-        "-g '!domain/finance/fulfillment.ts'",
-        "-g '!domain/finance/outbox.ts'",
-        "-g '!lib/operations/fulfillPaid.ts'",
-        "-g '!lib/operations/fulfillPadelRegistration.ts'",
-        "-g '!lib/operations/fulfillStoreOrder.ts'",
-        "-g '!lib/operations/fulfillResale.ts'",
-        "-g '!lib/operations/fulfillServiceBooking.ts'",
-        "-g '!lib/ownership/claimIdentity.ts'",
-        "-g '!domain/padel/cleanup.ts'",
-        "-g '!app/api/stripe/webhook/route.ts'",
-        "-g '!app/api/internal/worker/operations/route.ts'",
-        "-g '!app/api/org/[[]orgId[]]/events/[[]id[]]/refund/route.ts'",
-        "-g '!app/api/admin/eventos/purge/route.ts'",
-      ].join(" "),
-      "Entitlement writes outside canonical modules",
-    );
+    expect(() =>
+      assertNoMatches(
+        [
+          "rg -n",
+          "\"entitlement\\\\.(create|update|upsert|updateMany|delete|deleteMany)\"",
+          "app domain lib -S",
+          "-g '!domain/finance/fulfillment.ts'",
+          "-g '!domain/finance/outbox.ts'",
+          "-g '!lib/operations/fulfillPaid.ts'",
+          "-g '!lib/operations/fulfillPadelRegistration.ts'",
+          "-g '!lib/operations/fulfillStoreOrder.ts'",
+          "-g '!lib/operations/fulfillResale.ts'",
+          "-g '!lib/operations/fulfillServiceBooking.ts'",
+          "-g '!lib/ownership/claimIdentity.ts'",
+          "-g '!domain/padel/cleanup.ts'",
+          "-g '!app/api/stripe/webhook/route.ts'",
+          "-g '!app/api/internal/worker/operations/route.ts'",
+          "-g '!app/api/org/[[]orgId[]]/events/[[]id[]]/refund/route.ts'",
+          "-g '!app/api/admin/eventos/purge/route.ts'",
+        ].join(" "),
+        "Entitlement writes outside canonical modules",
+      ),
+    ).not.toThrow();
   });
 
   it("blocks ticket-status access gates in padel pairings", () => {
-    assertNoMatches(
-      ["rg -n", "\"ticket\\\\.status\"", "app/api/padel/pairings/route.ts -S"].join(" "),
-      "Ticket status access gates",
-    );
+    expect(() =>
+      assertNoMatches(
+        ["rg -n", "\"ticket\\\\.status\"", "app/api/padel/pairings/route.ts -S"].join(" "),
+        "Ticket status access gates",
+      ),
+    ).not.toThrow();
   });
 });

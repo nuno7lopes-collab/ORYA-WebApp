@@ -13,8 +13,6 @@ import { normalizeUsernameInput } from "@/lib/username";
 import { resolveUsernameOwner } from "@/lib/username/resolveUsernameOwner";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
-const normalizeVisibility = (value: unknown) =>
-  value === "PUBLIC" || value === "PRIVATE" || value === "FOLLOWERS" ? value : "PUBLIC";
 const MAX_LIMIT = 12;
 const isProfileEventCardRenderable = (event: { title?: string | null; startsAt?: string | null }) =>
   Boolean(event.title?.trim()) && Boolean(event.startsAt);
@@ -80,28 +78,6 @@ const EVENT_SELECT = {
     },
   },
 } as const;
-
-type SupabaseProfileRow = {
-  id: string;
-  username: string | null;
-  full_name: string | null;
-  visibility: "PUBLIC" | "PRIVATE" | "FOLLOWERS" | null;
-};
-
-const SUPABASE_PROFILE_SELECT = "id, username, full_name, visibility";
-
-async function fetchSupabaseProfileById(
-  supabase: ReturnType<typeof createSupabaseServer> extends Promise<infer T> ? T : never,
-  userId: string,
-): Promise<SupabaseProfileRow | null> {
-  const result = await supabase
-    .from("profiles")
-    .select(SUPABASE_PROFILE_SELECT)
-    .eq("id", userId)
-    .single();
-  if (result.error || !result.data) return null;
-  return result.data as SupabaseProfileRow;
-}
 
 async function _GET(req: NextRequest) {
   const origin = req.nextUrl.origin;
@@ -212,15 +188,24 @@ async function _GET(req: NextRequest) {
     if (deletedProfile) {
       return jsonWrap({ error: "NOT_FOUND" }, { status: 404 });
     }
-    const supabaseSelfProfile = await fetchSupabaseProfileById(supabase, viewerId);
+    const prismaSelfProfile = await prisma.profile.findUnique({
+      where: { id: viewerId },
+      select: {
+        id: true,
+        username: true,
+        fullName: true,
+        visibility: true,
+        isDeleted: true,
+      },
+    });
     const matchesUsername =
-      supabaseSelfProfile?.username &&
-      supabaseSelfProfile.username.toLowerCase() === username.toLowerCase();
-    if (matchesUsername) {
-      const visibility = normalizeVisibility(supabaseSelfProfile.visibility);
+      prismaSelfProfile?.username &&
+      prismaSelfProfile.username.toLowerCase() === username.toLowerCase();
+    if (prismaSelfProfile && !prismaSelfProfile.isDeleted && matchesUsername) {
+      const visibility = prismaSelfProfile.visibility ?? "PUBLIC";
       const isPrivate = visibility !== "PUBLIC";
-      const isSelf = viewerId === supabaseSelfProfile.id;
-      const viewerStatus = viewerId ? await getUserFollowStatus(viewerId, supabaseSelfProfile.id) : null;
+      const isSelf = viewerId === prismaSelfProfile.id;
+      const viewerStatus = viewerId ? await getUserFollowStatus(viewerId, prismaSelfProfile.id) : null;
       const canView = !isPrivate || isSelf || Boolean(viewerStatus?.isFollowing);
       if (!canView) {
         return jsonWrap({
@@ -234,12 +219,12 @@ async function _GET(req: NextRequest) {
 
       const now = new Date();
       const ownerProfile = {
-        fullName: supabaseSelfProfile.full_name ?? null,
-        username: supabaseSelfProfile.username ?? null,
+        fullName: prismaSelfProfile.fullName ?? null,
+        username: prismaSelfProfile.username ?? null,
       };
       const publicStatuses: EventStatus[] = PUBLIC_EVENT_STATUSES;
       const baseWhere = {
-        ownerUserId: supabaseSelfProfile.id,
+        ownerUserId: prismaSelfProfile.id,
         isDeleted: false,
         status: { in: publicStatuses },
       };

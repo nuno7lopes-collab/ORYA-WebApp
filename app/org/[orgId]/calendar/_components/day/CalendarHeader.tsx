@@ -22,6 +22,8 @@ type CalendarHeaderProps = {
   onSelectProfessional: (ids: string[]) => void;
   onSelectResource: (ids: string[]) => void;
   onResetSelections: () => void;
+  scopeSelectionEnabled: boolean;
+  scopeSelectionHint?: string;
   hasActiveSelection: boolean;
   onOpenFilters: () => void;
   activeFilterCount: number;
@@ -45,6 +47,8 @@ export function CalendarHeader({
   onSelectProfessional,
   onSelectResource,
   onResetSelections,
+  scopeSelectionEnabled,
+  scopeSelectionHint,
   hasActiveSelection,
   onOpenFilters,
   activeFilterCount,
@@ -102,31 +106,35 @@ export function CalendarHeader({
           </select>
         </label>
 
-        <SearchableEntitySelect
-          label="Equipa ou profissional"
-          placeholder="Equipa/profissional"
-          options={professionalOptions}
-          selectedIds={selectedProfessionalIds}
-          onChange={onSelectProfessional}
-        />
+        {scopeSelectionEnabled ? (
+          <>
+            <SearchableEntitySelect
+              label="Equipa ou profissional"
+              placeholder="Equipa/profissional"
+              options={professionalOptions}
+              selectedIds={selectedProfessionalIds}
+              onChange={onSelectProfessional}
+            />
 
-        <SearchableEntitySelect
-          label="Recurso"
-          placeholder="Recurso"
-          options={resourceOptions}
-          selectedIds={selectedResourceIds}
-          onChange={onSelectResource}
-        />
+            <SearchableEntitySelect
+              label="Recurso"
+              placeholder="Recurso"
+              options={resourceOptions}
+              selectedIds={selectedResourceIds}
+              onChange={onSelectResource}
+            />
 
-        <button
-          type="button"
-          onClick={onResetSelections}
-          className="inline-flex h-10 items-center rounded-full border border-white/20 bg-white/5 px-4 text-sm text-white/85 transition hover:border-white/40 hover:text-white"
-          aria-label="Mostrar calendário geral"
-        >
-          Geral
-          {!hasActiveSelection ? <span className="ml-2 text-[10px] text-cyan-100">ativo</span> : null}
-        </button>
+            <button
+              type="button"
+              onClick={onResetSelections}
+              className="inline-flex h-10 items-center rounded-full border border-white/20 bg-white/5 px-4 text-sm text-white/85 transition hover:border-white/40 hover:text-white"
+              aria-label="Mostrar calendário geral"
+            >
+              Geral
+              {!hasActiveSelection ? <span className="ml-2 text-[10px] text-cyan-100">ativo</span> : null}
+            </button>
+          </>
+        ) : null}
 
         <button
           type="button"
@@ -145,7 +153,9 @@ export function CalendarHeader({
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs text-white/50">
-          Catálogo de serviços definido pela organização; profissionais associados a serviços existentes.
+          {scopeSelectionEnabled
+            ? "Calendário operacional com ocupações por tipo e por escopo."
+            : scopeSelectionHint ?? "Calendário operacional consolidado para esta organização."}
         </p>
       </div>
     </header>

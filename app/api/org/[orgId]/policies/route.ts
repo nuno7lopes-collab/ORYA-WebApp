@@ -6,7 +6,16 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureDefaultPolicies } from "@/lib/organizationPolicies";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
-import { OrganizationMemberRole } from "@prisma/client";
+import {
+  BOOKING_POLICY_WINDOW_MINUTES_MAX,
+  BOOKING_POLICY_WINDOW_MINUTES_MIN,
+  ORG_RESCHEDULE_WINDOW_MINUTES_MAX,
+  ORG_RESCHEDULE_WINDOW_MINUTES_MIN,
+  clampBookingPolicyWindowMinutes,
+  clampOrgRescheduleWindowMinutes,
+  validateOrgRescheduleWindowMinutes,
+} from "@/lib/policies/bookingPolicyGuardrails";
+import { OrganizationMemberRole, Prisma } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -118,11 +127,25 @@ async function _GET(req: NextRequest) {
     return respondOk(ctx, {
       items: normalizedItems.map((item) => ({
         ...item,
+        cancellationWindowMinutes: clampBookingPolicyWindowMinutes(item.cancellationWindowMinutes),
+        rescheduleWindowMinutes: clampBookingPolicyWindowMinutes(item.rescheduleWindowMinutes),
         cancellationPenaltyBps: 0,
         noShowFeeCents: 0,
       })),
       organizationPolicy: {
-        orgRescheduleWindowMinutes: organizationSnapshot?.orgRescheduleWindowMinutes ?? 240,
+        orgRescheduleWindowMinutes: clampOrgRescheduleWindowMinutes(
+          organizationSnapshot?.orgRescheduleWindowMinutes ?? null,
+        ),
+      },
+      guardrails: {
+        bookingWindowMinutes: {
+          min: BOOKING_POLICY_WINDOW_MINUTES_MIN,
+          max: BOOKING_POLICY_WINDOW_MINUTES_MAX,
+        },
+        orgRescheduleWindowMinutes: {
+          min: ORG_RESCHEDULE_WINDOW_MINUTES_MIN,
+          max: ORG_RESCHEDULE_WINDOW_MINUTES_MAX,
+        },
       },
       financePolicy: {
         paymentsMode,
@@ -159,10 +182,15 @@ async function _POST(req: NextRequest) {
     message: string,
     errorCode = errorCodeForStatus(status),
     retryable = status >= 500,
+    details?: Record<string, unknown>,
   ) => {
     const resolvedMessage = typeof message === "string" ? message : String(message);
     const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
-    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+    return respondError(
+      ctx,
+      { errorCode: resolvedCode, message: resolvedMessage, retryable, ...(details ? { details } : {}) },
+      { status },
+    );
   };
   try {
     const supabase = await createSupabaseServer();
@@ -207,10 +235,15 @@ async function _PATCH(req: NextRequest) {
     message: string,
     errorCode = errorCodeForStatus(status),
     retryable = status >= 500,
+    details?: Record<string, unknown>,
   ) => {
     const resolvedMessage = typeof message === "string" ? message : String(message);
     const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
-    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+    return respondError(
+      ctx,
+      { errorCode: resolvedCode, message: resolvedMessage, retryable, ...(details ? { details } : {}) },
+      { status },
+    );
   };
 
   try {
@@ -233,15 +266,25 @@ async function _PATCH(req: NextRequest) {
     if (!organization || !membership) {
       return fail(403, "Sem permissões.");
     }
-    const payload = await req.json().catch(() => ({}));
+    const payloadRaw = await req.json().catch(() => ({}));
+    const payload =
+      payloadRaw && typeof payloadRaw === "object"
+        ? (payloadRaw as Record<string, unknown>)
+        : {};
     if (!Object.prototype.hasOwnProperty.call(payload, "orgRescheduleWindowMinutes")) {
       return fail(400, "Sem alterações.");
     }
-    const orgRescheduleWindowMinutesRaw = Number(payload?.orgRescheduleWindowMinutes);
-    if (!Number.isFinite(orgRescheduleWindowMinutesRaw)) {
-      return fail(400, "orgRescheduleWindowMinutes inválido.");
+    const orgRescheduleWindowValidation = validateOrgRescheduleWindowMinutes(payload.orgRescheduleWindowMinutes);
+    if (!orgRescheduleWindowValidation.ok) {
+      return fail(
+        422,
+        orgRescheduleWindowValidation.message,
+        orgRescheduleWindowValidation.errorCode,
+        false,
+        orgRescheduleWindowValidation.details,
+      );
     }
-    const orgRescheduleWindowMinutes = Math.max(0, Math.round(orgRescheduleWindowMinutesRaw));
+    const orgRescheduleWindowMinutes = orgRescheduleWindowValidation.value;
 
     const updated = await prisma.organization.update({
       where: { id: organization.id },
@@ -269,6 +312,19 @@ async function _PATCH(req: NextRequest) {
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "Não autenticado.");
+    }
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2020") {
+      return fail(
+        422,
+        "Valor fora do guardrail para janela global de reagendamento. Usa um valor entre 0 e 10080 minutos.",
+        "ORG_RESCHEDULE_WINDOW_OUT_OF_RANGE",
+        false,
+        {
+          field: "orgRescheduleWindowMinutes",
+          min: ORG_RESCHEDULE_WINDOW_MINUTES_MIN,
+          max: ORG_RESCHEDULE_WINDOW_MINUTES_MAX,
+        },
+      );
     }
     console.error("PATCH /api/org/[orgId]/policies error:", err);
     return fail(500, "Erro ao atualizar política global.");

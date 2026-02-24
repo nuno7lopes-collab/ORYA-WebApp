@@ -15,6 +15,7 @@ import { computeGraceUntil } from "@/domain/padelDeadlines";
 import { transitionPadelRegistrationStatus } from "@/domain/padelRegistration";
 import { queueOffsessionActionRequired } from "@/domain/notifications/splitPayments";
 import { computePricing } from "@/lib/pricing";
+import { requiresOrganizationStripe } from "@/domain/finance/payoutModePolicy";
 
 export async function attemptPadelSecondChargeForPairing(params: { pairingId: number; now?: Date }) {
   const now = params.now ?? new Date();
@@ -160,6 +161,9 @@ export async function attemptPadelSecondChargeForPairing(params: { pairingId: nu
     feeBps: pricing.feeBpsApplied,
     feeFixed: pricing.feeFixedApplied,
   });
+  const requiresOrganizationStripeForEvent = requiresOrganizationStripe(
+    event.organization?.orgType,
+  );
 
   const attempt = 1;
   const purchaseId = autoChargeKey(pairing.id, attempt);
@@ -204,7 +208,7 @@ export async function attemptPadelSecondChargeForPairing(params: { pairingId: nu
         stripePayoutsEnabled: event.organization?.stripePayoutsEnabled ?? null,
         orgType: event.organization?.orgType ?? null,
       },
-      requireStripe: true,
+      requireStripe: requiresOrganizationStripeForEvent,
       customerIdentityId: registration.buyerIdentityId ?? null,
       resolvedSnapshot: {
         orgId: registration.organizationId,

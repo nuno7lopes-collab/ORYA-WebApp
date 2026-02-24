@@ -13,7 +13,12 @@ import { OrganizationNotificationBell } from "@/app/components/notifications/Not
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { OrganizationMemberRole } from "@prisma/client";
 import { ORG_SHELL_GUTTER } from "@/app/org/_internal/core/layoutTokens";
-import { normalizeOrganizationPathname, resolveOrganizationTool, type OrgToolKey } from "@/app/org/_internal/core/topbarRouteUtils";
+import {
+  normalizeOrganizationPathname,
+  resolveOrganizationTool,
+  shouldPinOrganizationTopbar,
+  type OrgToolKey,
+} from "@/app/org/_internal/core/topbarRouteUtils";
 import { buildOrgHref, buildOrgHubHref } from "@/lib/organizationIdUtils";
 import EventsSubnav from "@/app/org/_components/subnav/EventsSubnav";
 import BookingsSubnav from "@/app/org/_components/subnav/BookingsSubnav";
@@ -62,7 +67,7 @@ type ActiveOrg = {
   avatarUrl: string | null;
   organizationKind?: string | null;
   primaryModule?: string | null;
-  modules?: string[] | null;
+  tools?: string[] | null;
 };
 
 type UserInfo = {
@@ -155,6 +160,10 @@ export default function OrganizationTopBar({
   const [openMenu, setOpenMenu] = useState<"org" | "user" | null>(null);
   const [isVisible, setIsVisible] = useState(true);
   const [isAtTop, setIsAtTop] = useState(true);
+  const isPinnedTopbarRoute = useMemo(
+    () => shouldPinOrganizationTopbar(normalizedPathname),
+    [normalizedPathname],
+  );
 
   const orgDisplay = activeOrg?.name ?? "Organização";
   const orgAvatar = activeOrg?.avatarUrl ?? null;
@@ -333,6 +342,11 @@ export default function OrganizationTopBar({
   }, []);
 
   useEffect(() => {
+    scrollDirectionDeltaRef.current = 0;
+    setIsVisible(true);
+  }, [normalizedPathname]);
+
+  useEffect(() => {
     if (typeof document === "undefined") return;
     const container = document.querySelector<HTMLElement>("[data-org-scroll]");
     const scrollTarget: HTMLElement | Window = container ?? window;
@@ -349,6 +363,11 @@ export default function OrganizationTopBar({
     };
 
     const handleScroll = () => {
+      if (isPinnedTopbarRoute) {
+        scrollDirectionDeltaRef.current = 0;
+        setIsVisible(true);
+        return;
+      }
       const currentY = getScrollY();
       const previousY = lastScrollYRef.current;
       const delta = currentY - previousY;
@@ -379,7 +398,7 @@ export default function OrganizationTopBar({
 
     scrollTarget.addEventListener("scroll", handleScroll, { passive: true });
     return () => scrollTarget.removeEventListener("scroll", handleScroll);
-  }, []);
+  }, [isPinnedTopbarRoute, normalizedPathname]);
 
   const handleMenuToggle = (key: "org" | "user") => (event: SyntheticEvent<HTMLDetailsElement>) => {
     const isOpen = event.currentTarget.open;
@@ -459,7 +478,7 @@ export default function OrganizationTopBar({
       ref={topbarRef}
       className={cn(
         "fixed inset-x-0 top-0 z-[70] transition-transform duration-300 ease-out",
-        isVisible ? "translate-y-0" : "-translate-y-full",
+        isPinnedTopbarRoute || isVisible ? "translate-y-0" : "-translate-y-full",
       )}
     >
       <div

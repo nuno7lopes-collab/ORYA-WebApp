@@ -633,6 +633,7 @@ async function _POST(req: NextRequest) {
 
     const hasExistingPaid = !isPadelEvent && event.ticketTypes.some((t) => (t.price ?? 0) > 0);
     const hasNewPaid = !isPadelEvent && newTicketTypes.some((nt) => Number(nt.price ?? 0) > 0);
+    const requiresStripeForPaidSales = requiresOrganizationStripe(organization?.orgType);
     if (event.organizationId && (hasExistingPaid || hasNewPaid) && !isAdmin) {
       const gate = getPaidSalesGate({
         officialEmail: organization?.officialEmail ?? null,
@@ -640,7 +641,7 @@ async function _POST(req: NextRequest) {
         stripeAccountId: organization?.stripeAccountId ?? null,
         stripeChargesEnabled: organization?.stripeChargesEnabled ?? false,
         stripePayoutsEnabled: organization?.stripePayoutsEnabled ?? false,
-        requireStripe: requiresOrganizationStripe(organization?.orgType),
+        requireStripe: requiresStripeForPaidSales,
       });
       if (!gate.ok) {
         return respondError(

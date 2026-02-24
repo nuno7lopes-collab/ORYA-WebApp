@@ -12,13 +12,14 @@ export default async function OrgChatPage({
   params: Promise<{ orgId: string }>;
   searchParams?: SearchParamsInput;
 }) {
-  const [{ orgId }, resolvedSearchParams] = await Promise.all([
+  const [resolvedParams, resolvedSearchParams] = await Promise.all([
     params,
     Promise.resolve(searchParams),
   ]);
-  const mergedSearchParams: Record<string, string | string[] | undefined> = {
-    ...(resolvedSearchParams ?? {}),
-    organizationId: orgId,
-  };
-  return <OrganizationChatPage searchParams={mergedSearchParams} />;
+  return (
+    <OrganizationChatPage
+      params={resolvedParams}
+      searchParams={resolvedSearchParams ?? {}}
+    />
+  );
 }

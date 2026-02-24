@@ -1,4 +1,4 @@
-import { describe, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { execSync } from "node:child_process";
 
 const STORE_DOMAIN_PATHS = [
@@ -27,10 +27,7 @@ function runRg(command: string) {
 describe("store legacy guardrails", () => {
   it("blocks legacy API namespace usage across runtime", () => {
     const output = runRg('rg -n "/api/me/store|/api/org/1/loja|/api/store/" app components lib apps/mobile -S');
-
-    if (output) {
-      throw new Error(`Legacy API namespaces found:\n${output}`);
-    }
+    expect(output).toBe("");
   });
 
   it("blocks legacy ownership/visibility/shipping contract in store domain", () => {
@@ -38,27 +35,18 @@ describe("store legacy guardrails", () => {
     const output = runRg(
       `rg -n "StoreOwnerType|owner_type|StoreProductStatus|StoreBundleStatus|\\bshippingMode\\b|\\bisVisible\\b" ${targets} -S`,
     );
-
-    if (output) {
-      throw new Error(`Legacy contract tokens found in store domain:\n${output}`);
-    }
+    expect(output).toBe("");
   });
 
   it("blocks direct status flag checks in public storefront surfaces", () => {
     const output = runRg(
       'set -o noglob; rg -n "store\\.(status|showOnProfile|checkoutEnabled)" app/api/public/store app/[username]/loja components/storefront -S',
     );
-
-    if (output) {
-      throw new Error(`Direct store flag checks found outside storeAccess:\n${output}`);
-    }
+    expect(output).toBe("");
   });
 
   it("blocks legacy helper aliases in runtime", () => {
     const output = runRg('rg -n "\\bisStorePublic\\b|\\bcanCheckoutStore\\b" app components lib domain -S');
-
-    if (output) {
-      throw new Error(`Legacy store helper aliases found:\n${output}`);
-    }
+    expect(output).toBe("");
   });
 });

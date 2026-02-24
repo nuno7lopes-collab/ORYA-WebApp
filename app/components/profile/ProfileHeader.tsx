@@ -514,7 +514,7 @@ export default function ProfileHeader({
           src={avatar ?? null}
           version={avatarVersion}
           name={displayName}
-          className="h-24 w-24 sm:h-28 sm:w-28"
+          className="h-[clamp(5.6rem,10.5vw,8.6rem)] w-[clamp(5.6rem,10.5vw,8.6rem)]"
           textClassName="text-xs font-semibold uppercase tracking-[0.2em] text-white/80"
           onError={handleAvatarError}
         />

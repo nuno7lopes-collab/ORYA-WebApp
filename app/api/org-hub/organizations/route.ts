@@ -45,7 +45,7 @@ async function _GET() {
     ]);
 
     const organizationIds = memberships.map((membership) => membership.organizationId);
-    const modulesRows =
+    const toolsRows =
       organizationIds.length > 0
         ? await prisma.organizationModuleEntry.findMany({
             where: {
@@ -60,13 +60,13 @@ async function _GET() {
           })
         : [];
 
-    const modulesByOrg = new Map<number, string[]>();
-    for (const moduleRow of modulesRows) {
-      const bucket = modulesByOrg.get(moduleRow.organizationId);
+    const toolsByOrg = new Map<number, string[]>();
+    for (const moduleRow of toolsRows) {
+      const bucket = toolsByOrg.get(moduleRow.organizationId);
       if (bucket) {
         bucket.push(moduleRow.moduleKey);
       } else {
-        modulesByOrg.set(moduleRow.organizationId, [moduleRow.moduleKey]);
+        toolsByOrg.set(moduleRow.organizationId, [moduleRow.moduleKey]);
       }
     }
 
@@ -83,7 +83,7 @@ async function _GET() {
           entityType: membership.organization.entityType,
           status: membership.organization.status,
           primaryModule: membership.organization.primaryModule,
-          modules: modulesByOrg.get(membership.organizationId) ?? [],
+          tools: toolsByOrg.get(membership.organizationId) ?? [],
         },
       }))
       .sort((a, b) => {
@@ -127,7 +127,7 @@ async function _POST(req: NextRequest) {
       addressId: typeof normalizedBody.addressId === "string" ? normalizedBody.addressId : null,
       username: parsed.data.username,
       primaryModule: parsed.data.primaryModule,
-      modules: parsed.data.modules,
+      tools: parsed.data.tools,
       publicWebsite: typeof normalizedBody.publicWebsite === "string" ? normalizedBody.publicWebsite : null,
       existingGroupId,
     });

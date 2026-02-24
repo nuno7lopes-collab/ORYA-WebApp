@@ -1,0 +1,850 @@
+{
+  "version": 1,
+  "description": "Catalogo normativo dos scripts operacionais (fase 3): owner, runbook e comando npm oficial por script.",
+  "policy": {
+    "owner": "platform-architecture",
+    "reviewCadence": "quarterly",
+    "complianceRule": "cada script da allowlist tem de ter owner, runbook e comando npm oficial"
+  },
+  "entries": [
+    {
+      "script": "scripts/audit_api_ui_coverage.ts",
+      "owner": "content-brand",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#audit-api-ui-coverage-ts",
+      "npmCommand": "gate:api-ui-coverage",
+      "environments": [
+        "ci",
+        "dev"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/audit_event_ticket_integrity.ts",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#audit-event-ticket-integrity-ts",
+      "npmCommand": "audit:event-ticket-integrity",
+      "environments": [
+        "ci",
+        "dev"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/audit_padel_category_ticket_links.ts",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#audit-padel-category-ticket-links-ts",
+      "npmCommand": "audit:padel-category-ticket-links",
+      "environments": [
+        "ci",
+        "dev"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/audit_public_events.ts",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#audit-public-events-ts",
+      "npmCommand": "audit:public-events",
+      "environments": [
+        "ci",
+        "dev"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/aws/pause-prod.sh",
+      "owner": "platform-infra",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#aws-pause-prod-sh",
+      "npmCommand": "aws:prod:pause",
+      "environments": [
+        "dev",
+        "prod"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/aws/redis-start.sh",
+      "owner": "platform-infra",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#aws-redis-start-sh",
+      "npmCommand": "aws:prod:redis:start",
+      "environments": [
+        "dev",
+        "prod"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/aws/redis-stop.sh",
+      "owner": "platform-infra",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#aws-redis-stop-sh",
+      "npmCommand": "aws:prod:redis:stop",
+      "environments": [
+        "dev",
+        "prod"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/aws/start-prod.sh",
+      "owner": "platform-infra",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#aws-start-prod-sh",
+      "npmCommand": "aws:prod:start",
+      "environments": [
+        "dev",
+        "prod"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/build-and-push.sh",
+      "owner": "platform-infra",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#build-and-push-sh",
+      "npmCommand": "deploy:build-push",
+      "environments": [
+        "dev",
+        "prod"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/chat-realtime-doctor.js",
+      "owner": "communications-realtime",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#chat-realtime-doctor-js",
+      "npmCommand": "chat:doctor",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/chat-ws-server.js",
+      "owner": "communications-realtime",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#chat-ws-server-js",
+      "npmCommand": "chat:ws",
+      "environments": [
+        "dev",
+        "prod"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/check-db-env.js",
+      "owner": "platform-data",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#check-db-env-js",
+      "npmCommand": "db:env",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/codemods/enforce-verified-auth.mjs",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#codemods-enforce-verified-auth-mjs",
+      "npmCommand": "auth:codemod:enforce-verified",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/convert_test_orgs_to_platform.ts",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#convert-test-orgs-to-platform-ts",
+      "npmCommand": "orgs:convert-test-platform",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/covers/generate-thumbs.ts",
+      "owner": "content-brand",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#covers-generate-thumbs-ts",
+      "npmCommand": "covers:thumbs",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/covers/sync-manifest.ts",
+      "owner": "content-brand",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#covers-sync-manifest-ts",
+      "npmCommand": "covers:manifest",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/covers/validate-manifest.ts",
+      "owner": "content-brand",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#covers-validate-manifest-ts",
+      "npmCommand": "covers:validate",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/cron-loop.js",
+      "owner": "platform-runtime",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#cron-loop-js",
+      "npmCommand": "cron:local",
+      "environments": [
+        "dev",
+        "prod"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/db/gates.js",
+      "owner": "platform-data",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#db-gates-js",
+      "npmCommand": "db:gates",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/db/preflight.js",
+      "owner": "platform-data",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#db-preflight-js",
+      "npmCommand": "db:preflight",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/db/prisma-retry.js",
+      "owner": "platform-data",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#db-prisma-retry-js",
+      "npmCommand": "db:generate",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/db/resolve-public-dns.js",
+      "owner": "platform-data",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#db-resolve-public-dns-js",
+      "npmCommand": "db:resolve-public-dns",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/db/schema_hygiene_snapshot.mjs",
+      "owner": "platform-data",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#db-schema-hygiene-snapshot-mjs",
+      "npmCommand": "db:schema-hygiene:snapshot",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/deploy-cf.sh",
+      "owner": "platform-infra",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#deploy-cf-sh",
+      "npmCommand": "deploy:cf",
+      "environments": [
+        "dev",
+        "prod"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/deploy-dev.sh",
+      "owner": "platform-infra",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#deploy-dev-sh",
+      "npmCommand": "deploy:dev",
+      "environments": [
+        "dev",
+        "prod"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/dev-all.js",
+      "owner": "platform-runtime",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#dev-all-js",
+      "npmCommand": "dev:all",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/e2e/address_event_checklist.mjs",
+      "owner": "qa-automation",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#e2e-address-event-checklist-mjs",
+      "npmCommand": "e2e:address:checklist",
+      "environments": [
+        "ci",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/e2e/ui_auth_bootstrap.mjs",
+      "owner": "qa-automation",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#e2e-ui-auth-bootstrap-mjs",
+      "npmCommand": "e2e:ui:auth-bootstrap",
+      "environments": [
+        "ci",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/e2e/ui_seed_guard.mjs",
+      "owner": "qa-automation",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#e2e-ui-seed-guard-mjs",
+      "npmCommand": "e2e:ui:seed-guard",
+      "environments": [
+        "ci",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/fetch_openverse_covers.js",
+      "owner": "content-brand",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#fetch-openverse-covers-js",
+      "npmCommand": "covers:fetch",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/finance_ledger_hygiene.mjs",
+      "owner": "finance-core",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#finance-ledger-hygiene-mjs",
+      "npmCommand": "finance:ledger-hygiene",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/finance_operational_gate.mjs",
+      "owner": "finance-core",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#finance-operational-gate-mjs",
+      "npmCommand": "gate:finance-ops",
+      "environments": [
+        "ci",
+        "dev"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/finance_prove_cycles.mjs",
+      "owner": "finance-core",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#finance-prove-cycles-mjs",
+      "npmCommand": "finance:prove-cycles",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/gate_auth_verified.mjs",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#gate-auth-verified-mjs",
+      "npmCommand": "gate:auth-verified",
+      "environments": [
+        "ci",
+        "dev"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/generate_api_ui_orphan_burndown_plan.mjs",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#generate-api-ui-orphan-burndown-plan-mjs",
+      "npmCommand": "report:api-ui-burndown",
+      "environments": [
+        "ci",
+        "dev"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/generate_cover_library.js",
+      "owner": "content-brand",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#generate-cover-library-js",
+      "npmCommand": "covers:build",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/generate-admin-totp-key.mjs",
+      "owner": "identity-access",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#generate-admin-totp-key-mjs",
+      "npmCommand": "admin:totp-key",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/generate-reserved-usernames.ts",
+      "owner": "identity-access",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#generate-reserved-usernames-ts",
+      "npmCommand": "usernames:generate-reserved",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/healthcheck.sh",
+      "owner": "platform-infra",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#healthcheck-sh",
+      "npmCommand": "ops:healthcheck",
+      "environments": [
+        "dev",
+        "prod"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/load-env.js",
+      "owner": "platform-runtime",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#load-env-js",
+      "npmCommand": "db:env",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/messages_purge_attachments_oneoff.ts",
+      "owner": "messaging-core",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#messages-purge-attachments-oneoff-ts",
+      "npmCommand": "messages:purge-attachments:dry",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/mobile-clean-cache.js",
+      "owner": "platform-runtime",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#mobile-clean-cache-js",
+      "npmCommand": "mobile:cache:clean",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/operational_scripts_allowlist_gate.mjs",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#operational-scripts-allowlist-gate-mjs",
+      "npmCommand": "gate:scripts-ops",
+      "environments": [
+        "ci",
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/operational_scripts_catalog_gate.mjs",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#operational-scripts-catalog-gate-mjs",
+      "npmCommand": "gate:scripts-catalog",
+      "environments": [
+        "ci",
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/operations-loop.js",
+      "owner": "platform-runtime",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#operations-loop-js",
+      "npmCommand": "worker",
+      "environments": [
+        "dev",
+        "prod"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/prepare-secrets-json.sh",
+      "owner": "platform-infra",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#prepare-secrets-json-sh",
+      "npmCommand": "secrets:prepare-json",
+      "environments": [
+        "dev",
+        "prod"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/regenerate-logo-assets.mjs",
+      "owner": "content-brand",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#regenerate-logo-assets-mjs",
+      "npmCommand": "logo:build",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/reset-dev-servers.sh",
+      "owner": "platform-runtime",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#reset-dev-servers-sh",
+      "npmCommand": "reset",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/run-next-dev.mjs",
+      "owner": "platform-runtime",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#run-next-dev-mjs",
+      "npmCommand": "dev:fast",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/run-playwright-ui.mjs",
+      "owner": "qa-automation",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#run-playwright-ui-mjs",
+      "npmCommand": "test:ui:web",
+      "environments": [
+        "ci",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/run-ts.cjs",
+      "owner": "platform-runtime",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#run-ts-cjs",
+      "npmCommand": "usernames:generate-reserved",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/smoke_reservas_hybrid.ts",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#smoke-reservas-hybrid-ts",
+      "npmCommand": "smoke:reservas:hybrid",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/ssot_normative_gate.mjs",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#ssot-normative-gate-mjs",
+      "npmCommand": "gate:ssot-normative",
+      "environments": [
+        "ci",
+        "dev"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/start-ui-e2e-server.mjs",
+      "owner": "qa-automation",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#start-ui-e2e-server-mjs",
+      "npmCommand": "test:ui:server:start",
+      "environments": [
+        "ci",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/sync_api_ui_orphan_baseline.mjs",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#sync-api-ui-orphan-baseline-mjs",
+      "npmCommand": "baseline:api-ui:sync",
+      "environments": [
+        "ci",
+        "dev"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/sync_ssot_p0_endpoints.mjs",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#sync-ssot-p0-endpoints-mjs",
+      "npmCommand": "ssot:p0:sync",
+      "environments": [
+        "ci",
+        "dev"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/test_hygiene_gate.mjs",
+      "owner": "qa-automation",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#test-hygiene-gate-mjs",
+      "npmCommand": "gate:test-hygiene",
+      "environments": [
+        "ci",
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/uiux_gate.mjs",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#uiux-gate-mjs",
+      "npmCommand": "gate:ui-ux",
+      "environments": [
+        "ci",
+        "dev"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/uiux_surface_inventory.mjs",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#uiux-surface-inventory-mjs",
+      "npmCommand": "gate:ui-ux:inventory",
+      "environments": [
+        "ci",
+        "dev"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/upload-secrets.sh",
+      "owner": "platform-infra",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#upload-secrets-sh",
+      "npmCommand": "secrets:upload",
+      "environments": [
+        "dev",
+        "prod"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/v9_api_contract_gate.mjs",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#v9-api-contract-gate-mjs",
+      "npmCommand": "gate:api-contract",
+      "environments": [
+        "ci",
+        "dev"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/v9_api_frontend_mapping.mjs",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#v9-api-frontend-mapping-mjs",
+      "npmCommand": "v9:api-mapping",
+      "environments": [
+        "ci",
+        "dev"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/v9_api_ui_baseline_gate.mjs",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#v9-api-ui-baseline-gate-mjs",
+      "npmCommand": "gate:api-ui-baseline",
+      "environments": [
+        "ci",
+        "dev"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/v9_frontend_usage_hints_gate.mjs",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#v9-frontend-usage-hints-gate-mjs",
+      "npmCommand": "gate:api-ui-hints",
+      "environments": [
+        "ci",
+        "dev"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/v9_generate_checklist.mjs",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#v9-generate-checklist-mjs",
+      "npmCommand": "v9:checklist",
+      "environments": [
+        "ci",
+        "dev"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/v9_internal_secret_gate.mjs",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#v9-internal-secret-gate-mjs",
+      "npmCommand": "gate:internal-secret",
+      "environments": [
+        "ci",
+        "dev"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/v9_inventory.mjs",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#v9-inventory-mjs",
+      "npmCommand": "v9:inventory",
+      "environments": [
+        "ci",
+        "dev"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/v9_org_context_gate.mjs",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#v9-org-context-gate-mjs",
+      "npmCommand": "gate:org-context",
+      "environments": [
+        "ci",
+        "dev"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/v9_org_id_parser_gate.mjs",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#v9-org-id-parser-gate-mjs",
+      "npmCommand": "gate:org-id-parser",
+      "environments": [
+        "ci",
+        "dev"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/v9_p0_error_gate.mjs",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#v9-p0-error-gate-mjs",
+      "npmCommand": "gate:p0-errors",
+      "environments": [
+        "ci",
+        "dev"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/v9_p0_policy_gate.mjs",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#v9-p0-policy-gate-mjs",
+      "npmCommand": "gate:p0-policy",
+      "environments": [
+        "ci",
+        "dev"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/v9_parity_gate.mjs",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#v9-parity-gate-mjs",
+      "npmCommand": "gate:parity",
+      "environments": [
+        "ci",
+        "dev"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/v9_readme_route_refs_gate.mjs",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#v9-readme-route-refs-gate-mjs",
+      "npmCommand": "gate:readme-refs",
+      "environments": [
+        "ci",
+        "dev"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/v9_runbook_gate.mjs",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#v9-runbook-gate-mjs",
+      "npmCommand": "gate:runbooks",
+      "environments": [
+        "ci",
+        "dev"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/v9_todo_gate.mjs",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#v9-todo-gate-mjs",
+      "npmCommand": "gate:todo",
+      "environments": [
+        "ci",
+        "dev"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/verify_schema_hygiene_smoke.ts",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#verify-schema-hygiene-smoke-ts",
+      "npmCommand": "db:schema-hygiene:smoke",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    }
+  ]
+}

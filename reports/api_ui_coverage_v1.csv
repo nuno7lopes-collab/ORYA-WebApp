@@ -187,21 +187,25 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/notifications/prefs,app/api/notifications/prefs/route.ts,public,covered,3,app/me/settings/page.tsx; apps/mobile/app/settings/index.tsx; apps/mobile/features/settings/api.ts
 /api/org-hub,app/api/org-hub/route.ts,public,covered,1,lib/canonicalOrgApiPath.ts
 /api/org-hub/groups/[groupId]/dashboard/agenda,app/api/org-hub/groups/[groupId]/dashboard/agenda/route.ts,public,covered,1,app/org/_internal/core/organizations/GroupDashboardClient.tsx
-/api/org-hub/groups/[groupId]/governance,app/api/org-hub/groups/[groupId]/governance/route.ts,public,covered,1,app/org/_internal/core/organizations/GroupsHubClient.tsx
-/api/org-hub/groups/[groupId]/governance/members,app/api/org-hub/groups/[groupId]/governance/members/route.ts,public,covered,1,app/org/_internal/core/organizations/GroupsHubClient.tsx
-/api/org-hub/groups/[groupId]/owner/transfer/cancel,app/api/org-hub/groups/[groupId]/owner/transfer/cancel/route.ts,public,covered,1,app/org/_internal/core/organizations/GroupsHubClient.tsx
-/api/org-hub/groups/[groupId]/owner/transfer/confirm,app/api/org-hub/groups/[groupId]/owner/transfer/confirm/route.ts,public,covered,2,app/org/_internal/core/organizations/GroupsHubClient.tsx; app/org/_internal/core/organizations/OwnerTransferConfirmClient.tsx
-/api/org-hub/groups/[groupId]/owner/transfer/start,app/api/org-hub/groups/[groupId]/owner/transfer/start/route.ts,public,covered,2,app/org/_internal/core/(dashboard)/staff/page.tsx; app/org/_internal/core/organizations/GroupsHubClient.tsx
-/api/org-hub/groups/exit-requests,app/api/org-hub/groups/exit-requests/route.ts,public,covered,1,app/org/_internal/core/organizations/GroupsHubClient.tsx
-/api/org-hub/groups/exit-requests/[id]/email/confirm,app/api/org-hub/groups/exit-requests/[id]/email/confirm/route.ts,public,covered,2,app/org/_internal/core/organizations/GroupsHubClient.tsx; app/org/_internal/core/organizations/RequestEmailConfirmClient.tsx
-/api/org-hub/groups/exit-requests/[id]/email/resend,app/api/org-hub/groups/exit-requests/[id]/email/resend/route.ts,public,covered,1,app/org/_internal/core/organizations/GroupsHubClient.tsx
-/api/org-hub/groups/exit-requests/[id]/generate-code,app/api/org-hub/groups/exit-requests/[id]/generate-code/route.ts,public,covered,1,app/org/_internal/core/organizations/GroupsHubClient.tsx
-/api/org-hub/groups/exit-requests/[id]/verify-codes,app/api/org-hub/groups/exit-requests/[id]/verify-codes/route.ts,public,covered,1,app/org/_internal/core/organizations/GroupsHubClient.tsx
-/api/org-hub/groups/join-requests,app/api/org-hub/groups/join-requests/route.ts,public,covered,1,app/org/_internal/core/organizations/GroupsHubClient.tsx
-/api/org-hub/groups/join-requests/[id]/email/confirm,app/api/org-hub/groups/join-requests/[id]/email/confirm/route.ts,public,covered,2,app/org/_internal/core/organizations/GroupsHubClient.tsx; app/org/_internal/core/organizations/RequestEmailConfirmClient.tsx
-/api/org-hub/groups/join-requests/[id]/email/resend,app/api/org-hub/groups/join-requests/[id]/email/resend/route.ts,public,covered,1,app/org/_internal/core/organizations/GroupsHubClient.tsx
-/api/org-hub/groups/join-requests/[id]/generate-code,app/api/org-hub/groups/join-requests/[id]/generate-code/route.ts,public,covered,1,app/org/_internal/core/organizations/GroupsHubClient.tsx
-/api/org-hub/groups/join-requests/[id]/verify-codes,app/api/org-hub/groups/join-requests/[id]/verify-codes/route.ts,public,covered,1,app/org/_internal/core/organizations/GroupsHubClient.tsx
+/api/org-hub/groups/[groupId]/dashboard/crm,app/api/org-hub/groups/[groupId]/dashboard/crm/route.ts,public,covered,1,app/org/_internal/core/organizations/GroupDashboardClient.tsx
+/api/org-hub/groups/[groupId]/dashboard/finance,app/api/org-hub/groups/[groupId]/dashboard/finance/route.ts,public,covered,1,app/org/_internal/core/organizations/GroupDashboardClient.tsx
+/api/org-hub/groups/[groupId]/dashboard/rankings,app/api/org-hub/groups/[groupId]/dashboard/rankings/route.ts,public,covered,1,app/org/_internal/core/organizations/GroupDashboardClient.tsx
+/api/org-hub/groups/[groupId]/dashboard/reservas,app/api/org-hub/groups/[groupId]/dashboard/reservas/route.ts,public,covered,1,app/org/_internal/core/organizations/GroupDashboardClient.tsx
+/api/org-hub/groups/[groupId]/governance,app/api/org-hub/groups/[groupId]/governance/route.ts,public,covered,1,app/org/_internal/core/organizations/GroupGovernanceClient.tsx
+/api/org-hub/groups/[groupId]/governance/members,app/api/org-hub/groups/[groupId]/governance/members/route.ts,public,covered,1,app/org/_internal/core/organizations/GroupGovernanceClient.tsx
+/api/org-hub/groups/[groupId]/owner/transfer/cancel,app/api/org-hub/groups/[groupId]/owner/transfer/cancel/route.ts,public,covered,1,app/org/_internal/core/organizations/GroupGovernanceClient.tsx
+/api/org-hub/groups/[groupId]/owner/transfer/confirm,app/api/org-hub/groups/[groupId]/owner/transfer/confirm/route.ts,public,covered,2,app/org/_internal/core/organizations/GroupGovernanceClient.tsx; app/org/_internal/core/organizations/OwnerTransferConfirmClient.tsx
+/api/org-hub/groups/[groupId]/owner/transfer/start,app/api/org-hub/groups/[groupId]/owner/transfer/start/route.ts,public,covered,2,app/org/_internal/core/(dashboard)/staff/page.tsx; app/org/_internal/core/organizations/GroupGovernanceClient.tsx
+/api/org-hub/groups/exit-requests,app/api/org-hub/groups/exit-requests/route.ts,public,covered,1,app/org/_internal/core/organizations/GroupGovernanceClient.tsx
+/api/org-hub/groups/exit-requests/[id]/email/confirm,app/api/org-hub/groups/exit-requests/[id]/email/confirm/route.ts,public,covered,2,app/org/_internal/core/organizations/GroupGovernanceClient.tsx; app/org/_internal/core/organizations/RequestEmailConfirmClient.tsx
+/api/org-hub/groups/exit-requests/[id]/email/resend,app/api/org-hub/groups/exit-requests/[id]/email/resend/route.ts,public,covered,1,app/org/_internal/core/organizations/GroupGovernanceClient.tsx
+/api/org-hub/groups/exit-requests/[id]/generate-code,app/api/org-hub/groups/exit-requests/[id]/generate-code/route.ts,public,covered,1,app/org/_internal/core/organizations/GroupGovernanceClient.tsx
+/api/org-hub/groups/exit-requests/[id]/verify-codes,app/api/org-hub/groups/exit-requests/[id]/verify-codes/route.ts,public,covered,1,app/org/_internal/core/organizations/GroupGovernanceClient.tsx
+/api/org-hub/groups/join-requests,app/api/org-hub/groups/join-requests/route.ts,public,covered,1,app/org/_internal/core/organizations/GroupGovernanceClient.tsx
+/api/org-hub/groups/join-requests/[id]/email/confirm,app/api/org-hub/groups/join-requests/[id]/email/confirm/route.ts,public,covered,2,app/org/_internal/core/organizations/GroupGovernanceClient.tsx; app/org/_internal/core/organizations/RequestEmailConfirmClient.tsx
+/api/org-hub/groups/join-requests/[id]/email/resend,app/api/org-hub/groups/join-requests/[id]/email/resend/route.ts,public,covered,1,app/org/_internal/core/organizations/GroupGovernanceClient.tsx
+/api/org-hub/groups/join-requests/[id]/generate-code,app/api/org-hub/groups/join-requests/[id]/generate-code/route.ts,public,covered,1,app/org/_internal/core/organizations/GroupGovernanceClient.tsx
+/api/org-hub/groups/join-requests/[id]/verify-codes,app/api/org-hub/groups/join-requests/[id]/verify-codes/route.ts,public,covered,1,app/org/_internal/core/organizations/GroupGovernanceClient.tsx
 /api/org-hub/invites,app/api/org-hub/invites/route.ts,public,covered,2,app/convites/organizacoes/OrganizationInvitesClient.tsx; apps/mobile/features/notifications/api.ts
 /api/org-hub/organizations,app/api/org-hub/organizations/route.ts,public,covered,3,app/me/page.tsx; components/organization/BecomeOrganizationForm.tsx; lib/canonicalOrgUiEndpointRegistry.ts
 /api/org-hub/organizations/[id],app/api/org-hub/organizations/[id]/route.ts,public,covered,1,app/org/_internal/core/(dashboard)/settings/page.tsx
@@ -281,11 +285,8 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/org/[orgId]/loyalty/recompensas,app/api/org/[orgId]/loyalty/recompensas/route.ts,public,covered,1,app/org/_internal/core/(dashboard)/crm/loyalty/page.tsx
 /api/org/[orgId]/loyalty/regras,app/api/org/[orgId]/loyalty/regras/route.ts,public,covered,1,app/org/_internal/core/(dashboard)/crm/loyalty/page.tsx
 /api/org/[orgId]/marketing/overview,app/api/org/[orgId]/marketing/overview/route.ts,public,covered,1,app/org/_internal/core/DashboardClient.tsx
-/api/org/[orgId]/me,app/api/org/[orgId]/me/route.ts,public,covered,10,app/org/_internal/core/(dashboard)/eventos/EventEditClient.tsx; app/org/_internal/core/(dashboard)/eventos/novo/page.tsx; app/org/_internal/core/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx; app/org/_internal/core/(dashboard)/reservas/page.tsx; app/org/_internal/core/(dashboard)/settings/page.tsx; app/org/_internal/core/(dashboard)/staff/page.tsx; app/org/_internal/core/DashboardClient.tsx; app/org/_internal/core/ObjectiveSubnav.tsx; app/org/_internal/core/OrganizationDashboardShell.tsx; app/org/_internal/core/OrganizationTopBar.tsx
+/api/org/[orgId]/me,app/api/org/[orgId]/me/route.ts,public,covered,11,app/org/[orgId]/store/OrgStoreToolClient.tsx; app/org/_internal/core/(dashboard)/eventos/EventEditClient.tsx; app/org/_internal/core/(dashboard)/eventos/novo/page.tsx; app/org/_internal/core/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx; app/org/_internal/core/(dashboard)/reservas/page.tsx; app/org/_internal/core/(dashboard)/settings/page.tsx; app/org/_internal/core/(dashboard)/staff/page.tsx; app/org/_internal/core/DashboardClient.tsx; app/org/_internal/core/ObjectiveSubnav.tsx; app/org/_internal/core/OrganizationDashboardShell.tsx; app/org/_internal/core/OrganizationTopBar.tsx
 /api/org/[orgId]/ops/feed,app/api/org/[orgId]/ops/feed/route.ts,public,covered,2,app/org/[orgId]/finance/FinanceToolClient.tsx; app/org/_internal/core/DashboardClient.tsx
-/api/org/[orgId]/padel/broadcast,app/api/org/[orgId]/padel/broadcast/route.ts,public,orphan,0,
-/api/org/[orgId]/padel/courts,app/api/org/[orgId]/padel/courts/route.ts,public,orphan,0,
-/api/org/[orgId]/padel/pairings/swap,app/api/org/[orgId]/padel/pairings/swap/route.ts,public,orphan,0,
 /api/org/[orgId]/pagamentos/invoices,app/api/org/[orgId]/pagamentos/invoices/route.ts,public,covered,1,app/org/_internal/core/pagamentos/invoices/invoices-client.tsx
 /api/org/[orgId]/policies,app/api/org/[orgId]/policies/route.ts,public,covered,2,app/org/[orgId]/policies/PoliciesToolClient.tsx; app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
 /api/org/[orgId]/policies/[id],app/api/org/[orgId]/policies/[id]/route.ts,public,covered,1,app/org/[orgId]/policies/PoliciesToolClient.tsx
@@ -362,7 +363,9 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/org/[orgId]/store/shipping/zones/[zoneId]/methods,app/api/org/[orgId]/store/shipping/zones/[zoneId]/methods/route.ts,public,covered,3,components/store/StoreShippingMethodsPanel.tsx; components/store/StoreShippingSettingsPanel.tsx; components/store/StoreShippingTiersPanel.tsx
 /api/org/[orgId]/tournaments/blocks/bulk,app/api/org/[orgId]/tournaments/blocks/bulk/route.ts,public,covered,1,lib/canonicalOrgUiEndpointRegistry.ts
 /api/org/[orgId]/tournaments/blocks/overrides,app/api/org/[orgId]/tournaments/blocks/overrides/route.ts,public,covered,1,lib/canonicalOrgUiEndpointRegistry.ts
+/api/org/[orgId]/tournaments/broadcast,app/api/org/[orgId]/tournaments/broadcast/route.ts,public,covered,1,app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
 /api/org/[orgId]/tournaments/create,app/api/org/[orgId]/tournaments/create/route.ts,public,covered,2,app/org/_internal/core/(dashboard)/eventos/novo/page.tsx; app/org/_internal/core/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx
+/api/org/[orgId]/tournaments/pairings/swap,app/api/org/[orgId]/tournaments/pairings/swap/route.ts,public,covered,1,app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
 /api/org/[orgId]/trainers/profile,app/api/org/[orgId]/trainers/profile/route.ts,public,covered,1,app/org/_internal/core/(dashboard)/treinadores/page.tsx
 /api/org/[orgId]/username,app/api/org/[orgId]/username/route.ts,public,covered,1,app/org/_internal/core/(dashboard)/settings/page.tsx
 /api/org/[orgId]/venues/recent,app/api/org/[orgId]/venues/recent/route.ts,public,covered,1,lib/canonicalOrgUiEndpointRegistry.ts
@@ -382,9 +385,7 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/padel/discover,app/api/padel/discover/route.ts,public,covered,1,apps/mobile/features/tournaments/api.ts
 /api/padel/event-categories,app/api/padel/event-categories/route.ts,public,covered,3,app/org/_internal/core/(dashboard)/eventos/EventEditClient.tsx; app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx; app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
 /api/padel/formats/plan,app/api/padel/formats/plan/route.ts,public,covered,3,app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx; app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx; app/org/_internal/core/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx
-/api/padel/live,app/api/padel/live/route.ts,public,orphan,0,
 /api/padel/matches,app/api/padel/matches/route.ts,public,covered,3,app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx; app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx; apps/mobile/features/tournaments/api.ts
-/api/padel/matches/[id]/delay,app/api/padel/matches/[id]/delay/route.ts,public,orphan,0,
 /api/padel/matches/[id]/dispute,app/api/padel/matches/[id]/dispute/route.ts,public,covered,3,app/[username]/padel/PadelDisputeButton.tsx; app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx; app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
 /api/padel/matches/[id]/result/confirm,app/api/padel/matches/[id]/result/confirm/route.ts,public,covered,1,app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
 /api/padel/matches/[id]/result/override,app/api/padel/matches/[id]/result/override/route.ts,public,covered,1,app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
@@ -401,10 +402,10 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/padel/ops/summary,app/api/padel/ops/summary/route.ts,public,covered,1,app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
 /api/padel/pairings,app/api/padel/pairings/route.ts,public,covered,5,app/components/checkout/Step1Bilhete.tsx; app/eventos/[slug]/EventPageClient.tsx; app/eventos/[slug]/PadelSignupInline.tsx; app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx; apps/mobile/features/tournaments/api.ts
 /api/padel/pairings/[id]/accept,app/api/padel/pairings/[id]/accept/route.ts,public,covered,1,apps/mobile/features/tournaments/api.ts
-/api/padel/pairings/[id]/cancel,app/api/padel/pairings/[id]/cancel/route.ts,public,orphan,0,
+/api/padel/pairings/[id]/actions/cancel,app/api/padel/pairings/[id]/actions/cancel/route.ts,public,covered,2,app/components/notifications/PairingInviteCard.tsx; app/me/bilhetes/[id]/TicketDetailClient.tsx
+/api/padel/pairings/[id]/actions/reopen,app/api/padel/pairings/[id]/actions/reopen/route.ts,public,covered,2,app/components/notifications/PairingInviteCard.tsx; app/me/bilhetes/[id]/TicketDetailClient.tsx
 /api/padel/pairings/[id]/checkout,app/api/padel/pairings/[id]/checkout/route.ts,public,covered,1,apps/mobile/features/checkout/api.ts
 /api/padel/pairings/[id]/decline,app/api/padel/pairings/[id]/decline/route.ts,public,covered,1,apps/mobile/features/tournaments/api.ts
-/api/padel/pairings/[id]/reopen,app/api/padel/pairings/[id]/reopen/route.ts,public,orphan,0,
 /api/padel/pairings/claim/[token],app/api/padel/pairings/claim/[token]/route.ts,public,covered,1,app/eventos/[slug]/EventPageClient.tsx
 /api/padel/pairings/invite-status,app/api/padel/pairings/invite-status/route.ts,public,covered,2,app/components/notifications/PairingInviteCard.tsx; app/me/bilhetes/[id]/TicketDetailClient.tsx
 /api/padel/pairings/open,app/api/padel/pairings/open/route.ts,public,covered,2,app/descobrir/_explorar/ExplorarContent.tsx; apps/mobile/features/tournaments/api.ts
@@ -423,7 +424,6 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/padel/partnerships/tournament-requests/[id]/reject,app/api/padel/partnerships/tournament-requests/[id]/reject/route.ts,public,covered,1,app/org/_internal/core/(dashboard)/padel/parcerias/PartnershipsPageClient.tsx
 /api/padel/partnerships/workspace/[id]/calendar,app/api/padel/partnerships/workspace/[id]/calendar/route.ts,public,covered,1,app/org/_internal/core/(dashboard)/padel/parcerias/[agreementId]/PartnershipWorkspaceClient.tsx
 /api/padel/players,app/api/padel/players/route.ts,public,covered,1,app/org/_internal/core/(dashboard)/padel/PadelHubSection.tsx
-/api/padel/public/calendar,app/api/padel/public/calendar/route.ts,public,orphan,0,
 /api/padel/public/clubs,app/api/padel/public/clubs/route.ts,public,covered,1,app/org/_internal/core/(dashboard)/eventos/novo/page.tsx
 /api/padel/public/live,app/api/padel/public/live/route.ts,public,covered,2,app/eventos/[slug]/PadelMatchesByCategoryClient.tsx; app/eventos/[slug]/monitor/MonitorClient.tsx
 /api/padel/public/open-pairings,app/api/padel/public/open-pairings/route.ts,public,covered,2,app/padel/duplas/PadelOpenPairingsClient.tsx; apps/mobile/features/tournaments/api.ts
@@ -438,9 +438,6 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/padel/tournaments/lifecycle,app/api/padel/tournaments/lifecycle/route.ts,public,covered,1,app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentLifecyclePanel.tsx
 /api/padel/tournaments/roles,app/api/padel/tournaments/roles/route.ts,public,covered,1,app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentRolesPanel.tsx
 /api/padel/tournaments/seeds,app/api/padel/tournaments/seeds/route.ts,public,covered,1,app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
-/api/padel/tournaments/tier-approvals/[id]/approve,app/api/padel/tournaments/tier-approvals/[id]/approve/route.ts,public,orphan,0,
-/api/padel/tournaments/tier-approvals/[id]/reject,app/api/padel/tournaments/tier-approvals/[id]/reject/route.ts,public,orphan,0,
-/api/padel/tournaments/tier-approvals/request,app/api/padel/tournaments/tier-approvals/request/route.ts,public,orphan,0,
 /api/payments/intent,app/api/payments/intent/route.ts,public,covered,2,app/components/checkout/Step2Pagamento.tsx; apps/mobile/features/checkout/api.ts
 /api/platform/fees,app/api/platform/fees/route.ts,public,covered,1,app/admin/(protected)/finance/page.tsx
 /api/profiles/check-username,app/api/profiles/check-username/route.ts,public,covered,1,apps/mobile/features/onboarding/api.ts
@@ -497,4 +494,3 @@ api_route,api_file,api_type,ui_status,ui_file_count,ui_files
 /api/upload/delete,app/api/upload/delete/route.ts,public,orphan,0,
 /api/username/check,app/api/username/check/route.ts,public,covered,4,app/components/autenticação/AuthModal.tsx; app/components/checkout/AuthWall.tsx; app/onboarding/perfil/page.tsx; components/organization/BecomeOrganizationForm.tsx
 /api/users/search,app/api/users/search/route.ts,public,covered,4,app/components/Navbar.tsx; app/components/checkout/Step1Bilhete.tsx; app/social/page.tsx; apps/mobile/features/search/api.ts
-/api/webhooks/stripe,app/api/webhooks/stripe/route.ts,webhook,exempt,0,

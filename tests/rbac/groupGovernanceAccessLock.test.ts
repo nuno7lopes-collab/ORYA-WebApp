@@ -38,5 +38,7 @@ describe("group governance access lock", () => {
     await expect(
       revokeGroupMemberForOrg({ organizationId: 5, userId: "u-1" }),
     ).rejects.toThrow("GROUP_GOVERNANCE_LOCKED");
+    expect(organizationFindUnique).toHaveBeenCalled();
+    expect(organizationGroupMemberFindFirst).toHaveBeenCalled();
   });
 });

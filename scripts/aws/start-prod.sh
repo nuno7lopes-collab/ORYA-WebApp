@@ -406,6 +406,8 @@ if [[ -n "${AlbCertificateArn:-}" ]]; then args+=("--alb-cert-arn" "$AlbCertific
 if [[ -n "${HostedZoneId:-}" ]]; then args+=("--hosted-zone-id" "$HostedZoneId"); fi
 if [[ -n "${AppDomain:-}" ]]; then args+=("--app-domain" "$AppDomain"); fi
 if [[ -n "${AdminDomain:-}" ]]; then args+=("--admin-domain" "$AdminDomain"); fi
+if [[ -n "${WwwDomain:-}" ]]; then args+=("--www-domain" "$WwwDomain"); fi
+if [[ -n "${AlbSslPolicy:-}" ]]; then args+=("--alb-ssl-policy" "$AlbSslPolicy"); fi
 args+=("--create-dns" "$CREATE_DNS_VALUE")
 
 export ENABLE_WORKER="${EnableWorker:-true}"

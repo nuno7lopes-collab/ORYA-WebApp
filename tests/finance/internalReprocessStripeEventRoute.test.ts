@@ -28,7 +28,7 @@ function makeReq(payload: unknown) {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-internal-secret": "test",
+      "X-ORYA-CRON-SECRET": "test",
     },
     body: JSON.stringify(payload),
   });
@@ -56,6 +56,7 @@ describe("POST /api/internal/reprocess/stripe-event", () => {
       expect.objectContaining({
         operationType: "PROCESS_STRIPE_EVENT",
         dedupeKey: "evt_1",
+        forceRequeue: true,
         correlations: expect.objectContaining({
           stripeEventId: "evt_1",
           paymentIntentId: "pi_123",

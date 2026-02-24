@@ -72,7 +72,7 @@ async function _GET(req: NextRequest, context: { params: Promise<{ id: string }>
     }
 
     if (!(await ensureInscricoesEnabled(organization))) {
-      return fail(ctx, 403, "Módulo de formulários desativado.");
+      return fail(ctx, 403, "Ferramenta de formulários desativada.");
     }
 
     const { id } = await context.params;
@@ -144,7 +144,7 @@ async function _PATCH(req: NextRequest, context: { params: Promise<{ id: string 
     }
 
     if (!(await ensureInscricoesEnabled(organization))) {
-      return fail(ctx, 403, "Módulo de formulários desativado.");
+      return fail(ctx, 403, "Ferramenta de formulários desativada.");
     }
 
     const { id } = await context.params;

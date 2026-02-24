@@ -91,7 +91,7 @@ async function _PATCH(
         ctx,
         409,
         "COURT_RESOURCE_MANAGED_BY_COURT",
-        "Recurso ligado a campo de padel deve ser editado no módulo de campos.",
+        "Recurso ligado a campo de padel deve ser editado na ferramenta de campos.",
       );
     }
 

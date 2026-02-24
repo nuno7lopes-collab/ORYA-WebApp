@@ -69,4 +69,59 @@ describe("group governance routes", () => {
 
     expect(res.status).toBe(400);
   });
+
+  it("allows group owner to update linked organizations visibility", async () => {
+    prisma.organizationGroup.findUnique.mockResolvedValue({
+      id: 4,
+      ownerUserId: "user-1",
+      name: "Grupo Norte",
+      showLinkedOrganizationsPublicly: true,
+    });
+    const update = vi.fn().mockResolvedValue({
+      id: 4,
+      ownerUserId: "user-1",
+      name: "Grupo Norte",
+      showLinkedOrganizationsPublicly: false,
+    });
+    prisma.$transaction.mockImplementation(async (callback: (tx: any) => Promise<unknown>) =>
+      callback({ organizationGroup: { update } }),
+    );
+
+    const res = await governancePatch(
+      new NextRequest("http://localhost/api/org-hub/groups/4/governance", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ showLinkedOrganizationsPublicly: false }),
+      }),
+      { params: Promise.resolve({ groupId: "4" }) },
+    );
+
+    expect(res.status).toBe(200);
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 4 },
+        data: expect.objectContaining({ showLinkedOrganizationsPublicly: false }),
+      }),
+    );
+  });
+
+  it("rejects invalid linked organizations visibility payload", async () => {
+    prisma.organizationGroup.findUnique.mockResolvedValue({
+      id: 5,
+      ownerUserId: "user-1",
+      name: "Grupo Centro",
+      showLinkedOrganizationsPublicly: true,
+    });
+
+    const res = await governancePatch(
+      new NextRequest("http://localhost/api/org-hub/groups/5/governance", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ showLinkedOrganizationsPublicly: "nope" }),
+      }),
+      { params: Promise.resolve({ groupId: "5" }) },
+    );
+
+    expect(res.status).toBe(400);
+  });
 });

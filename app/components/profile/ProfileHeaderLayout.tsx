@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 type ProfileHeaderLayoutProps = {
   coverUrl?: string | null;
   coverActionsSlot?: ReactNode;
+  onCoverClick?: (() => void) | null;
   coverHeightClassName?: string;
   contentWidthClassName?: string;
   avatarSlot: ReactNode;
@@ -67,6 +68,7 @@ export function ProfileVerifiedBadge() {
 export default function ProfileHeaderLayout({
   coverUrl,
   coverActionsSlot,
+  onCoverClick,
   coverHeightClassName = "orya-profile-cover",
   contentWidthClassName = "orya-page-width",
   avatarSlot,
@@ -79,6 +81,7 @@ export default function ProfileHeaderLayout({
   afterSlot,
 }: ProfileHeaderLayoutProps) {
   const [coverError, setCoverError] = useState(false);
+  const isCoverInteractive = typeof onCoverClick === "function";
 
   useEffect(() => {
     setCoverError(false);
@@ -89,7 +92,21 @@ export default function ProfileHeaderLayout({
       <div className="px-5 pt-5 sm:px-8">
         <div className={contentWidthClassName}>
           <div
-            className={`relative w-full overflow-hidden rounded-2xl border border-white/10 ${coverHeightClassName}`}
+            className={`relative w-full overflow-hidden rounded-2xl border border-white/10 ${coverHeightClassName} ${
+              isCoverInteractive ? "cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b1014]" : ""
+            }`}
+            onClick={isCoverInteractive ? onCoverClick : undefined}
+            onKeyDown={
+              isCoverInteractive
+                ? (event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    onCoverClick?.();
+                  }
+                : undefined
+            }
+            role={isCoverInteractive ? "button" : undefined}
+            tabIndex={isCoverInteractive ? 0 : undefined}
           >
             {coverUrl && !coverError ? (
               // eslint-disable-next-line @next/next/no-img-element

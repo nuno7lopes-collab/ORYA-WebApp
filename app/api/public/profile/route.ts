@@ -14,36 +14,6 @@ import { getPublicStorePaymentsGate } from "@/lib/store/publicPaymentsGate";
 import { canOpenPublicStorefront } from "@/lib/publicOrganizationProfile";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
-const normalizeVisibility = (value: unknown) =>
-  value === "PUBLIC" || value === "PRIVATE" || value === "FOLLOWERS" ? value : "PUBLIC";
-
-type SupabaseProfileRow = {
-  id: string;
-  username: string | null;
-  full_name: string | null;
-  avatar_url: string | null;
-  cover_url: string | null;
-  bio: string | null;
-  padel_level: string | null;
-  favourite_categories: string[] | null;
-  visibility: "PUBLIC" | "PRIVATE" | "FOLLOWERS" | null;
-};
-
-const SUPABASE_PROFILE_SELECT =
-  "id, username, full_name, avatar_url, cover_url, bio, padel_level, favourite_categories, visibility";
-
-async function fetchSupabaseProfileById(
-  supabase: ReturnType<typeof createSupabaseServer> extends Promise<infer T> ? T : never,
-  userId: string,
-): Promise<SupabaseProfileRow | null> {
-  const result = await supabase
-    .from("profiles")
-    .select(SUPABASE_PROFILE_SELECT)
-    .eq("id", userId)
-    .single();
-  if (result.error || !result.data) return null;
-  return result.data as SupabaseProfileRow;
-}
 
 type UserProfileCore = {
   id: string;
@@ -192,7 +162,6 @@ async function _GET(req: NextRequest) {
     if (response) return response;
   }
 
-  let supabaseSelfProfile: SupabaseProfileRow | null = null;
   if (!resolved && viewerId) {
     const deletedProfile = await prisma.profile.findFirst({
       where: { username: { equals: username, mode: "insensitive" }, isDeleted: true },
@@ -201,64 +170,40 @@ async function _GET(req: NextRequest) {
     if (deletedProfile) {
       return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
     }
-    supabaseSelfProfile = await fetchSupabaseProfileById(supabase, viewerId);
-    const matchesUsername =
-      supabaseSelfProfile?.username &&
-      supabaseSelfProfile.username.toLowerCase() === username.toLowerCase();
-    if (supabaseSelfProfile && matchesUsername) {
-      const prismaSelfProfile = await prisma.profile.findUnique({
-        where: { id: viewerId },
-        select: {
-          id: true,
-          username: true,
-          fullName: true,
-          avatarUrl: true,
-          coverUrl: true,
-          bio: true,
-          visibility: true,
-          padelLevel: true,
-          padelPreferredSide: true,
-          gender: true,
-          favouriteCategories: true,
-          isDeleted: true,
-        },
-      });
-      const prismaUsernameMatches =
-        prismaSelfProfile?.username &&
-        prismaSelfProfile.username.toLowerCase() === username.toLowerCase();
-      if (prismaSelfProfile && !prismaSelfProfile.isDeleted && prismaUsernameMatches) {
-        const response = await buildUserResponse(
-          {
-            id: prismaSelfProfile.id,
-            username: prismaSelfProfile.username,
-            fullName: prismaSelfProfile.fullName,
-            avatarUrl: prismaSelfProfile.avatarUrl,
-            coverUrl: prismaSelfProfile.coverUrl,
-            bio: prismaSelfProfile.bio,
-            visibility: prismaSelfProfile.visibility ?? "PUBLIC",
-            padelLevel: prismaSelfProfile.padelLevel ?? null,
-            padelPreferredSide: prismaSelfProfile.padelPreferredSide ?? null,
-            gender: prismaSelfProfile.gender ?? null,
-            favouriteCategories: prismaSelfProfile.favouriteCategories ?? [],
-          },
-          viewerId,
-        );
-        if (response) return response;
-      }
-
+    const prismaSelfProfile = await prisma.profile.findUnique({
+      where: { id: viewerId },
+      select: {
+        id: true,
+        username: true,
+        fullName: true,
+        avatarUrl: true,
+        coverUrl: true,
+        bio: true,
+        visibility: true,
+        padelLevel: true,
+        padelPreferredSide: true,
+        gender: true,
+        favouriteCategories: true,
+        isDeleted: true,
+      },
+    });
+    const prismaUsernameMatches =
+      prismaSelfProfile?.username &&
+      prismaSelfProfile.username.toLowerCase() === username.toLowerCase();
+    if (prismaSelfProfile && !prismaSelfProfile.isDeleted && prismaUsernameMatches) {
       const response = await buildUserResponse(
         {
-          id: supabaseSelfProfile.id,
-          username: supabaseSelfProfile.username ?? null,
-          fullName: supabaseSelfProfile.full_name ?? null,
-          avatarUrl: supabaseSelfProfile.avatar_url ?? null,
-          coverUrl: supabaseSelfProfile.cover_url ?? null,
-          bio: supabaseSelfProfile.bio ?? null,
-          visibility: normalizeVisibility(supabaseSelfProfile.visibility),
-          padelLevel: supabaseSelfProfile.padel_level ?? null,
-          padelPreferredSide: null,
-          gender: null,
-          favouriteCategories: supabaseSelfProfile.favourite_categories ?? [],
+          id: prismaSelfProfile.id,
+          username: prismaSelfProfile.username,
+          fullName: prismaSelfProfile.fullName,
+          avatarUrl: prismaSelfProfile.avatarUrl,
+          coverUrl: prismaSelfProfile.coverUrl,
+          bio: prismaSelfProfile.bio,
+          visibility: prismaSelfProfile.visibility ?? "PUBLIC",
+          padelLevel: prismaSelfProfile.padelLevel ?? null,
+          padelPreferredSide: prismaSelfProfile.padelPreferredSide ?? null,
+          gender: prismaSelfProfile.gender ?? null,
+          favouriteCategories: prismaSelfProfile.favouriteCategories ?? [],
         },
         viewerId,
       );

@@ -10,7 +10,7 @@ function read(file: string) {
 
 test("infra scripts exist", () => {
   const scripts = [
-    "scripts/create-secrets-json.sh",
+    "scripts/prepare-secrets-json.sh",
     "scripts/upload-secrets.sh",
     "scripts/build-and-push.sh",
     "scripts/deploy-cf.sh",
@@ -27,6 +27,25 @@ test("CloudFormation uses cost-first defaults", () => {
   expect(template).toContain("Keep last 5 images");
   expect(template).toContain("LogsRetentionDays");
   expect(template).toContain("CreateALB");
+});
+
+test("ALB listener keeps TLS hardening guardrail", () => {
+  const template = read("infra/ecs/orya-ecs-stack.yaml");
+  expect(template).toContain("AlbSslPolicy");
+  expect(template).toContain("ELBSecurityPolicy-TLS13-1-2-2021-06");
+  expect(template).toContain("SslPolicy: !Ref AlbSslPolicy");
+});
+
+test("infra supports canonical www domain wiring", () => {
+  const stack = read("infra/ecs/orya-ecs-stack.yaml");
+  const acm = read("infra/ecs/route53-acm.yaml");
+  const deploy = read("scripts/deploy-cf.sh");
+
+  expect(stack).toContain("WwwDomain");
+  expect(stack).toContain("WwwDnsRecord");
+  expect(acm).toContain("WwwDomain");
+  expect(acm).toContain("UseWwwDomain");
+  expect(deploy).toContain("--www-domain");
 });
 
 test("infra templates expose only canonical admin MFA break-glass secret", () => {

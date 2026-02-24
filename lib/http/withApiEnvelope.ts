@@ -415,7 +415,7 @@ export function withApiEnvelope<Req extends Request, Args extends any[]>(
           errorCode: "INTERNAL_ERROR",
           message: "Erro interno.",
           retryable: false,
-          details: err instanceof Error ? { name: err.name, message: err.message } : null,
+          details: null,
         },
         { status: 500 },
       );

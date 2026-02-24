@@ -53,6 +53,14 @@ Parameters:
     Type: String
     Default: ""
     Description: admin domain (e.g. admin.orya.pt)
+  WwwDomain:
+    Type: String
+    Default: ""
+    Description: optional www domain (e.g. www.orya.pt)
+  AlbSslPolicy:
+    Type: String
+    Default: ELBSecurityPolicy-TLS13-1-2-2021-06
+    Description: ALB HTTPS security policy (TLS protocol/cipher hardening)
   CreateDnsRecords:
     Type: String
     Default: "false"
@@ -128,9 +136,17 @@ Conditions:
   HasHostedZone: !Not [!Equals [!Ref HostedZoneId, ""]]
   HasAppDomain: !Not [!Equals [!Ref AppDomain, ""]]
   HasAdminDomain: !Not [!Equals [!Ref AdminDomain, ""]]
+  HasWwwDomain: !Not [!Equals [!Ref WwwDomain, ""]]
+  WwwDomainMatchesApp: !Equals [!Ref WwwDomain, !Ref AppDomain]
+  WwwDomainMatchesAdmin: !Equals [!Ref WwwDomain, !Ref AdminDomain]
   CreateDns: !And [!Equals [!Ref CreateDnsRecords, "true"], !Condition HasHostedZone, !Condition HasALB]
   CreateAppDns: !And [!Condition CreateDns, !Condition HasAppDomain]
   CreateAdminDns: !And [!Condition CreateDns, !Condition HasAdminDomain]
+  CreateWwwDns: !And
+    - !Condition CreateDns
+    - !Condition HasWwwDomain
+    - !Not [!Condition WwwDomainMatchesApp]
+    - !Not [!Condition WwwDomainMatchesAdmin]
   HasALBAndChatWs: !And [!Condition HasALB, !Condition UseChatWs]
 
 Resources:
@@ -466,6 +482,7 @@ Resources:
       LoadBalancerArn: !Ref LoadBalancer
       Port: 443
       Protocol: HTTPS
+      SslPolicy: !Ref AlbSslPolicy
       Certificates:
         - CertificateArn: !Ref AlbCertificateArn
       DefaultActions:
@@ -504,6 +521,17 @@ Resources:
     Properties:
       HostedZoneId: !Ref HostedZoneId
       Name: !Ref AdminDomain
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt LoadBalancer.DNSName
+        HostedZoneId: !GetAtt LoadBalancer.CanonicalHostedZoneID
+
+  WwwDnsRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: CreateWwwDns
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref WwwDomain
       Type: A
       AliasTarget:
         DNSName: !GetAtt LoadBalancer.DNSName

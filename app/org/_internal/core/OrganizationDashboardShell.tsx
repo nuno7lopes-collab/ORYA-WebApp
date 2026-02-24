@@ -2,7 +2,7 @@
 
 import { Suspense, type ReactNode, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { ORG_SHELL_GUTTER } from "@/app/org/_internal/core/layoutTokens";
 import OrganizationTopBar from "@/app/org/_internal/core/OrganizationTopBar";
@@ -12,7 +12,6 @@ import { ToastProvider } from "@/components/ui/toast-provider";
 import {
   buildOrgHref,
   buildOrgHubHref,
-  parseOrganizationId,
   parseOrgIdFromPathnameStrict,
 } from "@/lib/organizationIdUtils";
 
@@ -39,7 +38,7 @@ export type OrganizationShellActiveOrg = {
   avatarUrl: string | null;
   organizationKind?: string | null;
   primaryModule?: string | null;
-  modules?: string[] | null;
+  tools?: string[] | null;
 };
 
 export type OrganizationShellUser = {
@@ -108,7 +107,6 @@ export default function OrganizationDashboardShell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const searchParams = useSearchParams();
   const isSettingsRoute =
     pathname?.startsWith("/org/settings") ||
     pathname?.startsWith("/org/owner/confirm") ||
@@ -211,12 +209,8 @@ export default function OrganizationDashboardShell({
         }
       } catch {
         if (cancelled) return;
-        const fallbackOrgId = activeOrg?.id ?? null;
-        if (fallbackOrgId && fallbackOrgId !== requestedOrgId) {
-          router.replace(buildOrgHref(fallbackOrgId, "/overview"));
-        } else {
-          router.replace(buildOrgHubHref("/organizations"));
-        }
+        // Mantém a rota atual para evitar redirects em cascata quando há falhas transitórias
+        // de sync de contexto (rede/auth). O server layout já resolve o orgId canónico.
       } finally {
         syncInFlightRef.current = false;
       }
@@ -227,7 +221,7 @@ export default function OrganizationDashboardShell({
     return () => {
       cancelled = true;
     };
-  }, [activeOrg?.id, pathname, router, searchParams]);
+  }, [activeOrg?.id, pathname, router]);
 
   const handleEmailVerificationInfo = () => {
     if (!activeOrg?.id) {

@@ -7,6 +7,7 @@ import { appendEventLog } from "@/domain/eventLog/append";
 import { SourceType } from "@prisma/client";
 import { logWarn } from "@/lib/observability/logger";
 import { appendRefundLedgerEntries } from "@/domain/finance/ledgerAdjustments";
+import { requiresOrganizationStripe } from "@/domain/finance/payoutModePolicy";
 
 // Idempotent refund executor (base-only) anchored by refundKey(purchaseId).
 export async function refundPurchase(params: {
@@ -69,13 +70,14 @@ export async function refundPurchase(params: {
   const baseAmount = Math.max(0, totalCents - platformFeeCents - cardFeeCents - stripeFeeCents);
 
   let stripeRefundId: string | null = null;
+  const requiresStripeForRefund = requiresOrganizationStripe(org.orgType);
   try {
     const refund = await createRefund(
       {
         payment_intent: paymentIntentId ?? saleSummary.paymentIntentId ?? undefined,
         amount: baseAmount,
       },
-      { idempotencyKey: dedupeKey, org, requireStripe: true },
+      { idempotencyKey: dedupeKey, org, requireStripe: requiresStripeForRefund },
     );
     stripeRefundId = refund.id;
   } catch (err) {

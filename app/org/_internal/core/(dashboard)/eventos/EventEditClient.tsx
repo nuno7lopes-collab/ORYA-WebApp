@@ -1,6 +1,7 @@
 "use client";
 
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+import { appendOrganizationIdToHref, buildOrgHref } from "@/lib/organizationIdUtils";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -161,6 +162,8 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const { pushToast: publishToast } = useToast();
   const { user, profile } = useUser();
   const organizationId = event.organizationId ?? null;
+  const resolveOrgApiPath = (path: string) =>
+    resolveCanonicalOrgApiPath(path, organizationId);
   const orgMeUrl =
     organizationId ? `/api/org/${organizationId}/me` : null;
   const { data: organizationStatus } = useSWR<{
@@ -198,6 +201,15 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const ticketLabelThis = isPadel ? "esta inscrição" : "este bilhete";
   const ticketLabelNew = isPadel ? "nova inscrição" : "novo bilhete";
   const eventRouteBase = isPadel ? "/org/padel/tournaments" : "/org/events";
+  const eventDetailHref = organizationId
+    ? buildOrgHref(
+        organizationId,
+        isPadel ? `/padel/tournaments/${event.id}` : `/events/${event.id}`,
+      )
+    : appendOrganizationIdToHref(
+        `${eventRouteBase}/${event.id}`,
+        organizationId,
+      );
   const organizationPrimaryModule =
     (organizationStatus as { organization?: { primaryModule?: string | null } } | null)?.organization
       ?.primaryModule ?? null;
@@ -272,7 +284,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const { data: publicInvitesData, mutate: mutatePublicInvites, isLoading: publicInvitesLoading } = useSWR<{
     ok?: boolean;
     items?: EventInvite[];
-  }>(user ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/events/${event.id}/invites?scope=PUBLIC`) : null, fetcher, {
+  }>(user ? resolveOrgApiPath(`/api/org/[orgId]/events/${event.id}/invites?scope=PUBLIC`) : null, fetcher, {
     revalidateOnFocus: false,
   });
   const publicInvites = useMemo(
@@ -719,7 +731,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     setPublicInviteSaving(true);
     setPublicInviteError(null);
     try {
-      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/events/${event.id}/invites`), {
+      const res = await fetch(resolveOrgApiPath(`/api/org/[orgId]/events/${event.id}/invites`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ identifier: value, scope: "PUBLIC" }),
@@ -745,7 +757,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     setInviteRemovingId(inviteId);
     setPublicInviteError(null);
     try {
-      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/events/${event.id}/invites`), {
+      const res = await fetch(resolveOrgApiPath(`/api/org/[orgId]/events/${event.id}/invites`), {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ inviteId }),
@@ -883,7 +895,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
         (currentAccessPolicy?.requiresEntitlementForEntry === true) !== nextAccessPolicy.requiresEntitlementForEntry ||
         previousCheckins !== nextCheckins;
 
-      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/events/update"), {
+      const res = await fetch(resolveOrgApiPath("/api/org/[orgId]/events/update"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -990,7 +1002,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     setIsSaving(true);
     setError(null);
     try {
-      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/events/update"), {
+      const res = await fetch(resolveOrgApiPath("/api/org/[orgId]/events/update"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1832,7 +1844,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
                   Anterior
                 </button>
                 <Link
-                  href={`${eventRouteBase}/${event.id}`}
+                  href={eventDetailHref}
                   className="rounded-full border border-white/20 px-4 py-2 text-white/80 hover:bg-white/10"
                 >
                   Voltar

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   normalizeOrganizationPathname,
   resolveOrganizationTool,
+  shouldPinOrganizationTopbar,
 } from "@/app/org/_internal/core/topbarRouteUtils";
 
 describe("normalizeOrganizationPathname", () => {
@@ -74,5 +75,23 @@ describe("resolveOrganizationTool", () => {
     expect(resolveOrganizationTool("/org-hub/organizations")).toBeNull();
     expect(resolveOrganizationTool("/organizacao/manage")).toBeNull();
     expect(resolveOrganizationTool(null)).toBeNull();
+  });
+});
+
+describe("shouldPinOrganizationTopbar", () => {
+  it("fixa a topbar em todas as ferramentas", () => {
+    expect(shouldPinOrganizationTopbar("/org/50/events")).toBe(true);
+    expect(shouldPinOrganizationTopbar("/org/50/bookings/availability")).toBe(true);
+    expect(shouldPinOrganizationTopbar("/org/50/check-in/scanner")).toBe(true);
+    expect(shouldPinOrganizationTopbar("/org/50/chat/preview")).toBe(true);
+    expect(shouldPinOrganizationTopbar("/org/50/marketing")).toBe(true);
+    expect(shouldPinOrganizationTopbar("/org/50/settings")).toBe(true);
+  });
+
+  it("nao fixa no overview", () => {
+    expect(shouldPinOrganizationTopbar("/org/50/overview")).toBe(false);
+    expect(shouldPinOrganizationTopbar("/org/50")).toBe(false);
+    expect(shouldPinOrganizationTopbar("/org-hub/organizations")).toBe(false);
+    expect(shouldPinOrganizationTopbar(null)).toBe(false);
   });
 });

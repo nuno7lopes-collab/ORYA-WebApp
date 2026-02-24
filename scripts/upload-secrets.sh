@@ -71,7 +71,7 @@ if [[ -n "$SOURCE_DIR" ]]; then
 else
   AWS_PROFILE="$PROFILE" AWS_REGION="$REGION" \
     ALLOW_PLACEHOLDERS_DEV="$ALLOW_PLACEHOLDERS_DEV" COPY_PROD_TO_DEV="$COPY_PROD_TO_DEV" ONLY_ENVS="$ONLY_ENVS" \
-    "$SCRIPT_DIR/create-secrets-json.sh" --in "$SOURCE"
+    "$SCRIPT_DIR/prepare-secrets-json.sh" --in "$SOURCE"
 fi
 
 echo "\nSecrets in AWS (prod):"

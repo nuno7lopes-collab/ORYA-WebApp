@@ -93,6 +93,57 @@ function parseStoreSub(view: StoreView, raw: string | null) {
   return DEFAULT_SUB_BY_VIEW[view];
 }
 
+function unwrapEnvelope(payload: unknown) {
+  if (!payload || typeof payload !== "object") return payload;
+  const asRecord = payload as Record<string, unknown>;
+  if (asRecord.data && typeof asRecord.data === "object") return asRecord.data;
+  if (asRecord.result && typeof asRecord.result === "object") return asRecord.result;
+  return payload;
+}
+
+function resolveErrorCode(payload: unknown, fallbackStatus: number) {
+  const unwrapped = unwrapEnvelope(payload);
+  const topLevel = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : null;
+  const body = unwrapped && typeof unwrapped === "object" ? (unwrapped as Record<string, unknown>) : null;
+  const candidate =
+    (body?.errorCode as string | undefined) ??
+    (topLevel?.errorCode as string | undefined) ??
+    (body?.error as string | undefined) ??
+    (topLevel?.error as string | undefined);
+  if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
+  return `HTTP_${fallbackStatus}`;
+}
+
+function isLojaUnavailableError(errorCode: string | null) {
+  if (!errorCode) return false;
+  return (
+    errorCode === "LOJA_UNAVAILABLE" ||
+    errorCode.toUpperCase() === "LOJA_UNAVAILABLE" ||
+    errorCode.toLowerCase() === "loja indisponível para esta organização.".toLowerCase() ||
+    errorCode.toLowerCase() === "loja indisponivel para esta organizacao."
+  );
+}
+
+function formatStoreError(errorCode: string | null) {
+  if (!errorCode) return null;
+  if (isLojaUnavailableError(errorCode)) {
+    return "Ferramenta Loja inativa para esta organização.";
+  }
+  if (errorCode === "OFFICIAL_EMAIL_REQUIRED") {
+    return "Configura o email oficial da organização antes de usar a Loja.";
+  }
+  if (errorCode === "OFFICIAL_EMAIL_NOT_VERIFIED") {
+    return "Confirma o email oficial da organização para usar a Loja.";
+  }
+  if (errorCode === "UNAUTHENTICATED") {
+    return "Sessão expirada. Volta a iniciar sessão.";
+  }
+  if (errorCode.startsWith("HTTP_")) {
+    return "Não foi possível carregar a Loja. Tenta novamente.";
+  }
+  return errorCode;
+}
+
 export default function OrgStoreToolClient({ orgId }: OrgStoreToolClientProps) {
   const searchParams = useSearchParams();
   const view = parseStoreView(searchParams?.get("view") ?? null);
@@ -118,6 +169,7 @@ export default function OrgStoreToolClient({ orgId }: OrgStoreToolClientProps) {
   const [previewCounts, setPreviewCounts] = useState<StorePreviewCounts | null>(null);
   const [loadingStore, setLoadingStore] = useState(false);
   const [storeError, setStoreError] = useState<string | null>(null);
+  const [activatingLoja, setActivatingLoja] = useState(false);
 
   const loadStore = useCallback(async () => {
     setLoadingStore(true);
@@ -125,18 +177,33 @@ export default function OrgStoreToolClient({ orgId }: OrgStoreToolClientProps) {
     setPreviewCounts(null);
     try {
       const res = await fetch(endpoints.base, { cache: "no-store" });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "Erro ao carregar a loja.");
+      const payload = await res.json().catch(() => null);
+      const unwrapped = unwrapEnvelope(payload);
+      const topLevel = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : null;
+      const body = unwrapped && typeof unwrapped === "object" ? (unwrapped as Record<string, unknown>) : null;
+      const hasErrorFlag = topLevel?.ok === false || body?.ok === false;
+      if (!res.ok || hasErrorFlag) {
+        throw new Error(resolveErrorCode(payload, res.status));
       }
-      setStore((json.store ?? null) as StoreSnapshot | null);
+      setStore((body?.store ?? topLevel?.store ?? null) as StoreSnapshot | null);
       try {
         const previewRes = await fetch(`/api/org/${orgId}/store/preview`, { cache: "no-store" });
-        const previewJson = await previewRes.json().catch(() => null);
-        const counts = previewJson?.counts;
+        const previewPayload = await previewRes.json().catch(() => null);
+        const previewUnwrapped = unwrapEnvelope(previewPayload);
+        const previewTopLevel =
+          previewPayload && typeof previewPayload === "object"
+            ? (previewPayload as Record<string, unknown>)
+            : null;
+        const previewBody =
+          previewUnwrapped && typeof previewUnwrapped === "object"
+            ? (previewUnwrapped as Record<string, unknown>)
+            : null;
+        const previewHasError = previewTopLevel?.ok === false || previewBody?.ok === false;
+        if (!previewRes.ok || previewHasError) {
+          return;
+        }
+        const counts = previewBody?.counts as Record<string, unknown> | undefined;
         if (
-          previewRes.ok &&
-          previewJson?.ok &&
           counts &&
           typeof counts.total === "number" &&
           typeof counts.public === "number" &&
@@ -156,7 +223,37 @@ export default function OrgStoreToolClient({ orgId }: OrgStoreToolClientProps) {
     } finally {
       setLoadingStore(false);
     }
-  }, [endpoints.base]);
+  }, [endpoints.base, orgId]);
+
+  const activateLojaModule = useCallback(async () => {
+    setActivatingLoja(true);
+    setStoreError(null);
+    try {
+      const patchRes = await fetch(`/api/org/${orgId}/tools/LOJA`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "enable" }),
+      });
+      const patchPayload = await patchRes.json().catch(() => null);
+      const patchUnwrapped = unwrapEnvelope(patchPayload);
+      const patchTopLevel =
+        patchPayload && typeof patchPayload === "object" ? (patchPayload as Record<string, unknown>) : null;
+      const patchBody =
+        patchUnwrapped && typeof patchUnwrapped === "object"
+          ? (patchUnwrapped as Record<string, unknown>)
+          : null;
+      const patchHasError = patchTopLevel?.ok === false || patchBody?.ok === false;
+      if (!patchRes.ok || patchHasError) {
+        throw new Error(resolveErrorCode(patchPayload, patchRes.status));
+      }
+
+      await loadStore();
+    } catch (err) {
+      setStoreError(err instanceof Error ? err.message : "Nao foi possivel ativar a ferramenta Loja.");
+    } finally {
+      setActivatingLoja(false);
+    }
+  }, [orgId, loadStore]);
 
   useEffect(() => {
     void loadStore();
@@ -176,6 +273,8 @@ export default function OrgStoreToolClient({ orgId }: OrgStoreToolClientProps) {
 
   const storeLocked = Boolean(store?.catalogLocked);
   const hasStore = Boolean(store);
+  const lojaUnavailable = isLojaUnavailableError(storeError);
+  const storeErrorMessage = formatStoreError(storeError);
 
   const renderPanel = () => {
     if (!hasStore) return null;
@@ -294,7 +393,17 @@ export default function OrgStoreToolClient({ orgId }: OrgStoreToolClientProps) {
     <section className="space-y-4 text-white">
       {storeError ? (
         <div className="rounded-2xl border border-rose-500/35 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
-          {storeError}
+          <p>{storeErrorMessage}</p>
+          {lojaUnavailable ? (
+            <button
+              type="button"
+              onClick={() => void activateLojaModule()}
+              disabled={activatingLoja}
+              className="mt-3 rounded-lg border border-rose-200/50 bg-rose-200/20 px-3 py-1.5 text-xs font-semibold text-rose-50 transition hover:bg-rose-200/35 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {activatingLoja ? "A ativar ferramenta Loja..." : "Ativar ferramenta Loja"}
+            </button>
+          ) : null}
         </div>
       ) : null}
 

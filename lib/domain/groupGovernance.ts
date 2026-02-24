@@ -19,6 +19,7 @@ import { sendEmail } from "@/lib/emailClient";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { enforceGroupGovernanceInvariants } from "@/lib/domain/groupGovernanceInvariants";
+import { ensureDefaultOrganizationAvailabilityForReservas } from "@/lib/reservas/defaultOrganizationAvailability";
 
 type TxLike = Prisma.TransactionClient | PrismaClient;
 
@@ -471,7 +472,7 @@ export async function createOrganizationAtomic(input: {
   addressId?: string | null;
   username: string;
   primaryModule: string;
-  modules: string[];
+  tools: string[];
   publicWebsite?: string | null;
   existingGroupId?: number | null;
 }) {
@@ -489,7 +490,7 @@ export async function createOrganizationAtomic(input: {
   const {
     DEFAULT_PRIMARY_MODULE,
     parsePrimaryModule,
-    parseOrganizationModules,
+    parseOrganizationTools,
     getDefaultOrganizationModules,
   } = await import("@/lib/organizationCategories");
   const { isValidWebsite } = await import("@/lib/validation/organization");
@@ -509,7 +510,10 @@ export async function createOrganizationAtomic(input: {
   }
 
   const parsedPrimaryModule = parsePrimaryModule(input.primaryModule) ?? DEFAULT_PRIMARY_MODULE;
-  const parsedModules = parseOrganizationModules(input.modules) ?? getDefaultOrganizationModules(parsedPrimaryModule);
+  const requestedTools = parseOrganizationTools(input.tools) ?? [];
+  const parsedTools = Array.from(
+    new Set([...getDefaultOrganizationModules(parsedPrimaryModule), ...requestedTools]),
+  );
 
   const businessName = input.businessName?.trim();
   if (!businessName) {
@@ -592,13 +596,20 @@ export async function createOrganizationAtomic(input: {
       tx,
     });
 
-    if (parsedModules.length > 0) {
+    if (parsedTools.length > 0) {
       await tx.organizationModuleEntry.createMany({
-        data: parsedModules.map((moduleKey) => ({
+        data: parsedTools.map((moduleKey) => ({
           organizationId: organization.id,
           moduleKey,
           enabled: true,
         })),
+      });
+    }
+
+    if (parsedTools.includes("RESERVAS")) {
+      await ensureDefaultOrganizationAvailabilityForReservas({
+        tx,
+        organizationId: organization.id,
       });
     }
 

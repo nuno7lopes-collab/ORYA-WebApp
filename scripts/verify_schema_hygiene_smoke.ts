@@ -30,7 +30,6 @@ async function main() {
 
   const blockedChecks: Array<[string, () => Promise<number>]> = [
     ["padelTournamentRoleAssignment", () => prisma.padelTournamentRoleAssignment.count()],
-    ["refundPolicyVersion", () => prisma.refundPolicyVersion.count()],
   ];
 
   for (const [name, op] of blockedChecks) {

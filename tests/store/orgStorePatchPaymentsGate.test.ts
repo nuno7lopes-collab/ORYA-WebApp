@@ -9,7 +9,7 @@ const resolveOrganizationIdFromRequest = vi.hoisted(() => vi.fn());
 const ensureLojaModuleAccess = vi.hoisted(() => vi.fn());
 const ensureOrganizationEmailVerified = vi.hoisted(() => vi.fn());
 const prisma = vi.hoisted(() => ({
-  store: { findFirst: vi.fn(), update: vi.fn(), create: vi.fn() },
+  store: { upsert: vi.fn(), update: vi.fn() },
   storeProduct: { count: vi.fn() },
   organization: { findUnique: vi.fn() },
 }));
@@ -36,9 +36,8 @@ beforeEach(async () => {
   resolveOrganizationIdFromRequest.mockReset();
   ensureLojaModuleAccess.mockReset();
   ensureOrganizationEmailVerified.mockReset();
-  prisma.store.findFirst.mockReset();
+  prisma.store.upsert.mockReset();
   prisma.store.update.mockReset();
-  prisma.store.create.mockReset();
   prisma.storeProduct.count.mockReset();
   prisma.organization.findUnique.mockReset();
 
@@ -52,7 +51,7 @@ beforeEach(async () => {
   });
   ensureLojaModuleAccess.mockResolvedValue({ ok: true });
   ensureOrganizationEmailVerified.mockReturnValue({ ok: true });
-  prisma.store.findFirst.mockResolvedValue({
+  prisma.store.upsert.mockResolvedValue({
     id: 44,
     status: "CLOSED",
     catalogLocked: false,
@@ -119,7 +118,7 @@ describe("PATCH /api/org/[orgId]/store payments gate", () => {
   });
 
   it("allows hide even when payments are not ready", async () => {
-    prisma.store.findFirst.mockResolvedValue({
+    prisma.store.upsert.mockResolvedValue({
       id: 44,
       status: "ACTIVE",
       catalogLocked: false,

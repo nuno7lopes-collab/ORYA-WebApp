@@ -13,7 +13,7 @@ import { getProfileCoverUrl } from "@/lib/profileCover";
 import { getPadelOnboardingMissing, isPadelOnboardingComplete } from "@/domain/padelOnboarding";
 import {
   CORE_ORGANIZATION_MODULES,
-  parseOrganizationModules,
+  parseOrganizationTools,
   resolvePrimaryModule,
 } from "@/lib/organizationCategories";
 import { normalizeInterestSelection, resolveInterestLabel } from "@/lib/interests";
@@ -40,7 +40,7 @@ export const revalidate = 0;
 
 type PageProps = {
   params: { username: string } | Promise<{ username: string }>;
-  searchParams?: { serviceId?: string } | Promise<{ serviceId?: string }>;
+  searchParams?: { serviceId?: string; sec?: string } | Promise<{ serviceId?: string; sec?: string }>;
 };
 
 export async function generateMetadata({
@@ -221,6 +221,7 @@ type GroupCenterSummary = {
   id: number;
   username: string;
   name: string;
+  avatarUrl: string | null;
   city: string | null;
   address: string | null;
   publicHours: string | null;
@@ -231,36 +232,6 @@ type GroupCenterSummary = {
 };
 
 type OperationModule = "EVENTOS" | "RESERVAS" | "TORNEIOS";
-
-const OPERATION_META: Record<
-  OperationModule,
-  { label: string; cta: string; noun: string; nounPlural: string }
-> = {
-  EVENTOS: {
-    label: "Eventos",
-    cta: "Ver eventos",
-    noun: "evento",
-    nounPlural: "eventos",
-  },
-  TORNEIOS: {
-    label: "Torneios",
-    cta: "Ver torneios",
-    noun: "torneio",
-    nounPlural: "torneios",
-  },
-  RESERVAS: {
-    label: "Reservas",
-    cta: "Ver reservas",
-    noun: "evento",
-    nounPlural: "eventos",
-  },
-};
-
-const OPERATION_TEMPLATE: Record<OperationModule, "PADEL" | null> = {
-  EVENTOS: null,
-  TORNEIOS: "PADEL",
-  RESERVAS: null,
-};
 
 function formatEventDateRange(start: Date | null, end: Date | null, timezone?: string | null) {
   if (!start) return null;
@@ -335,6 +306,10 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
   const serviceIdParam = resolvedSearchParams && "serviceId" in resolvedSearchParams
     ? resolvedSearchParams.serviceId
     : undefined;
+  const sectionParamRaw = resolvedSearchParams && "sec" in resolvedSearchParams
+    ? resolvedSearchParams.sec
+    : undefined;
+  const sectionParam = typeof sectionParamRaw === "string" ? sectionParamRaw.trim() : undefined;
 
   if (!usernameParam) {
     notFound();
@@ -346,8 +321,11 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     notFound();
   }
   if (rawUsernameParam !== usernameParam) {
-    const query = serviceIdParam ? `?serviceId=${encodeURIComponent(serviceIdParam)}` : "";
-    redirect(`/${usernameParam}${query}`);
+    const nextQuery = new URLSearchParams();
+    if (serviceIdParam) nextQuery.set("serviceId", serviceIdParam);
+    if (sectionParam) nextQuery.set("sec", sectionParam);
+    const query = nextQuery.toString();
+    redirect(`/${usernameParam}${query ? `?${query}` : ""}`);
   }
 
   const [viewerId, profile, organizationProfileRaw] = await Promise.all([
@@ -407,6 +385,11 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
         infoLocationNotes: true,
         showAddressPublicly: true,
         timezone: true,
+        group: {
+          select: {
+            showLinkedOrganizationsPublicly: true,
+          },
+        },
         organizationModules: {
           where: { enabled: true },
           select: { moduleKey: true },
@@ -440,7 +423,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     const now = new Date();
     const moduleKeys = (organizationProfile.organizationModules ?? [])
       .map((module) => String(module.moduleKey).trim().toUpperCase());
-    const normalizedModules = parseOrganizationModules(moduleKeys) ?? [];
+    const normalizedModules = parseOrganizationTools(moduleKeys) ?? [];
     const primaryOperation = resolvePrimaryModule(
       organizationProfile.primaryModule ?? null,
       normalizedModules,
@@ -451,8 +434,6 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     const hasReservasModule = moduleSet.has("RESERVAS");
     const hasTorneiosModule = moduleSet.has("TORNEIOS");
     const showAgenda = hasEventosModule || hasTorneiosModule;
-    const operationMeta = OPERATION_META[primaryOperation];
-    const operationTemplate = OPERATION_TEMPLATE[primaryOperation];
     const orgDisplayName =
       organizationProfile.publicName?.trim() ||
       organizationProfile.businessName?.trim() ||
@@ -731,30 +712,35 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
       label: resource.label,
       capacity: resource.capacity,
     }));
-    const siblingOrganizations = await prisma.organization.findMany({
-      where: {
-        groupId: organizationProfile.groupId,
-        status: "ACTIVE",
-        id: { not: organizationProfile.id },
-        username: { not: null },
-      },
-      orderBy: [{ id: "asc" }],
-      select: {
-        id: true,
-        username: true,
-        publicName: true,
-        businessName: true,
-        publicHours: true,
-        infoRules: true,
-        infoRequirements: true,
-        infoLocationNotes: true,
-        addressRef: { select: { formattedAddress: true, canonical: true } },
-        organizationModules: {
-          where: { enabled: true },
-          select: { moduleKey: true },
-        },
-      },
-    });
+    const canShowLinkedOrganizationsPublicly =
+      organizationProfile.group?.showLinkedOrganizationsPublicly !== false;
+    const siblingOrganizations = canShowLinkedOrganizationsPublicly
+      ? await prisma.organization.findMany({
+          where: {
+            groupId: organizationProfile.groupId,
+            status: "ACTIVE",
+            id: { not: organizationProfile.id },
+            username: { not: null },
+          },
+          orderBy: [{ id: "asc" }],
+          select: {
+            id: true,
+            username: true,
+            publicName: true,
+            businessName: true,
+            brandingAvatarUrl: true,
+            publicHours: true,
+            infoRules: true,
+            infoRequirements: true,
+            infoLocationNotes: true,
+            addressRef: { select: { formattedAddress: true, canonical: true } },
+            organizationModules: {
+              where: { enabled: true },
+              select: { moduleKey: true },
+            },
+          },
+        })
+      : [];
     const siblingOrgIds = siblingOrganizations.map((org) => org.id);
     const [siblingClubs, siblingServiceCounts, siblingForms] = siblingOrgIds.length
       ? await Promise.all([
@@ -833,7 +819,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
           "state",
         );
         const serviceCount = siblingServiceCountByOrg.get(org.id) ?? 0;
-        const modules = parseOrganizationModules(
+        const modules = parseOrganizationTools(
           (org.organizationModules ?? []).map((module) => String(module.moduleKey).toUpperCase()),
         ) ?? [];
         const moduleSet = new Set<string>([...modules, ...CORE_ORGANIZATION_MODULES]);
@@ -848,6 +834,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
           id: org.id,
           username: orgUsername,
           name: org.publicName?.trim() || org.businessName?.trim() || `Centro #${org.id}`,
+          avatarUrl: org.brandingAvatarUrl ?? null,
           city: city ?? null,
           address: org.addressRef?.formattedAddress ?? null,
           publicHours: org.publicHours || club?.hours || null,
@@ -858,18 +845,11 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
         };
       });
 
-    const categoryEvents = operationTemplate
-      ? orgEvents.filter(
-          (event) =>
-            event.templateType === operationTemplate ||
-            event.templateType === null ||
-            event.templateType === "OTHER",
-        )
-      : orgEvents;
-    const upcomingEvents = categoryEvents
+    const agendaSourceEvents = orgEvents;
+    const upcomingEvents = agendaSourceEvents
       .filter((event) => event.startsAt && event.startsAt >= now)
       .sort((a, b) => (a.startsAt?.getTime() ?? 0) - (b.startsAt?.getTime() ?? 0));
-    const pastEvents = categoryEvents
+    const pastEvents = agendaSourceEvents
       .filter((event) => event.startsAt && event.startsAt < now)
       .sort((a, b) => (b.startsAt?.getTime() ?? 0) - (a.startsAt?.getTime() ?? 0));
     const spotlightEvent = upcomingEvents[0] ?? null;
@@ -893,15 +873,21 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     const publicForms = forms.filter((form) => form.status !== "ARCHIVED");
     const featuredForm =
       publicForms.find((form) => /guarda[-\s]?redes/i.test(form.title)) ?? publicForms[0] ?? null;
-    const agendaPreviewGroups = agendaGroups
-      .slice(0, 1)
-      .map((group) => ({ ...group, items: group.items.slice(0, 1) }));
-    const agendaPreviewCount = agendaPreviewGroups.reduce((acc, group) => acc + group.items.length, 0);
-    const remainingAgendaCount = Math.max(0, agendaTotal - agendaPreviewCount);
-    const agendaDiscoverHref = `${
-      primaryOperation === "TORNEIOS" ? "/descobrir/torneios" : "/descobrir/eventos"
-    }?query=${encodeURIComponent(orgDisplayName)}`;
+    const agendaPanelGroups = agendaGroups
+      .slice(0, 2)
+      .map((group) => ({ ...group, items: group.items.slice(0, 3) }));
+    const agendaPanelCount = agendaPanelGroups.reduce((acc, group) => acc + group.items.length, 0);
+    const remainingAgendaCount = Math.max(0, agendaTotal - agendaPanelCount);
+    const agendaDiscoverBase = hasTorneiosModule && !hasEventosModule ? "/descobrir/torneios" : "/descobrir/eventos";
+    const agendaDiscoverHref = `${agendaDiscoverBase}?query=${encodeURIComponent(orgDisplayName)}`;
     const agendaLeadEvent = spotlightEvent ?? agendaEvents[0] ?? null;
+    const agendaKindsLabel =
+      hasEventosModule && hasTorneiosModule
+        ? "Eventos e torneios"
+        : hasTorneiosModule
+          ? "Torneios"
+          : "Eventos";
+    const agendaLeadNoun = agendaLeadEvent?.templateType === "PADEL" ? "torneio" : "evento";
     const spotlightCtaLabel = agendaLeadEvent
       ? pastEventIds.has(agendaLeadEvent.id)
         ? "Ver resumo"
@@ -922,15 +908,41 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     const featuredFormCapacityLabel = featuredForm?.capacity
       ? `${featuredForm.capacity} vagas`
       : null;
-    const showAgendaSection = showAgenda && agendaTotal > 0;
-    const showReservasSection = hasReservasModule && services.length > 0;
+    const showAgendaSection = showAgenda;
+    const showReservasSection = hasReservasModule;
     const showFormsSection = hasInscricoes && publicForms.length > 0;
-    const showGroupCentersSection = groupCenters.length > 0;
+    const showGroupCentersSection = canShowLinkedOrganizationsPublicly && groupCenters.length > 0;
     const showCommunitySection = true;
+    const reservasServiceHighlights = services
+      .slice(0, 4)
+      .map((service) => service.title.trim())
+      .filter((name) => name.length > 0);
+    const reservasAvailabilityDays = Array.from({ length: 7 }).map((_, index) => {
+      const date = new Date(now);
+      date.setDate(now.getDate() + index);
+      return {
+        key: date.toISOString(),
+        dayLabel: new Intl.DateTimeFormat("pt-PT", { weekday: "short" }).format(date),
+        dateLabel: new Intl.DateTimeFormat("pt-PT", { day: "2-digit", month: "2-digit" }).format(date),
+      };
+    });
+    const linkedOrganizations = canShowLinkedOrganizationsPublicly
+      ? groupCenters.map((center) => ({
+          id: center.id,
+          username: center.username,
+          name: center.name,
+          avatarUrl: center.avatarUrl,
+        }))
+      : [];
     const isTopPadelProfile =
       (organizationProfile.username ?? "").startsWith("top_padel") ||
       orgDisplayName.toLowerCase().includes("top padel");
-    const groupCentersTitle = isTopPadelProfile ? "Centros do Grupo Top Padel" : "Outros centros do grupo";
+    const groupCentersTitle = isTopPadelProfile ? "Organizações do Grupo Top Padel" : "Outros rostos do grupo";
+    const canShowLocation = organizationProfile.showAddressPublicly === true;
+    const organizationLocationLabel = canShowLocation ? organizationAddress || organizationCity || null : null;
+    const organizationLocationMapHref = organizationLocationLabel
+      ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(organizationLocationLabel)}`
+      : null;
 
     const storeBaseHref = `/${organizationProfile.username ?? usernameParam}/loja`;
     const legalBaseHref = `/${organizationProfile.username ?? usernameParam}/legal`;
@@ -947,74 +959,58 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     const organizationSectionNav = [
       showAgendaSection ? { id: "agenda-publica", label: "Agenda" } : null,
       showReservasSection ? { id: "reservas", label: "Reservas" } : null,
-      showStoreSection ? { id: "loja", label: "Loja" } : null,
       showFormsSection ? { id: "formularios", label: "Formulários" } : null,
-      showGroupCentersSection ? { id: "centros-grupo", label: "Outros centros" } : null,
+      showGroupCentersSection ? { id: "centros-grupo", label: "Outros rostos" } : null,
+      showStoreSection ? { id: "loja", label: "Loja" } : null,
       showCommunitySection ? { id: "comunidade", label: "Comunidade" } : null,
+      { id: "legal", label: "Legal" },
     ].filter(Boolean) as Array<{ id: string; label: string }>;
-
-    const quickActionCards = [
-      showAgendaSection
-        ? {
-            id: "quick-agenda",
-            title: "Agenda pública",
-            subtitle: `${agendaTotal} ${agendaTotal === 1 ? "item" : "itens"} publicados`,
-            href: agendaDiscoverHref,
-            cta: "Ver agenda",
-          }
-        : null,
-      showReservasSection
-        ? {
-            id: "quick-reservas",
-            title: "Reservas",
-            subtitle: `${services.length} ${services.length === 1 ? "serviço" : "serviços"} disponíveis`,
-            href: "#reservar",
-            cta: "Reservar agora",
-          }
-        : null,
-      showFormsSection && featuredForm
-        ? {
-            id: "quick-formularios",
-            title: "Formulários",
-            subtitle: `${publicForms.length} ${publicForms.length === 1 ? "ativo" : "ativos"}`,
-            href: `/inscricoes/${featuredForm.id}`,
-            cta: "Ver formulários ativos",
-          }
-        : null,
-      showGroupCentersSection
-        ? {
-            id: "quick-centros",
-            title: "Grupo",
-            subtitle: `${groupCenters.length} ${groupCenters.length === 1 ? "centro ligado" : "centros ligados"}`,
-            href: "#centros-grupo",
-            cta: "Ver centros do grupo",
-          }
-        : null,
-    ].filter(Boolean) as Array<{ id: string; title: string; subtitle: string; href: string; cta: string }>;
+    const defaultSectionId = organizationSectionNav[0]?.id ?? "legal";
+    const requestedSectionId = sectionParam ?? null;
+    const activeSectionId = organizationSectionNav.some((item) => item.id === requestedSectionId)
+      ? requestedSectionId!
+      : defaultSectionId;
+    const buildSectionHref = (sectionId: string) => {
+      const params = new URLSearchParams();
+      if (sectionId !== defaultSectionId) {
+        params.set("sec", sectionId);
+      }
+      if (initialServiceId) {
+        params.set("serviceId", String(initialServiceId));
+      }
+      const query = params.toString();
+      return `/${organizationProfile.username ?? usernameParam}${query ? `?${query}` : ""}`;
+    };
 
     const fixedSections = [
       showAgendaSection
         ? {
             id: "agenda-publica",
             content: (
-              <section id="agenda-publica" className="rounded-3xl border border-white/12 bg-white/5 p-4 sm:p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <h2 className="text-xl font-semibold text-white">Agenda pública</h2>
-                    <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] text-white/70">
+              <section
+                id="agenda-publica"
+                className="rounded-3xl border border-white/15 bg-gradient-to-br from-[#0d1a37]/78 via-[#0a1329]/72 to-[#060912]/94 p-4 sm:p-6 shadow-[0_26px_80px_rgba(0,0,0,0.62)] backdrop-blur-2xl"
+              >
+                <div className="space-y-5">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Agenda pública</p>
+                      <h2 className="mt-1 text-xl font-semibold text-white sm:text-2xl">{agendaKindsLabel}</h2>
+                    </div>
+                    <span className="rounded-full border border-white/20 bg-black/25 px-3 py-1 text-[11px] text-white/75">
                       {agendaTotal} itens
                     </span>
                   </div>
                   <EventSpotlightCard
                     event={agendaLeadEvent}
-                    label={`Próximo ${operationMeta.noun}`}
-                    emptyLabel={`Sem ${operationMeta.noun} anunciado`}
+                    label={`Próximo ${agendaLeadNoun}`}
+                    emptyLabel={`Sem ${agendaKindsLabel.toLowerCase()} anunciados`}
                     ctaLabel={spotlightCtaLabel}
                     ctaHref={spotlightCtaHref}
                     variant="embedded"
                   />
                   <div className="space-y-3">
-                    {agendaPreviewGroups.map((group) => (
+                    {agendaPanelGroups.map((group) => (
                       <div key={group.key} className="space-y-2">
                         <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">{group.label}</p>
                         <div className="space-y-2">
@@ -1026,7 +1022,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
                               <Link
                                 key={item.id}
                                 href={href}
-                                className="group flex items-center justify-between gap-3 rounded-2xl border border-white/12 bg-white/5 px-3 py-3 text-sm text-white/80 transition hover:border-white/30 hover:bg-white/10"
+                                className="group flex items-center justify-between gap-3 rounded-2xl border border-white/15 bg-black/20 px-4 py-3 text-sm text-white/80 transition hover:border-white/35 hover:bg-black/30"
                               >
                                 <div>
                                   <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">{item.timeLabel}</p>
@@ -1057,7 +1053,10 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
                   </div>
                   {remainingAgendaCount > 0 ? (
                     <div className="flex justify-end">
-                      <Link href={agendaDiscoverHref} className="text-[11px] text-white/65 hover:text-white/90">
+                      <Link
+                        href={agendaDiscoverHref}
+                        className="rounded-full border border-white/20 bg-black/25 px-3 py-1.5 text-[11px] text-white/75 transition hover:border-white/35 hover:text-white"
+                      >
                         Ver mais {remainingAgendaCount}
                       </Link>
                     </div>
@@ -1072,7 +1071,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
             id: "reservas",
             content: (
               <section id="reservas" className="space-y-4">
-                <div className="rounded-3xl border border-white/12 bg-white/5 p-4 sm:p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+                <div className="rounded-3xl border border-white/15 bg-gradient-to-br from-[#0f1630]/70 via-[#0a1327]/70 to-[#060912]/94 p-4 sm:p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
                   <div className="flex flex-wrap items-center justify-between gap-4">
                     <div>
                       <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Reservas</p>
@@ -1082,37 +1081,97 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
                       </p>
                     </div>
                     <a
-                      href="#reservar"
+                      href={buildSectionHref("reservas")}
                       className="w-full rounded-full bg-white px-5 py-2 text-center text-[12px] font-semibold text-black shadow-[0_10px_30px_rgba(255,255,255,0.25)] sm:w-auto"
                     >
                       Reservar agora
                     </a>
                   </div>
                 </div>
+                <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
+                  <article className="rounded-2xl border border-white/14 bg-black/25 p-4">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">O que podes reservar</p>
+                    {reservasServiceHighlights.length > 0 ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {reservasServiceHighlights.map((serviceName) => (
+                          <span
+                            key={`reservas-service-${serviceName}`}
+                            className="rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-[11px] text-white/80"
+                          >
+                            {serviceName}
+                          </span>
+                        ))}
+                        {services.length > reservasServiceHighlights.length ? (
+                          <span className="rounded-full border border-white/20 bg-black/30 px-2.5 py-1 text-[11px] text-white/70">
+                            +{services.length - reservasServiceHighlights.length}
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <p className="mt-3 text-[12px] text-white/70">
+                        Sem serviços públicos anunciados para reservas.
+                      </p>
+                    )}
+                    <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                      <div className="rounded-xl border border-white/12 bg-black/30 px-3 py-2">
+                        <p className="text-[10px] uppercase tracking-[0.18em] text-white/55">Serviços</p>
+                        <p className="mt-1 text-sm font-semibold text-white">{services.length}</p>
+                      </div>
+                      <div className="rounded-xl border border-white/12 bg-black/30 px-3 py-2">
+                        <p className="text-[10px] uppercase tracking-[0.18em] text-white/55">Profissionais</p>
+                        <p className="mt-1 text-sm font-semibold text-white">{professionalsList.length}</p>
+                      </div>
+                      <div className="rounded-xl border border-white/12 bg-black/30 px-3 py-2">
+                        <p className="text-[10px] uppercase tracking-[0.18em] text-white/55">Recursos</p>
+                        <p className="mt-1 text-sm font-semibold text-white">{resourcesList.length}</p>
+                      </div>
+                    </div>
+                  </article>
+                  <article className="rounded-2xl border border-white/14 bg-black/25 p-4">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Disponibilidade</p>
+                    <p className="mt-2 text-[12px] text-white/72">
+                      Pré-visualização rápida da semana. A seleção final de horário acontece no calendário de reservas.
+                    </p>
+                    <div className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-7">
+                      {reservasAvailabilityDays.map((day) => (
+                        <div key={day.key} className="rounded-xl border border-white/12 bg-black/30 px-2 py-2 text-center">
+                          <p className="text-[10px] uppercase tracking-[0.12em] text-white/55">{day.dayLabel}</p>
+                          <p className="mt-1 text-[11px] font-semibold text-white">{day.dateLabel}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+                </div>
                 <div id="reservar">
-                  <ReservasBookingSection
-                    organization={{
-                      id: organizationProfile.id,
-                      publicName: organizationProfile.publicName,
-                      businessName: organizationProfile.businessName,
-                      city: organizationCity,
-                      username: organizationProfile.username ?? null,
-                      timezone: organizationProfile.timezone ?? "Europe/Lisbon",
-                      address: organizationAddress,
-                      reservationAssignmentMode:
-                        organizationProfile.reservationAssignmentMode ?? "PROFESSIONAL_ONLY",
-                    }}
-                    services={services.map((service) => ({
-                      ...service,
-                      coverImageUrl: service.coverImageUrl ?? null,
-                      locationMode: (service.locationMode ?? "FIXED") as "FIXED" | "CHOOSE_AT_BOOKING",
-                    }))}
-                    professionals={professionalsList}
-                    resources={resourcesList}
-                    initialServiceId={initialServiceId}
-                    featuredServiceIds={[]}
-                    servicesLayout="grid"
-                  />
+                  {services.length > 0 ? (
+                    <ReservasBookingSection
+                      organization={{
+                        id: organizationProfile.id,
+                        publicName: organizationProfile.publicName,
+                        businessName: organizationProfile.businessName,
+                        city: organizationCity,
+                        username: organizationProfile.username ?? null,
+                        timezone: organizationProfile.timezone ?? "Europe/Lisbon",
+                        address: organizationAddress,
+                        reservationAssignmentMode:
+                          organizationProfile.reservationAssignmentMode ?? "PROFESSIONAL_ONLY",
+                      }}
+                      services={services.map((service) => ({
+                        ...service,
+                        coverImageUrl: service.coverImageUrl ?? null,
+                        locationMode: (service.locationMode ?? "FIXED") as "FIXED" | "CHOOSE_AT_BOOKING",
+                      }))}
+                      professionals={professionalsList}
+                      resources={resourcesList}
+                      initialServiceId={initialServiceId}
+                      featuredServiceIds={[]}
+                      servicesLayout="grid"
+                    />
+                  ) : (
+                    <div className="rounded-2xl border border-white/14 bg-black/30 p-4 text-[13px] text-white/75">
+                      Esta organização ainda não publicou serviços de reserva.
+                    </div>
+                  )}
                 </div>
               </section>
             ),
@@ -1122,32 +1181,96 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
         ? {
             id: "formularios",
             content: (
-              <section id="formularios" className="rounded-3xl border border-white/12 bg-[#05070f]/80 p-4 shadow-[0_20px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
-                <div className="space-y-2">
+              <section
+                id="formularios"
+                className="rounded-3xl border border-white/15 bg-gradient-to-br from-[#13182f]/80 via-[#0a1225]/78 to-[#05070f]/94 p-4 sm:p-5 shadow-[0_20px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl"
+              >
+                <div className="space-y-4">
                   <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Formulários</p>
-                  <h3 className="text-lg font-semibold text-white">{featuredForm!.title}</h3>
-                  {featuredFormDateLabel || featuredFormCapacityLabel ? (
-                    <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-white/70">
-                      {featuredFormDateLabel && (
-                        <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
-                          {featuredFormDateLabel}
-                        </span>
-                      )}
-                      {featuredFormCapacityLabel && (
-                        <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
-                          {featuredFormCapacityLabel}
-                        </span>
-                      )}
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h3 className="text-lg font-semibold text-white sm:text-xl">
+                      {publicForms.length === 1 ? "Formulário ativo" : "Formulários ativos"}
+                    </h3>
+                    <span className="rounded-full border border-white/20 bg-black/25 px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-white/70">
+                      {publicForms.length} {publicForms.length === 1 ? "ativo" : "ativos"}
+                    </span>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {publicForms.slice(0, 4).map((form) => {
+                      const dateLabel = formatFormDateRange(form.startAt, form.endAt);
+                      const capacityLabel = form.capacity ? `${form.capacity} vagas` : null;
+                      return (
+                        <article key={form.id} className="rounded-2xl border border-white/14 bg-black/30 p-4">
+                          <p className="text-sm font-semibold text-white">{form.title}</p>
+                          {form.description ? (
+                            <p className="mt-1 line-clamp-2 text-[12px] text-white/70">{form.description}</p>
+                          ) : null}
+                          <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-white/70">
+                            {dateLabel ? (
+                              <span className="rounded-full border border-white/15 bg-white/10 px-2.5 py-1">
+                                {dateLabel}
+                              </span>
+                            ) : null}
+                            {capacityLabel ? (
+                              <span className="rounded-full border border-white/15 bg-white/10 px-2.5 py-1">
+                                {capacityLabel}
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="mt-4">
+                            <Link
+                              href={`/inscricoes/${form.id}`}
+                              className="inline-flex rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-black shadow-[0_10px_24px_rgba(255,255,255,0.22)]"
+                            >
+                              Abrir formulário
+                            </Link>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                  {publicForms.length > 4 && featuredForm ? (
+                    <div className="flex justify-end">
+                      <Link
+                        href={`/inscricoes/${featuredForm.id}`}
+                        className="rounded-full border border-white/20 bg-black/25 px-3 py-1.5 text-[11px] text-white/75 hover:border-white/35 hover:text-white"
+                      >
+                        Ver todos os formulários
+                      </Link>
                     </div>
                   ) : null}
-                  <div className="mt-4 flex flex-wrap items-center gap-2">
-                    <Link
-                      href={`/inscricoes/${featuredForm!.id}`}
-                      className="rounded-full bg-white px-4 py-2 text-[12px] font-semibold text-black shadow-[0_10px_30px_rgba(255,255,255,0.25)]"
-                    >
-                      {publicForms.length > 1 ? "Ver formulários ativos" : "Abrir formulário ativo"}
-                    </Link>
-                  </div>
+                  {featuredFormDateLabel || featuredFormCapacityLabel ? (
+                    <div className="rounded-2xl border border-white/12 bg-black/25 px-3 py-3 text-[11px] text-white/65">
+                      Destaque atual: <span className="font-semibold text-white">{featuredForm?.title}</span>
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+            ),
+          }
+        : null,
+      showStoreSection
+        ? {
+            id: "loja",
+            content: (
+              <section
+                id="loja"
+                className="mx-auto w-full rounded-3xl border border-white/15 bg-gradient-to-br from-[#0c1736]/88 via-[#101a37]/78 to-[#060b14]/95 p-5 text-center shadow-[0_20px_64px_rgba(0,0,0,0.6)] backdrop-blur-2xl sm:p-6"
+              >
+                <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Loja</p>
+                <h2 className="mt-2 text-xl font-semibold text-white sm:text-2xl">Produtos oficiais da organização</h2>
+                <p className="mt-2 text-sm text-white/70">
+                  {storeProductsCount > 0
+                    ? `${storeProductsCount} ${storeProductsCount === 1 ? "produto público disponível" : "produtos públicos disponíveis"}`
+                    : "Loja pública pronta para receber produtos."}
+                </p>
+                <div className="mt-5 flex items-center justify-center">
+                  <Link
+                    href={storeBaseHref}
+                    className="inline-flex rounded-full bg-white px-6 py-2 text-[12px] font-semibold text-black shadow-[0_10px_30px_rgba(255,255,255,0.25)]"
+                  >
+                    Abrir loja
+                  </Link>
                 </div>
               </section>
             ),
@@ -1157,7 +1280,10 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
         ? {
             id: "centros-grupo",
             content: (
-              <section id="centros-grupo" className="rounded-3xl border border-white/12 bg-white/5 p-4 shadow-[0_18px_54px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
+              <section
+                id="centros-grupo"
+                className="rounded-3xl border border-white/15 bg-gradient-to-br from-[#10172f]/76 via-[#0a1223]/74 to-[#05070f]/92 p-4 sm:p-5 shadow-[0_18px_54px_rgba(0,0,0,0.5)] backdrop-blur-2xl"
+              >
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Grupo</p>
@@ -1167,12 +1293,12 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
                     </p>
                   </div>
                   <span className="rounded-full border border-white/20 bg-white/8 px-3 py-1 text-[10px] uppercase tracking-[0.16em] text-white/70">
-                    {groupCenters.length} centros
+                    {groupCenters.length} perfis
                   </span>
                 </div>
                 <div className="mt-4 grid gap-3 lg:grid-cols-2">
                   {groupCenters.map((center) => (
-                    <article key={center.id} className="rounded-2xl border border-white/12 bg-black/25 p-4">
+                    <article key={center.id} className="rounded-2xl border border-white/14 bg-black/25 p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-sm font-semibold text-white">{center.name}</p>
@@ -1200,7 +1326,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
                           href={`/${center.username}`}
                           className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-white/85 hover:border-white/40"
                         >
-                          Ver centro
+                          Ver perfil
                         </Link>
                         {center.reservasHref ? (
                           <Link
@@ -1277,6 +1403,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
         ),
       },
     ].filter(Boolean) as Array<{ id: string; content: ReactNode }>;
+    const activeSection = fixedSections.find((section) => section.id === activeSectionId) ?? fixedSections[0] ?? null;
 
     return (
       <main className="relative min-h-screen w-full overflow-hidden text-white">
@@ -1294,7 +1421,9 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
             avatarUrl={organizationProfile.brandingAvatarUrl ?? null}
             coverUrl={headerCoverUrl}
             bio={publicDescription}
-            city={organizationCity ?? null}
+            addressLabel={organizationLocationLabel}
+            addressMapHref={organizationLocationMapHref}
+            linkedOrganizations={linkedOrganizations}
             followersCount={followersTotal}
             organizationId={organizationProfile.id}
             initialIsFollowing={initialIsFollowing}
@@ -1309,77 +1438,36 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
           />
 
           <div className="px-5 sm:px-8">
-            <div className="orya-page-width flex flex-col gap-8">
+            <div className="orya-page-width flex flex-col gap-6">
               {organizationSectionNav.length >= 2 ? (
-                <nav className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/12 bg-white/5 p-2 shadow-[0_12px_30px_rgba(0,0,0,0.35)] backdrop-blur-xl">
-                  {organizationSectionNav.map((item) => (
-                    <a
-                      key={`profile-nav-${item.id}`}
-                      href={`#${item.id}`}
-                      className="rounded-full border border-white/20 bg-black/25 px-3 py-1.5 text-[11px] font-semibold text-white/80 transition hover:border-white/40 hover:text-white"
-                    >
-                      {item.label}
-                    </a>
-                  ))}
+                <nav className="overflow-x-auto border-b border-white/12">
+                  <div className="flex min-w-max items-center gap-1">
+                    {organizationSectionNav.map((item) => {
+                      const isActive = item.id === activeSectionId;
+                      return (
+                        <Link
+                          key={`profile-nav-${item.id}`}
+                          href={buildSectionHref(item.id)}
+                          className={`relative rounded-t-xl px-4 py-3 text-[12px] font-semibold transition ${
+                            isActive ? "text-white" : "text-white/60 hover:text-white/85"
+                          }`}
+                        >
+                          {item.label}
+                          <span
+                            className={`absolute inset-x-2 bottom-0 h-[2px] rounded-full transition ${
+                              isActive ? "bg-white" : "bg-transparent"
+                            }`}
+                            aria-hidden="true"
+                          />
+                        </Link>
+                      );
+                    })}
+                  </div>
                 </nav>
               ) : null}
 
-              {showStoreSection ? (
-                <section
-                  id="loja"
-                  className="mx-auto w-full max-w-3xl rounded-3xl border border-white/12 bg-gradient-to-br from-[#0c1736]/88 via-[#101a37]/78 to-[#060b14]/95 p-5 text-center shadow-[0_20px_64px_rgba(0,0,0,0.6)] backdrop-blur-2xl sm:p-6"
-                >
-                  <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Loja</p>
-                  <h2 className="mt-2 text-xl font-semibold text-white sm:text-2xl">Produtos oficiais da organização</h2>
-                  <p className="mt-2 text-sm text-white/70">
-                    {storeProductsCount > 0
-                      ? `${storeProductsCount} ${storeProductsCount === 1 ? "produto público disponível" : "produtos públicos disponíveis"}`
-                      : "Loja pública pronta para receber produtos."}
-                  </p>
-                  <div className="mt-5 flex items-center justify-center">
-                    <Link
-                      href={storeBaseHref}
-                      className="inline-flex rounded-full bg-white px-6 py-2 text-[12px] font-semibold text-black shadow-[0_10px_30px_rgba(255,255,255,0.25)]"
-                    >
-                      Abrir loja
-                    </Link>
-                  </div>
-                </section>
-              ) : null}
-
-              {quickActionCards.length > 0 ? (
-                <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {quickActionCards.map((card) => (
-                    <Link
-                      key={card.id}
-                      href={card.href}
-                      className="rounded-2xl border border-white/12 bg-white/6 px-4 py-4 shadow-[0_16px_48px_rgba(0,0,0,0.45)] backdrop-blur-xl transition hover:border-white/25 hover:bg-white/10"
-                    >
-                      <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">{card.title}</p>
-                      <p className="mt-1 text-sm font-semibold text-white">{card.subtitle}</p>
-                      <p className="mt-3 text-[12px] text-white/75">{card.cta} →</p>
-                    </Link>
-                  ))}
-                </section>
-              ) : null}
-
-              {fixedSections.length > 0 ? (
-                <div className="grid gap-6 md:grid-cols-2">
-                  {fixedSections.map((section) => (
-                    <div
-                      key={section.id}
-                      className={
-                        section.id === "agenda-publica" ||
-                        section.id === "reservas" ||
-                        section.id === "centros-grupo"
-                          ? "md:col-span-2"
-                          : ""
-                      }
-                    >
-                      {section.content}
-                    </div>
-                  ))}
-                </div>
+              {activeSection ? (
+                <div className="pt-2">{activeSection.content}</div>
               ) : (
                 <section className="rounded-3xl border border-white/12 bg-white/5 p-4 text-sm text-white/70 shadow-[0_18px_54px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
                   Este perfil público está em preparação.

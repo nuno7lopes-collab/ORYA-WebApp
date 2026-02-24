@@ -81,6 +81,7 @@ describe("refundPurchase", () => {
     stripeRefundCreate.mockReset();
     recordOutboxEvent.mockClear();
     appendEventLog.mockClear();
+    prismaMock.refund.create.mockClear();
     refundState = null;
     eventState = { organizationId: 10 };
     orgState = {
@@ -142,5 +143,27 @@ describe("refundPurchase", () => {
     expect(prismaMock.refund.create).toHaveBeenCalledTimes(1);
     expect(recordOutboxEvent).toHaveBeenCalledTimes(1);
     expect(appendEventLog).toHaveBeenCalledTimes(1);
+  });
+
+  it("permite refund para org PLATFORM sem exigir Connect", async () => {
+    orgState = {
+      stripeAccountId: null,
+      stripeChargesEnabled: false,
+      stripePayoutsEnabled: false,
+      orgType: "PLATFORM",
+    };
+    stripeRefundCreate.mockResolvedValue({ id: "re_platform_1" });
+
+    const result = await refundPurchase({
+      purchaseId: "order_1",
+      paymentIntentId: "pi_1",
+      eventId: 1,
+      reason: RefundReason.CANCELLED,
+      refundedBy: "user_1",
+    });
+
+    expect(result?.stripeRefundId).toBe("re_platform_1");
+    expect(stripeRefundCreate).toHaveBeenCalledTimes(1);
+    expect(prismaMock.refund.create).toHaveBeenCalledTimes(1);
   });
 });

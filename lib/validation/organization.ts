@@ -73,7 +73,7 @@ export const becomeOrganizationSchema = z.object({
     .refine((value) => OPERATION_MODULES.includes(value as (typeof OPERATION_MODULES)[number]), {
       message: "Operação inválida.",
     }),
-  modules: z.array(z.enum(moduleKeys)).default([]),
+  tools: z.array(z.enum(moduleKeys)).default([]),
   businessName: z
     .string()
     .trim()

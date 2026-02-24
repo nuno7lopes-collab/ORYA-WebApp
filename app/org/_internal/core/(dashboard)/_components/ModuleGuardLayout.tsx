@@ -10,13 +10,14 @@ import {
   hasAnyActiveModule,
 } from "@/lib/organizationModules";
 import type { OrganizationModule } from "@/lib/organizationCategories";
-import { appendOrganizationIdToHref, buildOrgHref } from "@/lib/organizationIdUtils";
+import { appendOrganizationIdToHref, buildOrgHref, parseOrganizationId } from "@/lib/organizationIdUtils";
 
 type ModuleGuardLayoutProps = {
   children: ReactNode;
   requiredModules: OrganizationModule[];
   mode?: "any" | "all";
   redirectTo?: string;
+  params?: Promise<{ orgId?: string }> | { orgId?: string };
 };
 
 export default async function ModuleGuardLayout({
@@ -24,7 +25,10 @@ export default async function ModuleGuardLayout({
   requiredModules,
   mode = "any",
   redirectTo,
+  params,
 }: ModuleGuardLayoutProps) {
+  const resolvedParams = params ? await Promise.resolve(params) : null;
+  const requestedOrgId = parseOrganizationId(resolvedParams?.orgId);
   const supabase = await createSupabaseServer();
   const {
     data: { user },
@@ -35,7 +39,12 @@ export default async function ModuleGuardLayout({
   }
 
   const { organization } = await getActiveOrganizationForUser(user.id, {
-    allowFallback: true,
+    ...(requestedOrgId
+      ? {
+          organizationId: requestedOrgId,
+          allowFallback: false,
+        }
+      : { allowFallback: true }),
     allowedStatuses: [OrganizationStatus.ACTIVE, OrganizationStatus.SUSPENDED],
   });
 

@@ -1,0 +1,142 @@
+{
+  "script": "audit_fix_external_connect_standard.ts",
+  "timestamp": "2026-02-24T15:52:05.258Z",
+  "runtimeEnv": "test",
+  "mode": "apply",
+  "organizationsScanned": 13,
+  "organizationsUpdated": 13,
+  "accountsAlreadyStandard": 0,
+  "accountsResetForReconnect": 13,
+  "rows": [
+    {
+      "organizationId": 2,
+      "username": "top_padel",
+      "publicName": "Top Padel Fluvial",
+      "accountId": "acct_platform_orya_shared",
+      "accountType": null,
+      "action": "RESET_TO_RECONNECT",
+      "reason": "ACCOUNT_INACCESSIBLE",
+      "updated": true
+    },
+    {
+      "organizationId": 3,
+      "username": "nike_padel_lab",
+      "publicName": "Nike Padel Lab",
+      "accountId": "acct_platform_orya_shared",
+      "accountType": null,
+      "action": "RESET_TO_RECONNECT",
+      "reason": "ACCOUNT_INACCESSIBLE",
+      "updated": true
+    },
+    {
+      "organizationId": 4,
+      "username": "apple_arena_lisboa",
+      "publicName": "Apple Arena Lisboa",
+      "accountId": "acct_platform_orya_shared",
+      "accountType": null,
+      "action": "RESET_TO_RECONNECT",
+      "reason": "ACCOUNT_INACCESSIBLE",
+      "updated": true
+    },
+    {
+      "organizationId": 5,
+      "username": "porto_smash_house",
+      "publicName": "Porto Smash House",
+      "accountId": "acct_platform_orya_shared",
+      "accountType": null,
+      "action": "RESET_TO_RECONNECT",
+      "reason": "ACCOUNT_INACCESSIBLE",
+      "updated": true
+    },
+    {
+      "organizationId": 6,
+      "username": "matosinhos_club",
+      "publicName": "Matosinhos Club",
+      "accountId": "acct_platform_orya_shared",
+      "accountType": null,
+      "action": "RESET_TO_RECONNECT",
+      "reason": "ACCOUNT_INACCESSIBLE",
+      "updated": true
+    },
+    {
+      "organizationId": 7,
+      "username": "lisboa_wave_padel",
+      "publicName": "Lisboa Wave Padel",
+      "accountId": "acct_platform_orya_shared",
+      "accountType": null,
+      "action": "RESET_TO_RECONNECT",
+      "reason": "ACCOUNT_INACCESSIBLE",
+      "updated": true
+    },
+    {
+      "organizationId": 8,
+      "username": "braga_center_court",
+      "publicName": "Braga Center Court",
+      "accountId": "acct_platform_orya_shared",
+      "accountType": null,
+      "action": "RESET_TO_RECONNECT",
+      "reason": "ACCOUNT_INACCESSIBLE",
+      "updated": true
+    },
+    {
+      "organizationId": 10,
+      "username": "top_padel_industrial",
+      "publicName": "Top Padel Industrial",
+      "accountId": "acct_platform_orya_shared",
+      "accountType": null,
+      "action": "RESET_TO_RECONNECT",
+      "reason": "ACCOUNT_INACCESSIBLE",
+      "updated": true
+    },
+    {
+      "organizationId": 11,
+      "username": "top_padel_fojo",
+      "publicName": "Top Padel Fojo",
+      "accountId": "acct_platform_orya_shared",
+      "accountType": null,
+      "action": "RESET_TO_RECONNECT",
+      "reason": "ACCOUNT_INACCESSIBLE",
+      "updated": true
+    },
+    {
+      "organizationId": 12,
+      "username": "top_padel_guimaraes",
+      "publicName": "Top Padel Guimaraes",
+      "accountId": "acct_platform_orya_shared",
+      "accountType": null,
+      "action": "RESET_TO_RECONNECT",
+      "reason": "ACCOUNT_INACCESSIBLE",
+      "updated": true
+    },
+    {
+      "organizationId": 13,
+      "username": "top_padel_braga",
+      "publicName": "Top Padel Braga",
+      "accountId": "acct_platform_orya_shared",
+      "accountType": null,
+      "action": "RESET_TO_RECONNECT",
+      "reason": "ACCOUNT_INACCESSIBLE",
+      "updated": true
+    },
+    {
+      "organizationId": 14,
+      "username": "top_padel_famalicao",
+      "publicName": "Top Padel Famalicao",
+      "accountId": "acct_platform_orya_shared",
+      "accountType": null,
+      "action": "RESET_TO_RECONNECT",
+      "reason": "ACCOUNT_INACCESSIBLE",
+      "updated": true
+    },
+    {
+      "organizationId": 15,
+      "username": "top_padel_maia",
+      "publicName": "Top Padel Maia",
+      "accountId": "acct_platform_orya_shared",
+      "accountType": null,
+      "action": "RESET_TO_RECONNECT",
+      "reason": "ACCOUNT_INACCESSIBLE",
+      "updated": true
+    }
+  ]
+}

@@ -1,16 +1,16 @@
 # API <-> UI Coverage Report
 
-Generated: 2026-02-23T14:10:59.475Z
+Generated: 2026-02-24T14:18:57.201Z
 CSV: reports/api_ui_coverage_v1.csv
 
 ## Summary
-- API routes total: 499
-- Covered by UI: 434
-- Orphan (no UI): 14
+- API routes total: 495
+- Covered by UI: 442
+- Orphan (no UI): 3
 - Orphan baseline: 3
-- Orphan (new): 11
+- Orphan (new): 0
 - Orphan allowlisted: 3
-- Exempt (internal/cron/webhook): 48
+- Exempt (internal/cron/webhook): 47
 - UI endpoints missing API: 0
 - UI coverage hints (routes): 30
 
@@ -55,17 +55,7 @@ CSV: reports/api_ui_coverage_v1.csv
 - /api/org/[param]/store/shipping/zones/[param]/methods (files: components/store/StoreShippingMethodsPanel.tsx, components/store/StoreShippingSettingsPanel.tsx, components/store/StoreShippingTiersPanel.tsx)
 
 ## API routes without UI usage (new, excluding internal/cron/webhook)
-- /api/org/[orgId]/padel/broadcast (app/api/org/[orgId]/padel/broadcast/route.ts)
-- /api/org/[orgId]/padel/courts (app/api/org/[orgId]/padel/courts/route.ts)
-- /api/org/[orgId]/padel/pairings/swap (app/api/org/[orgId]/padel/pairings/swap/route.ts)
-- /api/padel/live (app/api/padel/live/route.ts)
-- /api/padel/matches/[id]/delay (app/api/padel/matches/[id]/delay/route.ts)
-- /api/padel/pairings/[id]/cancel (app/api/padel/pairings/[id]/cancel/route.ts)
-- /api/padel/pairings/[id]/reopen (app/api/padel/pairings/[id]/reopen/route.ts)
-- /api/padel/public/calendar (app/api/padel/public/calendar/route.ts)
-- /api/padel/tournaments/tier-approvals/[id]/approve (app/api/padel/tournaments/tier-approvals/[id]/approve/route.ts)
-- /api/padel/tournaments/tier-approvals/[id]/reject (app/api/padel/tournaments/tier-approvals/[id]/reject/route.ts)
-- /api/padel/tournaments/tier-approvals/request (app/api/padel/tournaments/tier-approvals/request/route.ts)
+- none
 
 ## API orphan baseline matches
 - /api/me/dsar/export (app/api/me/dsar/export/route.ts)
@@ -125,11 +115,10 @@ CSV: reports/api_ui_coverage_v1.csv
 - /api/internal/worker/operations (app/api/internal/worker/operations/route.ts)
 - /api/org-system/payouts/webhook (app/api/org-system/payouts/webhook/route.ts)
 - /api/stripe/webhook (app/api/stripe/webhook/route.ts)
-- /api/webhooks/stripe (app/api/webhooks/stripe/route.ts)
 
 ## P0 endpoints coverage (scripts/manifests/p0_endpoints.json)
-- Total: 35
-- Active (UI expected): 35
+- Total: 34
+- Active (UI expected): 34
 
 ### P0 missing files
 - none
@@ -147,7 +136,6 @@ CSV: reports/api_ui_coverage_v1.csv
 - /api/internal/checkin/consume (app/api/internal/checkin/consume/route.ts)
 - /api/cron/operations (app/api/cron/operations/route.ts)
 - /api/stripe/webhook (app/api/stripe/webhook/route.ts)
-- /api/webhooks/stripe (app/api/webhooks/stripe/route.ts)
 
 ### P0 covered by UI
 - /api/payments/intent (files: app/components/checkout/Step2Pagamento.tsx, apps/mobile/features/checkout/api.ts)

@@ -15,6 +15,7 @@ import {
 } from "@/lib/reservas/scopedAvailability";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
+import { clampOrgRescheduleWindowMinutes } from "@/lib/policies/bookingPolicyGuardrails";
 import {
   normalizeReservationAssignmentMode,
   resolveServiceAssignmentMode,
@@ -257,9 +258,8 @@ async function _POST(
       return fail(ctx, 400, "TIME_PASSED", "Este horário já passou.");
     }
     const now = new Date();
-    const orgRescheduleWindowMinutes = Math.max(
-      0,
-      booking.service.organization?.orgRescheduleWindowMinutes ?? 240,
+    const orgRescheduleWindowMinutes = clampOrgRescheduleWindowMinutes(
+      booking.service.organization?.orgRescheduleWindowMinutes ?? null,
     );
     const msUntilBooking = booking.startsAt.getTime() - now.getTime();
     if (msUntilBooking < orgRescheduleWindowMinutes * 60 * 1000) {

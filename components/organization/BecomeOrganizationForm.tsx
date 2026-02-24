@@ -12,6 +12,7 @@ import {
   type OperationModule,
   type OrganizationModule,
 } from "@/lib/organizationCategories";
+import { modeSupportsAvailabilityTemplates, resolveOrganizationOperationalMode } from "@/lib/organizationOperationalMode";
 import {
   BecomeOrganizationFormValues,
   becomeOrganizationSchema,
@@ -214,7 +215,7 @@ export default function BecomeOrganizationForm({
     mode: "onChange",
     defaultValues: {
       primaryModule: DEFAULT_PRIMARY_MODULE,
-      modules: getDefaultOrganizationModules(DEFAULT_PRIMARY_MODULE),
+      tools: getDefaultOrganizationModules(DEFAULT_PRIMARY_MODULE),
       businessName: "",
       username: "",
       groupMode: initialGroupMode === "EXISTING_GROUP" && hasOwnedGroups ? "EXISTING_GROUP" : "NEW_GROUP",
@@ -335,7 +336,7 @@ export default function BecomeOrganizationForm({
     };
   }, []);
 
-  const startBuildTransition = (organizationId?: number | null) => {
+  const startBuildTransition = (organizationId?: number | null, operation?: OperationModule | null) => {
     setShowBuildScreen(true);
     if (buildTimerRef.current) clearTimeout(buildTimerRef.current);
     if (typeof window !== "undefined") {
@@ -346,8 +347,13 @@ export default function BecomeOrganizationForm({
     }
     const fallbackOrgId =
       organizationId ?? createdOrganizationIdRef.current ?? getOrganizationIdFromBrowser();
+    const resolvedOperation = operation ?? selectedOperations[0] ?? DEFAULT_PRIMARY_MODULE;
     const targetHref = fallbackOrgId
-      ? buildOrgHref(fallbackOrgId, "/overview", { section: "modulos" })
+      ? resolvedOperation === "RESERVAS"
+        ? buildOrgHref(fallbackOrgId, "/bookings/operations")
+        : resolvedOperation === "TORNEIOS"
+          ? buildOrgHref(fallbackOrgId, "/padel/tournaments/create")
+          : buildOrgHref(fallbackOrgId, "/events/new")
       : buildOrgHubHref("/organizations");
     buildTimerRef.current = setTimeout(() => {
       router.replace(targetHref);
@@ -358,6 +364,38 @@ export default function BecomeOrganizationForm({
     () => selectedOperations[0] ?? DEFAULT_PRIMARY_MODULE,
     [selectedOperations],
   );
+  const onboardingOperationalMode = useMemo(
+    () =>
+      resolveOrganizationOperationalMode({
+        primaryModule: derivedPrimaryModule,
+        tools: Array.from(
+          new Set<OrganizationModule>([
+            ...getDefaultOrganizationModules(derivedPrimaryModule),
+            ...selectedOperations,
+            ...optionalSelection,
+          ]),
+        ),
+      }),
+    [derivedPrimaryModule, optionalSelection, selectedOperations],
+  );
+  const selectedOperation = selectedOperations[0] ?? null;
+  const onboardingAutomationNote = useMemo(() => {
+    if (modeSupportsAvailabilityTemplates(onboardingOperationalMode)) {
+      return {
+        title: "Recomendação automática para Reservas",
+        body:
+          "Vamos criar disponibilidade base automaticamente para arrancares rápido. Depois podes ajustar horários em Reservas > Disponibilidade.",
+      };
+    }
+    if (selectedOperation === "EVENTOS" || selectedOperation === "TORNEIOS" || onboardingOperationalMode === "EVENT_DRIVEN") {
+      return {
+        title: "Recomendação automática para Eventos/Torneios",
+        body:
+          "Não ativamos disponibilidade semanal por defeito. A agenda aparece quando criares cada evento/torneio, sem setup extra.",
+      };
+    }
+    return null;
+  }, [onboardingOperationalMode, selectedOperation]);
 
   useEffect(() => {
     form.setValue("primaryModule", derivedPrimaryModule, { shouldValidate: true });
@@ -368,7 +406,7 @@ export default function BecomeOrganizationForm({
     const nextModules = Array.from(
       new Set<OrganizationModule>([...baseModules, ...selectedOperations, ...optionalSelection]),
     );
-    form.setValue("modules", nextModules, { shouldValidate: true, shouldDirty: true });
+    form.setValue("tools", nextModules, { shouldValidate: true, shouldDirty: true });
   }, [form, derivedPrimaryModule, selectedOperations, optionalSelection]);
 
   useEffect(() => {
@@ -495,7 +533,7 @@ export default function BecomeOrganizationForm({
       setError("Seleciona o grupo onde queres adicionar esta organização.");
       return;
     }
-    const modulesPayload = Array.from(
+    const toolsPayload = Array.from(
       new Set<OrganizationModule>([
         ...getDefaultOrganizationModules(derivedPrimaryModule),
         ...selectedOperations,
@@ -510,7 +548,7 @@ export default function BecomeOrganizationForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           primaryModule: derivedPrimaryModule,
-          modules: modulesPayload,
+          tools: toolsPayload,
           businessName: values.businessName.trim(),
           publicName: values.businessName.trim(),
           username: cleanedUsername,
@@ -528,14 +566,18 @@ export default function BecomeOrganizationForm({
       const nextOrganizationId =
         typeof data?.organization?.id === "number" ? data.organization.id : null;
       if (nextOrganizationId) {
-        await fetch("/api/org-hub/organizations/switch", {
+        const switchRes = await fetch("/api/org-hub/organizations/switch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ organizationId: data.organization.id }),
         });
+        const switchPayload = await switchRes.json().catch(() => null);
+        if (!switchRes.ok || switchPayload?.ok === false) {
+          console.warn("[organização/become] organização criada mas switch falhou", switchPayload);
+        }
       }
       setSaving(false);
-      startBuildTransition(nextOrganizationId);
+      startBuildTransition(nextOrganizationId, derivedPrimaryModule);
     } catch (err) {
       console.error("[organização/become] erro:", err);
       setError("Erro inesperado ao criar organização.");
@@ -748,13 +790,21 @@ export default function BecomeOrganizationForm({
                   {form.formState.errors.primaryModule.message}
                 </p>
               )}
+              {onboardingAutomationNote && (
+                <div className="rounded-2xl border border-[#6BFFFF]/30 bg-[#6BFFFF]/8 px-4 py-3">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-[#B8FFFF]">
+                    {onboardingAutomationNote.title}
+                  </p>
+                  <p className="mt-1 text-sm text-white/80">{onboardingAutomationNote.body}</p>
+                </div>
+              )}
             </div>
           )}
 
           {activeStep === 2 && (
             <div className="space-y-6">
               <TypingText
-                key={`modules-${activeStep}`}
+                key={`tools-${activeStep}`}
                 text="Queres ativar formulários públicos e mensagens?"
                 className="text-2xl font-semibold text-white md:text-3xl"
               />

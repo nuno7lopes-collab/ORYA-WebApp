@@ -1,4 +1,4 @@
-import { describe, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { execSync } from "child_process";
 
 function assertNoMatches(command: string, label: string) {
@@ -17,13 +17,15 @@ function assertNoMatches(command: string, label: string) {
 
 describe("bookings canonical query guardrails", () => {
   it("blocks legacy query-based bookings navigation patterns", () => {
-    assertNoMatches(
-      [
-        "rg -n",
-        "\"/bookings\\\\?tab=availability|[?&]bookings=(availability|prices|integrations)\"",
-        "app lib -S",
-      ].join(" "),
-      "Legacy bookings query pattern",
-    );
+    expect(() =>
+      assertNoMatches(
+        [
+          "rg -n",
+          "\"/bookings\\\\?tab=availability|[?&]bookings=(availability|prices|integrations)\"",
+          "app lib -S",
+        ].join(" "),
+        "Legacy bookings query pattern",
+      ),
+    ).not.toThrow();
   });
 });

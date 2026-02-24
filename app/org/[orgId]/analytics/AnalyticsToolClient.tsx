@@ -193,7 +193,7 @@ function prettyMetricKey(value: MetricOption) {
 function prettyDimensionKey(value: DimensionOption) {
   switch (value) {
     case "MODULE":
-      return "Módulo";
+      return "Ferramenta";
     case "SOURCE_TYPE":
       return "Origem";
     case "PAYMENT_PROVIDER":
@@ -233,6 +233,23 @@ async function apiFetcher<T>(url: string): Promise<T> {
     throw new Error(errorCode);
   }
   return (unwrapped ?? payload) as T;
+}
+
+function formatAnalyticsError(error: unknown) {
+  const code = error instanceof Error ? error.message : "INTERNAL_ERROR";
+  if (code === "NOT_ORGANIZATION") {
+    return "Não tens acesso à organização selecionada.";
+  }
+  if (code === "NO_ANALYTICS_ACCESS") {
+    return "Ferramenta Analytics inativa ou sem permissões para esta organização.";
+  }
+  if (code === "UNAUTHENTICATED") {
+    return "Sessão expirada. Volta a iniciar sessão.";
+  }
+  if (code.startsWith("HTTP_")) {
+    return "Falha ao carregar analytics. Tenta novamente.";
+  }
+  return code;
 }
 
 function buildScopeQuery(scope: ScopeOption) {
@@ -519,7 +536,7 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
               value={dimensionKey}
               onChange={(value) => updateQuery({ dimensionKey: value })}
               options={[
-                { label: "Módulo", value: "MODULE" },
+                { label: "Ferramenta", value: "MODULE" },
                 { label: "Tipo de origem", value: "SOURCE_TYPE" },
                 { label: "Fornecedor", value: "PAYMENT_PROVIDER" },
                 { label: "Moeda", value: "CURRENCY" },
@@ -963,9 +980,9 @@ function ViewSection({
       <div className="rounded-2xl border border-rose-300/50 bg-gradient-to-br from-rose-500/16 via-rose-500/10 to-transparent p-4 text-sm text-rose-100">
         <p className="font-semibold">Falha ao carregar dados desta vista.</p>
         <p className="mt-1 rounded-md border border-rose-200/30 bg-black/15 px-2 py-1 text-rose-100/85">
-          {error instanceof Error ? error.message : "Erro inesperado."}
+          {formatAnalyticsError(error)}
         </p>
-        <p className="mt-1 text-xs text-rose-100/65">Se persistir, valide filtros e permissões de módulo.</p>
+        <p className="mt-1 text-xs text-rose-100/65">Se persistir, valide filtros e permissoes de ferramenta.</p>
         <button
           type="button"
           onClick={onRetry}

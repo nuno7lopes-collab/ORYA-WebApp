@@ -4,30 +4,15 @@ import { respondError, respondOk } from "@/lib/http/envelope";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
 import { prisma } from "@/lib/prisma";
-import { SourceType, OrganizationMemberRole } from "@prisma/client";
+import { SourceType } from "@prisma/client";
 import { buildAgendaOverlapFilter } from "@/domain/agendaReadModel/overlap";
-
-function parsePositiveInt(raw: string | null | undefined) {
-  if (!raw) return null;
-  const value = Number(raw);
-  if (!Number.isFinite(value) || value <= 0) return null;
-  return Math.floor(value);
-}
+import { parseOrgIds, parsePositiveInt, resolveGroupDashboardScope } from "../_helpers";
 
 function parseIsoDate(raw: string | null) {
   if (!raw) return null;
   const date = new Date(raw);
   if (Number.isNaN(date.getTime())) return null;
   return date;
-}
-
-function parseOrgIds(raw: string | null) {
-  if (!raw) return [] as number[];
-  return raw
-    .split(",")
-    .map((part) => Number(part.trim()))
-    .filter((value) => Number.isFinite(value) && value > 0)
-    .map((value) => Math.floor(value));
 }
 
 function parseSourceTypes(raw: string | null) {
@@ -63,31 +48,6 @@ async function _GET(req: NextRequest, context: { params: Promise<{ groupId: stri
       return respondError(ctx, { errorCode: "INVALID_GROUP_ID", message: "Grupo inválido.", retryable: false }, { status: 400 });
     }
 
-    const group = await prisma.organizationGroup.findUnique({
-      where: { id: groupId },
-      select: { id: true, ownerUserId: true },
-    });
-    if (!group) {
-      return respondError(ctx, { errorCode: "GROUP_NOT_FOUND", message: "GROUP_NOT_FOUND", retryable: false }, { status: 404 });
-    }
-
-    const isOwner = group.ownerUserId === user.id;
-    if (!isOwner) {
-      const governanceMember = await prisma.organizationGroupMember.findFirst({
-        where: {
-          groupId,
-          userId: user.id,
-          isGovernance: true,
-          scopeAllOrgs: true,
-          role: { in: [OrganizationMemberRole.OWNER, OrganizationMemberRole.CO_OWNER, OrganizationMemberRole.ADMIN] },
-        },
-        select: { id: true },
-      });
-      if (!governanceMember) {
-        return respondError(ctx, { errorCode: "FORBIDDEN", message: "FORBIDDEN", retryable: false }, { status: 403 });
-      }
-    }
-
     const url = new URL(req.url);
     const from = parseIsoDate(url.searchParams.get("from"));
     const to = parseIsoDate(url.searchParams.get("to"));
@@ -98,28 +58,26 @@ async function _GET(req: NextRequest, context: { params: Promise<{ groupId: stri
     const requestedOrgIds = parseOrgIds(url.searchParams.get("orgIds"));
     const sourceTypes = parseSourceTypes(url.searchParams.get("types"));
     const statuses = parseStatuses(url.searchParams.get("statuses"));
-
-    const organizations = await prisma.organization.findMany({
-      where: { groupId },
-      select: { id: true, publicName: true, businessName: true },
-      orderBy: { id: "asc" },
+    const scope = await resolveGroupDashboardScope({
+      groupId,
+      userId: user.id,
+      requestedOrgIds,
     });
-    const orgById = new Map(
-      organizations.map((org) => [org.id, org.publicName?.trim() || org.businessName?.trim() || `Organização #${org.id}`]),
-    );
+    if (!scope.ok) {
+      return respondError(
+        ctx,
+        { errorCode: scope.errorCode, message: scope.message, retryable: false },
+        { status: scope.status },
+      );
+    }
 
-    const allowedOrgIds = organizations.map((org) => org.id);
-    const scopedOrgIds = requestedOrgIds.length
-      ? requestedOrgIds.filter((id) => allowedOrgIds.includes(id))
-      : allowedOrgIds;
-
-    if (scopedOrgIds.length === 0) {
+    if (scope.scopedOrgIds.length === 0) {
       return respondOk(ctx, { items: [], organizations: [] }, { status: 200 });
     }
 
     const items = await prisma.agendaItem.findMany({
       where: {
-        organizationId: { in: scopedOrgIds },
+        organizationId: { in: scope.scopedOrgIds },
         ...buildAgendaOverlapFilter({ from, to }),
         sourceType: { in: sourceTypes },
         ...(statuses.length > 0
@@ -146,7 +104,7 @@ async function _GET(req: NextRequest, context: { params: Promise<{ groupId: stri
     const mapped = items.map((item) => {
       const base = {
         organizationId: item.organizationId,
-        organizationName: orgById.get(item.organizationId) ?? `Organização #${item.organizationId}`,
+        organizationName: scope.orgById.get(item.organizationId) ?? `Organização #${item.organizationId}`,
         title: item.title,
         startsAt: item.startsAt,
         endsAt: item.endsAt,
@@ -168,7 +126,7 @@ async function _GET(req: NextRequest, context: { params: Promise<{ groupId: stri
     return respondOk(
       ctx,
       {
-        organizations: scopedOrgIds.map((id) => ({ id, name: orgById.get(id) ?? `Organização #${id}` })),
+        organizations: scope.organizations,
         items: mapped,
       },
       { status: 200 },

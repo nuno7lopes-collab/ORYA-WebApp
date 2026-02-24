@@ -14,14 +14,26 @@ Parameters:
   AdminDomain:
     Type: String
     Default: admin.orya.pt
+  WwwDomain:
+    Type: String
+    Default: ""
 
 Conditions:
   HasAppDomain: !Not [!Equals [!Ref AppDomain, ""]]
   HasAdminDomain: !Not [!Equals [!Ref AdminDomain, ""]]
+  HasWwwDomain: !Not [!Equals [!Ref WwwDomain, ""]]
   AppDomainIsRoot: !Equals [!Ref AppDomain, !Ref RootDomain]
   AdminDomainIsRoot: !Equals [!Ref AdminDomain, !Ref RootDomain]
+  WwwDomainIsRoot: !Equals [!Ref WwwDomain, !Ref RootDomain]
+  WwwDomainMatchesApp: !Equals [!Ref WwwDomain, !Ref AppDomain]
+  WwwDomainMatchesAdmin: !Equals [!Ref WwwDomain, !Ref AdminDomain]
   UseAppDomain: !And [!Condition HasAppDomain, !Not [!Condition AppDomainIsRoot]]
   UseAdminDomain: !And [!Condition HasAdminDomain, !Not [!Condition AdminDomainIsRoot]]
+  UseWwwDomain: !And
+    - !Condition HasWwwDomain
+    - !Not [!Condition WwwDomainIsRoot]
+    - !Not [!Condition WwwDomainMatchesApp]
+    - !Not [!Condition WwwDomainMatchesAdmin]
 
 Resources:
   Certificate:
@@ -31,6 +43,7 @@ Resources:
       SubjectAlternativeNames:
         - !If [UseAppDomain, !Ref AppDomain, !Ref "AWS::NoValue"]
         - !If [UseAdminDomain, !Ref AdminDomain, !Ref "AWS::NoValue"]
+        - !If [UseWwwDomain, !Ref WwwDomain, !Ref "AWS::NoValue"]
       ValidationMethod: DNS
       DomainValidationOptions:
         - DomainName: !Ref RootDomain
@@ -43,6 +56,11 @@ Resources:
         - !If
           - UseAdminDomain
           - DomainName: !Ref AdminDomain
+            HostedZoneId: !Ref HostedZoneId
+          - !Ref "AWS::NoValue"
+        - !If
+          - UseWwwDomain
+          - DomainName: !Ref WwwDomain
             HostedZoneId: !Ref HostedZoneId
           - !Ref "AWS::NoValue"
 

@@ -19,6 +19,8 @@ import { computeFeePolicyVersion } from "@/domain/finance/checkout";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { notifyOrganizationBookingChangeResponse } from "@/lib/reservas/bookingChangeNotifications";
 import { ProcessorFeesStatus, SourceType } from "@prisma/client";
+import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
+import { requiresOrganizationStripe } from "@/domain/finance/payoutModePolicy";
 
 const CARD_PLATFORM_FEE_BPS = 100;
 
@@ -115,6 +117,8 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
                 platformFeeBps: true,
                 platformFeeFixedCents: true,
                 orgType: true,
+                officialEmail: true,
+                officialEmailVerifiedAt: true,
                 stripeAccountId: true,
                 stripeChargesEnabled: true,
                 stripePayoutsEnabled: true,
@@ -215,7 +219,9 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       const sourceId = String(booking.id);
       const purchaseId = `booking_change_${request.id}`;
       const { feeBps: defaultFeeBps, feeFixedCents: defaultFeeFixed } = await getPlatformFees();
-      const isPlatformOrg = booking.service?.organization?.orgType === "PLATFORM";
+      const requiresStripeForBooking = requiresOrganizationStripe(
+        booking.service?.organization?.orgType,
+      );
       const pricing = computePricing(priceDeltaCents, 0, {
         platformDefaultFeeMode: "INCLUDED",
         organizationFeeMode: booking.service?.organization?.feeMode ?? null,
@@ -223,7 +229,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         organizationPlatformFeeFixedCents: booking.service?.organization?.platformFeeFixedCents ?? null,
         platformDefaultFeeBps: defaultFeeBps,
         platformDefaultFeeFixedCents: defaultFeeFixed,
-        isPlatformOrg,
+        isPlatformOrg: !requiresStripeForBooking,
       });
       const combinedFees = computeCombinedFees({
         amountCents: priceDeltaCents,
@@ -241,6 +247,22 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       const totalCents = combinedFees.totalCents + cardPlatformFeeCents;
       const platformFeeCents = Math.min(pricing.platformFeeCents + cardPlatformFeeCents, totalCents);
       const payoutAmountCents = Math.max(0, totalCents - platformFeeCents);
+      const gate = getPaidSalesGate({
+        officialEmail: booking.service?.organization?.officialEmail ?? null,
+        officialEmailVerifiedAt: booking.service?.organization?.officialEmailVerifiedAt ?? null,
+        stripeAccountId: booking.service?.organization?.stripeAccountId ?? null,
+        stripeChargesEnabled: booking.service?.organization?.stripeChargesEnabled ?? false,
+        stripePayoutsEnabled: booking.service?.organization?.stripePayoutsEnabled ?? false,
+        requireStripe: requiresStripeForBooking,
+      });
+      if (!gate.ok) {
+        return fail(
+          409,
+          "PAYMENTS_NOT_READY",
+          formatPaidSalesGateMessage(gate, "Pagamentos indisponíveis. Para ativar,"),
+          { missingEmail: gate.missingEmail, missingStripe: gate.missingStripe },
+        );
+      }
       const feePolicyVersion = computeFeePolicyVersion({
         feeMode: pricing.feeMode,
         feeBps: pricing.feeBpsApplied,
@@ -310,7 +332,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
             stripePayoutsEnabled: booking.service?.organization?.stripePayoutsEnabled ?? false,
             orgType: booking.service?.organization?.orgType ?? null,
           },
-          requireStripe: !isPlatformOrg,
+          requireStripe: requiresStripeForBooking,
           resolvedSnapshot,
           customerIdentityId: booking.userId ?? null,
           paymentEvent: {

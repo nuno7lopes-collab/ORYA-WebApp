@@ -1,4 +1,4 @@
-import { describe, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { execSync } from "child_process";
 
 const COMMAND =
@@ -58,9 +58,8 @@ describe("agenda drift guardrails", () => {
     );
 
     const unexpected = Array.from(files).filter((file) => !isDomainCommand(file) && !ALLOWLIST.has(file));
-    if (unexpected.length) {
-      throw new Error(`Agenda drift allowlist violation: ${unexpected.join(", ")}`);
-    }
+    expect(unexpected).toEqual([]);
+    expect(files.size).toBeGreaterThan(0);
 
     // Log allowlisted drift for visibility (does not fail when unchanged).
     console.info("agenda drift allowlist", Array.from(files).sort());

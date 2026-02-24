@@ -24,9 +24,13 @@ describe("calendar ux guardrails", () => {
   it("keeps general calendar communication visible without fallback copy antiga", () => {
     const dayHeader = readLocal("app/org/[orgId]/calendar/_components/day/CalendarHeader.tsx");
     const weekClient = readLocal("app/org/[orgId]/calendar/_components/WeekCalendarReadClient.tsx");
+    const dayClient = readLocal("app/org/[orgId]/calendar/_components/day/DayCalendarReadClient.tsx");
 
     expect(dayHeader).toContain("Geral");
     expect(weekClient).not.toContain("Default quando não configurado: 2ª–6ª, 08:00-17:00");
+    expect(weekClient).not.toContain("Escrita operacional continua em <strong>Bookings</strong>");
+    expect(weekClient).toContain("buildCalendarOperationalGuidance");
+    expect(dayClient).toContain("buildCalendarOperationalGuidance");
   });
 
   it("keeps keyboard-first navigation in calendar day/week and datepicker", () => {

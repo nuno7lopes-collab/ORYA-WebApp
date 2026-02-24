@@ -255,7 +255,7 @@ function formatAuditMeta(metadata: Record<string, unknown> | null | undefined) {
   }
   const moduleKey = typeof metadata.moduleKey === "string" ? metadata.moduleKey : null;
   if (moduleKey && Object.prototype.hasOwnProperty.call(MODULE_LABELS, moduleKey)) {
-    parts.push(`Módulo: ${MODULE_LABELS[moduleKey as OrganizationModule]}`);
+    parts.push(`Ferramenta: ${MODULE_LABELS[moduleKey as OrganizationModule]}`);
   }
   const accessLevel = typeof metadata.accessLevel === "string" ? metadata.accessLevel : null;
   const normalizedAccess = normalizeAccessLevel(accessLevel);

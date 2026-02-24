@@ -23,6 +23,8 @@ export const CORE_ORGANIZATION_MODULES: OrganizationModule[] = [
   "STAFF",
   "FINANCEIRO",
   "MARKETING",
+  "CRM",
+  "ANALYTICS",
   "DEFINICOES",
   "PERFIL_PUBLICO",
 ];
@@ -30,6 +32,19 @@ export const DEFAULT_ORGANIZATION_MODULES: OrganizationModule[] = [
   ...CORE_ORGANIZATION_MODULES,
   DEFAULT_PRIMARY_MODULE,
 ];
+
+export const NON_DEACTIVABLE_ORGANIZATION_TOOL_MODULES: OrganizationModule[] = [
+  // Calendario depende de Reservas, por isso RESERVAS e base nao removivel.
+  "RESERVAS",
+  "FINANCEIRO",
+  // Definicoes + Politicas vivem neste modulo.
+  "DEFINICOES",
+  "STAFF",
+];
+
+export const NON_DEACTIVABLE_ORGANIZATION_TOOL_MODULE_SET = new Set<OrganizationModule>(
+  NON_DEACTIVABLE_ORGANIZATION_TOOL_MODULES,
+);
 
 const operationModuleSet = new Set<OperationModule>(OPERATION_MODULES);
 const organizationModuleSet = new Set<OrganizationModule>(ORGANIZATION_MODULES);
@@ -70,19 +85,19 @@ export function parsePrimaryModule(value: unknown): OperationModule | null {
 
 export function resolvePrimaryModule(
   primaryModule?: string | null,
-  modules?: string[] | null,
+  tools?: string[] | null,
 ): OperationModule {
   const parsed = parsePrimaryModule(primaryModule ?? null);
   if (parsed) return parsed;
   const fallback =
-    Array.isArray(modules) &&
-    modules
-      .map((module) => module.trim().toUpperCase())
-      .find((module) => operationModuleSet.has(module as OperationModule));
+    Array.isArray(tools) &&
+    tools
+      .map((tool) => tool.trim().toUpperCase())
+      .find((tool) => operationModuleSet.has(tool as OperationModule));
   return fallback ? (fallback as OperationModule) : DEFAULT_PRIMARY_MODULE;
 }
 
-export function parseOrganizationModules(value: unknown): OrganizationModule[] | null {
+export function parseOrganizationTools(value: unknown): OrganizationModule[] | null {
   if (!Array.isArray(value)) return null;
   const normalized: OrganizationModule[] = [];
   for (const entry of value) {

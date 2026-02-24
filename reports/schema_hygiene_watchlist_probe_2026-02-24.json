@@ -1,0 +1,43 @@
+{
+  "generatedAt": "2026-02-24T16:36:31.323Z",
+  "watchlistFile": "reports/schema_hygiene_dev_watchlist_columns_2026-02-24.csv",
+  "totalColumns": 5,
+  "activeColumns": 0,
+  "items": [
+    {
+      "table": "padel_tournament_participants",
+      "column": "seed_rank",
+      "status": "WATCHLIST_DEV",
+      "totalRows": 452,
+      "notNullRows": 0
+    },
+    {
+      "table": "tickets",
+      "column": "rotating_seed",
+      "status": "WATCHLIST_DEV",
+      "totalRows": 136,
+      "notNullRows": 0
+    },
+    {
+      "table": "profiles",
+      "column": "deleted_at_final",
+      "status": "WATCHLIST_DEV",
+      "totalRows": 124,
+      "notNullRows": 0
+    },
+    {
+      "table": "profiles",
+      "column": "location_source",
+      "status": "WATCHLIST_DEV",
+      "totalRows": 124,
+      "notNullRows": 0
+    },
+    {
+      "table": "padel_rounds",
+      "column": "duration_seconds",
+      "status": "WATCHLIST_DEV",
+      "totalRows": 20,
+      "notNullRows": 0
+    }
+  ]
+}

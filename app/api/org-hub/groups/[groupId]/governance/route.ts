@@ -26,7 +26,7 @@ async function resolveGroupAccess(params: { groupId: number; userId: string }) {
   const { groupId, userId } = params;
   const group = await prisma.organizationGroup.findUnique({
     where: { id: groupId },
-    select: { id: true, name: true, ownerUserId: true },
+    select: { id: true, name: true, ownerUserId: true, showLinkedOrganizationsPublicly: true },
   });
   if (!group) {
     return { ok: false as const, status: 404, error: "GROUP_NOT_FOUND" };
@@ -93,6 +93,7 @@ async function _GET(req: NextRequest, context: { params: Promise<{ groupId: stri
           id: access.group.id,
           name: access.group.name,
           ownerUserId: access.group.ownerUserId,
+          showLinkedOrganizationsPublicly: access.group.showLinkedOrganizationsPublicly,
         },
         organizations: organizations.map((org) => ({
           id: org.id,
@@ -139,7 +140,7 @@ async function _PATCH(req: NextRequest, context: { params: Promise<{ groupId: st
 
     const group = await prisma.organizationGroup.findUnique({
       where: { id: groupId },
-      select: { id: true, ownerUserId: true },
+      select: { id: true, ownerUserId: true, name: true, showLinkedOrganizationsPublicly: true },
     });
     if (!group) {
       return respondError(ctx, { errorCode: "GROUP_NOT_FOUND", message: "GROUP_NOT_FOUND", retryable: false }, { status: 404 });
@@ -149,15 +150,51 @@ async function _PATCH(req: NextRequest, context: { params: Promise<{ groupId: st
     }
 
     const body = await req.json().catch(() => null);
-    const name = normalizeGroupName(body?.name);
-    if (!name) {
+    const hasNameInput = Object.prototype.hasOwnProperty.call(body ?? {}, "name");
+    const hasVisibilityInput = Object.prototype.hasOwnProperty.call(body ?? {}, "showLinkedOrganizationsPublicly");
+
+    const name = hasNameInput ? normalizeGroupName(body?.name) : null;
+    if (hasNameInput && !name) {
       return respondError(ctx, { errorCode: "INVALID_NAME", message: "Nome inválido.", retryable: false }, { status: 400 });
     }
 
+    const showLinkedOrganizationsPubliclyInput =
+      hasVisibilityInput && typeof body?.showLinkedOrganizationsPublicly === "boolean"
+        ? body.showLinkedOrganizationsPublicly
+        : undefined;
+    if (hasVisibilityInput && showLinkedOrganizationsPubliclyInput === undefined) {
+      return respondError(
+        ctx,
+        {
+          errorCode: "INVALID_VISIBILITY_FLAG",
+          message: "Valor de visibilidade inválido.",
+          retryable: false,
+        },
+        { status: 400 },
+      );
+    }
+
+    if (!hasNameInput && !hasVisibilityInput) {
+      return respondError(
+        ctx,
+        {
+          errorCode: "NO_UPDATES",
+          message: "Sem alterações para aplicar.",
+          retryable: false,
+        },
+        { status: 400 },
+      );
+    }
+
     const updated = await prisma.$transaction(async (tx) => {
+      const updates: { name?: string; showLinkedOrganizationsPublicly?: boolean } = {};
+      if (name) updates.name = name;
+      if (showLinkedOrganizationsPubliclyInput !== undefined) {
+        updates.showLinkedOrganizationsPublicly = showLinkedOrganizationsPubliclyInput;
+      }
       const groupUpdated = await tx.organizationGroup.update({
         where: { id: groupId },
-        data: { name },
+        data: updates,
       });
       await enforceGroupGovernanceInvariants(tx, groupId);
       return groupUpdated;
@@ -165,7 +202,14 @@ async function _PATCH(req: NextRequest, context: { params: Promise<{ groupId: st
 
     return respondOk(
       ctx,
-      { group: { id: updated.id, name: updated.name, ownerUserId: updated.ownerUserId } },
+      {
+        group: {
+          id: updated.id,
+          name: updated.name,
+          ownerUserId: updated.ownerUserId,
+          showLinkedOrganizationsPublicly: updated.showLinkedOrganizationsPublicly,
+        },
+      },
       { status: 200 },
     );
   } catch (err) {

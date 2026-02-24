@@ -1,6 +1,7 @@
 export const runtime = "nodejs";
 
 import type { ReactNode, CSSProperties } from "react";
+import { redirect } from "next/navigation";
 import OrganizationDashboardShell from "../OrganizationDashboardShell";
 import { getCurrentUser } from "@/lib/supabaseServer";
 import {
@@ -13,6 +14,7 @@ import { OrganizationStatus } from "@prisma/client";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { getPlatformOfficialEmail } from "@/lib/platformSettings";
 import { listEffectiveOrganizationMembershipsForUser } from "@/lib/organizationMembers";
+import { buildOrgHubHref } from "@/lib/organizationIdUtils";
 
 type OrganizationSwitcherOption = {
   organizationId: number;
@@ -40,7 +42,13 @@ type OrganizationSwitcherOption = {
  * Não contém lógica de autenticação; isso é tratado no layout pai /organizacao.
  * Busca o organization ativo no server para alimentar o switcher e reduzir fetches client.
  */
-export default async function OrganizationDashboardLayout({ children }: { children: ReactNode }) {
+export default async function OrganizationDashboardLayout({
+  children,
+  requestedOrgId = null,
+}: {
+  children: ReactNode;
+  requestedOrgId?: number | null;
+}) {
   const { user } = await getCurrentUser();
 
   let orgOptions: OrganizationSwitcherOption[] = [];
@@ -59,6 +67,12 @@ export default async function OrganizationDashboardLayout({ children }: { childr
     });
     const activeOrgPromise = getActiveOrganizationForUser(user.id, {
       ...ORG_CONTEXT_UI,
+      ...(requestedOrgId
+        ? {
+            organizationId: requestedOrgId,
+            allowFallback: false,
+          }
+        : {}),
       includeOrganizationFields: "settings",
     });
     const membershipsPromise = listEffectiveOrganizationMembershipsForUser({
@@ -95,6 +109,10 @@ export default async function OrganizationDashboardLayout({ children }: { childr
         };
         activeRole = membership.role ?? null;
       }
+    }
+
+    if (requestedOrgId && !activeOrganization) {
+      redirect(buildOrgHubHref("/organizations"));
     }
 
     if (activeOrganization) {
@@ -179,7 +197,7 @@ export default async function OrganizationDashboardLayout({ children }: { childr
         avatarUrl: organizationAvatarUrl,
         organizationKind: activeOrganization.organizationKind ?? null,
         primaryModule: activeOrganization.primaryModule ?? null,
-        modules: activeModules,
+        tools: activeModules,
       }
     : null;
 

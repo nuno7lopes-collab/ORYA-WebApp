@@ -1,4 +1,4 @@
-import { describe, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { execSync } from "node:child_process";
 
 const TOURNAMENT_ENTRY_WRITE_CMD =
@@ -37,15 +37,11 @@ describe("padel entry/match write guardrails (D18.01, D18.06, D18.07)", () => {
     );
 
     const unexpected = Array.from(files).filter((file) => !ENTRY_ALLOWLIST.has(file));
-    if (unexpected.length) {
-      throw new Error(`TournamentEntry write allowlist violation: ${unexpected.join(", ")}`);
-    }
+    expect(unexpected).toEqual([]);
   });
 
   it("não permite writes de TournamentMatch dentro de módulos Padel", () => {
     const raw = run(TOURNAMENT_MATCH_WRITE_IN_PADEL_CMD);
-    if (raw) {
-      throw new Error(`TournamentMatch write found in Padel scope:\n${raw}`);
-    }
+    expect(raw).toBe("");
   });
 });

@@ -53,6 +53,17 @@ function sign(payload: string) {
   return base64Url(crypto.createHmac("sha256", key).update(payload).digest());
 }
 
+function safeTimingEqual(left: string, right: string) {
+  const leftBuffer = Buffer.from(left, "utf8");
+  const rightBuffer = Buffer.from(right, "utf8");
+  if (leftBuffer.length !== rightBuffer.length) return false;
+  try {
+    return crypto.timingSafeEqual(leftBuffer, rightBuffer);
+  } catch {
+    return false;
+  }
+}
+
 function encodePayload(payload: SessionPayload) {
   return base64Url(JSON.stringify(payload));
 }
@@ -109,7 +120,7 @@ export function verifyMfaSession(token: string | null | undefined, userId?: stri
   const [encoded, signature] = token.split(".");
   if (!encoded || !signature) return { ok: false as const, reason: "format" };
   const expected = sign(encoded);
-  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+  if (!safeTimingEqual(signature, expected)) {
     return { ok: false as const, reason: "signature" };
   }
   const payload = decodePayload(encoded);

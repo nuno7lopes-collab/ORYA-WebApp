@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import OrgHubTopNav from "@/app/org/_internal/core/organizations/OrgHubTopNav";
-import { buildOrgHubHref } from "@/lib/organizationIdUtils";
+import { buildOrgHref, buildOrgHubHref } from "@/lib/organizationIdUtils";
+import { resolveGroupDisplayName } from "@/lib/orgHub/groupDisplayName";
 import { cn } from "@/lib/utils";
 
 type OrganizationSummary = {
@@ -237,8 +239,7 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
   const [rankingsError, setRankingsError] = useState<string | null>(null);
   const [rankingsData, setRankingsData] = useState<RankingsResponse | null>(null);
 
-  const groupDisplayName = group.name?.trim() ? group.name.trim() : `Grupo #${group.id}`;
-  const groupDashboardHref = buildOrgHubHref(`/groups/${group.id}`);
+  const groupDisplayName = resolveGroupDisplayName(group.name, group.id);
   const scopedOrgIds = useMemo(
     () => (orgSelection.length ? orgSelection : organizations.map((org) => org.id)),
     [orgSelection, organizations],
@@ -247,6 +248,7 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
     () => (orgSelection.length ? `?orgIds=${orgSelection.join(",")}` : ""),
     [orgSelection],
   );
+  const selectedOrganizationsCount = orgSelection.length || organizations.length;
 
   useEffect(() => {
     if (tab !== "agenda") return;
@@ -454,7 +456,7 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
     <div className="mx-auto w-full max-w-[1240px] px-4 py-10 text-white sm:px-6 md:py-12 lg:px-8">
       <div className="space-y-6">
         <section className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl sm:p-6">
-          <OrgHubTopNav groupDashboardHref={groupDashboardHref} />
+          <OrgHubTopNav />
           <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-[11px] uppercase tracking-[0.28em] text-white/75">Dashboard do grupo</p>
@@ -466,6 +468,24 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
             <div className="rounded-full border border-white/15 bg-white/8 px-4 py-2 text-[11px] uppercase tracking-[0.24em] text-white/70">
               ID #{group.id}
             </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <Link
+              href={buildOrgHubHref("/groups")}
+              className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55"
+            >
+              Voltar a grupos
+            </Link>
+            <Link
+              href={buildOrgHubHref(`/groups/${group.id}/governance`)}
+              className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55"
+            >
+              Governança
+            </Link>
+            <span className="rounded-full border border-white/20 bg-white/8 px-3 py-1.5 text-[11px] font-semibold text-white/80">
+              {selectedOrganizationsCount} organização(ões) no filtro
+            </span>
           </div>
 
           <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
@@ -484,6 +504,98 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
             <div className="rounded-2xl border border-[#22D3EE]/32 bg-[#22D3EE]/10 p-3">
               <p className="text-[10px] uppercase tracking-[0.2em] text-[#B5F9FF]">Agenda 7 dias</p>
               <p className="mt-1 text-xl font-semibold text-[#DEFDFF]">{metrics.upcomingAgenda}</p>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-white/14 bg-white/6 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/70">
+                Filtro transversal por organização
+              </p>
+              {orgSelection.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setOrgSelection([])}
+                  className="rounded-full border border-white/20 bg-white/8 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/75 transition hover:bg-white/12"
+                >
+                  Limpar filtro
+                </button>
+              )}
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {organizations.map((org) => {
+                const active = orgSelection.length === 0 || orgSelection.includes(org.id);
+                return (
+                  <button
+                    key={`global-org-filter-${org.id}`}
+                    type="button"
+                    onClick={() =>
+                      setOrgSelection((prev) =>
+                        prev.length === 0
+                          ? [org.id]
+                          : prev.includes(org.id)
+                            ? prev.filter((id) => id !== org.id)
+                            : [...prev, org.id],
+                      )
+                    }
+                    className={cn(
+                      "rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition",
+                      active
+                        ? "border-[#22D3EE]/50 bg-[#22D3EE]/15 text-[#D8FDFF]"
+                        : "border-white/20 bg-white/8 text-white/70 hover:bg-white/12",
+                    )}
+                  >
+                    {org.name}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-[12px] text-white/60">
+              {orgSelection.length === 0
+                ? "Sem filtro específico: a mostrar todas as organizações."
+                : `A mostrar ${orgSelection.length} de ${organizations.length} organizações.`}
+            </p>
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-white/14 bg-white/6 p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/70">
+              Atalhos operacionais por organização
+            </p>
+            <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {organizations.map((org) => (
+                <div
+                  key={`group-tool-${org.id}`}
+                  className="rounded-2xl border border-white/10 bg-black/25 p-3"
+                >
+                  <p className="text-sm font-semibold text-white">{org.name}</p>
+                  <p className="text-[11px] text-white/55">{org.username ? `@${org.username}` : "Sem username"}</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Link
+                      href={buildOrgHref(org.id, "/overview")}
+                      className="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80 transition hover:bg-white/16"
+                    >
+                      Visão geral
+                    </Link>
+                    <Link
+                      href={buildOrgHref(org.id, "/team")}
+                      className="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80 transition hover:bg-white/16"
+                    >
+                      Equipa
+                    </Link>
+                    <Link
+                      href={buildOrgHref(org.id, "/finance")}
+                      className="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80 transition hover:bg-white/16"
+                    >
+                      Financeiro org
+                    </Link>
+                  </div>
+                </div>
+              ))}
+              {organizations.length === 0 && (
+                <p className="rounded-2xl border border-white/10 bg-black/25 p-3 text-sm text-white/65">
+                  Este grupo ainda não tem organizações ativas.
+                </p>
+              )}
             </div>
           </div>
 
@@ -508,6 +620,13 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
             })}
           </div>
         </section>
+
+        {organizations.length === 0 && (
+          <section className="rounded-3xl border border-white/12 bg-white/6 p-5 text-sm text-white/70">
+            Este grupo ainda não tem organizações ativas. Cria ou adiciona uma organização para ativar métricas e
+            análises agregadas.
+          </section>
+        )}
 
         {tab === "overview" && (
           <section className="grid gap-4 lg:grid-cols-2">
@@ -593,44 +712,6 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
                     className="rounded-xl border border-white/20 bg-black/30 px-2.5 py-1.5 text-[12px] text-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55"
                   />
                 </div>
-              </div>
-
-              <div className="mt-4 flex flex-wrap gap-2">
-                {organizations.map((org) => {
-                  const active = orgSelection.length === 0 || orgSelection.includes(org.id);
-                  return (
-                    <button
-                      key={`org-filter-${org.id}`}
-                      type="button"
-                      onClick={() =>
-                        setOrgSelection((prev) =>
-                          prev.length === 0
-                            ? [org.id]
-                            : prev.includes(org.id)
-                              ? prev.filter((id) => id !== org.id)
-                              : [...prev, org.id],
-                        )
-                      }
-                      className={cn(
-                        "rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition",
-                        active
-                          ? "border-[#22D3EE]/50 bg-[#22D3EE]/15 text-[#D8FDFF]"
-                          : "border-white/20 bg-white/8 text-white/70 hover:bg-white/12",
-                      )}
-                    >
-                      {org.name}
-                    </button>
-                  );
-                })}
-                {orgSelection.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setOrgSelection([])}
-                    className="rounded-full border border-white/20 bg-white/8 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/70 hover:bg-white/12"
-                  >
-                    Ver todas
-                  </button>
-                )}
               </div>
 
               <div className="mt-3 flex flex-wrap gap-2">

@@ -51,6 +51,15 @@ jobs:
       - name: Typecheck mobile
         run: npm run typecheck:mobile
 
+      - name: Operational scripts allowlist gate
+        run: npm run gate:scripts-ops
+
+      - name: Operational scripts catalog gate
+        run: npm run gate:scripts-catalog
+
+      - name: Test hygiene gate
+        run: npm run gate:test-hygiene
+
       - name: API contract gate
         run: npm run gate:api-contract
 

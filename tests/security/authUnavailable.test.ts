@@ -4,6 +4,7 @@ import {
   EmailNotVerifiedError,
   UnauthenticatedError,
   ensureAuthenticated,
+  isUserEmailVerified,
   isUnauthenticatedError,
 } from "@/lib/security";
 
@@ -96,5 +97,27 @@ describe("isUnauthenticatedError", () => {
 
   it("returns false for generic errors", () => {
     expect(isUnauthenticatedError(new Error("generic"))).toBe(false);
+  });
+});
+
+describe("isUserEmailVerified", () => {
+  it("em produção não considera verificado quando faltam campos de confirmação", () => {
+    const previousEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    try {
+      expect(isUserEmailVerified({ id: "user_no_confirmation_fields" } as any)).toBe(false);
+    } finally {
+      process.env.NODE_ENV = previousEnv;
+    }
+  });
+
+  it("mantém compatibilidade em testes para mocks antigos sem campos de confirmação", () => {
+    const previousEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "test";
+    try {
+      expect(isUserEmailVerified({ id: "legacy_test_mock" } as any)).toBe(true);
+    } finally {
+      process.env.NODE_ENV = previousEnv;
+    }
   });
 });

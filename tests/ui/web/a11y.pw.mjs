@@ -69,7 +69,8 @@ test("@a11y authenticated user/org/admin routes have no critical axe violations"
   const userBearer = process.env.UI_E2E_USER_BEARER_RESOLVED;
   const adminBearer = process.env.UI_E2E_ADMIN_BEARER_RESOLVED;
   if (!userBearer) {
-    test.skip(true, "missing resolved user bearer");
+    test.info().annotations.push({ type: "env-missing", description: "missing resolved user bearer" });
+    return;
   }
   const orgId = process.env.UI_E2E_ORG_ID_RESOLVED || null;
 

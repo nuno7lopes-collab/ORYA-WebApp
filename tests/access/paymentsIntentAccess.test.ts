@@ -127,4 +127,12 @@ describe("payments intent access gate", () => {
     expect(file).toContain("requiresOrganizationStripe(event.org_type)");
     expect(file).not.toContain('payout_mode !== "PLATFORM"');
   });
+
+  it("guardrail: fluxo PADEL nao pode forcar requireStripe=true hardcoded", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const file = readFileSync(resolve(process.cwd(), "app/api/payments/intent/route.ts"), "utf8");
+    expect(file).not.toContain("requireStripe: true");
+    expect(file).toContain("requiresOrganizationStripeForPairing");
+  });
 });

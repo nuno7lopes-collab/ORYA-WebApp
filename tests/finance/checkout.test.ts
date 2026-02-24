@@ -49,6 +49,40 @@ vi.mock("@/domain/access/evaluateAccess", () => ({ evaluateEventAccess }));
 
 const ORDER_ID = "order-1";
 const REG_ID = "reg-1";
+const ticketResolvedSnapshot = {
+  orgId: 10,
+  customerIdentityId: "identity-1",
+  eventId: 1,
+  ticketTypeIds: [1],
+  snapshot: {
+    currency: "EUR",
+    gross: 1200,
+    discounts: 0,
+    taxes: 0,
+    platformFee: 200,
+    total: 1200,
+    netToOrgPending: 1000,
+    processorFeesStatus: ProcessorFeesStatus.PENDING,
+    processorFeesActual: null,
+    feeMode: FeeMode.ADDED,
+    feeBps: 500,
+    feeFixed: 30,
+    feePolicyVersion: "a".repeat(64),
+    promoPolicyVersion: null,
+    sourceType: SourceType.TICKET_ORDER,
+    sourceId: ORDER_ID,
+    lineItems: [
+      {
+        quantity: 2,
+        unitPriceCents: 500,
+        totalAmountCents: 1000,
+        currency: "EUR",
+        ticketTypeId: 1,
+        sourceLineId: "1",
+      },
+    ],
+  },
+};
 
 let ticketOrderState: any = null;
 let padelRegistrationState: any = null;
@@ -247,6 +281,7 @@ describe("createCheckout", () => {
       sourceType: SourceType.TICKET_ORDER,
       sourceId: ORDER_ID,
       idempotencyKey: "idem-1",
+      resolvedSnapshot: ticketResolvedSnapshot,
     });
 
     expect(output.status).toBe("CREATED");
@@ -276,6 +311,7 @@ describe("createCheckout", () => {
       sourceType: SourceType.TICKET_ORDER,
       sourceId: ORDER_ID,
       idempotencyKey: "idem-1",
+      resolvedSnapshot: ticketResolvedSnapshot,
     });
 
     await createCheckout({
@@ -283,6 +319,7 @@ describe("createCheckout", () => {
       sourceType: SourceType.TICKET_ORDER,
       sourceId: ORDER_ID,
       idempotencyKey: "idem-1",
+      resolvedSnapshot: ticketResolvedSnapshot,
     });
 
     expect(prismaMock.payment.create).toHaveBeenCalledTimes(1);
@@ -314,6 +351,7 @@ describe("createCheckout", () => {
       sourceType: SourceType.TICKET_ORDER,
       sourceId: ORDER_ID,
       idempotencyKey: "idem-3",
+      resolvedSnapshot: ticketResolvedSnapshot,
     });
 
     expect(output.paymentId).toBe("payment-1");
@@ -339,6 +377,7 @@ describe("createCheckout", () => {
         sourceId: ORDER_ID,
         customerIdentityId: "identity-guest",
         idempotencyKey: "idem-guest",
+        resolvedSnapshot: ticketResolvedSnapshot,
       }),
     ).rejects.toThrow("GUEST_CHECKOUT_NOT_ALLOWED");
   });
@@ -366,6 +405,7 @@ describe("createCheckout", () => {
         sourceId: ORDER_ID,
         customerIdentityId: "identity-user",
         idempotencyKey: "idem-private-block",
+        resolvedSnapshot: ticketResolvedSnapshot,
       }),
     ).rejects.toThrow("INVITE_REQUIRED");
   });
@@ -392,6 +432,7 @@ describe("createCheckout", () => {
       sourceId: ORDER_ID,
       customerIdentityId: "identity-user",
       idempotencyKey: "idem-private-allow",
+      resolvedSnapshot: ticketResolvedSnapshot,
     });
 
     expect(output.status).toBe("CREATED");
@@ -420,6 +461,7 @@ describe("createCheckout", () => {
         inviteToken: "tok",
         customerIdentityId: "identity-user",
         idempotencyKey: "idem-access",
+        resolvedSnapshot: ticketResolvedSnapshot,
       }),
     ).rejects.toThrow("INVITE_TOKEN_REQUIRED");
     expect(evaluateEventAccess).toHaveBeenCalled();
@@ -449,6 +491,17 @@ describe("createCheckout", () => {
     expect(output.status).toBe("CREATED");
     expect(createdPayment.organizationId).toBe(30);
     expect(createdPayment.sourceType).toBe(SourceType.STORE_ORDER);
+  });
+
+  it("exige resolvedSnapshot para TICKET_ORDER", async () => {
+    await expect(
+      createCheckout({
+        orgId: 10,
+        sourceType: SourceType.TICKET_ORDER,
+        sourceId: ORDER_ID,
+        idempotencyKey: "idem-ticket-order-no-snapshot",
+      }),
+    ).rejects.toThrow("TICKET_ORDER_RESOLVED_SNAPSHOT_REQUIRED");
   });
 
 });

@@ -19,7 +19,7 @@ import {
 import { resolveMemberModuleAccess } from "@/lib/organizationRbac";
 import { OrganizationMemberRole, OrganizationModule, OrganizationRolePack } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
-import { parseOrganizationModules, resolvePrimaryModule } from "@/lib/organizationCategories";
+import { parseOrganizationTools, resolvePrimaryModule } from "@/lib/organizationCategories";
 import { AppleMapsLoader } from "@/app/components/maps/AppleMapsLoader";
 import { AppleLocationMapPreview } from "@/app/components/maps/AppleLocationMapPreview";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
@@ -209,7 +209,7 @@ export function NewOrganizationEventPage({
       officialEmail?: string | null;
       officialEmailVerifiedAt?: string | null;
       primaryModule?: string | null;
-      modules?: string[] | null;
+      tools?: string[] | null;
       padelDefaults?: {
         ruleSetId?: number | null;
         favoriteCategories?: number[];
@@ -334,16 +334,16 @@ export function NewOrganizationEventPage({
     Boolean(organizationStatus?.organization?.id) ||
     Boolean(organizationStatus?.membershipRole);
   const isAdmin = roles.some((r) => r?.toLowerCase() === "admin");
-  const normalizedModules = useMemo(
-    () => parseOrganizationModules(organizationStatus?.organization?.modules) ?? [],
-    [organizationStatus?.organization?.modules],
+  const normalizedTools = useMemo(
+    () => parseOrganizationTools(organizationStatus?.organization?.tools) ?? [],
+    [organizationStatus?.organization?.tools],
   );
   const primaryModule = resolvePrimaryModule(
     organizationStatus?.organization?.primaryModule ?? null,
-    normalizedModules,
+    normalizedTools,
   );
-  const hasEventosModule = normalizedModules.includes("EVENTOS") || primaryModule === "EVENTOS";
-  const hasTorneiosModule = normalizedModules.includes("TORNEIOS") || primaryModule === "TORNEIOS";
+  const hasEventosModule = normalizedTools.includes("EVENTOS") || primaryModule === "EVENTOS";
+  const hasTorneiosModule = normalizedTools.includes("TORNEIOS") || primaryModule === "TORNEIOS";
   const hasCurrentModule = isPadelPreset ? hasTorneiosModule : hasEventosModule;
   const canSwitchPreset = !forcePreset && hasEventosModule && hasTorneiosModule;
   const isPadelPaid = isPadelPreset && !isGratisEvent;
@@ -480,7 +480,7 @@ export function NewOrganizationEventPage({
       return "A tua organização ainda não está ativa.";
     }
     if (!hasCurrentModule) {
-      return `Ativa a ferramenta de ${primaryLabelPlural} nas apps da organização.`;
+      return `Ativa a ferramenta de ${primaryLabelPlural} nas ferramentas da organizacao.`;
     }
     if (!canCreateEvents) {
       return `Sem permissões para criar ${primaryLabelPlural} nesta organização.`;

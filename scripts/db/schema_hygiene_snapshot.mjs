@@ -100,7 +100,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const schemaText = fs.readFileSync(SCHEMA_PATH, "utf8");
   const prismaModels = parsePrismaModels(schemaText).filter((m) => m.schema === "app_v3" || m.schema === "auth");
-  const blockedMissingTables = new Set(["padel_tournament_roles", "refund_policy_versions"]);
+  const blockedMissingTables = new Set(["padel_tournament_roles"]);
 
   const client = new Client({
     connectionString: process.env.DATABASE_URL,

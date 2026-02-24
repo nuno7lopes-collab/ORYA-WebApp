@@ -61,6 +61,8 @@ describe("padel lifecycle permissions", () => {
     const req = new NextRequest("http://localhost/api/padel/tournaments/lifecycle?eventId=1");
     const res = await GET(req);
     expect(res.status).toBe(200);
+    expect(ensureMemberModuleAccess).toHaveBeenCalled();
+    expect(getActiveOrganizationForUser).toHaveBeenCalled();
   });
 
   it("bloqueia edição sem permissão EDIT", async () => {
@@ -94,5 +96,7 @@ describe("padel lifecycle permissions", () => {
     });
     const res = await POST(req);
     expect(res.status).toBe(403);
+    expect(ensureMemberModuleAccess).toHaveBeenCalled();
+    expect(getActiveOrganizationForUser).toHaveBeenCalled();
   });
 });

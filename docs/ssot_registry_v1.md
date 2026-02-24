@@ -1584,9 +1584,22 @@ DORG.03A) Ferramentas da Organização — fonte única + fail-closed (FECHADO)
 		–	tiver conteúdo publicável.
 	•	Visibilidade no dashboard (mostrar/ocultar cards) é preferência de UI e NÃO altera capacidade de domínio.
 	•	Escopo da preferência de visibilidade no dashboard é por organização (não por utilizador).
-	•	Alteração da visibilidade no dashboard é permitida apenas a `OWNER`, `CO_OWNER` e `ADMIN`.
-	•	Toggle canónico de ferramenta (enabled/disabled) afeta domínio e perfil público de forma determinística (sem bypass por URL direta).
-		•	Ferramentas estruturais no dashboard (não ocultáveis): `Definições`, `Finanças`, `Equipa`.
+			•	Alteração da visibilidade no dashboard é permitida apenas a `OWNER`, `CO_OWNER` e `ADMIN`.
+			•	Toggle canónico de ferramenta (enabled/disabled) afeta domínio e perfil público de forma determinística (sem bypass por URL direta).
+			•	Endpoints canónicos de comando por ferramenta: `POST /api/org/:orgId/tools/:toolKey` com `action=enable|disable` (hard-cut, sem mutação por lista).
+				•	Ferramentas estruturais no dashboard (não ocultáveis): `Calendário`, `Finanças`, `Definições`, `Políticas`, `Equipa`.
+				•	Ativar/desativar ferramenta é permitido apenas a `OWNER`, `CO_OWNER` e `ADMIN`.
+				•	Ferramentas base não desativáveis ao nível de domínio: `RESERVAS` (calendário), `FINANCEIRO`, `DEFINICOES` (definições+políticas) e `STAFF` (equipa).
+		•	Vocabulario canonico de produto nas superficies B2B: `Ferramentas`.
+			–	`apps` e `modulos` sao termos tecnicos internos e nao devem aparecer na copy de gestao.
+		•	Desativacao canonica de ferramenta e fail-closed e bloqueada quando existem operacoes ativas no dominio:
+			–	`EVENTOS`: eventos ativos ou em preparacao;
+			–	`RESERVAS`: servicos/reservas/alteracoes pendentes;
+			–	`TORNEIOS`: clubes ativos ou torneios em lifecycle `DRAFT|PUBLISHED|LOCKED`;
+			–	`INSCRICOES`: formularios em `DRAFT|PUBLISHED`;
+			–	`LOJA`: loja ativa ou encomendas operacionais;
+			–	`MENSAGENS`: conversas internas abertas.
+		•	Ativacao de `RESERVAS` deve auto-provisionar disponibilidade base da organizacao (dias uteis 09:00-19:00) quando inexistente.
 
 
 #### G04.008 + G04.009 (origem: DORG.04A + DORG.05A)
@@ -1837,7 +1850,7 @@ Entitlements são emitidos após `Payment=SUCCEEDED` e persistência do ledger b
 
 C10) Stripe Webhooks ↔ Finanças (ingestão e reconciliação) — **FECHADO**
 Regras:
-	•	Endpoint canónico: `/api/stripe/webhook` (alias `/api/webhooks/stripe` deve apontar para o mesmo handler).
+	•	Endpoint canónico único: `/api/stripe/webhook`.
 	•	Assinatura Stripe obrigatória; rejeitar se `livemode` não corresponder ao modo esperado.
 	•	Dedupe obrigatório por `stripeEventId` (idempotencyKey global).
 	•	Resolver `orgId` por `stripeAccountId` (Connect) ou metadata `orgId` no PaymentIntent/Charge.
@@ -4263,7 +4276,6 @@ Classificação canónica:
 - `app/api/internal/checkin/consume/route.ts`
 - `app/api/cron/operations/route.ts`
 - `app/api/stripe/webhook/route.ts`
-- `app/api/webhooks/stripe/route.ts`
 <!-- P0_ENDPOINTS_END -->
 
 ## Operational SLIs, SLOs & Alerting (NORMATIVE)

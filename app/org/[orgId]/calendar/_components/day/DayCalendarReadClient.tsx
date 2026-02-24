@@ -3,9 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { getDateParts } from "@/lib/reservas/availability";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
 import { ContextDrawer } from "@/components/ui/context-drawer";
+import { buildCalendarOperationalGuidance } from "../operationalGuidance";
 import {
   addDays,
   buildActiveFilterChips,
@@ -43,7 +45,7 @@ import type {
 const PROFESSIONAL_OPTION_PREFIX = "P:";
 const RESOURCE_OPTION_PREFIX = "R:";
 const COURT_OPTION_PREFIX = "C:";
-const KIND_FILTER_OPTIONS = [
+const ALL_KIND_FILTER_OPTIONS = [
   { value: "RESERVATION", label: "Reserva" },
   { value: "CLASS", label: "Aula" },
   { value: "EVENT", label: "Evento" },
@@ -211,8 +213,8 @@ export default function DayCalendarReadClient() {
   const [hourHeight] = useState(DEFAULT_HOUR_HEIGHT);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [visibleKinds, setVisibleKinds] = useState<Array<(typeof KIND_FILTER_OPTIONS)[number]["value"]>>(
-    KIND_FILTER_OPTIONS.map((option) => option.value),
+  const [visibleKinds, setVisibleKinds] = useState<Array<(typeof ALL_KIND_FILTER_OPTIONS)[number]["value"]>>(
+    ALL_KIND_FILTER_OPTIONS.map((option) => option.value),
   );
   const [appliedFilters, setAppliedFilters] = useState(() => emptyFilters());
   const [draftFilters, setDraftFilters] = useState(() => emptyFilters());
@@ -299,26 +301,37 @@ export default function DayCalendarReadClient() {
           to: dayEndExclusive.toISOString(),
         }).toString()}`
       : null;
+
+  const { data: agendaData, error: agendaError, isLoading: agendaLoading } = useSWR<AgendaResponse>(agendaUrl, fetchJson);
+  const agendaCapabilities = agendaData?.capabilities ?? null;
+  const operationalMode = agendaData?.operationalMode ?? null;
+  const reservationsCapability = agendaCapabilities?.reservas;
+  const reservationsEnabled = reservationsCapability === true;
+  const scopeSelectionEnabled = reservationsCapability !== false;
+
   const reservationsUrl =
-    Number.isFinite(organizationId) && organizationId > 0
+    reservationsEnabled && Number.isFinite(organizationId) && organizationId > 0
       ? `/api/org/${organizationId}/reservas?${new URLSearchParams({
           from: bookingsFrom.toISOString(),
           to: bookingsTo.toISOString(),
         }).toString()}`
       : null;
-  // These endpoints already enforce org roles/scopes (staff sees own scope; admins can see all).
+  // Estes endpoints continuam no domínio de reservas e só são usados quando a ferramenta está ativa.
   const professionalsUrl =
-    Number.isFinite(organizationId) && organizationId > 0 ? `/api/org/${organizationId}/reservas/profissionais` : null;
+    reservationsEnabled && Number.isFinite(organizationId) && organizationId > 0
+      ? `/api/org/${organizationId}/reservas/profissionais`
+      : null;
   const resourcesUrl =
-    Number.isFinite(organizationId) && organizationId > 0
+    reservationsEnabled && Number.isFinite(organizationId) && organizationId > 0
       ? `/api/org/${organizationId}/reservas/recursos?${new URLSearchParams({
           includeCourts: "1",
         }).toString()}`
       : null;
   const servicesUrl =
-    Number.isFinite(organizationId) && organizationId > 0 ? `/api/org/${organizationId}/servicos` : null;
+    reservationsEnabled && Number.isFinite(organizationId) && organizationId > 0
+      ? `/api/org/${organizationId}/servicos`
+      : null;
 
-  const { data: agendaData, error: agendaError, isLoading: agendaLoading } = useSWR<AgendaResponse>(agendaUrl, fetchJson);
   const { data: reservationsData } = useSWR<ReservationListResponse>(reservationsUrl, fetchJson);
   const { data: professionalsData } = useSWR<CollectionResponse<ProfessionalItem>>(professionalsUrl, fetchJson);
   const { data: resourcesData } = useSWR<CollectionResponse<ResourceItem>>(resourcesUrl, fetchJson);
@@ -340,6 +353,25 @@ export default function DayCalendarReadClient() {
     () => (servicesData?.items ?? []).filter((item) => item.isActive),
     [servicesData?.items],
   );
+  const availableKindOptions = useMemo(() => {
+    if (!agendaCapabilities) return ALL_KIND_FILTER_OPTIONS;
+    return ALL_KIND_FILTER_OPTIONS.filter((option) => {
+      if (option.value === "RESERVATION" || option.value === "CLASS") return agendaCapabilities.reservas;
+      if (option.value === "EVENT") return agendaCapabilities.eventos;
+      if (option.value === "TOURNAMENT") return agendaCapabilities.torneios;
+      return false;
+    });
+  }, [agendaCapabilities]);
+
+  useEffect(() => {
+    const allowed = new Set(availableKindOptions.map((option) => option.value));
+    setVisibleKinds((current) => {
+      const next = current.filter((kind) => allowed.has(kind));
+      if (next.length > 0) return next;
+      if (availableKindOptions.length > 0) return [availableKindOptions[0].value];
+      return current;
+    });
+  }, [availableKindOptions]);
 
   const columnSeeds = useMemo(
     () =>
@@ -355,7 +387,7 @@ export default function DayCalendarReadClient() {
   );
 
   const availabilityKey =
-    Number.isFinite(organizationId) && organizationId > 0 && columnSeeds.length > 0
+    reservationsEnabled && Number.isFinite(organizationId) && organizationId > 0 && columnSeeds.length > 0
       ? `day-availability:${organizationId}:${getDayKey(selectedDate, timezone)}:${columnSeeds
           .map((seed) => `${seed.entityKind}:${seed.entityId}`)
           .join("|")}`
@@ -388,7 +420,9 @@ export default function DayCalendarReadClient() {
     },
   );
   const organizationAvailabilityKey =
-    Number.isFinite(organizationId) && organizationId > 0 ? `org-availability:${organizationId}` : null;
+    reservationsEnabled && Number.isFinite(organizationId) && organizationId > 0
+      ? `org-availability:${organizationId}`
+      : null;
   const { data: organizationAvailability } = useSWR<ReturnType<typeof normalizeAvailability> | undefined>(
     organizationAvailabilityKey,
     async () => {
@@ -435,11 +469,12 @@ export default function DayCalendarReadClient() {
       const matchesResource = Boolean(event.resourceId && selectedResourceIds.includes(event.resourceId));
       const matchesCourt = Boolean(event.courtId && selectedCourtIds.includes(event.courtId));
       const hasAnySelection =
-        selectedProfessionalIds.length > 0 || selectedResourceIds.length > 0 || selectedCourtIds.length > 0;
+        scopeSelectionEnabled &&
+        (selectedProfessionalIds.length > 0 || selectedResourceIds.length > 0 || selectedCourtIds.length > 0);
       if (!hasAnySelection) return true;
       return matchesProfessional || matchesResource || matchesCourt;
     });
-  }, [enrichedEvents, selectedCourtIds, selectedProfessionalIds, selectedResourceIds]);
+  }, [enrichedEvents, scopeSelectionEnabled, selectedCourtIds, selectedProfessionalIds, selectedResourceIds]);
 
   const filteredEventsBase = useMemo(
     () => filterEvents(scopedEvents, appliedFilters, timezone),
@@ -450,6 +485,15 @@ export default function DayCalendarReadClient() {
     [filteredEventsBase, visibleKinds],
   );
   const statusSummary = useMemo(() => summarizeAgendaItemsByStatus(filteredEvents), [filteredEvents]);
+  const operationalGuidance = useMemo(
+    () =>
+      buildCalendarOperationalGuidance({
+        organizationId,
+        operationalMode,
+        capabilities: agendaCapabilities,
+      }),
+    [agendaCapabilities, operationalMode, organizationId],
+  );
   const filteredEventsById = useMemo(() => new Map(filteredEvents.map((event) => [event.id, event])), [filteredEvents]);
 
   const professionalOptions = useMemo(
@@ -555,7 +599,7 @@ export default function DayCalendarReadClient() {
       return next;
     });
   };
-  const toggleVisibleKind = (kind: (typeof KIND_FILTER_OPTIONS)[number]["value"]) => {
+  const toggleVisibleKind = (kind: (typeof ALL_KIND_FILTER_OPTIONS)[number]["value"]) => {
     setVisibleKinds((current) => {
       if (current.includes(kind)) {
         const next = current.filter((item) => item !== kind);
@@ -565,9 +609,10 @@ export default function DayCalendarReadClient() {
     });
   };
   const hasActiveSelection =
-    selectedProfessionalIds.length > 0 || selectedResourceIds.length > 0 || selectedCourtIds.length > 0;
+    scopeSelectionEnabled &&
+    (selectedProfessionalIds.length > 0 || selectedResourceIds.length > 0 || selectedCourtIds.length > 0);
   const selectedScopesCount =
-    selectedProfessionalIds.length + selectedResourceIds.length + selectedCourtIds.length;
+    scopeSelectionEnabled ? selectedProfessionalIds.length + selectedResourceIds.length + selectedCourtIds.length : 0;
   const selectedScopesLabel = useMemo(() => {
     const parts: string[] = [];
     if (selectedProfessionalIds.length > 0) {
@@ -655,14 +700,42 @@ export default function DayCalendarReadClient() {
 
   return (
     <div className="space-y-4 p-4 md:p-6">
+      <section className="rounded-2xl border border-white/10 bg-[linear-gradient(150deg,rgba(34,211,238,0.14),rgba(16,24,39,0.82))] p-4 shadow-[0_24px_90px_rgba(0,0,0,0.45)]">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="max-w-3xl">
+            <p className="text-xs uppercase tracking-[0.22em] text-cyan-100/70">{operationalGuidance.badge}</p>
+            <h1 className="mt-1 text-2xl font-semibold text-white">Calendário operacional</h1>
+            <p className="mt-2 text-sm text-white/80">{operationalGuidance.description}</p>
+            <p className="mt-2 text-xs text-white/60">{operationalGuidance.title}</p>
+          </div>
+          {operationalGuidance.actions.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {operationalGuidance.actions.map((action) => (
+                <Link
+                  key={`day-guidance-action-${action.id}`}
+                  href={action.href}
+                  className={
+                    action.tone === "primary"
+                      ? "rounded-full border border-cyan-300/45 bg-cyan-400/12 px-3 py-1.5 text-xs text-cyan-100 transition hover:border-cyan-300/75"
+                      : "rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-xs text-white/80 transition hover:border-white/35 hover:text-white"
+                  }
+                >
+                  {action.label}
+                </Link>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </section>
+
       <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
           <p className="text-[11px] text-white/58">
             {hasActiveSelection
               ? `Seleção ativa (${selectedScopesCount}): ${selectedScopesLabel}.`
-              : "Sem seleção ativa: vista geral consolidada."}
+              : operationalGuidance.selectionHint}
           </p>
-          {hasActiveSelection ? (
+          {scopeSelectionEnabled && hasActiveSelection ? (
             <button
               type="button"
               onClick={clearSelections}
@@ -699,6 +772,8 @@ export default function DayCalendarReadClient() {
           replaceState({ nextResources: nextResourceIds, nextCourts: nextCourtIds });
         }}
         onResetSelections={clearSelections}
+        scopeSelectionEnabled={scopeSelectionEnabled}
+        scopeSelectionHint={operationalGuidance.selectionHint}
         hasActiveSelection={hasActiveSelection}
         onOpenFilters={() => {
           setDraftFilters(cloneFilters(appliedFilters));
@@ -733,7 +808,7 @@ export default function DayCalendarReadClient() {
 
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-[11px] uppercase tracking-[0.14em] text-white/50">Tipo</span>
-        {KIND_FILTER_OPTIONS.map((option) => {
+        {availableKindOptions.map((option) => {
           const isActive = visibleKinds.includes(option.value);
           return (
             <button
@@ -828,7 +903,7 @@ export default function DayCalendarReadClient() {
           ) : null}
           {!agendaLoading && !agendaError && filteredEvents.length === 0 ? (
             <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm text-white/65">
-              <p>Sem reservas para os filtros e data selecionados.</p>
+              <p>Sem itens de agenda para os filtros e data selecionados.</p>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
@@ -855,6 +930,19 @@ export default function DayCalendarReadClient() {
                     Mostrar geral
                   </button>
                 ) : null}
+                {operationalGuidance.actions.map((action) => (
+                  <Link
+                    key={`day-empty-action-${action.id}`}
+                    href={action.href}
+                    className={
+                      action.tone === "primary"
+                        ? "rounded-full border border-cyan-300/45 bg-cyan-400/12 px-3 py-1 text-xs text-cyan-100 transition hover:border-cyan-300/75"
+                        : "rounded-full border border-white/20 px-3 py-1 text-xs text-white/80 transition hover:border-white/35 hover:text-white"
+                    }
+                  >
+                    {action.label}
+                  </Link>
+                ))}
               </div>
             </div>
           ) : null}

@@ -16,6 +16,8 @@ const NON_HIDEABLE_TOOL_IDS = Array.from(NON_HIDEABLE_DASHBOARD_TOOL_IDS).sort()
 
 const canEditDashboardVisibility = (role: string | null | undefined) =>
   role === "OWNER" || role === "CO_OWNER" || role === "ADMIN";
+const canManageDashboardTools = (role: string | null | undefined) =>
+  role === "OWNER" || role === "CO_OWNER" || role === "ADMIN";
 
 async function resolveOrgAccess(req: NextRequest) {
   const supabase = await createSupabaseServer();
@@ -50,11 +52,14 @@ async function _GET(req: NextRequest) {
     }
 
     const hiddenToolIds = await getOrganizationDashboardHiddenToolIds(access.organizationId);
+    const canManageTools = canManageDashboardTools(access.membershipRole);
     return jsonWrap(
       {
         ok: true,
         hiddenToolIds,
         canEdit: canEditDashboardVisibility(access.membershipRole),
+        canManageTools,
+        membershipRole: access.membershipRole ?? null,
         nonHideableToolIds: NON_HIDEABLE_TOOL_IDS,
       },
       { status: 200 },
@@ -82,11 +87,14 @@ async function _PATCH(req: NextRequest) {
       hiddenToolIds: body?.hiddenToolIds,
     });
 
+    const canManageTools = canManageDashboardTools(access.membershipRole);
     return jsonWrap(
       {
         ok: true,
         hiddenToolIds,
         canEdit: true,
+        canManageTools,
+        membershipRole: access.membershipRole ?? null,
         nonHideableToolIds: NON_HIDEABLE_TOOL_IDS,
       },
       { status: 200 },

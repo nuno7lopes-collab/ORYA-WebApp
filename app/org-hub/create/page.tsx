@@ -96,9 +96,6 @@ export default async function OrgHubCreatePage({
         </div>
 
         <header className="space-y-2.5 text-center md:space-y-3">
-          <div className="mx-auto inline-flex items-center rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] uppercase tracking-[0.16em] text-white/70">
-            Organização • Onboarding
-          </div>
           <h1 className="text-3xl font-semibold md:text-[32px]">Cria o teu painel de organização</h1>
           <p className="mx-auto max-w-2xl text-[15px] text-white/75 md:text-base">
             Configuração simples e rápida para entrares no teu painel.

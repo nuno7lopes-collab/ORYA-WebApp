@@ -85,11 +85,11 @@ export function Avatar({
 
   const ringInset = useMemo(() => {
     if (!ring) return 0;
-    if (!avatarSize) return 1.5;
-    if (avatarSize <= 36) return 1;
-    if (avatarSize <= 64) return 1.35;
-    if (avatarSize <= 96) return 1.75;
-    return 2;
+    if (!avatarSize) return 1.1;
+    if (avatarSize <= 36) return 0.9;
+    if (avatarSize <= 64) return 1.1;
+    if (avatarSize <= 96) return 1.4;
+    return 1.8;
   }, [avatarSize, ring]);
 
   const fallbackFontSize = useMemo(() => {
@@ -100,11 +100,11 @@ export function Avatar({
 
   const ringGlow = useMemo(() => {
     if (!ring) return 0;
-    if (!avatarSize) return 8;
-    if (avatarSize <= 36) return 6;
-    if (avatarSize <= 64) return 8;
-    if (avatarSize <= 96) return 10;
-    return 12;
+    if (!avatarSize) return 6;
+    if (avatarSize <= 36) return 5;
+    if (avatarSize <= 64) return 6;
+    if (avatarSize <= 96) return 7;
+    return 8;
   }, [avatarSize, ring]);
 
   const ringStyle = useMemo<CSSProperties>(() => {
@@ -129,7 +129,7 @@ export function Avatar({
       <div
         className={cn(
           "relative flex h-full w-full items-center justify-center overflow-hidden rounded-full",
-          ring && "border border-white/70",
+          ring && "border border-transparent",
           !hasImage && "orya-avatar-fallback",
         )}
       >

@@ -60,7 +60,8 @@ import { prisma } from "@/lib/prisma";
 import { applyPaymentStatusToEntitlements, fulfillPaymentIfSucceeded } from "@/domain/finance/fulfillment";
 
 let payments: any[] = [];
-let ticketOrders: any[] = [];
+let saleSummaries: any[] = [];
+let saleLines: any[] = [];
 let ticketTypes: any[] = [];
 let events: any[] = [];
 let entitlements: any[] = [];
@@ -78,8 +79,13 @@ vi.mock("@/lib/prisma", () => {
       return null;
     }),
   };
-  const ticketOrder = {
-    findUnique: vi.fn(({ where }: any) => ticketOrders.find((o) => o.id === where.id) ?? null),
+  const saleSummary = {
+    findUnique: vi.fn(({ where }: any) => saleSummaries.find((s) => s.purchaseId === where.purchaseId) ?? null),
+  };
+  const saleLine = {
+    findMany: vi.fn(({ where }: any) =>
+      saleLines.filter((line) => line.saleSummaryId === where.saleSummaryId && line.ticketTypeId != null),
+    ),
   };
   const ticketType = {
     findMany: vi.fn(({ where }: any) =>
@@ -142,7 +148,8 @@ vi.mock("@/lib/prisma", () => {
 
   const prisma = {
     payment,
-    ticketOrder,
+    saleSummary,
+    saleLine,
     ticketType,
     event,
     eventAccessPolicy,
@@ -157,32 +164,36 @@ const prismaMock = vi.mocked(prisma);
 
 describe("payment fulfillment v7", () => {
   beforeEach(() => {
-    const sourceId = "order_1";
     payments = [
       {
         id: "pay_1",
         status: PaymentStatus.SUCCEEDED,
         sourceType: SourceType.TICKET_ORDER,
-        sourceId,
+        sourceId: "legacy_source_id",
         customerIdentityId: "ident_1",
         pricingSnapshotJson: { gross: 2000, platformFee: 200, currency: "EUR" },
       },
     ];
-    ticketOrders = [
+    saleSummaries = [
       {
-        id: "order_1",
-        organizationId: 1,
-        buyerIdentityId: "ident_1",
+        id: 501,
+        purchaseId: "pay_1",
+        eventId: 99,
+        ownerIdentityId: "ident_1",
+        userId: null,
         currency: "EUR",
-        lines: [
-          {
-            id: 10,
-            ticketTypeId: 1,
-            qty: 2,
-            unitAmount: 1000,
-            totalAmount: 2000,
-          },
-        ],
+      },
+    ];
+    saleLines = [
+      {
+        id: 10,
+        saleSummaryId: 501,
+        ticketTypeId: 1,
+        quantity: 2,
+        unitPriceCents: 1000,
+        grossCents: 2000,
+        netCents: 2000,
+        platformFeeCents: 200,
       },
     ];
     ticketTypes = [{ id: 1, eventId: 99 }];
@@ -191,6 +202,8 @@ describe("payment fulfillment v7", () => {
         id: 99,
         title: "Evento",
         coverImageUrl: null,
+        organizationId: 1,
+        addressRef: null,
         locationName: "Local",
         startsAt: new Date("2026-01-01T10:00:00Z"),
         timezone: "Europe/Lisbon",

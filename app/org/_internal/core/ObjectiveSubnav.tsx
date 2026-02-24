@@ -13,8 +13,7 @@ import {
 } from "@/lib/organizationIdUtils";
 import {
   CORE_ORGANIZATION_MODULES,
-  OPERATION_MODULES,
-  parseOrganizationModules,
+  parseOrganizationTools,
   resolvePrimaryModule,
 } from "@/lib/organizationCategories";
 import {
@@ -37,7 +36,7 @@ type ObjectiveSubnavProps = {
   activeId?: string;
   focusSectionId?: string;
   primaryModule?: string | null;
-  modules?: string[] | null;
+  tools?: string[] | null;
   organizationId?: number | null;
   mode?: "dashboard" | "page";
   variant?: "full" | "tabs" | "topbar";
@@ -50,7 +49,7 @@ export default function ObjectiveSubnav({
   activeId,
   focusSectionId,
   primaryModule,
-  modules,
+  tools,
   organizationId: organizationIdProp = null,
   mode,
   variant = "full",
@@ -76,7 +75,7 @@ export default function ObjectiveSubnav({
   const organizationIdPath = parseOrganizationIdFromPathname(pathname);
   const organizationId = organizationIdProp ?? organizationIdParam ?? organizationIdPath ?? null;
   const orgMeUrl = organizationId ? `/api/org/${organizationId}/me` : null;
-  const { data } = useSWR(primaryModule || modules ? null : orgMeUrl, fetcher);
+  const { data } = useSWR(primaryModule || tools ? null : orgMeUrl, fetcher);
   const organization = data?.organization ?? null;
   const inscricoesBasePath = (() => {
     if (!pathname) return null;
@@ -116,28 +115,27 @@ export default function ObjectiveSubnav({
           : null;
   const operationOverride = sectionOperationOverride ?? pathnameOperationOverride;
 
-  const rawModules = Array.isArray(modules)
-    ? modules
-    : Array.isArray(organization?.modules)
-      ? organization.modules
+  const rawTools = Array.isArray(tools)
+    ? tools
+    : Array.isArray(organization?.tools)
+      ? organization.tools
       : [];
-  const normalizedModules = parseOrganizationModules(rawModules) ?? [];
+  const normalizedTools = parseOrganizationTools(rawTools) ?? [];
   const resolvedPrimary = resolvePrimaryModule(
     primaryModule ?? organization?.primaryModule ?? null,
-    normalizedModules,
+    normalizedTools,
   );
-  const activeModules = (() => {
+  const activeTools = (() => {
     const base = new Set<string>([
-      ...normalizedModules,
+      ...normalizedTools,
       ...CORE_ORGANIZATION_MODULES,
-      ...OPERATION_MODULES,
       resolvedPrimary,
     ]);
     return Array.from(base);
   })();
   const context: ObjectiveNavContext = {
     primaryModule: resolvedPrimary,
-    modules: activeModules,
+    tools: activeTools,
     username: organization?.username ?? null,
   };
 

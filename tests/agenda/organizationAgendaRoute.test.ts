@@ -9,6 +9,7 @@ const ensureReservasModuleAccess = vi.hoisted(() => vi.fn());
 const prismaMock = vi.hoisted(() => ({
   padelClub: { findFirst: vi.fn() },
   padelClubCourt: { findFirst: vi.fn() },
+  organizationModuleEntry: { findMany: vi.fn() },
 }));
 
 vi.mock("@/domain/agendaReadModel/query", () => ({ getAgendaItemsForOrganization }));
@@ -22,9 +23,16 @@ vi.mock("@/lib/supabaseServer", () => ({
     auth: { getUser: vi.fn(async () => ({ data: { user: { id: "u1" } } })) },
   })),
 }));
-vi.mock("@/lib/security", () => ({
-  ensureAuthenticated: vi.fn(async () => ({ id: "u1" })),
-}));
+vi.mock("@/lib/security", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/security")>();
+  return {
+    ...actual,
+    ensureAuthenticated: vi.fn(async () => ({ id: "u1" })),
+    isAuthUnavailableError: vi.fn(() => false),
+    isEmailNotVerifiedError: vi.fn(() => false),
+    isUnauthenticatedError: vi.fn(() => false),
+  };
+});
 
 let GET: typeof import("@/app/api/org/[orgId]/agenda/route").GET;
 
@@ -35,6 +43,7 @@ beforeEach(async () => {
   ensureReservasModuleAccess.mockReset();
   prismaMock.padelClub.findFirst.mockReset();
   prismaMock.padelClubCourt.findFirst.mockReset();
+  prismaMock.organizationModuleEntry.findMany.mockReset();
   vi.resetModules();
   GET = (await import("@/app/api/org/[orgId]/agenda/route")).GET;
 });
@@ -54,6 +63,11 @@ describe("organization agenda route", () => {
     });
     ensureReservasModuleAccess.mockResolvedValue({ ok: true });
     ensureMemberModuleAccess.mockResolvedValue({ ok: true });
+    prismaMock.organizationModuleEntry.findMany.mockResolvedValue([
+      { moduleKey: "RESERVAS" },
+      { moduleKey: "EVENTOS" },
+      { moduleKey: "TORNEIOS" },
+    ]);
     getAgendaItemsForOrganization.mockResolvedValue([
       { kind: "EVENT", eventId: 1, title: "E1", startsAt: new Date(), endsAt: new Date() },
     ]);

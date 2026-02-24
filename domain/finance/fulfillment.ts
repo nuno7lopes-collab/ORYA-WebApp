@@ -114,84 +114,99 @@ async function ensurePurchaseSignal(params: { userId: string | null; eventId: nu
   });
 }
 
-function allocatePlatformFeePerUnit(params: {
-  grossTotal: number;
-  platformFeeTotal: number;
-  lineTotal: number;
-  qty: number;
-}) {
-  if (params.grossTotal <= 0 || params.qty <= 0) return 0;
-  const lineShare = params.platformFeeTotal * (params.lineTotal / params.grossTotal);
-  return Math.round(lineShare / params.qty);
-}
-
 async function issueTicketOrderEntitlements(
   payment: { id: string; sourceId: string; customerIdentityId: string | null; pricingSnapshotJson: any },
   tx: DbClient,
 ) {
-  const order = await tx.ticketOrder.findUnique({
-    where: { id: payment.sourceId },
+  const saleSummary = await tx.saleSummary.findUnique({
+    where: { purchaseId: payment.id },
     select: {
       id: true,
-      buyerIdentityId: true,
+      eventId: true,
+      ownerIdentityId: true,
+      userId: true,
       currency: true,
-      lines: {
-        select: {
-          id: true,
-          qty: true,
-          totalAmount: true,
-          ticketTypeId: true,
-        },
-      },
     },
   });
-  if (!order) throw new Error("TICKET_ORDER_NOT_FOUND");
-  if (!order.lines.length) throw new Error("TICKET_ORDER_LINES_EMPTY");
+  if (!saleSummary) throw new Error("SALE_SUMMARY_NOT_FOUND");
 
-  const { event } = await resolveEventForTicketTypes(
-    order.lines.map((line) => line.ticketTypeId),
-    tx,
-  );
+  const lines = await tx.saleLine.findMany({
+    where: {
+      saleSummaryId: saleSummary.id,
+      ticketTypeId: { not: null },
+    },
+    select: {
+      id: true,
+      quantity: true,
+      unitPriceCents: true,
+      grossCents: true,
+      netCents: true,
+      platformFeeCents: true,
+      ticketTypeId: true,
+    },
+  });
+  if (!lines.length) throw new Error("SALE_LINES_EMPTY");
 
-  const buyerIdentityId = payment.customerIdentityId ?? order.buyerIdentityId ?? null;
+  const event = await tx.event.findUnique({
+    where: { id: saleSummary.eventId },
+    select: {
+      id: true,
+      title: true,
+      coverImageUrl: true,
+      startsAt: true,
+      organizationId: true,
+      timezone: true,
+      addressRef: { select: { formattedAddress: true } },
+    },
+  });
+  if (!event) throw new Error("EVENT_NOT_FOUND");
+
+  let buyerIdentityId = payment.customerIdentityId ?? saleSummary.ownerIdentityId ?? null;
+  if (!buyerIdentityId && saleSummary.userId) {
+    const identity = await resolveIdentityForUser({ userId: saleSummary.userId, email: null });
+    buyerIdentityId = identity.id;
+  }
   if (!buyerIdentityId) {
     throw new Error("OWNER_IDENTITY_REQUIRED");
   }
-  const buyerUserId = await resolveUserIdFromIdentity(buyerIdentityId, tx);
+  const buyerUserId = (await resolveUserIdFromIdentity(buyerIdentityId, tx)) ?? saleSummary.userId ?? null;
 
   const policyVersionApplied = await requireLatestPolicyVersionForEvent(event.id, tx);
   const ownerKey = buildOwnerKey(buyerIdentityId);
-  const snapshot = payment.pricingSnapshotJson as { gross?: number; platformFee?: number; currency?: string } | null;
-  const grossTotal = snapshot?.gross ?? 0;
-  const platformFeeTotal = snapshot?.platformFee ?? 0;
-  const currency = snapshot?.currency ?? order.currency ?? "EUR";
+  const snapshot = payment.pricingSnapshotJson as { currency?: string } | null;
+  const currency = (snapshot?.currency ?? saleSummary.currency ?? "EUR").toUpperCase();
   const snapshotVenueName = formatEventLocationLabel({ addressRef: event.addressRef ?? null }, "Local a anunciar");
+  const emissionOffsetByType = new Map<number, number>();
 
-  for (const line of order.lines) {
+  for (const line of lines) {
     const ticketTypeId = parseIntId(line.ticketTypeId);
     if (!ticketTypeId) {
       throw new Error("TICKET_TYPE_ID_INVALID");
     }
-    const unitTotal = Math.round(line.totalAmount / Math.max(1, line.qty));
-    const unitPlatformFee = allocatePlatformFeePerUnit({
-      grossTotal,
-      platformFeeTotal,
-      lineTotal: line.totalAmount,
-      qty: line.qty,
-    });
+    const qty = Math.max(1, Number(line.quantity ?? 1));
+    const lineTotal = line.netCents ?? line.grossCents ?? (line.unitPriceCents ?? 0) * qty;
+    const unitTotal = Math.round(lineTotal / qty);
+    const totalPlatformFee = line.platformFeeCents ?? 0;
+    const basePlatformFee = Math.floor(totalPlatformFee / qty);
+    let feeRemainder = totalPlatformFee - basePlatformFee * qty;
+    const emissionStart = emissionOffsetByType.get(ticketTypeId) ?? 0;
 
-    for (let i = 0; i < line.qty; i += 1) {
+    for (let i = 0; i < qty; i += 1) {
+      const emissionIndex = emissionStart + i;
+      const feeForTicket = basePlatformFee + (feeRemainder > 0 ? 1 : 0);
+      if (feeRemainder > 0) feeRemainder -= 1;
+
       const ticket = await tx.ticket.upsert({
         where: {
           purchaseId_ticketTypeId_emissionIndex: {
             purchaseId: payment.id,
             ticketTypeId,
-            emissionIndex: i,
+            emissionIndex,
           },
         },
         update: {
           status: TicketStatus.ACTIVE,
-          ownerIdentityId: payment.customerIdentityId ?? order.buyerIdentityId ?? null,
+          ownerIdentityId: buyerIdentityId,
         },
         create: {
           eventId: event.id,
@@ -201,11 +216,11 @@ async function issueTicketOrderEntitlements(
           pricePaid: unitTotal,
           currency,
           stripePaymentIntentId: null,
-          platformFeeCents: unitPlatformFee,
-          totalPaidCents: unitTotal,
+          platformFeeCents: feeForTicket,
+          totalPaidCents: unitTotal + feeForTicket,
           purchaseId: payment.id,
-          emissionIndex: i,
-          ownerIdentityId: payment.customerIdentityId ?? order.buyerIdentityId ?? null,
+          emissionIndex,
+          ownerIdentityId: buyerIdentityId,
           ownerUserId: null,
         },
       });
@@ -222,7 +237,7 @@ async function issueTicketOrderEntitlements(
         },
         update: {
           status: EntitlementStatus.ACTIVE,
-          ownerIdentityId: payment.customerIdentityId ?? order.buyerIdentityId ?? null,
+          ownerIdentityId: buyerIdentityId,
           eventId: event.id,
           policyVersionApplied,
           snapshotTitle: event.title,
@@ -238,7 +253,7 @@ async function issueTicketOrderEntitlements(
           lineItemIndex: i,
           ownerKey,
           ownerUserId: null,
-          ownerIdentityId: payment.customerIdentityId ?? order.buyerIdentityId ?? null,
+          ownerIdentityId: buyerIdentityId,
           eventId: event.id,
           type: EntitlementType.EVENT_TICKET,
           status: EntitlementStatus.ACTIVE,
@@ -252,6 +267,8 @@ async function issueTicketOrderEntitlements(
         },
       });
     }
+
+    emissionOffsetByType.set(ticketTypeId, emissionStart + qty);
   }
 
   await ensurePurchaseSignal({ userId: buyerUserId, eventId: event.id, organizationId: event.organizationId }, tx);

@@ -33,11 +33,11 @@ describe("EventAccessPolicy lock", () => {
       entitlement: {
         count: vi.fn().mockResolvedValue(1),
       },
+      ticket: {
+        count: vi.fn().mockResolvedValue(0),
+      },
       payment: {
         findFirst: vi.fn().mockResolvedValue(null),
-      },
-      ticketOrder: {
-        findMany: vi.fn().mockResolvedValue([]),
       },
       padelRegistration: {
         findMany: vi.fn().mockResolvedValue([]),
@@ -63,7 +63,7 @@ describe("EventAccessPolicy lock", () => {
     expect(client.eventAccessPolicy.create).not.toHaveBeenCalled();
   });
 
-  it("bloqueia mudança mais restritiva após pagamento SUCCEEDED", async () => {
+  it("bloqueia mudança mais restritiva após emissão de tickets", async () => {
     const client = {
       event: {
         findUnique: vi.fn().mockResolvedValue({ templateType: null }),
@@ -90,11 +90,11 @@ describe("EventAccessPolicy lock", () => {
       entitlement: {
         count: vi.fn().mockResolvedValue(0),
       },
-      payment: {
-        findFirst: vi.fn().mockResolvedValue({ id: "pay-1" }),
+      ticket: {
+        count: vi.fn().mockResolvedValue(1),
       },
-      ticketOrder: {
-        findMany: vi.fn().mockResolvedValue([{ id: "order-1" }]),
+      payment: {
+        findFirst: vi.fn().mockResolvedValue(null),
       },
       padelRegistration: {
         findMany: vi.fn().mockResolvedValue([]),
@@ -147,11 +147,11 @@ describe("EventAccessPolicy lock", () => {
       entitlement: {
         count: vi.fn().mockResolvedValue(1),
       },
+      ticket: {
+        count: vi.fn().mockResolvedValue(0),
+      },
       payment: {
         findFirst: vi.fn().mockResolvedValue(null),
-      },
-      ticketOrder: {
-        findMany: vi.fn().mockResolvedValue([]),
       },
       padelRegistration: {
         findMany: vi.fn().mockResolvedValue([]),

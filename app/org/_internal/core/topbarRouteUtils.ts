@@ -65,3 +65,12 @@ export function resolveOrganizationTool(pathname: string | null): OrgToolKey | n
   if (rest.startsWith("/settings")) return "settings";
   return "dashboard";
 }
+
+export function shouldPinOrganizationTopbar(pathname: string | null) {
+  const normalized = normalizeOrganizationPathname(pathname);
+  if (!normalized) return false;
+  const canonicalMatch = normalized.match(/^\/org\/\d+(?:\/(.*))?$/i);
+  if (!canonicalMatch) return false;
+  const rest = `/${canonicalMatch[1] ?? "overview"}`;
+  return rest !== "/overview";
+}

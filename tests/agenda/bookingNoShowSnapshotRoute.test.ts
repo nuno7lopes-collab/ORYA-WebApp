@@ -179,5 +179,7 @@ describe("booking no-show snapshot route", () => {
         reason: "NO_SHOW_REFUND",
       }),
     );
+    expect(markNoShowBookingMock).toHaveBeenCalled();
+    expect(ensureAuthenticatedMock).toHaveBeenCalled();
   });
 });

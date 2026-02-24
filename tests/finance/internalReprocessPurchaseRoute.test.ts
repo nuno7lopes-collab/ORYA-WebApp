@@ -37,7 +37,7 @@ function makeReq(payload: unknown) {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-internal-secret": "test",
+      "X-ORYA-CRON-SECRET": "test",
     },
     body: JSON.stringify(payload),
   });
@@ -54,6 +54,7 @@ describe("POST /api/internal/reprocess/purchase", () => {
       expect.objectContaining({
         operationType: "FULFILL_PAYMENT",
         dedupeKey: "pur_123",
+        forceRequeue: true,
         correlations: expect.objectContaining({
           purchaseId: "pur_123",
           paymentIntentId: "pi_123",

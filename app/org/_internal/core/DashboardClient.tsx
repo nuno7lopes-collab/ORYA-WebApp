@@ -30,9 +30,15 @@ import { hasModuleAccess, normalizeAccessLevel, resolveMemberModuleAccess } from
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { appendOrganizationIdToHref, getOrganizationIdFromBrowser, parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
 import {
+  canManageOrganizationTools as canManageOrganizationToolsByRole,
+  getEnabledDashboardToolActivationCards,
+  getAvailableDashboardToolActivationCards,
+  NON_DEACTIVABLE_ORGANIZATION_TOOL_MODULE_SET,
   NON_HIDEABLE_DASHBOARD_TOOL_IDS,
   sanitizeDashboardHiddenToolIds,
+  shouldShowDashboardToolManagerCta,
 } from "@/lib/organizationDashboardTools";
+import type { DashboardToolActivationCard } from "@/lib/organizationDashboardTools";
 import type { OrganizationMemberRole, OrganizationModule, OrganizationRolePack } from "@prisma/client";
 import { ModuleIcon } from "./moduleIcons";
 
@@ -56,6 +62,24 @@ const fetcherStrict = async (url: string) => {
     clearTimeout(timeout);
   }
 };
+
+function extractApiErrorMessage(payload: unknown, fallback: string) {
+  if (!payload || typeof payload !== "object") return fallback;
+  const topLevel = payload as Record<string, unknown>;
+  const data =
+    topLevel.data && typeof topLevel.data === "object"
+      ? (topLevel.data as Record<string, unknown>)
+      : null;
+  const candidate = [
+    topLevel.message,
+    topLevel.error,
+    topLevel.errorCode,
+    data?.message,
+    data?.error,
+    data?.errorCode,
+  ].find((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+  return candidate ?? fallback;
+}
 const swrOptions = {
   revalidateOnFocus: false,
   revalidateOnReconnect: false,
@@ -363,7 +387,7 @@ type OrganizationLite = {
   primaryModule?: string | null;
   organizationKind?: string | null;
   username?: string | null;
-  modules?: string[] | null;
+  tools?: string[] | null;
   publicDescription?: string | null;
   brandingAvatarUrl?: string | null;
   brandingCoverUrl?: string | null;
@@ -403,6 +427,8 @@ type DashboardToolVisibilityResponse = {
   ok: boolean;
   hiddenToolIds?: string[];
   canEdit?: boolean;
+  canManageTools?: boolean;
+  membershipRole?: string | null;
   error?: string;
 };
 
@@ -574,8 +600,13 @@ function OrganizacaoPageInner({
   const [eventActionLoading, setEventActionLoading] = useState<number | null>(null);
   const [eventDialog, setEventDialog] = useState<{ mode: "archive" | "delete" | "unarchive"; ev: EventItem } | null>(null);
   const [toolsModalOpen, setToolsModalOpen] = useState(false);
+  const [moduleActivationLoading, setModuleActivationLoading] = useState<OrganizationModule | null>(null);
+  const [moduleDeactivationLoading, setModuleDeactivationLoading] = useState<OrganizationModule | null>(null);
+  const [moduleActivationError, setModuleActivationError] = useState<string | null>(null);
+  const [moduleActivationSuccess, setModuleActivationSuccess] = useState<string | null>(null);
   const [loadingTimedOut, setLoadingTimedOut] = useState(false);
   const [pendingToolVisibilityRemoval, setPendingToolVisibilityRemoval] = useState<DashboardToolCard | null>(null);
+  const [pendingModuleDeactivation, setPendingModuleDeactivation] = useState<DashboardToolActivationCard | null>(null);
   const loadingRetryAttemptRef = useRef(false);
   const dashboardLoadStartedAtRef = useRef<number | null>(null);
   const dashboardLoadSuccessTrackedRef = useRef(false);
@@ -739,7 +770,7 @@ function OrganizacaoPageInner({
       platformOfficialEmail?: string | null;
       membershipRole?: string | null;
       membershipRolePack?: string | null;
-      modulePermissions?: Array<{
+      toolPermissions?: Array<{
         moduleKey: OrganizationModule;
         accessLevel: string;
         scopeType?: string | null;
@@ -764,27 +795,34 @@ function OrganizacaoPageInner({
     typeof suspension?.remainingWindowDays === "number" ? suspension.remainingWindowDays : null;
   const platformSupportEmail = organizationData?.platformOfficialEmail ?? null;
   const primaryModule = organization?.primaryModule ?? null;
-  const rawModules = useMemo(() => {
-    if (!Array.isArray(organization?.modules)) return [];
-    return organization.modules
-      .filter((module): module is string => typeof module === "string")
-      .map((module) => module.trim().toUpperCase())
-      .filter((module) => module.length > 0);
-  }, [organization?.modules]);
-  const primaryOperation = useMemo<OperationModule>(
-    () => resolvePrimaryModule(primaryModule, rawModules) as OperationModule,
-    [primaryModule, rawModules],
+  const rawTools = useMemo(() => {
+    if (!Array.isArray(organization?.tools)) return [];
+    return organization.tools
+      .filter((tool): tool is string => typeof tool === "string")
+      .map((tool) => tool.trim().toUpperCase())
+      .filter((tool) => tool.length > 0);
+  }, [organization?.tools]);
+  const normalizedRawTools = useMemo(
+    () => Array.from(new Set(rawTools)),
+    [rawTools],
   );
-  const hasReservasModule = useMemo(() => rawModules.includes("RESERVAS"), [rawModules]);
+  const primaryOperation = useMemo<OperationModule>(
+    () => resolvePrimaryModule(primaryModule, rawTools) as OperationModule,
+    [primaryModule, rawTools],
+  );
+  const baseManagedModuleSet = useMemo(
+    () => new Set(NON_DEACTIVABLE_ORGANIZATION_TOOL_MODULE_SET),
+    [],
+  );
+  const hasReservasModule = useMemo(() => rawTools.includes("RESERVAS"), [rawTools]);
   const activeModules = useMemo(() => {
     const base = new Set<string>([
-      ...rawModules,
+      ...rawTools,
       ...CORE_ORGANIZATION_MODULES,
-      ...OPERATION_MODULES,
     ]);
     base.add(primaryOperation);
     return Array.from(base);
-  }, [rawModules, primaryOperation]);
+  }, [rawTools, primaryOperation]);
   const operationLabel = OPERATION_LABELS[primaryOperation];
   const orgDisplayName =
     organization?.publicName?.trim() ||
@@ -866,15 +904,15 @@ function OrganizacaoPageInner({
   const canReactivateSuspendedOrganization = membershipRole === "OWNER" && isSuspended && reactivationWindowOpen;
   const moduleOverrides = useMemo(
     () =>
-      Array.isArray(organizationData?.modulePermissions)
-        ? organizationData?.modulePermissions.map((item) => ({
+      Array.isArray(organizationData?.toolPermissions)
+        ? organizationData?.toolPermissions.map((item) => ({
             moduleKey: item.moduleKey,
             accessLevel: normalizeAccessLevel(item.accessLevel) ?? "NONE",
             scopeType: item.scopeType ?? null,
             scopeId: item.scopeId ?? null,
           }))
         : [],
-    [organizationData?.modulePermissions],
+    [organizationData?.toolPermissions],
   );
   const moduleAccess = useMemo(
     () =>
@@ -885,9 +923,15 @@ function OrganizacaoPageInner({
       }),
     [membershipRole, membershipRolePack, moduleOverrides],
   );
+  const enabledModuleSet = useMemo(() => new Set(activeModules), [activeModules]);
+  const isModuleEnabled = useCallback(
+    (moduleKey: OrganizationModule) => enabledModuleSet.has(moduleKey),
+    [enabledModuleSet],
+  );
   const canAccessModule = useCallback(
-    (moduleKey: OrganizationModule) => hasModuleAccess(moduleAccess, moduleKey, "EDIT"),
-    [moduleAccess],
+    (moduleKey: OrganizationModule) =>
+      isModuleEnabled(moduleKey) && hasModuleAccess(moduleAccess, moduleKey, "EDIT"),
+    [isModuleEnabled, moduleAccess],
   );
   const canAccessFinance = canAccessModule("FINANCEIRO");
   const canAccessEvents = canAccessModule("EVENTOS");
@@ -993,7 +1037,11 @@ function OrganizacaoPageInner({
       fetcherStrict,
       swrOptions,
     );
-  const canCustomizeTools = roleFlags.canEditOrg && Boolean(dashboardToolsVisibility?.canEdit ?? roleFlags.canEditOrg);
+  const visibilityMembershipRole = dashboardToolsVisibility?.membershipRole ?? null;
+  const canManageOrgTools = canManageOrganizationToolsByRole(
+    membershipRole ?? visibilityMembershipRole,
+  ) || dashboardToolsVisibility?.canManageTools === true;
+  const canCustomizeTools = Boolean(dashboardToolsVisibility?.canEdit ?? roleFlags.canEditOrg);
   const [hiddenToolIds, setHiddenToolIds] = useState<string[]>([]);
   const [toolVisibilityError, setToolVisibilityError] = useState<string | null>(null);
   const salesUnitHint = isPadelContext
@@ -2273,6 +2321,8 @@ function OrganizacaoPageInner({
   const canUseCrm = canAccessCrm;
   const canUseChatInterno = canAccessMensagens;
   const canUseCheckin = canAccessEvents || canAccessTorneios;
+  const canUseCalendar = canAccessEvents || canAccessReservas || canAccessTorneios;
+  const calendarModuleKey = canAccessReservas ? "RESERVAS" : canAccessEvents ? "EVENTOS" : "TORNEIOS";
   const dashboardTools = useMemo<DashboardToolCard[]>(
     () => {
       const tools: Array<DashboardToolCard | null> = [
@@ -2300,14 +2350,14 @@ function OrganizacaoPageInner({
               flow: "Operações",
             }
           : null,
-        canAccessReservas
+        canUseCalendar
           ? {
               id: "calendar",
-              moduleKey: "RESERVAS",
+              moduleKey: calendarModuleKey,
               iconKey: "TOOL_CALENDARIO",
               title: "Calendário",
-              summary: "Visão operacional read-first da ocupação da organização.",
-              bullets: ["Agenda consolidada", "Vista semanal e diária", "Sem escrita direta de serviços"],
+              summary: "Agenda operacional consolidada da organização.",
+              bullets: ["Eventos, torneios e reservas quando ativos", "Vista semanal e diária", "Sem escrita direta de serviços"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/calendar` : undefined,
               flow: "Operações",
             }
@@ -2416,7 +2466,7 @@ function OrganizacaoPageInner({
               title: "CRM",
               summary: "Clientes, segmentos e fidelização.",
               bullets: ["Clientes + histórico", "Segmentos + campanhas", "Pontos + recompensas"],
-              href: scopedOrganizationId ? `/org/${scopedOrganizationId}/crm` : undefined,
+              href: scopedOrganizationId ? `/org/${scopedOrganizationId}/crm/customers` : undefined,
               flow: "Gestão",
             }
           : null,
@@ -2475,6 +2525,7 @@ function OrganizacaoPageInner({
       canAccessEvents,
       canAccessReservas,
       canAccessTorneios,
+      canUseCalendar,
       canUseCheckin,
       canAccessInscricoes,
       canUseChatInterno,
@@ -2485,6 +2536,7 @@ function OrganizacaoPageInner({
       canAccessLoja,
       canManageMembers,
       canEditOrgSettings,
+      calendarModuleKey,
       scopedOrganizationId,
     ],
   );
@@ -2530,6 +2582,28 @@ function OrganizacaoPageInner({
     [hiddenDashboardTools],
   );
   const hasHiddenTools = hiddenDashboardTools.length > 0;
+  const availableToolCards = useMemo(
+    () => getAvailableDashboardToolActivationCards(activeModules),
+    [activeModules],
+  );
+  const activeManagedToolCards = useMemo(
+    () => getEnabledDashboardToolActivationCards(activeModules),
+    [activeModules],
+  );
+  const optionalActiveToolCards = useMemo(
+    () =>
+      activeManagedToolCards.filter(
+        (card) => !baseManagedModuleSet.has(card.moduleKey),
+      ),
+    [activeManagedToolCards, baseManagedModuleSet],
+  );
+  const hasAvailableToolCards = availableToolCards.length > 0;
+  const showToolManagementCta = shouldShowDashboardToolManagerCta({
+    canCustomizeTools,
+    hasHiddenTools,
+    canManageTools: canManageOrgTools,
+    hasAvailableToolCards,
+  });
   const hideDashboardTool = useCallback(
     (tool: DashboardToolCard) => {
       if (!canCustomizeTools) return;
@@ -2547,6 +2621,130 @@ function OrganizacaoPageInner({
     },
     [canCustomizeTools, hiddenToolSet, persistHiddenToolIds, validHiddenToolIds],
   );
+  const activateModule = useCallback(
+    async (card: DashboardToolActivationCard) => {
+      if (!canManageOrgTools) {
+        setModuleActivationError("Apenas Dono, Co-dono e Administrador podem ativar novas ferramentas.");
+        return;
+      }
+      if (!scopedOrganizationId) {
+        setModuleActivationError("Seleciona uma organização primeiro.");
+        return;
+      }
+
+      setModuleActivationLoading(card.moduleKey);
+      setModuleActivationError(null);
+      setModuleActivationSuccess(null);
+
+      try {
+        const res = await fetch(`/api/org/${scopedOrganizationId}/tools/${encodeURIComponent(card.moduleKey)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "enable" }),
+        });
+        const payload = await res.json().catch(() => null);
+        const body =
+          payload && typeof payload === "object" && payload.data && typeof payload.data === "object"
+            ? (payload.data as Record<string, unknown>)
+            : null;
+        const hasErrorFlag =
+          (payload && typeof payload === "object" && (payload as Record<string, unknown>).ok === false) ||
+          body?.ok === false;
+        if (!res.ok || hasErrorFlag) {
+          throw new Error(
+            extractApiErrorMessage(payload, "Nao foi possivel ativar a ferramenta."),
+          );
+        }
+
+        await mutateOrganization();
+        setModuleActivationSuccess(`Ferramenta ${card.title} ativada.`);
+        trackEvent("org_dashboard_module_enabled", {
+          organizationId: scopedOrganizationId ?? organizationId ?? null,
+          moduleKey: card.moduleKey,
+        });
+      } catch (error) {
+        setModuleActivationError(
+          error instanceof Error ? error.message : "Nao foi possivel ativar a ferramenta.",
+        );
+      } finally {
+        setModuleActivationLoading(null);
+      }
+    },
+    [
+      canManageOrgTools,
+      mutateOrganization,
+      organizationId,
+      scopedOrganizationId,
+    ],
+  );
+  const deactivateModule = useCallback(
+    async (card: DashboardToolActivationCard) => {
+      if (!canManageOrgTools) {
+        setModuleActivationError("Apenas Dono, Co-dono e Administrador podem desativar ferramentas.");
+        return;
+      }
+      if (!scopedOrganizationId) {
+        setModuleActivationError("Seleciona uma organização primeiro.");
+        return;
+      }
+      if (baseManagedModuleSet.has(card.moduleKey)) {
+        setModuleActivationError(
+          `A ferramenta ${card.title} faz parte da base da organização e nao pode ser desativada.`,
+        );
+        return;
+      }
+
+      setModuleDeactivationLoading(card.moduleKey);
+      setModuleActivationError(null);
+      setModuleActivationSuccess(null);
+
+      try {
+        const res = await fetch(`/api/org/${scopedOrganizationId}/tools/${encodeURIComponent(card.moduleKey)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "disable" }),
+        });
+        const payload = await res.json().catch(() => null);
+        const body =
+          payload && typeof payload === "object" && payload.data && typeof payload.data === "object"
+            ? (payload.data as Record<string, unknown>)
+            : null;
+        const hasErrorFlag =
+          (payload && typeof payload === "object" && (payload as Record<string, unknown>).ok === false) ||
+          body?.ok === false;
+        if (!res.ok || hasErrorFlag) {
+          throw new Error(
+            extractApiErrorMessage(payload, "Nao foi possivel desativar a ferramenta."),
+          );
+        }
+
+        await mutateOrganization();
+        setModuleActivationSuccess(`Ferramenta ${card.title} desativada.`);
+        trackEvent("org_dashboard_module_disabled", {
+          organizationId: scopedOrganizationId ?? organizationId ?? null,
+          moduleKey: card.moduleKey,
+        });
+      } catch (error) {
+        setModuleActivationError(
+          error instanceof Error ? error.message : "Nao foi possivel desativar a ferramenta.",
+        );
+      } finally {
+        setModuleDeactivationLoading(null);
+      }
+    },
+    [
+      baseManagedModuleSet,
+      canManageOrgTools,
+      mutateOrganization,
+      organizationId,
+      scopedOrganizationId,
+    ],
+  );
+  useEffect(() => {
+    if (!moduleActivationSuccess) return;
+    const timer = window.setTimeout(() => setModuleActivationSuccess(null), 2800);
+    return () => window.clearTimeout(timer);
+  }, [moduleActivationSuccess]);
   const modulePrefetchTargets = useMemo(() => {
     if (!scopedOrganizationId) return [];
     const coreTargets = [
@@ -2779,22 +2977,164 @@ function OrganizacaoPageInner({
     );
   };
 
+  const toolManagerCtaLabel =
+    canManageOrgTools && hasAvailableToolCards
+      ? "Adicionar ferramenta"
+      : hasHiddenTools
+        ? "Mostrar ferramenta"
+        : "Gerir ferramentas";
+  const openToolManager = () => {
+    setModuleActivationError(null);
+    setModuleActivationSuccess(null);
+    setToolsModalOpen(true);
+  };
   const renderAddToolGhostCard = () => (
     <button
       type="button"
-      onClick={() => setToolsModalOpen(true)}
-      aria-label="Adicionar ferramenta"
-      className="group flex h-full min-h-[172px] w-full flex-col items-center justify-center gap-3 overflow-hidden rounded-[26px] border border-dashed border-white/28 bg-[linear-gradient(180deg,rgba(255,255,255,0.1),rgba(255,255,255,0.03)_52%,rgba(20,20,20,0.88))] px-3 py-4 text-center text-white/80 transition hover:border-[#22D3EE]/45 hover:bg-[linear-gradient(180deg,rgba(255,255,255,0.14),rgba(255,255,255,0.04)_52%,rgba(20,20,20,0.92))] hover:text-white sm:min-h-[192px] sm:gap-4 sm:px-4 sm:py-5"
+      onClick={openToolManager}
+      aria-label={toolManagerCtaLabel}
+      className="group block w-full rounded-[32px] transition-transform duration-300 ease-out hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b1014]"
     >
-      <div className="relative flex h-[84px] w-[84px] items-center justify-center rounded-full border border-white/30 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.35),rgba(255,255,255,0.14)_32%,rgba(8,12,20,0.88)_78%,rgba(6,10,18,0.96)_100%)] text-4xl leading-none shadow-[inset_0_1px_0_rgba(255,255,255,0.46),0_14px_32px_rgba(0,0,0,0.56),0_0_24px_rgba(34,211,238,0.25)] sm:h-[102px] sm:w-[102px] sm:text-5xl">
-        <span className="pointer-events-none absolute inset-[8px] rounded-full bg-[radial-gradient(circle_at_50%_48%,rgba(34,211,238,0.14),rgba(7,11,18,0.88)_72%)]" />
-        <span className="pointer-events-none absolute inset-[10px] rounded-full border border-white/18" />
-        <span className="pointer-events-none absolute inset-x-5 top-2 h-4 rounded-full bg-white/30 blur-[6px] sm:inset-x-6 sm:top-2.5 sm:h-5" />
-        <span className="relative">+</span>
+      <div className="relative flex w-full min-h-[214px] flex-col items-center justify-center gap-1 overflow-visible px-3 py-1 text-center sm:min-h-[248px] sm:gap-2 sm:px-4">
+        <div className="relative mx-auto flex items-center justify-center transition-transform duration-300 ease-out group-hover:-translate-y-1 group-hover:scale-[1.03]">
+          <div className="pointer-events-none absolute inset-0 scale-[0.86] rounded-full bg-[radial-gradient(circle,rgba(148,190,255,0.28)_0%,rgba(148,190,255,0.1)_48%,transparent_74%)] opacity-90 blur-xl transition-opacity duration-300 ease-out group-hover:opacity-100" />
+          <svg
+            viewBox="0 0 220 220"
+            aria-hidden="true"
+            className="pointer-events-none relative z-[1] h-[188px] w-[188px] drop-shadow-[0_14px_24px_rgba(0,0,0,0.46)] sm:h-[220px] sm:w-[220px]"
+          >
+            <path d="M110 30V190M30 110H190" fill="none" stroke="rgba(246,252,255,0.96)" strokeWidth="26" strokeLinecap="round" />
+            <path d="M110 30V190M30 110H190" fill="none" stroke="rgba(162,226,255,0.72)" strokeWidth="12" strokeLinecap="round" />
+          </svg>
+        </div>
+        <span className="relative mx-auto max-w-[220px] leading-tight text-[15px] font-semibold text-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.62)] sm:max-w-[250px] sm:text-[17px]">
+          {toolManagerCtaLabel}
+        </span>
       </div>
-      <span className="text-[14px] font-bold text-white sm:text-[16px]">Adicionar ferramenta</span>
     </button>
   );
+
+  const renderModuleActivationCard = (card: DashboardToolActivationCard) => {
+    const iconGradient =
+      MODULE_ICON_GRADIENTS[card.iconKey] ??
+      MODULE_ICON_GRADIENTS[card.moduleKey] ??
+      "from-white/15 via-white/5 to-white/10";
+    const isActivating = moduleActivationLoading === card.moduleKey;
+    return (
+      <div
+        key={`activation-${card.moduleKey}`}
+        className="rounded-2xl border border-white/12 bg-white/5 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.4)] transition"
+      >
+        <div className="flex flex-col gap-3">
+          <div className="flex items-start gap-3">
+            <div
+              className={cn(
+                "flex h-14 w-14 items-center justify-center rounded-[16px] border border-white/20 bg-gradient-to-br text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_12px_28px_rgba(0,0,0,0.32)]",
+                iconGradient,
+              )}
+            >
+              <ModuleIcon moduleKey={card.iconKey} className="h-6 w-6" aria-hidden="true" />
+            </div>
+            <div className="flex-1 space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-sm font-semibold text-white">{card.title}</p>
+                  <p className="text-[12px] text-white/65">{card.summary}</p>
+                </div>
+                <span className="rounded-full border border-cyan-300/40 bg-cyan-400/10 px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-cyan-100">
+                  Disponivel
+                </span>
+              </div>
+              <ul className="space-y-1 text-[11px] text-white/60">
+                {card.bullets.map((bullet) => (
+                  <li key={`${card.moduleKey}-${bullet}`} className="flex items-start gap-2">
+                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-white/40" />
+                    <span>{bullet}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[11px] uppercase tracking-[0.2em] text-white/40">{card.flow}</span>
+            <button
+              type="button"
+              onClick={() => void activateModule(card)}
+              disabled={!canManageOrgTools || isActivating}
+              className="rounded-full border border-cyan-300/40 bg-cyan-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100 transition hover:border-cyan-200/60 hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-65"
+            >
+              {isActivating ? "A ativar..." : "Ativar"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderActiveManagedModuleCard = (card: DashboardToolActivationCard) => {
+    const iconGradient =
+      MODULE_ICON_GRADIENTS[card.iconKey] ??
+      MODULE_ICON_GRADIENTS[card.moduleKey] ??
+      "from-white/15 via-white/5 to-white/10";
+    const isBaseModule = baseManagedModuleSet.has(card.moduleKey);
+    const isDeactivating = moduleDeactivationLoading === card.moduleKey;
+    return (
+      <div
+        key={`active-${card.moduleKey}`}
+        className="rounded-2xl border border-white/12 bg-white/5 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.4)] transition"
+      >
+        <div className="flex flex-col gap-3">
+          <div className="flex items-start gap-3">
+            <div
+              className={cn(
+                "flex h-14 w-14 items-center justify-center rounded-[16px] border border-white/20 bg-gradient-to-br text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_12px_28px_rgba(0,0,0,0.32)]",
+                iconGradient,
+              )}
+            >
+              <ModuleIcon moduleKey={card.iconKey} className="h-6 w-6" aria-hidden="true" />
+            </div>
+            <div className="flex-1 space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-sm font-semibold text-white">{card.title}</p>
+                  <p className="text-[12px] text-white/65">{card.summary}</p>
+                </div>
+                <span
+                  className={cn(
+                    "rounded-full px-2 py-1 text-[10px] uppercase tracking-[0.18em]",
+                    isBaseModule
+                      ? "border border-white/30 bg-white/10 text-white/90"
+                      : "border border-emerald-300/40 bg-emerald-400/10 text-emerald-100",
+                  )}
+                >
+                  {isBaseModule ? "Base" : "Ativa"}
+                </span>
+              </div>
+              <ul className="space-y-1 text-[11px] text-white/60">
+                {card.bullets.map((bullet) => (
+                  <li key={`${card.moduleKey}-${bullet}`} className="flex items-start gap-2">
+                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-white/40" />
+                    <span>{bullet}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[11px] uppercase tracking-[0.2em] text-white/40">{card.flow}</span>
+            <button
+              type="button"
+              onClick={() => setPendingModuleDeactivation(card)}
+              disabled={!canManageOrgTools || isBaseModule || isDeactivating}
+              className="rounded-full border border-rose-300/40 bg-rose-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-100 transition hover:border-rose-200/60 hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-65"
+            >
+              {isBaseModule ? "Nao removivel" : isDeactivating ? "A desativar..." : "Desativar"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const renderToolPickerCard = (tool: DashboardToolCard) => {
     const iconGradient = MODULE_ICON_GRADIENTS[tool.iconKey] ?? MODULE_ICON_GRADIENTS[tool.moduleKey] ?? "from-white/15 via-white/5 to-white/10";
@@ -2862,7 +3202,7 @@ function OrganizacaoPageInner({
             className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4"
             role="dialog"
             aria-modal="true"
-            aria-label="Ferramentas ocultas"
+            aria-label="Gestor de ferramentas"
             onClick={(event) => {
               if (event.target === event.currentTarget) setToolsModalOpen(false);
             }}
@@ -2870,10 +3210,10 @@ function OrganizacaoPageInner({
             <div className="w-full max-w-5xl overflow-hidden rounded-3xl border border-white/12 bg-[#050915]/95 p-5 text-white shadow-[0_28px_80px_rgba(0,0,0,0.75)]">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="space-y-1">
-                  <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Ferramentas ocultas</p>
-                  <h3 className="text-xl font-semibold text-white">Mostrar ferramentas</h3>
+                  <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Gestor de ferramentas</p>
+                  <h3 className="text-xl font-semibold text-white">Ativar e organizar ferramentas</h3>
                   <p className="text-[12px] text-white/65">
-                    Estas ferramentas continuam ativas no sistema, apenas estão ocultas no dashboard.
+                    Ativa ou desativa ferramentas da organizacao e volta a mostrar ferramentas ocultas no dashboard.
                   </p>
                 </div>
                 <button
@@ -2886,20 +3226,74 @@ function OrganizacaoPageInner({
               </div>
 
               <div className="mt-4 max-h-[60vh] space-y-6 overflow-y-auto pr-1">
-                {hiddenToolGroups.length > 0 ? (
-                  hiddenToolGroups.map((group) => (
-                    <div key={group.flow} className="space-y-3">
+                {canManageOrgTools && (
+                  <div className="space-y-6">
+                    {moduleActivationError ? (
+                      <p className="rounded-xl border border-rose-400/35 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-100">
+                        {moduleActivationError}
+                      </p>
+                    ) : null}
+                    {moduleActivationSuccess ? (
+                      <p className="rounded-xl border border-emerald-300/35 bg-emerald-500/10 px-3 py-2 text-[12px] text-emerald-100">
+                        {moduleActivationSuccess}
+                      </p>
+                    ) : null}
+                    <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <p className="text-[11px] uppercase tracking-[0.24em] text-white/50">{group.flow}</p>
+                        <p className="text-[11px] uppercase tracking-[0.24em] text-white/50">Ferramentas disponiveis</p>
+                        <span className="text-[11px] text-white/45">{availableToolCards.length} por ativar</span>
                       </div>
-                      <div className="grid gap-3 lg:grid-cols-2">
-                        {group.tools.map((tool) => renderToolPickerCard(tool))}
-                      </div>
+                      {availableToolCards.length > 0 ? (
+                        <div className="grid gap-3 lg:grid-cols-2">
+                          {availableToolCards.map((card) => renderModuleActivationCard(card))}
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-sm text-white/70">
+                          Nao existem mais ferramentas opcionais disponiveis para ativacao nesta organizacao.
+                        </div>
+                      )}
                     </div>
-                  ))
-                ) : (
-                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-sm text-white/70">
-                    Não tens ferramentas ocultas neste momento.
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[11px] uppercase tracking-[0.24em] text-white/50">Ferramentas ativas</p>
+                        <span className="text-[11px] text-white/45">
+                          {optionalActiveToolCards.length} opcionais desativaveis
+                        </span>
+                      </div>
+                      {activeManagedToolCards.length > 0 ? (
+                        <div className="grid gap-3 lg:grid-cols-2">
+                          {activeManagedToolCards.map((card) => renderActiveManagedModuleCard(card))}
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-sm text-white/70">
+                          Nao existem ferramentas opcionais ativas nesta organizacao.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {canCustomizeTools && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[11px] uppercase tracking-[0.24em] text-white/50">Ferramentas ocultas</p>
+                    </div>
+                    {hiddenToolGroups.length > 0 ? (
+                      hiddenToolGroups.map((group) => (
+                        <div key={group.flow} className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <p className="text-[11px] uppercase tracking-[0.24em] text-white/50">{group.flow}</p>
+                          </div>
+                          <div className="grid gap-3 lg:grid-cols-2">
+                            {group.tools.map((tool) => renderToolPickerCard(tool))}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-sm text-white/70">
+                        Nao tens ferramentas ocultas neste momento.
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -3108,13 +3502,13 @@ function OrganizacaoPageInner({
               <Link href={primaryCreateMeta.href} className={CTA_PRIMARY}>
                 {primaryCreateMeta.label}
               </Link>
-              {canCustomizeTools && (
+              {showToolManagementCta && (
                 <button
                   type="button"
-                  onClick={() => setToolsModalOpen(true)}
+                  onClick={openToolManager}
                   className={CTA_SECONDARY}
                 >
-                  Ferramentas
+                  Gerir ferramentas
                 </button>
               )}
             </div>
@@ -3249,7 +3643,7 @@ function OrganizacaoPageInner({
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="space-y-1">
                   <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Ferramentas</p>
-                  <h2 className="text-xl font-semibold text-white">Apps da organização</h2>
+                  <h2 className="text-xl font-semibold text-white">Ferramentas da organização</h2>
                   <p className="text-[12px] text-white/65">Cada ferramenta mantém domínio próprio e acesso direto.</p>
                 </div>
               </div>
@@ -3267,7 +3661,7 @@ function OrganizacaoPageInner({
                     </div>
                     <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8">
                       {group.tools.map((tool) => renderToolCard(tool))}
-                      {canCustomizeTools && hasHiddenTools && group.flow === "Operações" && renderAddToolGhostCard()}
+                      {showToolManagementCta && group.flow === "Operações" && renderAddToolGhostCard()}
                     </div>
                   </div>
                 ))}
@@ -5002,10 +5396,10 @@ function OrganizacaoPageInner({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setToolsModalOpen(true)}
+                  onClick={openToolManager}
                   className={cn(CTA_SECONDARY, "text-[12px]")}
                 >
-                  Ativar ferramenta
+                  Gerir ferramentas
                 </button>
               </div>
             </div>
@@ -5478,6 +5872,24 @@ function OrganizacaoPageInner({
             setPendingToolVisibilityRemoval(null);
           }}
           onClose={() => setPendingToolVisibilityRemoval(null)}
+        />
+      )}
+      {pendingModuleDeactivation && (
+        <ConfirmDestructiveActionDialog
+          open
+          title={`Desativar ${pendingModuleDeactivation.title}?`}
+          description="Esta ferramenta deixa de estar ativa no dominio e pode desaparecer do perfil publico."
+          consequences={[
+            "A desativacao e bloqueada automaticamente quando existem operacoes ativas dessa ferramenta.",
+            "Podes voltar a ativar a ferramenta mais tarde no gestor de ferramentas.",
+          ]}
+          confirmLabel="Desativar ferramenta"
+          dangerLevel="high"
+          onConfirm={() => {
+            void deactivateModule(pendingModuleDeactivation);
+            setPendingModuleDeactivation(null);
+          }}
+          onClose={() => setPendingModuleDeactivation(null)}
         />
       )}
       {eventDialog && (

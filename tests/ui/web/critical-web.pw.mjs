@@ -51,7 +51,8 @@ test("@web authenticated user+org surfaces render", async ({ browser }) => {
 
   const userBearer = process.env.UI_E2E_USER_BEARER_RESOLVED;
   if (!userBearer) {
-    test.skip(true, "missing resolved user bearer");
+    test.info().annotations.push({ type: "env-missing", description: "missing resolved user bearer" });
+    return;
   }
   const orgId = process.env.UI_E2E_ORG_ID_RESOLVED || null;
 
@@ -100,7 +101,8 @@ test("@web authenticated user+org surfaces render", async ({ browser }) => {
 test("@web admin protected surfaces render with authenticated context", async ({ browser }) => {
   const adminBearer = process.env.UI_E2E_ADMIN_BEARER_RESOLVED;
   if (!adminBearer) {
-    test.skip(true, "missing resolved admin bearer");
+    test.info().annotations.push({ type: "env-missing", description: "missing resolved admin bearer" });
+    return;
   }
 
   const context = await browser.newContext({

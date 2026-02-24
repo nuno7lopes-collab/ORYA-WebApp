@@ -65,7 +65,7 @@ async function _GET(req: NextRequest) {
       );
     }
     if (!(await ensureInscricoesEnabled(organization))) {
-      return fail(403, "Módulo de formulários desativado.");
+      return fail(403, "Ferramenta de formulários desativada.");
     }
 
     const forms = await prisma.organizationForm.findMany({
@@ -131,7 +131,7 @@ async function _POST(req: NextRequest) {
       return fail(403, "Sem organização ativa.");
     }
     if (!(await ensureInscricoesEnabled(organization))) {
-      return fail(403, "Módulo de formulários desativado.");
+      return fail(403, "Ferramenta de formulários desativada.");
     }
 
     const body = await req.json().catch(() => null);

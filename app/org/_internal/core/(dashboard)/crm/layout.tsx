@@ -8,9 +8,19 @@ import { OrganizationMemberRole, OrganizationStatus } from "@prisma/client";
 import { AuthGate } from "@/app/components/autenticação/AuthGate";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { prisma } from "@/lib/prisma";
-import { buildOrgHref, buildOrgHubHref } from "@/lib/organizationIdUtils";
+import { buildOrgHref, buildOrgHubHref, parseOrganizationId } from "@/lib/organizationIdUtils";
 
-export default async function CrmLayout({ children }: { children: ReactNode }) {
+type RouteParamsInput = Promise<{ orgId?: string }> | { orgId?: string } | undefined;
+
+export default async function CrmLayout({
+  children,
+  params,
+}: {
+  children: ReactNode;
+  params?: RouteParamsInput;
+}) {
+  const resolvedParams = params ? await Promise.resolve(params) : null;
+  const requestedOrgId = parseOrganizationId(resolvedParams?.orgId);
   const supabase = await createSupabaseServer();
   const {
     data: { user },
@@ -21,7 +31,12 @@ export default async function CrmLayout({ children }: { children: ReactNode }) {
   }
 
   const { organization, membership } = await getActiveOrganizationForUser(user.id, {
-    allowFallback: true,
+    ...(requestedOrgId
+      ? {
+          organizationId: requestedOrgId,
+          allowFallback: false,
+        }
+      : { allowFallback: true }),
     allowedStatuses: [OrganizationStatus.ACTIVE, OrganizationStatus.SUSPENDED],
     roles: Object.values(OrganizationMemberRole),
   });

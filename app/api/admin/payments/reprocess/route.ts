@@ -53,6 +53,7 @@ async function _POST(req: NextRequest) {
     await enqueueOperation({
       operationType: "FULFILL_PAYMENT",
       dedupeKey: paymentIntentId,
+      forceRequeue: true,
       correlations: { paymentIntentId, purchaseId },
       payload: { paymentIntentId, purchaseId },
     });

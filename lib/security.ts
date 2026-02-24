@@ -175,8 +175,8 @@ export function isUserEmailVerified(
   }
 
   // Compatibilidade para mocks antigos em testes que devolvem apenas { id }.
-  // Em produção, o user do Supabase inclui os campos de confirmação.
-  if (!hasEmailConfirmedAt && !hasConfirmedAt && !hasEmailConfirmed) {
+  // Em runtime não-test, ausência destes campos deve falhar por defeito.
+  if (process.env.NODE_ENV === "test" && !hasEmailConfirmedAt && !hasConfirmedAt && !hasEmailConfirmed) {
     return true;
   }
 

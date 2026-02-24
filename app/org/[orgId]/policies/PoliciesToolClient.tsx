@@ -5,6 +5,11 @@ import { useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
 import { isPoliciesAllowedView, type PoliciesAllowedView } from "@/lib/domainBoundaries";
+import {
+  BOOKING_POLICY_WINDOW_MINUTES_MAX,
+  BOOKING_POLICY_WINDOW_MINUTES_MIN,
+  validateBookingPolicyWindowMinutes,
+} from "@/lib/policies/bookingPolicyGuardrails";
 import { cn } from "@/lib/utils";
 
 type PoliciesToolClientProps = {
@@ -118,6 +123,22 @@ type PadelPolicyResponse = {
   };
 };
 
+type DraftWindowValidation =
+  | { ok: true; value: number | null }
+  | { ok: false; message: string };
+
+type PolicyDraftValidation = {
+  ok: boolean;
+  values: {
+    cancellationWindowMinutes: number | null;
+    rescheduleWindowMinutes: number | null;
+  };
+  errors: {
+    cancellationWindowCustom: string | null;
+    rescheduleWindowCustom: string | null;
+  };
+};
+
 const swrOptions = {
   revalidateOnFocus: false,
   revalidateOnReconnect: true,
@@ -206,14 +227,69 @@ function windowPresetFromValue(value: number | null): WindowPreset {
   return "custom";
 }
 
-function resolveWindowFromDraft(preset: WindowPreset, customValue: string) {
-  if (preset === "none") return null;
+function validateDraftWindow(params: {
+  field: "cancellationWindowMinutes" | "rescheduleWindowMinutes";
+  preset: WindowPreset;
+  customValue: string;
+}): DraftWindowValidation {
+  const { field, preset, customValue } = params;
+  if (preset === "none") return { ok: true, value: null };
   if (preset === "custom") {
-    const parsed = Number(customValue);
-    if (!Number.isFinite(parsed)) return null;
-    return Math.max(0, Math.round(parsed));
+    if (!customValue.trim()) {
+      return {
+        ok: false,
+        message: `Indica um valor entre ${BOOKING_POLICY_WINDOW_MINUTES_MIN} e ${BOOKING_POLICY_WINDOW_MINUTES_MAX} minutos.`,
+      };
+    }
+    const customValidation = validateBookingPolicyWindowMinutes({
+      value: customValue,
+      field,
+      allowNull: false,
+    });
+    if (!customValidation.ok) {
+      return { ok: false, message: customValidation.message };
+    }
+    return { ok: true, value: customValidation.value };
   }
-  return Math.max(0, Math.round(Number(preset)));
+  const presetValidation = validateBookingPolicyWindowMinutes({
+    value: Number(preset),
+    field,
+    allowNull: false,
+  });
+  if (!presetValidation.ok) {
+    return { ok: false, message: presetValidation.message };
+  }
+  return { ok: true, value: presetValidation.value };
+}
+
+function validatePolicyDraft(draft: PolicyDraft | null): PolicyDraftValidation | null {
+  if (!draft) return null;
+  const cancellationResult = draft.allowCancellation
+    ? validateDraftWindow({
+        field: "cancellationWindowMinutes",
+        preset: draft.cancellationWindowPreset,
+        customValue: draft.cancellationWindowCustom,
+      })
+    : ({ ok: true, value: null } as DraftWindowValidation);
+  const rescheduleResult = draft.allowReschedule
+    ? validateDraftWindow({
+        field: "rescheduleWindowMinutes",
+        preset: draft.rescheduleWindowPreset,
+        customValue: draft.rescheduleWindowCustom,
+      })
+    : ({ ok: true, value: null } as DraftWindowValidation);
+
+  return {
+    ok: cancellationResult.ok && rescheduleResult.ok,
+    values: {
+      cancellationWindowMinutes: cancellationResult.ok ? cancellationResult.value : null,
+      rescheduleWindowMinutes: rescheduleResult.ok ? rescheduleResult.value : null,
+    },
+    errors: {
+      cancellationWindowCustom: cancellationResult.ok ? null : cancellationResult.message,
+      rescheduleWindowCustom: rescheduleResult.ok ? null : rescheduleResult.message,
+    },
+  };
 }
 
 function formatFeeRateLabel(bps: number) {
@@ -316,6 +392,8 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
   const [storePolicyErrorMessage, setStorePolicyErrorMessage] = useState<string | null>(null);
   const [storePolicySuccessMessage, setStorePolicySuccessMessage] = useState<string | null>(null);
 
+  const bookingDraftValidation = useMemo(() => validatePolicyDraft(bookingDraft), [bookingDraft]);
+
   useEffect(() => {
     if (!bookingPolicy) return;
     if (loadedBookingPolicyId === bookingPolicy.id) return;
@@ -349,7 +427,12 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
   }, [storePolicyData, storePolicyLoaded]);
 
   const saveBookingPolicy = useCallback(async () => {
-    if (!bookingPolicy || !bookingDraft || bookingSaving) return;
+    if (!bookingPolicy || !bookingDraft || bookingSaving || !bookingDraftValidation) return;
+    if (!bookingDraftValidation.ok) {
+      setBookingError("Revê os guardrails dos valores personalizados antes de guardar.");
+      setBookingSuccessMessage(null);
+      return;
+    }
     setBookingSaving(true);
     setBookingError(null);
     setBookingSuccessMessage(null);
@@ -358,11 +441,11 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
       const payload = {
         allowCancellation: bookingDraft.allowCancellation,
         cancellationWindowMinutes: bookingDraft.allowCancellation
-          ? resolveWindowFromDraft(bookingDraft.cancellationWindowPreset, bookingDraft.cancellationWindowCustom)
+          ? bookingDraftValidation.values.cancellationWindowMinutes
           : null,
         allowReschedule: bookingDraft.allowReschedule,
         rescheduleWindowMinutes: bookingDraft.allowReschedule
-          ? resolveWindowFromDraft(bookingDraft.rescheduleWindowPreset, bookingDraft.rescheduleWindowCustom)
+          ? bookingDraftValidation.values.rescheduleWindowMinutes
           : null,
         guestBookingAllowed: bookingDraft.guestBookingAllowed,
         cancellationPenaltyBps: 0,
@@ -386,7 +469,7 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
     } finally {
       setBookingSaving(false);
     }
-  }, [bookingDraft, bookingPolicy, bookingSaving, mutatePolicies, orgApiBase]);
+  }, [bookingDraft, bookingDraftValidation, bookingPolicy, bookingSaving, mutatePolicies, orgApiBase]);
 
   const saveStorePolicy = useCallback(async () => {
     if (storePolicySaving) return;
@@ -535,6 +618,10 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
 
                 <PolicyControls
                   draft={bookingDraft}
+                  validationErrors={{
+                    cancellationWindowCustom: bookingDraftValidation?.errors.cancellationWindowCustom ?? null,
+                    rescheduleWindowCustom: bookingDraftValidation?.errors.rescheduleWindowCustom ?? null,
+                  }}
                   onChange={(next) => {
                     setBookingDraft((prev) => {
                       const base = prev ?? bookingDraft;
@@ -547,12 +634,16 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
                   <p className="font-semibold text-white">Como fica para o cliente</p>
                   <p className="mt-1">
                     Cancelamento: {bookingDraft.allowCancellation
-                      ? prettyWindow(resolveWindowFromDraft(bookingDraft.cancellationWindowPreset, bookingDraft.cancellationWindowCustom))
+                      ? bookingDraftValidation?.errors.cancellationWindowCustom
+                        ? "valor personalizado inválido"
+                        : prettyWindow(bookingDraftValidation?.values.cancellationWindowMinutes ?? null)
                       : "não permitido"}
                   </p>
                   <p className="mt-1">
                     Reagendamento: {bookingDraft.allowReschedule
-                      ? prettyWindow(resolveWindowFromDraft(bookingDraft.rescheduleWindowPreset, bookingDraft.rescheduleWindowCustom))
+                      ? bookingDraftValidation?.errors.rescheduleWindowCustom
+                        ? "valor personalizado inválido"
+                        : prettyWindow(bookingDraftValidation?.values.rescheduleWindowMinutes ?? null)
                       : "não permitido"}
                   </p>
                   <p className="mt-1">
@@ -560,11 +651,22 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
                   </p>
                 </div>
 
+                {bookingDraftValidation && !bookingDraftValidation.ok ? (
+                  <Notice tone="warning">
+                    Guardrails ativos: os prazos personalizados têm de ficar entre {BOOKING_POLICY_WINDOW_MINUTES_MIN} e{" "}
+                    {BOOKING_POLICY_WINDOW_MINUTES_MAX} minutos.
+                  </Notice>
+                ) : null}
                 {bookingError ? <Notice tone="error">{bookingError}</Notice> : null}
                 {bookingSuccessMessage ? <Notice tone="success">{bookingSuccessMessage}</Notice> : null}
 
                 <div>
-                  <button type="button" className={CTA_PRIMARY} onClick={() => void saveBookingPolicy()} disabled={bookingSaving}>
+                  <button
+                    type="button"
+                    className={CTA_PRIMARY}
+                    onClick={() => void saveBookingPolicy()}
+                    disabled={bookingSaving || Boolean(bookingDraftValidation && !bookingDraftValidation.ok)}
+                  >
                     {bookingSaving ? "A guardar..." : "Guardar alterações"}
                   </button>
                 </div>
@@ -805,9 +907,14 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
 
 function PolicyControls({
   draft,
+  validationErrors,
   onChange,
 }: {
   draft: PolicyDraft;
+  validationErrors: {
+    cancellationWindowCustom: string | null;
+    rescheduleWindowCustom: string | null;
+  };
   onChange: (next: PolicyDraft | ((prev: PolicyDraft) => PolicyDraft)) => void;
 }) {
   const assign = useCallback(
@@ -859,15 +966,28 @@ function PolicyControls({
             <option value="custom">Personalizado</option>
           </select>
           {draft.cancellationWindowPreset === "custom" ? (
-            <input
-              className={cn(INPUT, "mt-2")}
-              value={draft.cancellationWindowCustom}
-              onChange={(event) =>
-                assign((prev) => ({ ...prev, cancellationWindowCustom: event.target.value.replace(/[^\d]/g, "") }))
-              }
-              placeholder="Minutos"
-              disabled={!draft.allowCancellation}
-            />
+            <>
+              <input
+                className={cn(INPUT, "mt-2")}
+                value={draft.cancellationWindowCustom}
+                onChange={(event) =>
+                  assign((prev) => ({ ...prev, cancellationWindowCustom: event.target.value.replace(/[^\d]/g, "") }))
+                }
+                placeholder={`Minutos (${BOOKING_POLICY_WINDOW_MINUTES_MIN}-${BOOKING_POLICY_WINDOW_MINUTES_MAX})`}
+                disabled={!draft.allowCancellation}
+                inputMode="numeric"
+                aria-invalid={Boolean(validationErrors.cancellationWindowCustom)}
+              />
+              <p
+                className={cn(
+                  "mt-1 text-xs",
+                  validationErrors.cancellationWindowCustom ? "text-rose-200" : "text-white/60",
+                )}
+              >
+                {validationErrors.cancellationWindowCustom ??
+                  `Aceita apenas ${BOOKING_POLICY_WINDOW_MINUTES_MIN}-${BOOKING_POLICY_WINDOW_MINUTES_MAX} minutos.`}
+              </p>
+            </>
           ) : null}
         </Field>
 
@@ -891,15 +1011,28 @@ function PolicyControls({
             <option value="custom">Personalizado</option>
           </select>
           {draft.rescheduleWindowPreset === "custom" ? (
-            <input
-              className={cn(INPUT, "mt-2")}
-              value={draft.rescheduleWindowCustom}
-              onChange={(event) =>
-                assign((prev) => ({ ...prev, rescheduleWindowCustom: event.target.value.replace(/[^\d]/g, "") }))
-              }
-              placeholder="Minutos"
-              disabled={!draft.allowReschedule}
-            />
+            <>
+              <input
+                className={cn(INPUT, "mt-2")}
+                value={draft.rescheduleWindowCustom}
+                onChange={(event) =>
+                  assign((prev) => ({ ...prev, rescheduleWindowCustom: event.target.value.replace(/[^\d]/g, "") }))
+                }
+                placeholder={`Minutos (${BOOKING_POLICY_WINDOW_MINUTES_MIN}-${BOOKING_POLICY_WINDOW_MINUTES_MAX})`}
+                disabled={!draft.allowReschedule}
+                inputMode="numeric"
+                aria-invalid={Boolean(validationErrors.rescheduleWindowCustom)}
+              />
+              <p
+                className={cn(
+                  "mt-1 text-xs",
+                  validationErrors.rescheduleWindowCustom ? "text-rose-200" : "text-white/60",
+                )}
+              >
+                {validationErrors.rescheduleWindowCustom ??
+                  `Aceita apenas ${BOOKING_POLICY_WINDOW_MINUTES_MIN}-${BOOKING_POLICY_WINDOW_MINUTES_MAX} minutos.`}
+              </p>
+            </>
           ) : null}
         </Field>
       </div>

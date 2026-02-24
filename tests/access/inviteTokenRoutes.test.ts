@@ -48,6 +48,7 @@ describe("invite token routes access", () => {
     const res = await publicInviteToken(req, { params: Promise.resolve({ slug: "slug" }) });
     const body = await res.json();
     expect(body.data.allow).toBe(false);
+    expect(evaluateEventAccess).toHaveBeenCalled();
   });
 
   it("bloqueia emissão org quando access engine nega", async () => {
@@ -63,5 +64,6 @@ describe("invite token routes access", () => {
     });
     const res = await orgInviteToken(req, { params: Promise.resolve({ id: "1" }) });
     expect(res.status).toBe(409);
+    expect(evaluateEventAccess).toHaveBeenCalled();
   });
 });

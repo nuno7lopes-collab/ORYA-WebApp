@@ -63,7 +63,7 @@ async function _POST(req: NextRequest) {
       APP_ENV: targetEnv,
     };
 
-    const result = await runScript(ctx, "create-secrets-json.sh", ["/tmp/orya-prod-secrets.json"], extraEnv);
+    const result = await runScript(ctx, "prepare-secrets-json.sh", ["/tmp/orya-prod-secrets.json"], extraEnv);
     await auditInfraAction(ctx, admin, "ADMIN_INFRA_ROTATE_SECRETS", {
       ok: result.ok,
       envs,

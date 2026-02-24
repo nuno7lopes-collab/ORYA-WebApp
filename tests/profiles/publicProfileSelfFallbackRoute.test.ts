@@ -13,8 +13,6 @@ const eventCount = vi.hoisted(() => vi.fn());
 const organizationFindUnique = vi.hoisted(() => vi.fn());
 const organizationFollowsCount = vi.hoisted(() => vi.fn());
 
-const supabaseSingle = vi.hoisted(() => vi.fn());
-
 vi.mock("@/lib/http/withApiEnvelope", () => ({ withApiEnvelope: (handler: unknown) => handler }));
 
 vi.mock("@/lib/supabaseServer", () => ({
@@ -22,13 +20,6 @@ vi.mock("@/lib/supabaseServer", () => ({
     auth: {
       getUser,
     },
-    from: vi.fn(() => ({
-      select: vi.fn(() => ({
-        eq: vi.fn(() => ({
-          single: supabaseSingle,
-        })),
-      })),
-    })),
   })),
 }));
 
@@ -75,25 +66,10 @@ beforeEach(async () => {
   eventCount.mockReset();
   organizationFindUnique.mockReset();
   organizationFollowsCount.mockReset();
-  supabaseSingle.mockReset();
 
   getUser.mockResolvedValue({ data: { user: { id: "user-1" } } });
   resolveUsernameOwner.mockResolvedValue(null);
   profileFindFirst.mockResolvedValue(null);
-  supabaseSingle.mockResolvedValue({
-    data: {
-      id: "user-1",
-      username: "migueloryatest",
-      full_name: "Miguel Orya Test",
-      avatar_url: null,
-      cover_url: null,
-      bio: null,
-      padel_level: "6",
-      favourite_categories: [],
-      visibility: "PUBLIC",
-    },
-    error: null,
-  });
   profileFindUnique.mockResolvedValue({
     id: "user-1",
     username: "migueloryatest",
@@ -119,7 +95,7 @@ beforeEach(async () => {
 });
 
 describe("GET /api/public/profile fallback self-profile", () => {
-  it("usa perfil Prisma do próprio utilizador para incluir dados de padel", async () => {
+  it("usa perfil Prisma do próprio utilizador para incluir dados de padel sem fallback Supabase", async () => {
     const req = new NextRequest("http://localhost/api/public/profile?username=migueloryatest");
 
     const res = await GET(req);

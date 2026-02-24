@@ -1276,10 +1276,21 @@ body {
   --orya-avatar-ring-padding: 2px;
   --orya-avatar-ring-glow: 8px;
   padding: var(--orya-avatar-ring-padding);
-  background-image: linear-gradient(45deg, #ff00c8 0%, #b08cff 48%, #6bffff 100%);
+  background-image: conic-gradient(
+    from 220deg,
+    #feda75 0deg,
+    #fa7e1e 68deg,
+    #d62976 138deg,
+    #962fbf 214deg,
+    #4f5bd5 300deg,
+    #0bd4c5 332deg,
+    #feda75 360deg
+  );
+  background-color: transparent;
   box-shadow:
-    0 0 var(--orya-avatar-ring-glow) rgba(34,211,238, 0.16),
-    0 0 calc(var(--orya-avatar-ring-glow) * 1.15) rgba(255, 0, 200, 0.14);
+    0 0 var(--orya-avatar-ring-glow) rgba(79, 91, 213, 0.2),
+    0 0 calc(var(--orya-avatar-ring-glow) * 1.2) rgba(250, 126, 30, 0.22),
+    0 0 calc(var(--orya-avatar-ring-glow) * 1.45) rgba(214, 41, 118, 0.2);
 }
 
 .orya-profile-cover-fallback {

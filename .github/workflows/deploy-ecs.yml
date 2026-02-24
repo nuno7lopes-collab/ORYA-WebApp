@@ -6,7 +6,7 @@ on:
       target:
         description: "Serviço(s) a publicar"
         required: true
-        default: all
+        default: web
         type: choice
         options:
           - all
@@ -47,7 +47,9 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             target="${{ inputs.target }}"
           else
-            target="all"
+            # Em push automático (branch developer), publicar apenas web para evitar
+            # religar componentes de custo (worker) sem intenção explícita.
+            target="web"
           fi
           echo "DEPLOY_TARGET=${target}" >> "$GITHUB_ENV"
           echo "target=${target}" >> "$GITHUB_OUTPUT"
@@ -171,12 +173,16 @@ jobs:
           fi
 
           if [[ "${DEPLOY_TARGET}" == "all" || "${DEPLOY_TARGET}" == "worker" ]]; then
-            if [[ -z "${WORKER_DIGEST}" ]]; then
+            worker_status=$(aws ecs describe-services --cluster "${ECS_CLUSTER}" --services "${ECS_SERVICE_WORKER}" --query "services[0].status" --output text 2>/dev/null || true)
+            if [[ -z "${worker_status}" || "${worker_status}" == "None" || "${worker_status}" == "MISSING" || "${worker_status}" == "INACTIVE" ]]; then
+              echo "Worker service (${ECS_SERVICE_WORKER}) indisponível/inativo; a saltar deploy do worker."
+            elif [[ -z "${WORKER_DIGEST}" ]]; then
               echo "WORKER_DIGEST vazio; build worker falhou." >&2
               exit 1
+            else
+              update_service_with_digest "${ECS_SERVICE_WORKER}" "orya-worker" "${ECR_REGISTRY}/${ECR_REPOSITORY_WORKER}@${WORKER_DIGEST}"
+              services+=("${ECS_SERVICE_WORKER}")
             fi
-            update_service_with_digest "${ECS_SERVICE_WORKER}" "orya-worker" "${ECR_REGISTRY}/${ECR_REPOSITORY_WORKER}@${WORKER_DIGEST}"
-            services+=("${ECS_SERVICE_WORKER}")
           fi
 
           wait_for_service_stable() {

@@ -94,6 +94,8 @@ const pairingEventSelect = {
       platformFeeBps: true,
       platformFeeFixedCents: true,
       orgType: true,
+      officialEmail: true,
+      officialEmailVerifiedAt: true,
       stripeAccountId: true,
       stripeChargesEnabled: true,
       stripePayoutsEnabled: true,
@@ -746,6 +748,35 @@ async function handlePadelRegistrationIntent(req: NextRequest, body: Body) {
     feeBps: pricing.feeBpsApplied,
     feeFixed: pricing.feeFixedApplied,
   });
+  const requiresOrganizationStripeForPairing = requiresOrganizationStripe(
+    pairing.event.organization?.orgType,
+  );
+  if (pricing.totalCents > 0) {
+    const gate = getPaidSalesGate({
+      officialEmail: pairing.event.organization?.officialEmail ?? null,
+      officialEmailVerifiedAt: pairing.event.organization?.officialEmailVerifiedAt ?? null,
+      stripeAccountId: pairing.event.organization?.stripeAccountId ?? null,
+      stripeChargesEnabled: pairing.event.organization?.stripeChargesEnabled ?? false,
+      stripePayoutsEnabled: pairing.event.organization?.stripePayoutsEnabled ?? false,
+      requireStripe: requiresOrganizationStripeForPairing,
+    });
+    if (!gate.ok) {
+      const code = gate.missingEmail
+        ? "ORGANIZATION_PAYMENTS_NOT_READY"
+        : "ORGANIZATION_STRIPE_NOT_CONNECTED";
+      return intentError(
+        code,
+        formatPaidSalesGateMessage(gate, "Pagamentos desativados para este evento. Para ativar,"),
+        {
+          httpStatus: 409,
+          status: "FAILED",
+          nextAction: gate.missingStripe ? "CONNECT_STRIPE" : "NONE",
+          retryable: false,
+          extra: { missingEmail: gate.missingEmail, missingStripe: gate.missingStripe },
+        },
+      );
+    }
+  }
 
   const purchaseId =
     purchaseIdFromBody ||
@@ -882,7 +913,7 @@ async function handlePadelRegistrationIntent(req: NextRequest, body: Body) {
         stripePayoutsEnabled: pairing.event.organization?.stripePayoutsEnabled ?? null,
         orgType: pairing.event.organization?.orgType ?? null,
       },
-      requireStripe: true,
+      requireStripe: requiresOrganizationStripeForPairing,
       clientIdempotencyKey: clientIdempotencyKey ?? undefined,
       customerIdentityId: buyerIdentityId ?? null,
       resolvedSnapshot: {

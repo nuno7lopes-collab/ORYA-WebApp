@@ -1,0 +1,6 @@
+table,column,model,field,runtime_signal,scripts_signal,tests_signal,db_refs_total,structural_dependencies,status,recommended_action,notes
+padel_tournament_participants,seed_rank,PadelTournamentParticipant,seedRank,0,0,0,24,none,WATCHLIST_DEV,monitor_no_ddl,seed ranks ativos hoje via config/advanced e não persistidos nesta coluna
+tickets,rotating_seed,Ticket,rotatingSeed,0,0,0,52,none,WATCHLIST_DEV,monitor_no_ddl,coluna preparada para rotação de QR mas sem uso explícito atual
+profiles,deleted_at_final,Profile,deletedAtFinal,0,0,0,280,none,WATCHLIST_DEV,monitor_no_ddl,fluxo de eliminação usa requested/scheduled mas não final marker
+profiles,location_source,Profile,locationSource,0,0,0,280,none,WATCHLIST_DEV,monitor_no_ddl,coluna declarada no schema mas sem leitura/escrita explícita de profile.locationSource
+padel_rounds,duration_seconds,PadelRound,durationSeconds,0,0,0,2,none,WATCHLIST_DEV,monitor_no_ddl,timer/round workflow usa startsAt/endsAt e não esta duração persistida

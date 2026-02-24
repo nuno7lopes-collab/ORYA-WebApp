@@ -222,6 +222,7 @@ async function _POST(req: NextRequest) {
   await enqueueOperation({
     operationType: "PROCESS_STRIPE_EVENT",
     dedupeKey: stripeEvent.id,
+    forceRequeue: true,
     correlations: {
       stripeEventId: stripeEvent.id,
       paymentIntentId: mapped.paymentIntentId,

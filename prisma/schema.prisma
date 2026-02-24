@@ -277,7 +277,6 @@ model Organization {
   padelWaitlistEntries                                                     PadelWaitlistEntry[]
   organizationPolicies                                                     OrganizationPolicy[]
   userEventSignals                                                         UserEventSignal[]
-  refundPolicyVersions                                                     RefundPolicyVersion[]
   services                                                                 Service[]
   bookings                                                                 Booking[]
   bookingChangeRequests                                                    BookingChangeRequest[]
@@ -305,8 +304,6 @@ model Organization {
   crmCampaignApprovals                                                     CrmCampaignApproval[]
   crmJourneys                                                              CrmJourney[]
   crmJourneySteps                                                          CrmJourneyStep[]
-  crmJourneyEnrollments                                                    CrmJourneyEnrollment[]
-  crmJourneyRuns                                                           CrmJourneyRun[]
   crmCampaignDeliveries                                                    CrmCampaignDelivery[]
   crmSavedViews                                                            CrmSavedView[]
   userConsents                                                             UserConsent[]
@@ -354,6 +351,7 @@ model OrganizationGroup {
   id                 Int                              @id @default(autoincrement())
   name               String?                          @map("name")
   ownerUserId        String                           @map("owner_user_id") @db.Uuid
+  showLinkedOrganizationsPublicly Boolean             @default(true) @map("show_linked_organizations_publicly")
   createdAt          DateTime                         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime                         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   organizations      Organization[]
@@ -1828,11 +1826,9 @@ model Event {
   invites                        EventInvite[]
   accessPolicies                 EventAccessPolicy[]
   inviteTokens                   InviteToken[]
-  ticketOrders                   TicketOrder[]
   padelRegistrations             PadelRegistration[]
   saleSummaries                  SaleSummary[]
   saleLines                      SaleLine[]
-  refundPolicyVersions           RefundPolicyVersion[]
   favorites                      EventFavorite[]
   userEventSignals               UserEventSignal[]
   guestTicketAccessTokens        GuestTicketAccessToken[]
@@ -1959,7 +1955,6 @@ model TicketType {
   tickets                  Ticket[]
   padelEventCategoryLink   PadelEventCategoryLink? @relation(fields: [padelEventCategoryLinkId], references: [id], onDelete: SetNull)
   inviteTokens             InviteToken[]
-  ticketOrderLines         TicketOrderLine[]
   saleLines                SaleLine[]
 
   @@index([eventId])
@@ -2064,44 +2059,6 @@ model TicketReservation {
   @@index([userId])
   @@index([status, expiresAt])
   @@map("ticket_reservations")
-  @@schema("app_v3")
-}
-
-/// Checkout source (TICKET_ORDER)
-model TicketOrder {
-  env             String            @default("prod")
-  id              String            @id @default(uuid()) @db.Uuid
-  organizationId  Int               @map("organization_id")
-  eventId         Int               @map("event_id")
-  buyerIdentityId String?           @map("buyer_identity_id") @db.Uuid
-  currency        String            @default("EUR")
-  status          TicketOrderStatus @default(DRAFT)
-  createdAt       DateTime          @default(now()) @map("created_at")
-  updatedAt       DateTime          @updatedAt @map("updated_at")
-  lines           TicketOrderLine[]
-  event           Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  @@index([organizationId], map: "ticket_orders_org_idx")
-  @@index([eventId], map: "ticket_orders_event_idx")
-  @@map("ticket_orders")
-  @@schema("app_v3")
-}
-
-/// Linhas do TicketOrder (para pricing snapshot)
-model TicketOrderLine {
-  env           String      @default("prod")
-  id            Int         @id @default(autoincrement())
-  ticketOrderId String      @map("ticket_order_id") @db.Uuid
-  ticketTypeId  Int         @map("ticket_type_id")
-  qty           Int         @map("qty")
-  unitAmount    Int         @map("unit_amount")
-  totalAmount   Int         @map("total_amount")
-  ticketOrder   TicketOrder @relation(fields: [ticketOrderId], references: [id], onDelete: Cascade)
-  ticketType    TicketType  @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
-
-  @@index([ticketOrderId], map: "ticket_order_lines_order_idx")
-  @@index([ticketTypeId], map: "ticket_order_lines_ticket_type_idx")
-  @@map("ticket_order_lines")
   @@schema("app_v3")
 }
 
@@ -2686,27 +2643,6 @@ model AddressLookup {
   @@unique([sourceProvider, sourceProviderPlaceId], map: "address_lookups_provider_place_uq")
   @@index([addressId], map: "address_lookups_address_idx")
   @@map("address_lookups")
-  @@schema("app_v3")
-}
-
-/// Política de reembolso versionada (auditável)
-model RefundPolicyVersion {
-  env             String         @default("prod")
-  id              Int            @id @default(autoincrement())
-  organizationId  Int            @map("organization_id")
-  eventId         Int?           @map("event_id")
-  policyVersion   String         @map("policy_version")
-  feeBps          Int            @default(0) @map("fee_bps")
-  feeFixedCents   Int            @default(0) @map("fee_fixed_cents")
-  feePayer        RefundFeePayer @default(CUSTOMER) @map("fee_payer")
-  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
-  createdByUserId String?        @map("created_by_user_id") @db.Uuid
-  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  event           Event?         @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  @@unique([organizationId, eventId, policyVersion], map: "refund_policy_versions_org_event_version_uq")
-  @@index([organizationId, eventId], map: "refund_policy_versions_org_event_idx")
-  @@map("refund_policy_versions")
   @@schema("app_v3")
 }
 
@@ -5563,7 +5499,6 @@ model CrmContact {
   notes               CrmContactNote[]
   padelProfile        CrmContactPadel?
   campaignDeliveries  CrmCampaignDelivery[]
-  journeyEnrollments  CrmJourneyEnrollment[]
   padelPlayerProfiles PadelPlayerProfile[]
 
   @@unique([organizationId, userId], map: "crm_contacts_org_user_unique")
@@ -5775,8 +5710,6 @@ model CrmJourney {
   organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   creator      Profile?               @relation("CrmJourneyCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
   steps        CrmJourneyStep[]
-  enrollments  CrmJourneyEnrollment[]
-  runs         CrmJourneyRun[]
 
   @@index([organizationId, status], map: "crm_journeys_org_status_idx")
   @@map("crm_journeys")
@@ -5797,65 +5730,11 @@ model CrmJourneyStep {
 
   organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   journey      CrmJourney      @relation(fields: [journeyId], references: [id], onDelete: Cascade)
-  runs         CrmJourneyRun[]
 
   @@unique([journeyId, stepKey], map: "crm_journey_steps_journey_step_key_uq")
   @@unique([journeyId, position], map: "crm_journey_steps_journey_position_uq")
   @@index([organizationId, journeyId], map: "crm_journey_steps_org_journey_idx")
   @@map("crm_journey_steps")
-  @@schema("app_v3")
-}
-
-model CrmJourneyEnrollment {
-  env             String                     @default("prod")
-  id              String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId  Int                        @map("organization_id")
-  journeyId       String                     @map("journey_id") @db.Uuid
-  contactId       String                     @map("contact_id") @db.Uuid
-  triggerEventId  String?                    @map("trigger_event_id") @db.Text
-  dedupeKey       String                     @map("dedupe_key") @db.Text
-  status          CrmJourneyEnrollmentStatus @default(ACTIVE)
-  currentStep     Int                        @default(0) @map("current_step")
-  lastEvaluatedAt DateTime?                  @map("last_evaluated_at") @db.Timestamptz(6)
-  completedAt     DateTime?                  @map("completed_at") @db.Timestamptz(6)
-  createdAt       DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  journey      CrmJourney      @relation(fields: [journeyId], references: [id], onDelete: Cascade)
-  contact      CrmContact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  runs         CrmJourneyRun[]
-
-  @@unique([journeyId, dedupeKey], map: "crm_journey_enrollments_journey_dedupe_key_uq")
-  @@index([organizationId, status], map: "crm_journey_enrollments_org_status_idx")
-  @@index([organizationId, contactId], map: "crm_journey_enrollments_org_contact_idx")
-  @@map("crm_journey_enrollments")
-  @@schema("app_v3")
-}
-
-model CrmJourneyRun {
-  env            String              @default("prod")
-  id             String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId Int                 @map("organization_id")
-  journeyId      String              @map("journey_id") @db.Uuid
-  enrollmentId   String              @map("enrollment_id") @db.Uuid
-  stepId         String              @map("step_id") @db.Uuid
-  status         CrmJourneyRunStatus @default(PENDING)
-  scheduledFor   DateTime?           @map("scheduled_for") @db.Timestamptz(6)
-  executedAt     DateTime?           @map("executed_at") @db.Timestamptz(6)
-  errorCode      String?             @map("error_code")
-  errorMessage   String?             @map("error_message")
-  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  journey      CrmJourney           @relation(fields: [journeyId], references: [id], onDelete: Cascade)
-  enrollment   CrmJourneyEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
-  step         CrmJourneyStep       @relation(fields: [stepId], references: [id], onDelete: Cascade)
-
-  @@index([organizationId, status], map: "crm_journey_runs_org_status_idx")
-  @@index([enrollmentId, createdAt], map: "crm_journey_runs_enrollment_created_idx")
-  @@map("crm_journey_runs")
   @@schema("app_v3")
 }
 
@@ -6196,14 +6075,6 @@ enum LedgerEntryType {
   REFUND_PROCESSOR_FEES_REVERSAL
   CHARGEBACK_GROSS
   CHARGEBACK_PLATFORM_FEE_REVERSAL
-
-  @@schema("app_v3")
-}
-
-enum TicketOrderStatus {
-  DRAFT
-  READY_FOR_CHECKOUT
-  CANCELLED
 
   @@schema("app_v3")
 }
@@ -6772,13 +6643,6 @@ enum AddressValidationStatus {
   RAW
   NORMALIZED
   VERIFIED
-
-  @@schema("app_v3")
-}
-
-enum RefundFeePayer {
-  ORGANIZATION
-  CUSTOMER
 
   @@schema("app_v3")
 }
@@ -7821,25 +7685,6 @@ enum CrmJourneyStepType {
   CONDITION
   DELAY
   ACTION
-
-  @@schema("app_v3")
-}
-
-enum CrmJourneyEnrollmentStatus {
-  ACTIVE
-  PAUSED
-  COMPLETED
-  CANCELLED
-
-  @@schema("app_v3")
-}
-
-enum CrmJourneyRunStatus {
-  PENDING
-  RUNNING
-  SENT
-  SKIPPED
-  FAILED
 
   @@schema("app_v3")
 }

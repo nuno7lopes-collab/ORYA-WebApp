@@ -14,7 +14,11 @@ function parsePositiveInt(raw: string | null | undefined) {
   return Math.floor(value);
 }
 
-export default async function GroupDashboardPage({ params }: { params: { groupId: string } }) {
+type GroupDashboardPageProps = {
+  params: Promise<{ groupId: string }> | { groupId: string };
+};
+
+export default async function GroupDashboardPage({ params }: GroupDashboardPageProps) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
@@ -24,7 +28,8 @@ export default async function GroupDashboardPage({ params }: { params: { groupId
     return <AuthGate />;
   }
 
-  const groupId = parsePositiveInt(params.groupId);
+  const resolvedParams = await params;
+  const groupId = parsePositiveInt(resolvedParams.groupId);
   if (!groupId) {
     return (
       <div className="mx-auto w-full max-w-[1240px] px-4 py-16 text-white sm:px-6 lg:px-8">

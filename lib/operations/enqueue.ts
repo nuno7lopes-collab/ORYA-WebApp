@@ -8,6 +8,7 @@ type EnqueueParams = {
   operationType: string;
   dedupeKey: string;
   status?: OperationStatus;
+  forceRequeue?: boolean;
   payload?: Record<string, unknown> | null;
   correlations?: {
     purchaseId?: string | null;
@@ -28,6 +29,7 @@ export async function enqueueOperation(params: EnqueueParams) {
     operationType,
     dedupeKey,
     status = "PENDING",
+    forceRequeue = false,
     payload = {},
     correlations = {},
   } = params;
@@ -63,8 +65,25 @@ export async function enqueueOperation(params: EnqueueParams) {
           )
           ON CONFLICT (dedupe_key)
           DO UPDATE SET
-            status = EXCLUDED.status,
-            payload = EXCLUDED.payload,
+            status = CASE
+              WHEN ${forceRequeue} THEN EXCLUDED.status
+              ELSE operations.status
+            END,
+            payload = CASE
+              WHEN ${forceRequeue} THEN EXCLUDED.payload
+              WHEN operations.status IN ('SUCCEEDED'::app_v3."OperationStatus", 'DEAD_LETTER'::app_v3."OperationStatus", 'RUNNING'::app_v3."OperationStatus')
+                THEN operations.payload
+              ELSE EXCLUDED.payload
+            END,
+            attempts = CASE WHEN ${forceRequeue} THEN 0 ELSE operations.attempts END,
+            last_error = CASE WHEN ${forceRequeue} THEN NULL ELSE operations.last_error END,
+            reason_code = CASE WHEN ${forceRequeue} THEN NULL ELSE operations.reason_code END,
+            error_class = CASE WHEN ${forceRequeue} THEN NULL ELSE operations.error_class END,
+            error_stack = CASE WHEN ${forceRequeue} THEN NULL ELSE operations.error_stack END,
+            first_seen_at = CASE WHEN ${forceRequeue} THEN NULL ELSE operations.first_seen_at END,
+            last_seen_at = CASE WHEN ${forceRequeue} THEN NULL ELSE operations.last_seen_at END,
+            locked_at = CASE WHEN ${forceRequeue} THEN NULL ELSE operations.locked_at END,
+            next_retry_at = CASE WHEN ${forceRequeue} THEN NULL ELSE operations.next_retry_at END,
             updated_at = now(),
             purchase_id = COALESCE(operations.purchase_id, EXCLUDED.purchase_id),
             payment_intent_id = COALESCE(operations.payment_intent_id, EXCLUDED.payment_intent_id),

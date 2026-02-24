@@ -51,67 +51,79 @@ async function _POST(req: NextRequest) {
       return jsonWrap({ ok: false, error: "ORGANIZATION_NOT_FOUND" }, { status: 404 });
     }
 
-    if (organization.orgType === orgType) {
-      return jsonWrap({
-        ok: true,
-        organization: { id: organization.id, orgType: organization.orgType, changed: false },
-      });
-    }
+    const changedOrgType = organization.orgType !== orgType;
 
     let cancelledPayouts = 0;
     let platformEmail: string | null = null;
-    if (orgType === OrgType.PLATFORM) {
+    if (changedOrgType && orgType === OrgType.PLATFORM) {
       platformEmail = await getPlatformOfficialEmail();
       if (!platformEmail) {
         return jsonWrap({ ok: false, error: "PLATFORM_EMAIL_NOT_SET" }, { status: 400 });
       }
     }
-    if (orgType === OrgType.PLATFORM && organization.stripeAccountId) {
+    if (changedOrgType && orgType === OrgType.PLATFORM && organization.stripeAccountId) {
       cancelledPayouts = 0;
     }
 
     const updateResult = await prisma.$transaction(async (tx) => {
-      const updated = await tx.organization.update({
-        where: { id: organization.id },
-        data:
-          orgType === OrgType.PLATFORM
-            ? {
-                orgType,
-                officialEmail: platformEmail,
-                officialEmailVerifiedAt: new Date(),
-                stripeAccountId: null,
-                stripeChargesEnabled: false,
-                stripePayoutsEnabled: false,
-              }
-            : {
-                orgType,
-                officialEmail: null,
-                officialEmailVerifiedAt: null,
-                stripeAccountId: null,
-                stripeChargesEnabled: false,
-                stripePayoutsEnabled: false,
-              },
-        select: { id: true, orgType: true },
-      });
+      let updated: { id: number; orgType: OrgType } = {
+        id: organization.id,
+        orgType: organization.orgType,
+      };
 
-      const correctedEventPayoutModes =
-        orgType === OrgType.EXTERNAL
-          ? (
-              await tx.event.updateMany({
-                where: {
-                  organizationId: organization.id,
-                  payoutMode: PayoutMode.PLATFORM,
+      if (changedOrgType) {
+        updated = await tx.organization.update({
+          where: { id: organization.id },
+          data:
+            orgType === OrgType.PLATFORM
+              ? {
+                  orgType,
+                  officialEmail: platformEmail,
+                  officialEmailVerifiedAt: new Date(),
+                  stripeAccountId: null,
+                  stripeChargesEnabled: false,
+                  stripePayoutsEnabled: false,
+                }
+              : {
+                  orgType,
+                  officialEmail: null,
+                  officialEmailVerifiedAt: null,
+                  stripeAccountId: null,
+                  stripeChargesEnabled: false,
+                  stripePayoutsEnabled: false,
                 },
-                data: {
-                  payoutMode: PayoutMode.ORGANIZATION,
-                },
-              })
-            ).count
-          : 0;
+          select: { id: true, orgType: true },
+        });
+      }
 
-      return { updated, correctedEventPayoutModes };
+      const targetPayoutMode =
+        orgType === OrgType.PLATFORM
+          ? PayoutMode.PLATFORM
+          : PayoutMode.ORGANIZATION;
+      const correctedEventPayoutModes = (
+        await tx.event.updateMany({
+          where: {
+            organizationId: organization.id,
+            payoutMode: { not: targetPayoutMode },
+          },
+          data: {
+            payoutMode: targetPayoutMode,
+          },
+        })
+      ).count;
+
+      return { updated, correctedEventPayoutModes, changed: changedOrgType };
     });
     const updated = updateResult.updated;
+
+    if (!updateResult.changed && updateResult.correctedEventPayoutModes === 0) {
+      return jsonWrap({
+        ok: true,
+        organization: { id: updated.id, orgType: updated.orgType, changed: false },
+        cancelledPayouts: 0,
+        correctedEventPayoutModes: 0,
+      });
+    }
 
     const ip = getClientIp(req);
     const userAgent = req.headers.get("user-agent");
@@ -143,7 +155,7 @@ async function _POST(req: NextRequest) {
 
     return jsonWrap({
       ok: true,
-      organization: { id: updated.id, orgType: updated.orgType },
+      organization: { id: updated.id, orgType: updated.orgType, changed: updateResult.changed },
       cancelledPayouts,
       correctedEventPayoutModes: updateResult.correctedEventPayoutModes,
     });

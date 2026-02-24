@@ -6,6 +6,19 @@ config({ path: ".env.local" });
 config();
 
 type SmokeMode = "PROFESSIONAL_ONLY" | "RESOURCE_ONLY" | "PROFESSIONAL_AND_RESOURCE";
+type PaymentsBlockedStage = "CALENDAR_MONTH" | "CALENDAR_DAY" | "RESERVAR" | "CHECKOUT";
+type SmokeOutcome = "BOOKING_CONFIRMED" | "PAYMENTS_BLOCKED";
+type SmokeResult = {
+  mode: SmokeMode;
+  serviceId: number;
+  outcome: SmokeOutcome;
+  blockedStage: PaymentsBlockedStage | null;
+  bookingId: number | null;
+  startsAt: string | null;
+  checkoutStatus: number | null;
+  checkoutOk: boolean;
+  checkoutPaymentsNotReady: boolean;
+};
 
 const args = process.argv.slice(2);
 const baseUrl =
@@ -48,6 +61,11 @@ async function fetchJson(url: string, init?: RequestInit) {
   return { status: response.status, json };
 }
 
+function isPaymentsNotReadyResult(params: { status: number; json: any }) {
+  if (params.status !== 409 || params.json?.ok !== false) return false;
+  return params.json?.errorCode === "PAYMENTS_NOT_READY" || params.json?.error === "PAYMENTS_NOT_READY";
+}
+
 async function findOpenSlot(serviceId: number, partySize: number | null) {
   for (let i = 0; i <= maxDays; i += 1) {
     const date = new Date();
@@ -58,11 +76,35 @@ async function findOpenSlot(serviceId: number, partySize: number | null) {
     const { status, json } = await fetchJson(
       `${baseUrl}/api/servicos/${serviceId}/calendario?${params.toString()}`,
     );
+    if (isPaymentsNotReadyResult({ status, json })) {
+      return { startsAt: null, paymentsNotReady: true };
+    }
     if (status !== 200 || !json?.ok) continue;
     const first = Array.isArray(json.items) ? json.items[0] : null;
-    if (first?.startsAt) return first.startsAt as string;
+    if (first?.startsAt) return { startsAt: first.startsAt as string, paymentsNotReady: false };
   }
-  return null;
+  return { startsAt: null, paymentsNotReady: false };
+}
+
+function blockedResult(params: {
+  mode: SmokeMode;
+  serviceId: number;
+  stage: PaymentsBlockedStage;
+  startsAt?: string | null;
+  bookingId?: number | null;
+  checkoutStatus?: number | null;
+}): SmokeResult {
+  return {
+    mode: params.mode,
+    serviceId: params.serviceId,
+    outcome: "PAYMENTS_BLOCKED",
+    blockedStage: params.stage,
+    bookingId: params.bookingId ?? null,
+    startsAt: params.startsAt ?? null,
+    checkoutStatus: params.checkoutStatus ?? null,
+    checkoutOk: false,
+    checkoutPaymentsNotReady: true,
+  };
 }
 
 async function runMode(mode: SmokeMode, service: any) {
@@ -78,10 +120,25 @@ async function runMode(mode: SmokeMode, service: any) {
     `${baseUrl}/api/servicos/${service.id}/calendario?${monthParams.toString()}`,
   );
   if (monthResult.status !== 200 || !monthResult.json?.ok) {
+    if (isPaymentsNotReadyResult(monthResult)) {
+      return blockedResult({
+        mode,
+        serviceId: service.id,
+        stage: "CALENDAR_MONTH",
+      });
+    }
     throw new Error(`[${mode}] calendário mês falhou: ${monthResult.status}`);
   }
 
-  const startsAt = await findOpenSlot(service.id, partySize);
+  const slotLookup = await findOpenSlot(service.id, partySize);
+  if (slotLookup.paymentsNotReady) {
+    return blockedResult({
+      mode,
+      serviceId: service.id,
+      stage: "CALENDAR_DAY",
+    });
+  }
+  const startsAt = slotLookup.startsAt;
   if (!startsAt) {
     throw new Error(`[${mode}] sem slot aberto nos próximos ${maxDays} dias.`);
   }
@@ -105,6 +162,14 @@ async function runMode(mode: SmokeMode, service: any) {
     body: JSON.stringify(reservarPayload),
   });
   if (reservarResult.status !== 200 || !reservarResult.json?.ok) {
+    if (isPaymentsNotReadyResult(reservarResult)) {
+      return blockedResult({
+        mode,
+        serviceId: service.id,
+        stage: "RESERVAR",
+        startsAt,
+      });
+    }
     throw new Error(
       `[${mode}] reservar falhou: ${reservarResult.status} ${JSON.stringify(reservarResult.json)}`,
     );
@@ -120,14 +185,21 @@ async function runMode(mode: SmokeMode, service: any) {
     body: JSON.stringify({ bookingId, guest }),
   });
   const checkoutOk = checkoutResult.status === 200 && checkoutResult.json?.ok === true;
-  const checkoutPaymentsNotReady =
-    checkoutResult.status === 409 &&
-    checkoutResult.json?.ok === false &&
-    checkoutResult.json?.errorCode === "PAYMENTS_NOT_READY";
+  const checkoutPaymentsNotReady = isPaymentsNotReadyResult(checkoutResult);
   if (!checkoutOk && !checkoutPaymentsNotReady) {
     throw new Error(
       `[${mode}] checkout falhou: ${checkoutResult.status} ${JSON.stringify(checkoutResult.json)}`,
     );
+  }
+  if (checkoutPaymentsNotReady) {
+    return blockedResult({
+      mode,
+      serviceId: service.id,
+      stage: "CHECKOUT",
+      startsAt,
+      bookingId,
+      checkoutStatus: checkoutResult.status,
+    });
   }
 
   // Simula confirmação final no DB para fechar o fluxo smoke sem depender de pagamento real.
@@ -156,12 +228,14 @@ async function runMode(mode: SmokeMode, service: any) {
   return {
     mode,
     serviceId: service.id,
+    outcome: "BOOKING_CONFIRMED",
+    blockedStage: null,
     bookingId,
     startsAt,
-    checkoutStatus: checkoutResult.status,
+    checkoutStatus: checkoutResult.status ?? null,
     checkoutOk,
     checkoutPaymentsNotReady,
-  };
+  } satisfies SmokeResult;
 }
 
 async function main() {
@@ -213,9 +287,15 @@ async function main() {
     const service = byMode.get(mode);
     const result = await runMode(mode, service);
     results.push(result);
-    console.log(
-      `[smoke] ${mode} ok | service=${result.serviceId} booking=${result.bookingId} checkout=${result.checkoutStatus}`,
-    );
+    if (result.outcome === "BOOKING_CONFIRMED") {
+      console.log(
+        `[smoke] ${mode} ok | service=${result.serviceId} booking=${result.bookingId} checkout=${result.checkoutStatus}`,
+      );
+    } else {
+      console.log(
+        `[smoke] ${mode} bloqueado por pagamentos (${result.blockedStage}) | service=${result.serviceId}`,
+      );
+    }
   }
 
   console.log("[smoke] sucesso");

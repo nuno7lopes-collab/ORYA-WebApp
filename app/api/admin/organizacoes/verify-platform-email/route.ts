@@ -8,7 +8,7 @@ import { maskEmailForLog, normalizeOfficialEmail } from "@/lib/organizationOffic
 import { getPlatformOfficialEmail } from "@/lib/platformSettings";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
-import { OrgType } from "@prisma/client";
+import { OrgType, PayoutMode } from "@prisma/client";
 import { logError } from "@/lib/observability/logger";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { parseOrganizationId } from "@/lib/organizationIdUtils";
@@ -75,18 +75,35 @@ async function _POST(req: NextRequest) {
       cancelledPayouts = 0;
     }
 
-    const updated = await prisma.organization.update({
-      where: { id: organization.id },
-      data: {
-        orgType: OrgType.PLATFORM,
-        officialEmail: platformEmail,
-        officialEmailVerifiedAt: new Date(),
-        stripeAccountId: null,
-        stripeChargesEnabled: false,
-        stripePayoutsEnabled: false,
-      },
-      select: { id: true, orgType: true, officialEmail: true, officialEmailVerifiedAt: true },
+    const updateResult = await prisma.$transaction(async (tx) => {
+      const updated = await tx.organization.update({
+        where: { id: organization.id },
+        data: {
+          orgType: OrgType.PLATFORM,
+          officialEmail: platformEmail,
+          officialEmailVerifiedAt: new Date(),
+          stripeAccountId: null,
+          stripeChargesEnabled: false,
+          stripePayoutsEnabled: false,
+        },
+        select: { id: true, orgType: true, officialEmail: true, officialEmailVerifiedAt: true },
+      });
+
+      const correctedEventPayoutModes = (
+        await tx.event.updateMany({
+          where: {
+            organizationId: organization.id,
+            payoutMode: { not: PayoutMode.PLATFORM },
+          },
+          data: {
+            payoutMode: PayoutMode.PLATFORM,
+          },
+        })
+      ).count;
+
+      return { updated, correctedEventPayoutModes };
     });
+    const updated = updateResult.updated;
 
     const ip = getClientIp(req);
     const userAgent = req.headers.get("user-agent");
@@ -108,6 +125,7 @@ async function _POST(req: NextRequest) {
         },
         alreadyVerified,
         cancelledPayouts,
+        correctedEventPayoutModes: updateResult.correctedEventPayoutModes,
       },
       ip,
       userAgent,
@@ -121,6 +139,7 @@ async function _POST(req: NextRequest) {
         organizationId: organization.id,
         alreadyVerified,
         cancelledPayouts,
+        correctedEventPayoutModes: updateResult.correctedEventPayoutModes,
         officialEmail: updated.officialEmail,
       },
     });
@@ -136,6 +155,7 @@ async function _POST(req: NextRequest) {
         },
         alreadyVerified,
         cancelledPayouts,
+        correctedEventPayoutModes: updateResult.correctedEventPayoutModes,
       },
       { status: 200 },
     );

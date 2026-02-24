@@ -46,8 +46,7 @@ const nextConfig: NextConfig = {
     ],
   },
   typescript: {
-    // Ignorar erros de typecheck no build para não bloquear deploy
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
   async headers() {
     const baseHeaders = [

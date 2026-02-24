@@ -40,7 +40,7 @@ async function _GET(req: NextRequest, context: { params: Promise<{ id: string }>
     }
 
     if (!(await ensureInscricoesEnabled(organization))) {
-      return jsonWrap({ ok: false, error: "Módulo de formulários desativado." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "Ferramenta de formulários desativada." }, { status: 403 });
     }
 
     const { id } = await context.params;

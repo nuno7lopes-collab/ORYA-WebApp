@@ -26,7 +26,7 @@ async function _GET(req: NextRequest) {
       organizationId: organizationId ?? undefined,
     });
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "NOT_ORGANIZATION" }, { status: 403 });
     }
 
     const access = await ensureMemberModuleAccess({
@@ -38,7 +38,7 @@ async function _GET(req: NextRequest) {
       required: "VIEW",
     });
     if (!access.ok) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "NO_ANALYTICS_ACCESS" }, { status: 403 });
     }
 
     const dimensionParam = req.nextUrl.searchParams.get("dimensionKey");

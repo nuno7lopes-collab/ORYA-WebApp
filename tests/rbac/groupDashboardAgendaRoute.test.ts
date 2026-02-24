@@ -44,6 +44,8 @@ describe("group dashboard agenda RBAC", () => {
     );
 
     expect(res.status).toBe(403);
+    expect(organizationGroupMemberFindFirst).toHaveBeenCalled();
+    expect(requireUser).toHaveBeenCalled();
   });
 
   it("allows governance member read-only access", async () => {
@@ -57,5 +59,7 @@ describe("group dashboard agenda RBAC", () => {
     );
 
     expect(res.status).toBe(200);
+    expect(organizationGroupMemberFindFirst).toHaveBeenCalled();
+    expect(requireUser).toHaveBeenCalled();
   });
 });

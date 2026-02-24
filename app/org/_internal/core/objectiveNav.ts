@@ -4,7 +4,7 @@ export type ObjectiveTab = "create" | "manage" | "promote" | "analyze";
 
 export type ObjectiveNavContext = {
   primaryModule?: string | null;
-  modules: string[];
+  tools: string[];
   username?: string | null;
 };
 
@@ -41,12 +41,12 @@ const PRIMARY_META: Record<
 const PADEL_CLUB_SECTION = "padel-club";
 const PADEL_TOURNAMENTS_SECTION = "padel-tournaments";
 
-function hasModule(modules: string[], key: string) {
-  return Array.isArray(modules) && modules.includes(key);
+function hasTool(tools: string[], key: string) {
+  return Array.isArray(tools) && tools.includes(key);
 }
 
-function resolvePrimaryOperation(primaryModule: string | null | undefined, modules: string[]): OperationModule {
-  return resolvePrimaryModule(primaryModule ?? null, modules);
+function resolvePrimaryOperation(primaryModule: string | null | undefined, tools: string[]): OperationModule {
+  return resolvePrimaryModule(primaryModule ?? null, tools);
 }
 
 export function getObjectiveSections(
@@ -61,10 +61,9 @@ export function getObjectiveSections(
   },
 ): ObjectiveNavSection[] {
   const primaryOperation =
-    options?.operationOverride ?? resolvePrimaryOperation(context.primaryModule, context.modules);
+    options?.operationOverride ?? resolvePrimaryOperation(context.primaryModule, context.tools);
   const categoryMeta = PRIMARY_META[primaryOperation];
   const sections: ObjectiveNavSection[] = [];
-  const isDashboard = options?.mode === "dashboard";
   const manageBase = options?.basePath ?? null;
   const manageHref = (section: string) => {
     if (manageBase) {
@@ -92,7 +91,7 @@ export function getObjectiveSections(
       label: categoryMeta.createLabel,
       href: categoryMeta.createHref,
     });
-    if (hasModule(context.modules, "INSCRICOES")) {
+    if (hasTool(context.tools, "INSCRICOES")) {
       sections.push({
         id: "inscricoes",
         label: "Formulários",
@@ -110,7 +109,7 @@ export function getObjectiveSections(
   if (objective === "manage") {
     const focusId = options?.focusSectionId ?? null;
     const operationOverride = options?.operationOverride ?? null;
-    if (focusId === "inscricoes" && hasModule(context.modules, "INSCRICOES")) {
+    if (focusId === "inscricoes" && hasTool(context.tools, "INSCRICOES")) {
       const listHref = "/org/forms";
       const detailBase = options?.inscricoesBasePath ?? null;
       const canDeepLink = Boolean(detailBase);
@@ -148,7 +147,7 @@ export function getObjectiveSections(
         },
         {
           id: "disponibilidade",
-          label: "Disponibilidade",
+          label: "Disponibilidade (reservas)",
           href: `${baseHref}/availability`,
         },
         {
@@ -213,13 +212,6 @@ export function getObjectiveSections(
           items: [{ id: "players", label: "Jogadores", href: padelTournamentsHref("players") }],
         },
       );
-      if (!isDashboard) {
-        sections.push({
-          id: "caixa",
-          label: "Caixa",
-          href: "/org/clube/caixa",
-        });
-      }
       if (focusId) {
         const focused = sections.find((section) => section.id === focusId);
         return focused ? [focused] : sections;
@@ -237,7 +229,7 @@ export function getObjectiveSections(
         label: categoryMeta.createLabel,
         href: categoryMeta.createHref,
       });
-      if (hasModule(context.modules, "INSCRICOES") && focusId === "inscricoes") {
+      if (hasTool(context.tools, "INSCRICOES") && focusId === "inscricoes") {
         sections.push({
           id: "inscricoes",
           label: "Formulários",
@@ -272,14 +264,14 @@ export function getObjectiveSections(
         href: manageHref(PADEL_TOURNAMENTS_SECTION),
       },
     );
-    if (hasModule(context.modules, "EVENTOS") || hasModule(context.modules, "TORNEIOS")) {
+    if (hasTool(context.tools, "EVENTOS") || hasTool(context.tools, "TORNEIOS")) {
       sections.push({
         id: "checkin",
         label: "Check-in",
         href: "/org/check-in",
       });
     }
-    if (hasModule(context.modules, "CRM")) {
+    if (hasTool(context.tools, "CRM")) {
       sections.push({
         id: "crm",
         label: "CRM",
@@ -292,7 +284,7 @@ export function getObjectiveSections(
         ],
       });
     }
-    if (hasModule(context.modules, "INSCRICOES")) {
+    if (hasTool(context.tools, "INSCRICOES")) {
       sections.push({
         id: "inscricoes",
         label: "Formulários",

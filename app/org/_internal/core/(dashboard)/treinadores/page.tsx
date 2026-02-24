@@ -88,7 +88,10 @@ export default function TrainerProfilePage() {
   const organization = data?.organization ?? profile?.organization ?? null;
   const profileUser = profile?.user ?? data?.user ?? null;
   const canEdit = data?.canEdit === true;
-  const manageTrainerRoleHref = appendOrganizationIdToHref("/org/padel?section=trainers", organization?.id ?? browserOrgId);
+  const manageTrainerRoleHref = appendOrganizationIdToHref(
+    "/org/padel/clubs/trainers",
+    organization?.id ?? browserOrgId,
+  );
   const displayName = profileUser?.fullName || profileUser?.username || "Treinador";
   const reviewStatus = profile?.reviewStatus ?? "DRAFT";
   const statusLabel =

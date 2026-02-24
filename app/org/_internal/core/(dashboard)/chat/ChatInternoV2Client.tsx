@@ -311,7 +311,7 @@ function mapChatErrorMessage(input: string | null | undefined) {
   if (code === "INVALID_TITLE") return "Indica um titulo com pelo menos 2 caracteres.";
   if (code === "NOT_IN_ORGANIZATION") return "So podes adicionar membros da organizacao.";
   if (code === "FORBIDDEN") return "Sem permissoes para esta acao.";
-  if (code === "MODULE_DISABLED") return "O modulo de mensagens esta desativado.";
+  if (code === "MODULE_DISABLED") return "A ferramenta de mensagens esta desativada.";
   if (code === "RATE_LIMITED") return "Muitas tentativas. Tenta novamente em instantes.";
   if (code === "ORG_CONTEXT_REQUIRED") return "Falta contexto da organizacao. Atualiza a pagina.";
   if (code === "UNAUTHENTICATED") return "Sessao expirada. Volta a autenticar-te.";
@@ -3102,7 +3102,7 @@ export default function ChatInternoV2Client() {
                       className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/30 px-3 py-2"
                     >
                       <div className="flex min-w-0 items-center gap-3">
-                        <Avatar src={member.avatarUrl} name={displayName} className="h-9 w-9 border border-white/15" />
+                        <Avatar src={member.avatarUrl} name={displayName} className="h-9 w-9" />
                         <div className="min-w-0">
                           <p className="truncate text-[12px] font-semibold text-white/90">{displayName}</p>
                           <p className="truncate text-[11px] text-white/55">{presence}</p>

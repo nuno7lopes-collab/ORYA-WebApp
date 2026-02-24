@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { clampBookingPolicyWindowMinutes } from "@/lib/policies/bookingPolicyGuardrails";
 import { Prisma, PrismaClient } from "@prisma/client";
 
 type TxLike = Prisma.TransactionClient | PrismaClient;
@@ -7,7 +8,15 @@ export async function ensureDefaultPolicies(client: TxLike, organizationId: numb
   const existing = await client.organizationPolicy.findMany({
     where: { organizationId },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    select: { id: true, policyType: true, name: true },
+    select: {
+      id: true,
+      policyType: true,
+      name: true,
+      allowCancellation: true,
+      cancellationWindowMinutes: true,
+      allowReschedule: true,
+      rescheduleWindowMinutes: true,
+    },
   });
   if (existing.length === 0) {
     await client.organizationPolicy.create({
@@ -63,6 +72,12 @@ export async function ensureDefaultPolicies(client: TxLike, organizationId: numb
     data: {
       policyType: "MODERATE",
       name: canonical.name?.trim() ? canonical.name : "Politica default",
+      cancellationWindowMinutes: canonical.allowCancellation
+        ? clampBookingPolicyWindowMinutes(canonical.cancellationWindowMinutes)
+        : null,
+      rescheduleWindowMinutes: canonical.allowReschedule
+        ? clampBookingPolicyWindowMinutes(canonical.rescheduleWindowMinutes)
+        : null,
       cancellationPenaltyBps: 0,
       noShowFeeCents: 0,
     },

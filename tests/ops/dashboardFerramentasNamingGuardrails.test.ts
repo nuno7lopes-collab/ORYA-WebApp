@@ -18,6 +18,9 @@ describe("dashboard naming guardrails", () => {
       expect(content).toContain("Ferramentas");
       expect(content).not.toContain("Módulos");
       expect(content).not.toContain("modulos");
+      expect(content).not.toContain("Gerir apps");
+      expect(content).not.toContain("Gestor de apps");
+      expect(content).not.toContain("Adicionar app");
     }
   });
 });

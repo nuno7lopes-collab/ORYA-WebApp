@@ -6,6 +6,7 @@ import {
   OrganizationStatus,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+export { resolveGroupDisplayName } from "@/lib/orgHub/groupDisplayName";
 import { listEffectiveOrganizationMembershipsForUser } from "@/lib/organizationMembers";
 
 export type OrgHubGroupOrganization = {
@@ -68,6 +69,7 @@ export type OrgHubGroupPayload = {
   groupId: number;
   groupName: string | null;
   ownerUserId: string | null;
+  showLinkedOrganizationsPublicly: boolean;
   viewerIsGroupOwner: boolean;
   viewerIsGovernance: boolean;
   governance: {
@@ -108,7 +110,13 @@ function resolveOrgName(input: {
 
 export async function listOrgHubGroupsForUser(params: {
   userId: string;
+  groupId?: number;
 }): Promise<OrgHubGroupPayload[]> {
+  const requestedGroupId =
+    typeof params.groupId === "number" && Number.isFinite(params.groupId) && params.groupId > 0
+      ? Math.floor(params.groupId)
+      : null;
+
   const memberships = await listEffectiveOrganizationMembershipsForUser({
     userId: params.userId,
     allowedStatuses: GROUP_ALLOWED_STATUSES,
@@ -133,7 +141,7 @@ export async function listOrgHubGroupsForUser(params: {
     { group: { ownerUserId: params.userId } },
   ];
 
-  const [openRequests, pendingTransfers] = await Promise.all([
+  const [openRequestsRaw, pendingTransfersRaw] = await Promise.all([
     prisma.groupMembershipRequest.findMany({
       where: {
         status: { in: OPEN_REQUEST_STATUSES },
@@ -187,11 +195,26 @@ export async function listOrgHubGroupsForUser(params: {
     }),
   ]);
 
-  const allGroupIds = new Set<number>([
+  const openRequests =
+    requestedGroupId === null
+      ? openRequestsRaw
+      : openRequestsRaw.filter((request) => request.groupId === requestedGroupId);
+  const pendingTransfers =
+    requestedGroupId === null
+      ? pendingTransfersRaw
+      : pendingTransfersRaw.filter((transfer) => transfer.groupId === requestedGroupId);
+
+  const discoveredGroupIds = new Set<number>([
     ...Array.from(userGroupIds),
     ...openRequests.map((request) => request.groupId),
     ...pendingTransfers.map((transfer) => transfer.groupId),
   ]);
+
+  if (requestedGroupId !== null && !discoveredGroupIds.has(requestedGroupId)) {
+    return [];
+  }
+
+  const allGroupIds = requestedGroupId !== null ? new Set<number>([requestedGroupId]) : discoveredGroupIds;
 
   if (allGroupIds.size === 0) {
     return [];
@@ -204,6 +227,7 @@ export async function listOrgHubGroupsForUser(params: {
         id: true,
         name: true,
         ownerUserId: true,
+        showLinkedOrganizationsPublicly: true,
         _count: { select: { organizations: true } },
         organizations: {
           where: { status: { in: GROUP_ALLOWED_STATUSES } },
@@ -232,6 +256,7 @@ export async function listOrgHubGroupsForUser(params: {
         groupId: true,
         userId: true,
         role: true,
+        scopeAllOrgs: true,
         user: {
           select: {
             fullName: true,
@@ -246,7 +271,9 @@ export async function listOrgHubGroupsForUser(params: {
 
   const groupById = new Map(groups.map((group) => [group.id, group]));
   const viewerGovernanceGroupIds = new Set(
-    governanceMembers.filter((member) => member.userId === params.userId).map((member) => member.groupId),
+    governanceMembers
+      .filter((member) => member.userId === params.userId && member.scopeAllOrgs)
+      .map((member) => member.groupId),
   );
   const governanceCountsByGroupId = new Map<number, { coOwnerCount: number; adminCount: number }>();
   const governanceMembersByGroupId = new Map<number, OrgHubGroupGovernanceMember[]>();
@@ -370,6 +397,7 @@ export async function listOrgHubGroupsForUser(params: {
       groupId: group.id,
       groupName: group.name?.trim() ? group.name.trim() : null,
       ownerUserId: group.ownerUserId,
+      showLinkedOrganizationsPublicly: group.showLinkedOrganizationsPublicly !== false,
       viewerIsGroupOwner,
       viewerIsGovernance,
       governance,
@@ -398,6 +426,7 @@ export async function listOrgHubGroupsForUser(params: {
       groupId: request.groupId,
       groupName: null,
       ownerUserId: request.group.ownerUserId,
+      showLinkedOrganizationsPublicly: true,
       viewerIsGroupOwner: canActAsGroupOwner,
       viewerIsGovernance: canActAsGroupOwner,
       governance: { coOwnerCount: 0, adminCount: 0 },

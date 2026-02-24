@@ -1,128 +1,37 @@
 # Scripts (Ops/Diagnostico)
 
-## diagnoseTournamentsMissingEventId.js
+Este diretório foi limpo de scripts legados one-off.
 
-Diagnostico read-only para o D1: lista torneios com `eventId` em falta ou orfao (sem `events` associado),
-com resumo por organizacao e indicacao de ligacao direta via `events.tournament_id` (se a coluna existir).
+Os scripts de criação legados foram removidos.
+Para segredos, o fluxo operacional foi mantido via `prepare-secrets-json.sh` + `upload-secrets.sh`.
 
-Uso:
+Os scripts de seed/backfill de criação também foram removidos.
 
-```bash
-node scripts/diagnoseTournamentsMissingEventId.js
-node scripts/diagnoseTournamentsMissingEventId.js --format json --out /tmp/diagnose_tournaments.json
-node scripts/diagnoseTournamentsMissingEventId.js --format csv --out /tmp/diagnose_tournaments.csv
-```
+## Nota de execução TypeScript
 
-Nota sobre TLS (importante):
-
-- Preferido: usar `DATABASE_URL` a apontar para um proxy/endpoint com CA correta (cadeia valida).
-- Em `npm run dev` / `npm run dev:fast`, TLS inseguro é opt-in explícito:
-  - `ORYA_DEV_INSECURE_TLS=1 npm run dev`
-  - quando ativo, o wrapper define `NODE_TLS_REJECT_UNAUTHORIZED=0` e mostra aviso no arranque.
-- Fora desse opt-in local, evitar `NODE_TLS_REJECT_UNAUTHORIZED=0`.
-
-Exemplo (estrutura do output JSON):
-
-```json
-{
-  "generatedAt": "2026-01-26T20:40:00.000Z",
-  "hasEventTournamentIdColumn": true,
-  "total": 2,
-  "items": [
-    {
-      "tournamentId": 123,
-      "eventId": null,
-      "organizationId": 45,
-      "eventStatus": null,
-      "eventStartsAt": null,
-      "eventEndsAt": null,
-      "hasAnyCandidateEventDirectLink": true,
-      "candidateEventId": 987
-    }
-  ],
-  "countsByOrgAndStatus": [
-    { "organizationId": 45, "eventStatus": null, "count": 2 }
-  ]
-}
-```
-
-## audit_event_access_policy.ts
-
-Auditoria read-only para convites/policies:
-- Policies inválidas (`inviteTokenAllowed=true` + `inviteIdentityMatch=USERNAME`)
-- Convites por username inexistente
-- Convites com identidade não permitida pela policy
-
-Uso:
-
-```bash
-node -r ./scripts/load-env.js -r ts-node/register scripts/audit_event_access_policy.ts
-node -r ./scripts/load-env.js -r ts-node/register scripts/audit_event_access_policy.ts --format=json --out /tmp/audit_access_policy.json
-node -r ./scripts/load-env.js -r ts-node/register scripts/audit_event_access_policy.ts --format=md --out /tmp/audit_access_policy.md --limit=200
-```
-
-## Infra helpers (prod/dev)
-
-### Secrets (prod + dev)
-```bash
-AWS_PROFILE=codex AWS_REGION=eu-west-1 \\
-  scripts/upload-secrets.sh /tmp/orya-prod-secrets.json
-```
-
-### Build & push (ECR)
-```bash
-AWS_PROFILE=codex AWS_REGION=eu-west-1 \\
-  scripts/build-and-push.sh
-```
-
-### Deploy ECS (CloudFormation)
-```bash
-AWS_PROFILE=codex AWS_REGION=eu-west-1 \\
-  WITH_ALB=true \\
-  scripts/deploy-cf.sh
-```
-
-### Pause/Resume
-```bash
-AWS_PROFILE=codex AWS_REGION=eu-west-1 scripts/deploy-cf.sh --pause
-AWS_PROFILE=codex AWS_REGION=eu-west-1 scripts/deploy-cf.sh --resume
-```
-
-### Pause/Start (ALB + ECS + IPv4)
-```bash
-AWS_PROFILE=codex AWS_REGION=eu-west-1 scripts/aws/pause-prod.sh
-AWS_PROFILE=codex AWS_REGION=eu-west-1 scripts/aws/start-prod.sh
-```
-Estado guardado em `scripts/aws/state/orya-prod-pause.json` (ver `docs/ssot_registry_v1.md`, apêndice de envs canónicos).
-
-### Dev serverless (SAM)
-```bash
-AWS_PROFILE=codex AWS_REGION=eu-west-1 \\
-  IMAGE_URI=495219734037.dkr.ecr.eu-west-1.amazonaws.com/orya-web:latest \\
-  scripts/deploy-dev.sh
-```
-
-### Healthcheck
-```bash
-ORYA_CRON_SECRET=*** scripts/healthcheck.sh https://orya.pt
-```
-
-### Migrations
-```bash
-scripts/run-migrations.sh
-```
-
-### Localhost aliases (admin/app/test)
-Para usar `admin.localhost:3000`, `app.localhost:3000` e `test.localhost:3000` no dev:
-
-```bash
-DRY_RUN=true scripts/setup-localhost-aliases.sh
-sudo scripts/setup-localhost-aliases.sh
-```
-
-## Executar scripts TypeScript (node)
-Quando um script `.ts` não arranca com `node -r ts-node/register`, usa:
+Quando um script `.ts` não arranca diretamente:
 
 ```bash
 node scripts/run-ts.cjs scripts/nome-do-script.ts
 ```
+
+## Governança de scripts operacionais (Fase 2)
+
+- Manifesto: `scripts/manifests/operational_scripts_allowlist_v1.json`
+- Gate: `npm run gate:scripts-ops`
+
+Este gate valida:
+- caminhos de scripts permitidos por ambiente (`local`, `dev`, `ci`, `prod`);
+- cobertura da allowlist para todos os scripts referenciados no `package.json`;
+- cobertura extra para scripts operacionais fora do `package.json` (deploy/aws/secrets/e2e auxiliares).
+
+## Governança de scripts operacionais (Fase 3)
+
+- Catalogo: `scripts/manifests/operational_scripts_catalog_v1.json`
+- Runbook: `docs/runbooks/scripts_operacionais_catalogo_v1.md`
+- Gate: `npm run gate:scripts-catalog`
+
+Este gate valida:
+- owner, runbook e comando npm oficial para cada script da allowlist;
+- existencia real dos runbooks e das ancoras por script;
+- alinhamento de ambientes entre allowlist e catalogo.

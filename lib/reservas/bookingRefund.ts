@@ -8,6 +8,7 @@ import {
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { appendEventLog } from "@/domain/eventLog/append";
 import { SourceType } from "@prisma/client";
+import { requiresOrganizationStripe } from "@/domain/finance/payoutModePolicy";
 
 type RefundBookingParams = {
   bookingId: number;
@@ -105,6 +106,7 @@ export async function refundBookingPayment(params: RefundBookingParams) {
         : null;
 
   if (!refundAmountCents) return null;
+  const requiresStripeForRefund = requiresOrganizationStripe(org.orgType);
 
   try {
     const refund = await createRefund(
@@ -112,7 +114,7 @@ export async function refundBookingPayment(params: RefundBookingParams) {
         payment_intent: params.paymentIntentId,
         amount: refundAmountCents,
       },
-      { idempotencyKey, org, requireStripe: true },
+      { idempotencyKey, org, requireStripe: requiresStripeForRefund },
     );
 
     await prisma.$transaction(async (tx) => {

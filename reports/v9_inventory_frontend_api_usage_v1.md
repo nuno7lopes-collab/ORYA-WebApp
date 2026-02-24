@@ -1,6 +1,6 @@
 # V9 Inventory — Frontend API Usage
 
-Total endpoints referenced: 453
+Total endpoints referenced: 461
 
 ## /api/address/autocomplete
 - apps/mobile/features/discover/location.ts
@@ -554,6 +554,18 @@ Total endpoints referenced: 453
 - lib/canonicalOrgApiPath.ts
 
 ## /api/org-hub/groups/[groupId]/dashboard/agenda
+- app/org/_internal/core/organizations/GroupDashboardClient.tsx
+
+## /api/org-hub/groups/[groupId]/dashboard/crm
+- app/org/_internal/core/organizations/GroupDashboardClient.tsx
+
+## /api/org-hub/groups/[groupId]/dashboard/finance
+- app/org/_internal/core/organizations/GroupDashboardClient.tsx
+
+## /api/org-hub/groups/[groupId]/dashboard/rankings
+- app/org/_internal/core/organizations/GroupDashboardClient.tsx
+
+## /api/org-hub/groups/[groupId]/dashboard/reservas
 - app/org/_internal/core/organizations/GroupDashboardClient.tsx
 
 ## /api/org-hub/groups/[groupId]/governance
@@ -1178,9 +1190,15 @@ Total endpoints referenced: 453
 ## /api/org/[orgId]/tournaments/blocks/overrides
 - lib/canonicalOrgUiEndpointRegistry.ts
 
+## /api/org/[orgId]/tournaments/broadcast
+- app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
+
 ## /api/org/[orgId]/tournaments/create
 - app/org/_internal/core/(dashboard)/eventos/novo/page.tsx
 - app/org/_internal/core/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx
+
+## /api/org/[orgId]/tournaments/pairings/swap
+- app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
 
 ## /api/org/[orgId]/trainers/profile
 - app/org/_internal/core/(dashboard)/treinadores/page.tsx
@@ -1327,6 +1345,14 @@ Total endpoints referenced: 453
 
 ## /api/padel/pairings/[id]/accept
 - apps/mobile/features/tournaments/api.ts
+
+## /api/padel/pairings/[id]/actions/cancel
+- app/components/notifications/PairingInviteCard.tsx
+- app/me/bilhetes/[id]/TicketDetailClient.tsx
+
+## /api/padel/pairings/[id]/actions/reopen
+- app/components/notifications/PairingInviteCard.tsx
+- app/me/bilhetes/[id]/TicketDetailClient.tsx
 
 ## /api/padel/pairings/[id]/checkout
 - apps/mobile/features/checkout/api.ts

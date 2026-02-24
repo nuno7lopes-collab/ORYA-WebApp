@@ -1765,12 +1765,7 @@ async function processUpsertLedger(op: OperationRecord) {
 
   if (!lines.length) throw new Error("No lines to upsert ledger");
 
-  const currency =
-    typeof payload.currency === "string"
-      ? payload.currency.toUpperCase()
-      : typeof payload.currency === "string"
-        ? payload.currency.toUpperCase()
-        : "EUR";
+  const currency = normalizeText(payload.currency)?.toUpperCase() ?? "EUR";
   const promoCodeId =
     typeof payload.promoCodeId === "number"
       ? payload.promoCodeId

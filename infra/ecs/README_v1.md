@@ -21,6 +21,8 @@ Secrets are grouped into JSON secrets (`orya/prod/app`, `orya/prod/supabase`, `o
 - `VpcId`, `PublicSubnets`, `ServiceSubnets`, `AssignPublicIp`
 - `AlbCertificateArn` (if `CreateALB=true`)
 - `WebImage`, `WorkerImage`
+- `AlbSslPolicy` (recomendado: `ELBSecurityPolicy-TLS13-1-2-2021-06`)
+- `WwwDomain` (opcional, para criar alias `www` no mesmo ALB)
 
 ## Notes
 - Health check uses `x-orya-cron-secret` header. Ensure `ORYA_CRON_SECRET` is available.

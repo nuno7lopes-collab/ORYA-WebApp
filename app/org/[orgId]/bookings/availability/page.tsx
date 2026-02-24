@@ -8,6 +8,10 @@ import { CTA_PRIMARY, DASHBOARD_CARD, DASHBOARD_LABEL, DASHBOARD_MUTED } from "@
 import { buildOrgHref, parseOrgIdFromPathnameStrict } from "@/lib/organizationIdUtils";
 import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
+import {
+  resolveOrganizationOperationalMode,
+  type OrganizationOperationalMode,
+} from "@/lib/organizationOperationalMode";
 
 type ProfessionalItem = {
   id: number;
@@ -22,6 +26,14 @@ type ResourceItem = {
 };
 
 type ScopeType = "ORGANIZATION" | "PROFESSIONAL" | "RESOURCE";
+
+type OrganizationMeResponse = {
+  ok: boolean;
+  organization?: {
+    primaryModule?: string | null;
+    tools?: string[] | null;
+  } | null;
+};
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -48,9 +60,11 @@ export default function OrgBookingsAvailabilityPage() {
 
   const professionalsKey = organizationId ? `/api/org/${organizationId}/reservas/profissionais` : null;
   const resourcesKey = organizationId ? `/api/org/${organizationId}/reservas/recursos?includeCourts=1` : null;
+  const organizationMeKey = organizationId ? `/api/org/${organizationId}/me` : null;
 
   const { data: professionalsData } = useSWR<{ ok: boolean; items?: ProfessionalItem[] }>(professionalsKey, fetcher);
   const { data: resourcesData } = useSWR<{ ok: boolean; items?: ResourceItem[] }>(resourcesKey, fetcher);
+  const { data: organizationMeData } = useSWR<OrganizationMeResponse>(organizationMeKey, fetcher);
 
   const professionals = useMemo(
     () => (professionalsData?.items ?? []).filter((item) => item.isActive !== false),
@@ -60,6 +74,41 @@ export default function OrgBookingsAvailabilityPage() {
     () => (resourcesData?.items ?? []).filter((item) => item.isActive !== false),
     [resourcesData?.items],
   );
+  const organizationOperationalMode = useMemo<OrganizationOperationalMode>(() => {
+    const organizationPayload = organizationMeData?.organization;
+    if (!organizationPayload) return "SLOT_DRIVEN";
+    return resolveOrganizationOperationalMode({
+      primaryModule: organizationPayload.primaryModule ?? null,
+      tools: organizationPayload.tools ?? [],
+    });
+  }, [organizationMeData?.organization]);
+  const activeToolSet = useMemo(
+    () =>
+      new Set(
+        (organizationMeData?.organization?.tools ?? [])
+          .map((tool) => (typeof tool === "string" ? tool.trim().toUpperCase() : ""))
+          .filter(Boolean),
+      ),
+    [organizationMeData?.organization?.tools],
+  );
+  const canCreateEvent = activeToolSet.has("EVENTOS");
+  const canCreateTournament = activeToolSet.has("TORNEIOS");
+  const availabilityGuidance = useMemo(() => {
+    if (organizationOperationalMode === "HYBRID") {
+      return {
+        badge: "Modo híbrido",
+        title: "Disponibilidade apenas para reservas",
+        body:
+          "Nesta organização, eventos/torneios continuam a entrar diretamente na agenda. Configura disponibilidade apenas para serviços por slots.",
+      };
+    }
+    return {
+      badge: "Modo reservas",
+      title: "Disponibilidade como fonte de verdade",
+      body:
+        "A disponibilidade semanal define quando os teus serviços de reserva podem ser vendidos e operados.",
+    };
+  }, [organizationOperationalMode]);
 
   const resolvedScope = useMemo(() => {
     if (scopeTypeParam === "PROFESSIONAL" && scopeIdParam) {
@@ -99,7 +148,7 @@ export default function OrgBookingsAvailabilityPage() {
     }
     return {
       title: "Disponibilidade geral",
-      subtitle: "Define o default de disponibilidade usado por toda a operacao.",
+      subtitle: "Define o default de disponibilidade usado pelos servicos com reservas.",
     };
   }, [selectedProfessional, selectedResource]);
 
@@ -117,9 +166,9 @@ export default function OrgBookingsAvailabilityPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className={DASHBOARD_LABEL}>Reservas</p>
-            <h1 className="text-xl font-semibold text-white">Disponibilidade</h1>
+            <h1 className="text-xl font-semibold text-white">Disponibilidade de reservas</h1>
             <p className={DASHBOARD_MUTED}>
-              Setup de horarios base e excecoes. O calendario operacional fica na ferramenta Calendario.
+              Usa isto apenas para servicos com slots. Para eventos e torneios pontuais, a agenda nasce no proprio item criado.
             </p>
           </div>
           <Link href={buildOrgHref(organizationId, "/calendar")} className={CTA_PRIMARY}>
@@ -128,11 +177,42 @@ export default function OrgBookingsAvailabilityPage() {
         </div>
       </header>
 
+      <section className="rounded-2xl border border-cyan-300/20 bg-[linear-gradient(140deg,rgba(34,211,238,0.12),rgba(10,18,34,0.82))] p-4 shadow-[0_16px_50px_rgba(0,0,0,0.35)]">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="max-w-3xl">
+            <p className="text-[11px] uppercase tracking-[0.2em] text-cyan-100/75">{availabilityGuidance.badge}</p>
+            <h2 className="mt-1 text-lg font-semibold text-white">{availabilityGuidance.title}</h2>
+            <p className="mt-2 text-sm text-white/80">{availabilityGuidance.body}</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href={buildOrgHref(organizationId, "/bookings/operations")} className={CTA_PRIMARY}>
+              Abrir operacoes
+            </Link>
+            {organizationOperationalMode === "HYBRID" && canCreateEvent ? (
+              <Link
+                href={buildOrgHref(organizationId, "/events/new")}
+                className="rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-xs text-white/80 transition hover:border-white/35 hover:text-white"
+              >
+                Criar evento
+              </Link>
+            ) : null}
+            {organizationOperationalMode === "HYBRID" && !canCreateEvent && canCreateTournament ? (
+              <Link
+                href={buildOrgHref(organizationId, "/padel/tournaments/create")}
+                className="rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-xs text-white/80 transition hover:border-white/35 hover:text-white"
+              >
+                Criar torneio
+              </Link>
+            ) : null}
+          </div>
+        </div>
+      </section>
+
       <section className={cn(DASHBOARD_CARD, "p-4 space-y-4")}>
         <div>
           <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Escopo</p>
           <p className="mt-1 text-sm text-white/70">
-            Seleciona onde queres editar disponibilidade: geral da operação, um profissional, ou um recurso/campo.
+            Seleciona onde queres editar disponibilidade de reservas: geral da operacao, um profissional, ou um recurso/campo.
           </p>
         </div>
 

@@ -18,6 +18,12 @@ export type OrganizationAuditInput = {
   userAgent?: string | null;
 };
 
+function normalizeOptionalUuid(value: string | null | undefined) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 /**
  * Regista ações sensíveis para audit trail da organização.
  * Usa TransactionClient quando já estivermos em transação.
@@ -33,13 +39,13 @@ export async function recordOrganizationAudit(
     data: {
       organizationId: input.organizationId,
       groupId: input.groupId ?? null,
-      actorUserId: input.actorUserId ?? null,
+      actorUserId: normalizeOptionalUuid(input.actorUserId),
       action: input.action,
       entityType: input.entityType ?? null,
       entityId: input.entityId ?? null,
       correlationId: input.correlationId ?? null,
-      fromUserId: input.fromUserId ?? null,
-      toUserId: input.toUserId ?? null,
+      fromUserId: normalizeOptionalUuid(input.fromUserId),
+      toUserId: normalizeOptionalUuid(input.toUserId),
       metadata: (input.metadata ?? {}) as Prisma.InputJsonValue,
       ip: input.ip ?? null,
       userAgent: input.userAgent ?? null,

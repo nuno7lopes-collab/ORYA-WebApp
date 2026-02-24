@@ -23,7 +23,7 @@ const SECTION_LABELS: Record<string, string> = {
   inscricoes: "Formulários",
   reservas: "Reservas",
   agenda: "Agenda",
-  disponibilidade: "Disponibilidade",
+  disponibilidade: "Disponibilidade (reservas)",
   servicos: "Serviços",
   clientes: "Clientes",
   profissionais: "Profissionais",
@@ -95,7 +95,7 @@ function resolveLabel(
   if (/^\/org\/(?:\d+\/)?bookings\/professionals(?:\/|$)/.test(pathname)) return "Reservas · Profissionais";
   if (/^\/org\/(?:\d+\/)?bookings\/resources(?:\/|$)/.test(pathname)) return "Reservas · Recursos";
   if (/^\/org\/(?:\d+\/)?bookings(?:\/|$)/.test(pathname)) {
-    if (/^\/org\/(?:\d+\/)?bookings\/availability(?:\/|$)/.test(pathname)) return "Reservas · Disponibilidade";
+    if (/^\/org\/(?:\d+\/)?bookings\/availability(?:\/|$)/.test(pathname)) return "Reservas · Disponibilidade (reservas)";
     const sectionLabel = section ? SECTION_LABELS[section] : null;
     if (sectionLabel && section !== "reservas") {
       return `Reservas · ${sectionLabel}`;

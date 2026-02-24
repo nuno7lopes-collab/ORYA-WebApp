@@ -8,9 +8,13 @@ import DashboardClient from "@/app/org/_internal/core/DashboardClient";
 import { getOrganizationActiveModules, hasAnyActiveModule } from "@/lib/organizationModules";
 import { prisma } from "@/lib/prisma";
 import { OrganizationStatus } from "@prisma/client";
-import { buildOrgHref } from "@/lib/organizationIdUtils";
+import { buildOrgHref, buildOrgHubHref, parseOrganizationId } from "@/lib/organizationIdUtils";
 
-export default async function OrganizationEventosPage() {
+type RouteParamsInput = Promise<{ orgId?: string }> | { orgId?: string } | undefined;
+
+export default async function OrganizationEventosPage({ params }: { params?: RouteParamsInput } = {}) {
+  const resolvedParams = params ? await Promise.resolve(params) : null;
+  const requestedOrgId = parseOrganizationId(resolvedParams?.orgId);
   const supabase = await createSupabaseServer();
   const {
     data: { user },
@@ -21,12 +25,17 @@ export default async function OrganizationEventosPage() {
   }
 
   const { organization } = await getActiveOrganizationForUser(user.id, {
-    allowFallback: true,
+    ...(requestedOrgId
+      ? {
+          organizationId: requestedOrgId,
+          allowFallback: false,
+        }
+      : { allowFallback: true }),
     allowedStatuses: [OrganizationStatus.ACTIVE, OrganizationStatus.SUSPENDED],
   });
 
   if (!organization) {
-    redirect("/org-hub/organizations");
+    redirect(buildOrgHubHref("/organizations"));
   }
 
   const { activeModules } = await getOrganizationActiveModules(

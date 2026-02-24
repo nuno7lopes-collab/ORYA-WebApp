@@ -3,7 +3,7 @@
 ## Postgres Local (Docker)
 1. `npm run db:local:up`
 2. `npm run db:local:deploy`
-3. `npm run seed:local:rich-demo`
+3. Preparar dados manualmente (o seed automático foi removido).
 
 ## Smoke (3 modos)
 1. `npm run dev`

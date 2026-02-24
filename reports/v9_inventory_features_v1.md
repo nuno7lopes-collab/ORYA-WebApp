@@ -87,8 +87,12 @@ Pages (16):
 
 ## orgs
 
-API routes (178):
+API routes (184):
 - /api/org-hub/groups/[groupId]/dashboard/agenda
+- /api/org-hub/groups/[groupId]/dashboard/crm
+- /api/org-hub/groups/[groupId]/dashboard/finance
+- /api/org-hub/groups/[groupId]/dashboard/rankings
+- /api/org-hub/groups/[groupId]/dashboard/reservas
 - /api/org-hub/groups/[groupId]/governance
 - /api/org-hub/groups/[groupId]/governance/members
 - /api/org-hub/groups/[groupId]/owner/transfer/cancel
@@ -261,7 +265,9 @@ API routes (178):
 - /api/org/[orgId]/store/shipping/zones/[zoneId]/methods
 - /api/org/[orgId]/tournaments/blocks/bulk
 - /api/org/[orgId]/tournaments/blocks/overrides
+- /api/org/[orgId]/tournaments/broadcast
 - /api/org/[orgId]/tournaments/create
+- /api/org/[orgId]/tournaments/pairings/swap
 - /api/org/[orgId]/trainers/profile
 - /api/org/[orgId]/username
 - /api/org/[orgId]/venues/recent
@@ -377,7 +383,7 @@ Pages (106):
 
 ## payments
 
-API routes (11):
+API routes (10):
 - /api/admin/payments/dispute
 - /api/admin/payments/export
 - /api/admin/payments/list
@@ -388,7 +394,6 @@ API routes (11):
 - /api/checkout/status
 - /api/payments/intent
 - /api/stripe/webhook
-- /api/webhooks/stripe
 
 Pages (1):
 - /[username]/loja/checkout
@@ -440,7 +445,7 @@ Pages (9):
 
 ## padel
 
-API routes (66):
+API routes (68):
 - /api/padel/calendar
 - /api/padel/calendar/auto-schedule
 - /api/padel/calendar/auto-schedule/runs/[runId]
@@ -473,6 +478,8 @@ API routes (66):
 - /api/padel/ops/summary
 - /api/padel/pairings
 - /api/padel/pairings/[id]/accept
+- /api/padel/pairings/[id]/actions/cancel
+- /api/padel/pairings/[id]/actions/reopen
 - /api/padel/pairings/[id]/checkout
 - /api/padel/pairings/[id]/decline
 - /api/padel/pairings/claim/[token]

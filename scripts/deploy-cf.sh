@@ -23,13 +23,15 @@ CREATE_DNS_RECORDS=${CREATE_DNS_RECORDS:-false}
 HOSTED_ZONE_ID=${HOSTED_ZONE_ID:-}
 APP_DOMAIN=${APP_DOMAIN:-}
 ADMIN_DOMAIN=${ADMIN_DOMAIN:-}
+WWW_DOMAIN=${WWW_DOMAIN:-}
+ALB_SSL_POLICY=${ALB_SSL_POLICY:-ELBSecurityPolicy-TLS13-1-2-2021-06}
 
 WEB_DESIRED_COUNT=${WEB_DESIRED_COUNT:-1}
 WORKER_DESIRED_COUNT=${WORKER_DESIRED_COUNT:-1}
 CHAT_WS_DESIRED_COUNT=${CHAT_WS_DESIRED_COUNT:-1}
 
 function usage() {
-  echo "Usage: deploy-cf.sh [--with-alb true|false] [--with-acm true|false] [--pause|--resume|--hard-pause] [--force-public] [--hosted-zone-id Z] [--app-domain app.example.com] [--admin-domain admin.example.com] [--create-dns true|false]" >&2
+  echo "Usage: deploy-cf.sh [--with-alb true|false] [--with-acm true|false] [--pause|--resume|--hard-pause] [--force-public] [--hosted-zone-id Z] [--app-domain app.example.com] [--admin-domain admin.example.com] [--www-domain www.example.com] [--alb-ssl-policy ELBSecurityPolicy-...] [--create-dns true|false]" >&2
 }
 
 while [[ $# -gt 0 ]]; do
@@ -66,6 +68,10 @@ while [[ $# -gt 0 ]]; do
       APP_DOMAIN="$2"; shift 2;;
     --admin-domain)
       ADMIN_DOMAIN="$2"; shift 2;;
+    --www-domain)
+      WWW_DOMAIN="$2"; shift 2;;
+    --alb-ssl-policy)
+      ALB_SSL_POLICY="$2"; shift 2;;
     --create-dns)
       CREATE_DNS_RECORDS="$2"; shift 2;;
     *)
@@ -176,11 +182,12 @@ if [[ "$WITH_ACM" == "true" ]]; then
   ROOT_DOMAIN=${ROOT_DOMAIN:-orya.pt}
   APP_DOMAIN=${APP_DOMAIN:-orya.pt}
   ADMIN_DOMAIN=${ADMIN_DOMAIN:-admin.orya.pt}
+  WWW_DOMAIN=${WWW_DOMAIN:-www.orya.pt}
   aws cloudformation deploy --profile "$PROFILE" --region "$REGION" \
     --stack-name "$ACM_STACK_NAME" \
     --template-file "$ACM_TEMPLATE" \
     --capabilities CAPABILITY_NAMED_IAM \
-    --parameter-overrides HostedZoneId="$HOSTED_ZONE_ID" RootDomain="$ROOT_DOMAIN" AppDomain="$APP_DOMAIN" AdminDomain="$ADMIN_DOMAIN"
+    --parameter-overrides HostedZoneId="$HOSTED_ZONE_ID" RootDomain="$ROOT_DOMAIN" AppDomain="$APP_DOMAIN" AdminDomain="$ADMIN_DOMAIN" WwwDomain="$WWW_DOMAIN"
 
   ALB_CERT_ARN=$(aws cloudformation describe-stacks --profile "$PROFILE" --region "$REGION" \
     --stack-name "$ACM_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='CertificateArn'].OutputValue" --output text)
@@ -227,6 +234,8 @@ aws cloudformation deploy --profile "$PROFILE" --region "$REGION" \
     HostedZoneId="${HOSTED_ZONE_ID:-}" \
     AppDomain="${APP_DOMAIN:-}" \
     AdminDomain="${ADMIN_DOMAIN:-}" \
+    WwwDomain="${WWW_DOMAIN:-}" \
+    AlbSslPolicy="${ALB_SSL_POLICY:-ELBSecurityPolicy-TLS13-1-2-2021-06}" \
     CreateDnsRecords="${CREATE_DNS_RECORDS:-false}" \
     SecretsPrefix="orya/prod" \
     BudgetNotificationEmail="${BUDGET_NOTIFICATION_EMAIL:-}" \
