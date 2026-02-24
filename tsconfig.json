@@ -52,6 +52,8 @@
     "**/node_modules",
     ".next",
     "**/.next",
+    "apps/mobile",
+    "apps/mobile/**",
     "apps/mobile/dist",
     "apps/mobile/__tests__",
     "dist",

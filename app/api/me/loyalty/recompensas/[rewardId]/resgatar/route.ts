@@ -8,12 +8,15 @@ import { getOrganizationActiveModules, hasAnyActiveModule } from "@/lib/organiza
 import { recordLoyaltyLedgerOutbox } from "@/domain/loyaltyOutbox";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-async function _POST(_req: NextRequest, context: { params: { rewardId: string } }) {
+async function _POST(
+  _req: NextRequest,
+  context: { params: Promise<{ rewardId: string }> },
+) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
 
-    const rewardId = context.params.rewardId;
+    const { rewardId } = await context.params;
     const reward = await prisma.loyaltyReward.findUnique({
       where: { id: rewardId },
       select: {
