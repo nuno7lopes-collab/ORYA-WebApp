@@ -7,6 +7,7 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { ensureOrganizationWriteAccess } from "@/lib/organizationWriteAccess";
+import { evaluatePaidWriteGate } from "@/lib/organizationPayments";
 import { OrganizationMemberRole } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
@@ -77,6 +78,7 @@ async function _PATCH(
     const { organization } = await getActiveOrganizationForUser(profile.id, {
       organizationId: organizationId ?? undefined,
       roles: [...ROLE_ALLOWLIST],
+      includeOrganizationFields: "settings",
     });
 
     if (!organization) {
@@ -87,7 +89,8 @@ async function _PATCH(
       return fail(403, reservasAccess.error);
     }
     const writeAccess = ensureOrganizationWriteAccess(organization, {
-      requireStripeForServices: true,
+      requireStripeForServices: false,
+      skipEmailGate: true,
     });
     if (!writeAccess.ok) {
       return fail(403, writeAccess.errorCode);
@@ -124,6 +127,30 @@ async function _PATCH(
         return fail(400, "Preço inválido.");
       }
       updates.deltaPriceCents = deltaPriceCents;
+    }
+    if (Object.prototype.hasOwnProperty.call(updates, "deltaPriceCents")) {
+      const paidWriteGate = evaluatePaidWriteGate({
+        organizationId: organization.id,
+        orgType: (organization as { orgType?: string | null }).orgType ?? null,
+        officialEmail: organization.officialEmail ?? null,
+        officialEmailVerifiedAt: organization.officialEmailVerifiedAt ?? null,
+        stripeAccountId: (organization as { stripeAccountId?: string | null }).stripeAccountId ?? null,
+        stripeChargesEnabled: (organization as { stripeChargesEnabled?: boolean | null }).stripeChargesEnabled ?? false,
+        stripePayoutsEnabled: (organization as { stripePayoutsEnabled?: boolean | null }).stripePayoutsEnabled ?? false,
+        amountCents: Number(updates.deltaPriceCents),
+      });
+      if (!paidWriteGate.ok) {
+        return respondError(
+          ctx,
+          {
+            errorCode: paidWriteGate.errorCode,
+            message: paidWriteGate.message,
+            retryable: false,
+            details: paidWriteGate.details,
+          },
+          { status: 403 },
+        );
+      }
     }
     if (payload?.maxQty !== undefined) {
       if (payload.maxQty === null || payload.maxQty === "") {
@@ -209,6 +236,7 @@ async function _DELETE(
     const { organization } = await getActiveOrganizationForUser(profile.id, {
       organizationId: organizationId ?? undefined,
       roles: [...ROLE_ALLOWLIST],
+      includeOrganizationFields: "settings",
     });
 
     if (!organization) {

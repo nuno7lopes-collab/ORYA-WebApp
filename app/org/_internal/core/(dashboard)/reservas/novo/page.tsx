@@ -6,6 +6,7 @@ import { useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { appendOrganizationIdToHref, parseOrganizationId, parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
+import { mapPaymentGateUiState, parseApiError } from "@/lib/payments/paymentGateUi";
 import {
   CTA_PRIMARY,
   CTA_SECONDARY,
@@ -33,25 +34,35 @@ export default function NovoServicoPage() {
   const [durationMinutes, setDurationMinutes] = useState(String(DEFAULT_DURATION_MINUTES));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorCtaHref, setErrorCtaHref] = useState<string | null>(null);
+  const [errorCtaLabel, setErrorCtaLabel] = useState<string | null>(null);
 
   const handleSubmit = async () => {
     const trimmedTitle = title.trim();
     if (!trimmedTitle) {
       setError("Indica o título do serviço.");
+      setErrorCtaHref(null);
+      setErrorCtaLabel(null);
       return;
     }
     const durationValue = Number(durationMinutes);
     if (!DURATION_OPTIONS.includes(durationValue)) {
       setError("Seleciona a duração.");
+      setErrorCtaHref(null);
+      setErrorCtaLabel(null);
       return;
     }
     const unitPriceValue = Number(unitPrice.replace(",", "."));
     if (!Number.isFinite(unitPriceValue) || unitPriceValue < 0) {
       setError("Preço inválido.");
+      setErrorCtaHref(null);
+      setErrorCtaLabel(null);
       return;
     }
     setSaving(true);
     setError(null);
+    setErrorCtaHref(null);
+    setErrorCtaLabel(null);
 
     try {
       const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/servicos"), {
@@ -70,13 +81,25 @@ export default function NovoServicoPage() {
 
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        throw new Error(json?.message || json?.error || "Erro ao criar serviço.");
+        const parsedError = parseApiError(json, "Erro ao criar serviço.");
+        const uiError = mapPaymentGateUiState({
+          organizationId,
+          errorCode: parsedError.errorCode,
+          message: parsedError.message,
+          details: parsedError.details,
+        });
+        setError(uiError.message);
+        setErrorCtaHref(uiError.ctaHref);
+        setErrorCtaLabel(uiError.ctaLabel);
+        return;
       }
 
       const detailHref = appendOrganizationIdToHref(`/org/bookings/${json.service.id}`, organizationId);
       router.push(detailHref);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao criar serviço.");
+      setErrorCtaHref(null);
+      setErrorCtaLabel(null);
     } finally {
       setSaving(false);
     }
@@ -143,7 +166,16 @@ export default function NovoServicoPage() {
 
         {error && (
           <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-100">
-            {error}
+            <p>{error}</p>
+            {errorCtaHref && errorCtaLabel ? (
+              <button
+                type="button"
+                onClick={() => router.push(errorCtaHref)}
+                className="mt-3 rounded-full border border-red-200/50 bg-red-200/15 px-3 py-1.5 text-xs font-semibold text-red-50 transition hover:bg-red-200/25"
+              >
+                {errorCtaLabel}
+              </button>
+            ) : null}
           </div>
         )}
 

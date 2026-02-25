@@ -16,6 +16,7 @@ const B2C_CONTEXT_TYPES: ChatConversationContextType[] = [
   ChatConversationContextType.ORG_CONTACT,
   ChatConversationContextType.BOOKING,
   ChatConversationContextType.SERVICE,
+  ChatConversationContextType.ORG_COMMUNITY,
 ];
 const ACTIVE_MEMBER_FILTER = {
   leftAt: null,
@@ -75,6 +76,10 @@ function buildConversationDisplay(params: {
       username: string | null;
       brandingAvatarUrl: string | null;
     } | null;
+    community: {
+      title: string;
+      coverImageUrl: string | null;
+    } | null;
     members: ConversationMember[];
   };
   viewerId: string;
@@ -98,6 +103,14 @@ function buildConversationDisplay(params: {
       title: conversation.title || "Grupo",
       subtitle: null as string | null,
       imageUrl: null as string | null,
+    };
+  }
+
+  if (conversation.contextType === "ORG_COMMUNITY") {
+    return {
+      title: conversation.community?.title || conversation.title || "Comunidade",
+      subtitle: conversation.organization?.publicName || conversation.organization?.businessName || "Comunidade",
+      imageUrl: conversation.community?.coverImageUrl ?? conversation.organization?.brandingAvatarUrl ?? null,
     };
   }
 
@@ -183,6 +196,12 @@ async function _GET(req: NextRequest) {
             },
             organization: {
               select: { id: true, publicName: true, businessName: true, username: true, brandingAvatarUrl: true },
+            },
+            community: {
+              select: {
+                title: true,
+                coverImageUrl: true,
+              },
             },
             members: {
               where: ACTIVE_MEMBER_FILTER,

@@ -56,6 +56,39 @@ export type MessageInviteAcceptResponse = {
   expiresAt: string | null;
 };
 
+export type MessageCommunityInvite = {
+  id: string;
+  conversationId: string;
+  status: string;
+  createdAt: string;
+  expiresAt: string | null;
+  community: {
+    conversationId: string;
+    title: string;
+    coverImageUrl: string | null;
+    talkPolicy: string;
+    accessMode: string;
+    organizationId: number;
+  } | null;
+  requester: {
+    id: string;
+    fullName: string | null;
+    username: string | null;
+    avatarUrl: string | null;
+  } | null;
+};
+
+export type MessageCommunityInvitesResponse = {
+  items: MessageCommunityInvite[];
+};
+
+export type CommunityInviteRedeemResponse = {
+  ok: boolean;
+  contextType?: string;
+  conversationId?: string;
+  error?: string;
+};
+
 export type MessageRequest = {
   id: string;
   status: string;
@@ -93,6 +126,18 @@ export type ConversationMessage = {
   body: string | null;
   createdAt: string;
   deletedAt?: string | null;
+  reactions?: Array<{
+    messageId: string;
+    userId: string;
+    emoji: string;
+    createdAt: string;
+    user?: {
+      id: string;
+      fullName: string | null;
+      username: string | null;
+      avatarUrl: string | null;
+    } | null;
+  }>;
   sender: {
     id: string;
     fullName: string | null;
@@ -111,6 +156,12 @@ export type ConversationMessagesResponse = {
     organizationId: number | null;
     customerId: string | null;
     professionalId: string | null;
+    community?: {
+      title: string;
+      coverImageUrl: string | null;
+      talkPolicy: string;
+      accessMode: string;
+    } | null;
   };
   members: ConversationMember[];
   items: ConversationMessage[];
@@ -118,6 +169,7 @@ export type ConversationMessagesResponse = {
   latestCursor?: string | null;
   canPost?: boolean;
   readOnlyReason?: string | null;
+  followGraceEndsAt?: string | null;
 };
 
 export type ConversationMessageSendResponse = {
@@ -133,4 +185,9 @@ export type ConversationNotificationResponse = {
   ok: boolean;
   notifLevel: string;
   mutedUntil: string | null;
+};
+
+export type MessageReactionResponse = {
+  ok: boolean;
+  warnings?: string[];
 };

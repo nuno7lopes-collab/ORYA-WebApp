@@ -46,8 +46,6 @@ const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.STAFF,
 ];
 
-const SLOT_STEP_MINUTES = 5;
-
 function fail(
   ctx: { requestId: string; correlationId: string },
   status: number,
@@ -604,7 +602,7 @@ async function _POST(
         rangeEnd: dayEnd,
         timezone,
         durationMinutes: booking.durationMinutes,
-        stepMinutes: SLOT_STEP_MINUTES,
+        stepMinutes: bookingPolicy.gridMinutes,
         now,
         professionals: professionalScopes,
         resources: resourceScopes,
@@ -681,7 +679,7 @@ async function _POST(
           rangeEnd: dayEnd,
           timezone,
           durationMinutes: booking.durationMinutes,
-          stepMinutes: SLOT_STEP_MINUTES,
+          stepMinutes: bookingPolicy.gridMinutes,
           now,
           scopeType: scope.scopeType,
           scopeId: scope.scopeId,

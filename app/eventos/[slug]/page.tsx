@@ -7,6 +7,7 @@ import WavesSectionClient, { type WaveTicket, type WaveStatus } from "./WavesSec
 import Link from "next/link";
 import EventPageClient from "./EventPageClient";
 import PadelMatchesByCategoryClient from "./PadelMatchesByCategoryClient";
+import EventDescriptionReadMore from "./EventDescriptionReadMore";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import type { Metadata } from "next";
 import type { Prisma } from "@prisma/client";
@@ -374,11 +375,6 @@ export default async function EventPage({
   const ticketCopy = getTicketCopy(isPadel ? "PADEL" : "DEFAULT", locale);
   const ticketSectionLabel = ticketCopy.pluralCap;
   const freeBadgeLabel = ticketCopy.freeLabel;
-  const ctaFreeLabel = ticketCopy.isPadel ? ticketCopy.buyLabel : t("ctaReserveSeat", locale);
-  const ctaPaidLabel = ticketCopy.viewLabel;
-  const hasTicketLabel = ticketCopy.isPadel
-    ? t("hasPadelRegistrationLabel", locale)
-    : t("hasEventTicketLabel", locale);
   const ticketSelectLabel = ticketCopy.isPadel
     ? t("selectRegistrationLabel", locale)
     : t("selectTicketLabel", locale);
@@ -499,10 +495,6 @@ export default async function EventPage({
   const safeOrganization = organizationDisplay || t("organizationFallback", locale);
   const organizationAvatarUrl = event.organization?.brandingAvatarUrl?.trim() || null;
   const organizationHandle = organizationUsername ? `@${organizationUsername}` : null;
-  // Nota: no modelo atual, não determinamos o utilizador autenticado neste
-  // Server Component para evitar erros de escrita de cookies.
-  // A verificação de "já tens bilhete" pode ser feita no cliente.
-  const currentUserHasTicket = false;
 
   const startDateObj = event.startsAt;
   const endDateObj = event.endsAt ?? event.startsAt;
@@ -522,7 +514,6 @@ export default async function EventPage({
 
   const date = dateFormatter.format(startDateObj);
   const time = timeFormatter.format(startDateObj);
-  const endTime = timeFormatter.format(endDateObj);
   const formattedDate = date.charAt(0).toUpperCase() + date.slice(1);
   const descriptionText =
     event.description && event.description.trim().length > 0
@@ -816,7 +807,7 @@ export default async function EventPage({
 
         {/* ========== HERO ============ */}
         <section className="relative z-10 w-full pb-16 pt-20 md:pb-20 md:pt-28">
-          <div className="orya-page-width flex items-center justify-between px-4 md:px-8">
+          <div className="orya-page-width px-4 md:px-8">
             <Link
               href="/descobrir/eventos"
               className="inline-flex items-center gap-2 text-xs font-medium text-white/75 transition hover:text-white"
@@ -824,138 +815,14 @@ export default async function EventPage({
               <span className="text-lg leading-none">←</span>
               <span>{t("backToExplore", locale)}</span>
             </Link>
-            <div className="hidden items-center gap-2 rounded-full border border-white/12 bg-black/40 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-white/70 sm:flex">
-              <span>{t("oryaEventBadge", locale)}</span>
-              <span className="h-1 w-1 rounded-full bg-white/40" />
-              {organizationUsername ? (
-                <Link href={`/${organizationUsername}`} className="text-white/80 hover:text-white">
-                  {safeOrganization}
-                </Link>
-              ) : (
-                <span>{safeOrganization}</span>
-              )}
-            </div>
           </div>
 
-          <div className="orya-page-width mt-6 grid grid-cols-1 gap-6 px-4 md:px-8 lg:grid-cols-[1.1fr_0.9fr]">
-            <div className="relative">
+          <div
+            data-testid="event-detail-dice-split"
+            className="orya-page-width mt-6 grid grid-cols-1 gap-6 px-4 md:px-8 lg:grid-cols-[minmax(320px,0.92fr)_minmax(420px,1.08fr)]"
+          >
+            <div data-testid="event-cover-square" className="relative order-1">
               <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-[#7CFFEA]/70 to-transparent" />
-              <div className="relative rounded-3xl border border-white/10 bg-black/55 p-6 shadow-[0_24px_60px_rgba(0,0,0,0.6)] backdrop-blur-2xl md:p-8 animate-fade-slide">
-                <div className="relative">
-                <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.25em] text-white/60">
-                  <span>{safeLocationName}</span>
-                  <span className="h-1 w-1 rounded-full bg-white/30" />
-                  <span>{resolvedLocation.city || t("cityTbd", locale)}</span>
-                </div>
-
-                  <div className="mt-4 flex flex-wrap gap-2 text-white/85">
-                    <span className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold ${availabilityTone}`}>
-                      {availabilityLabel}
-                    </span>
-                    {isInviteRestricted && (
-                      <span className="rounded-full border border-white/30 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white/80">
-                        {t("inviteAccessLabel", locale)}
-                      </span>
-                    )}
-                    {isGratis ? (
-                      <span className="rounded-full border border-emerald-400/50 bg-emerald-500/15 px-3 py-1.5 text-[11px] font-semibold text-emerald-100">
-                        {freeBadgeLabel}
-                      </span>
-                    ) : showPriceFrom ? (
-                      <span className="rounded-full border border-fuchsia-400/40 bg-fuchsia-500/15 px-3 py-1.5 text-[11px] font-semibold text-fuchsia-100">
-                        {t("priceFromLabel", locale)} {(displayPriceFrom ?? 0).toFixed(2)} €
-                      </span>
-                    ) : (
-                      <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white/75">
-                        {t("priceTbd", locale)}
-                      </span>
-                    )}
-                  </div>
-
-                  <h1 className="mt-4 text-4xl font-semibold leading-tight text-white md:text-5xl lg:text-6xl">
-                    {event.title}
-                  </h1>
-                  <div className="mt-3 h-px w-24 bg-gradient-to-r from-[#7CFFEA] via-[#9F8CFF] to-transparent" />
-
-                  <div className="mt-4">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/60">
-                      {t("organizedByLabel", locale)}
-                    </p>
-                    {organizationUsername ? (
-                      <Link
-                        href={`/${organizationUsername}`}
-                        className="mt-2 inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-black/40 px-3 py-2 transition hover:border-white/20 hover:bg-white/10"
-                      >
-                        <Avatar
-                          src={organizationAvatarUrl}
-                          name={safeOrganization}
-                          className="h-10 w-10 border border-white/20"
-                          textClassName="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/80"
-                          fallbackText="OR"
-                        />
-                        <div className="flex flex-col">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-semibold text-white">{safeOrganization}</span>
-                            <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-white/65">
-                              {t("organizationLabel", locale)}
-                            </span>
-                          </div>
-                          {organizationHandle && (
-                            <span className="text-xs text-white/60">{organizationHandle}</span>
-                          )}
-                        </div>
-                      </Link>
-                    ) : (
-                      <div className="mt-2 inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-black/40 px-3 py-2">
-                        <Avatar
-                          src={organizationAvatarUrl}
-                          name={safeOrganization}
-                          className="h-10 w-10 border border-white/20"
-                          textClassName="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/80"
-                          fallbackText="OR"
-                        />
-                        <div className="flex flex-col">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-semibold text-white">{safeOrganization}</span>
-                            <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-white/65">
-                              {t("organizationLabel", locale)}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {currentUserHasTicket && (
-                    <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-emerald-400/60 bg-emerald-500/15 px-3 py-1 text-xs text-emerald-100">
-                      <span className="text-sm">🎟️</span>
-                      <span>{hasTicketLabel}</span>
-                    </div>
-                  )}
-
-                  <div className="mt-6 flex flex-wrap items-center gap-4">
-                    {!eventEnded && (
-                      <a
-                        href="#bilhetes"
-                        className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-semibold text-black shadow-[0_0_30px_rgba(255,255,255,0.3)] transition-transform hover:scale-105 active:scale-95 md:text-sm"
-                      >
-                        {isGratis ? ctaFreeLabel : ctaPaidLabel}
-                        <span className="text-xs">↓</span>
-                      </a>
-                    )}
-                    <a
-                      href="#resumo"
-                      className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/5 px-4 py-2 text-xs text-white/80 transition hover:border-white/30 hover:bg-white/10 md:text-sm"
-                    >
-                      {t("viewSummaryLabel", locale)}
-                    </a>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="relative">
-              <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-[#FF7AD9]/60 to-transparent" />
               <div className="relative aspect-square w-full overflow-hidden rounded-3xl border border-white/12 bg-black/40 shadow-[0_24px_60px_rgba(0,0,0,0.75)]">
                 <Image
                   src={cover}
@@ -963,68 +830,102 @@ export default async function EventPage({
                   fill
                   priority
                   fetchPriority="high"
-                  sizes="(max-width: 768px) 90vw, (max-width: 1200px) 40vw, 480px"
-                  className="object-cover"
+                  sizes="(max-width: 768px) 90vw, (max-width: 1200px) 42vw, 520px"
+                  className="object-cover object-center"
                   placeholder="blur"
                   blurDataURL={defaultBlurDataURL}
                 />
                 <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent" />
               </div>
             </div>
-          </div>
 
-          <div className="orya-page-width mt-6 px-4 md:px-8">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-              <div className="rounded-2xl border border-white/10 bg-black/45 px-4 py-3 shadow-[0_12px_30px_rgba(0,0,0,0.4)] backdrop-blur">
-                <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">
-                  {t("dateTimeLabel", locale)}
-                </p>
-                <p className="mt-2 text-sm font-semibold text-white/90">
-                  {formattedDate}
-                </p>
-                <p className="text-xs text-white/60">
-                  {time} – {endTime}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-black/45 px-4 py-3 shadow-[0_12px_30px_rgba(0,0,0,0.4)] backdrop-blur">
-                <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">
-                  {t("locationLabel", locale)}
-                </p>
-                <p className="mt-2 text-sm font-semibold text-white/90">
-                  {safeLocationName}
-                </p>
-                <p className="text-xs text-white/60">
-                  {resolvedLocation.city || t("cityTbd", locale)}
-                </p>
-                {googleMapsUrl && (
+            <div className="relative order-2">
+              <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-[#FF7AD9]/60 to-transparent" />
+              <div className="relative rounded-3xl border border-white/10 bg-black/55 p-6 shadow-[0_24px_60px_rgba(0,0,0,0.6)] backdrop-blur-2xl md:p-8 animate-fade-slide">
+                <h1 className="text-4xl font-semibold leading-tight text-white md:text-5xl lg:text-[3.35rem]">
+                  {event.title}
+                </h1>
+
+                <div className="mt-5">
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-white/60">
+                    {t("organizedByLabel", locale)}
+                  </p>
+                  {organizationUsername ? (
+                    <Link
+                      href={`/${organizationUsername}`}
+                      className="mt-2 inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-black/40 px-3 py-2 transition hover:border-white/20 hover:bg-white/10"
+                    >
+                      <Avatar
+                        src={organizationAvatarUrl}
+                        name={safeOrganization}
+                        className="h-10 w-10 border border-white/20"
+                        textClassName="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/80"
+                        fallbackText="OR"
+                      />
+                      <div className="flex flex-col">
+                        <span className="text-sm font-semibold text-white">{safeOrganization}</span>
+                        {organizationHandle && (
+                          <span className="text-xs text-white/60">{organizationHandle}</span>
+                        )}
+                      </div>
+                    </Link>
+                  ) : (
+                    <div className="mt-2 inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-black/40 px-3 py-2">
+                      <Avatar
+                        src={organizationAvatarUrl}
+                        name={safeOrganization}
+                        className="h-10 w-10 border border-white/20"
+                        textClassName="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/80"
+                        fallbackText="OR"
+                      />
+                      <span className="text-sm font-semibold text-white">{safeOrganization}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-6 space-y-4">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/60">
+                      {t("dateLabel", locale)}
+                    </p>
+                    <p className="mt-1 text-base font-medium text-white/90">
+                      {formattedDate} · {time}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/60">
+                      {t("locationLabel", locale)}
+                    </p>
+                    {googleMapsUrl ? (
+                      <a
+                        href={googleMapsUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-1 inline-flex flex-col items-start text-white/90 hover:text-white"
+                      >
+                        <span className="text-base font-medium underline decoration-white/35 underline-offset-4">
+                          {safeLocationName}
+                        </span>
+                        <span className="text-xs text-white/62">{safeLocationAddress}</span>
+                      </a>
+                    ) : (
+                      <div className="mt-1">
+                        <p className="text-base font-medium text-white/90">{safeLocationName}</p>
+                        <p className="text-xs text-white/62">{safeLocationAddress}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-7 flex flex-wrap items-center gap-3">
                   <a
-                    href={googleMapsUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-2 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] font-semibold text-white/80 hover:bg-white/10"
+                    href="#bilhetes"
+                    className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-semibold text-black shadow-[0_0_30px_rgba(255,255,255,0.3)] transition-transform hover:scale-105 active:scale-95 md:text-sm"
                   >
-                    {t("openGoogleMaps", locale)}
+                    {ticketCopy.viewLabel}
+                    <span className="text-xs">↓</span>
                   </a>
-                )}
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-black/45 px-4 py-3 shadow-[0_12px_30px_rgba(0,0,0,0.4)] backdrop-blur">
-                <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">
-                  {t("priceLabel", locale)}
-                </p>
-                <p className="mt-2 text-sm font-semibold text-white/90">
-                  {isGratis
-                    ? freeBadgeLabel
-                    : showPriceFrom
-                      ? `${(displayPriceFrom ?? 0).toFixed(2)} €`
-                      : t("priceTbd", locale)}
-                </p>
-                <p className="text-xs text-white/60">
-                  {isGratis
-                    ? ticketCopy.isPadel
-                      ? t("signupNow", locale)
-                      : t("reserveSeatNow", locale)
-                    : t("priceCheckoutHint", locale)}
-                </p>
+                </div>
               </div>
             </div>
           </div>
@@ -1047,18 +948,15 @@ export default async function EventPage({
           {/* LEFT SIDE — Info + Descrição */}
           <div className="space-y-12 md:col-span-2">
             <section
-              id="resumo"
+              id="sobre"
               className="rounded-3xl border border-white/10 bg-black/45 p-6 shadow-[0_20px_50px_rgba(0,0,0,0.55)] backdrop-blur-2xl md:p-8 animate-fade-slide"
             >
-              <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-white/60">
-                <span>{t("eventSummaryEyebrow", locale)}</span>
-                <span className="h-1 w-1 rounded-full bg-white/30" />
-                <span>{t("eventSummaryEssential", locale)}</span>
-              </div>
-              <h2 className="mt-3 text-2xl font-semibold">{t("eventSummaryTitle", locale)}</h2>
-              <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-white/80 md:text-base">
-                {descriptionText}
-              </p>
+              <h2 className="text-2xl font-semibold">{t("aboutEventTitle", locale)}</h2>
+              <EventDescriptionReadMore
+                text={descriptionText}
+                locale={locale}
+                collapsedLines={6}
+              />
             </section>
 
             {checkoutVariant === "PADEL" && (
@@ -1087,34 +985,9 @@ export default async function EventPage({
                     </span>
                   </div>
 
-                  <div className="mt-4 grid gap-4 sm:grid-cols-2 md:grid-cols-1">
-                    <div className="rounded-xl border border-white/12 bg-black/50 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-                      <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">
-                        {t("dateLabel", locale)}
-                      </p>
-                      <p className="mt-1 text-sm text-white/85">
-                        {formattedDate}
-                      </p>
-                      <p className="text-xs text-white/60">
-                        {time} – {endTime}
-                      </p>
-                    </div>
-                    <div className="rounded-xl border border-white/12 bg-black/50 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-                      <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">
-                        {t("locationLabel", locale)}
-                      </p>
-                      <p className="mt-1 text-sm text-white/85">
-                        {safeLocationName}
-                      </p>
-                      <p className="text-xs text-white/60">
-                        {safeLocationAddress}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div id="bilhetes" className="mt-4 scroll-mt-28">
+                  <div id="bilhetes" className="mt-5 scroll-mt-28 border-t border-white/12 pt-5">
                     {!eventEnded ? (
-                      <div className="space-y-5 border-t border-white/12 pt-5">
+                      <div className="space-y-5">
                         <div className="flex items-center justify-between gap-2">
                           <h3 className="text-base font-semibold">
                             {ticketSelectLabel}

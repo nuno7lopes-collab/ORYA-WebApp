@@ -184,6 +184,17 @@ const DEFAULT_BOOKING_POLICY: BookingPolicy = {
   presetDurations: [60, 90],
 };
 
+function resolveBookingApiErrorMessage(
+  payload: { error?: string; errorCode?: string; message?: string } | null,
+  fallback: string,
+) {
+  const code = payload?.errorCode ?? payload?.error;
+  if (code === "RESERVAS_OPERATIONAL_OFF") {
+    return payload?.message || "Reservas temporariamente indisponíveis.";
+  }
+  return payload?.message || payload?.error || fallback;
+}
+
 function formatMoney(cents: number, currency: string) {
   return `${(cents / 100).toFixed(2)} ${currency}`;
 }
@@ -710,61 +721,6 @@ export default function ReservasBookingClient({
   }, [selectedServiceId]);
 
   useEffect(() => {
-    let cancelled = false;
-    fetch(`/api/org/${organization.id}/reservas/config`, { cache: "no-store" })
-      .then((res) => res.json())
-      .then((json) => {
-        if (cancelled) return;
-        if (!json?.ok) return;
-        const data = json?.data ?? {};
-        const activeDurations = Array.isArray(data.activeDurations)
-          ? data.activeDurations.filter((value: unknown) => typeof value === "number" && Number.isFinite(value))
-          : null;
-        const allowedDurations = Array.isArray(data.allowedDurations)
-          ? data.allowedDurations.filter((value: unknown) => typeof value === "number" && Number.isFinite(value))
-          : [];
-        const resolvedActiveDurations = activeDurations && activeDurations.length > 0 ? activeDurations : allowedDurations;
-        const nextPolicy: BookingPolicy = {
-          gridMinutes:
-            typeof data.gridMinutes === "number" && Number.isFinite(data.gridMinutes)
-              ? data.gridMinutes
-              : DEFAULT_BOOKING_POLICY.gridMinutes,
-          durationCatalog: Array.isArray(data.durationCatalog)
-            ? data.durationCatalog.filter((value: unknown) => typeof value === "number" && Number.isFinite(value))
-            : [...(DEFAULT_BOOKING_POLICY.durationCatalog ?? [])],
-          activeDurations: resolvedActiveDurations.length > 0
-            ? resolvedActiveDurations
-            : [...(DEFAULT_BOOKING_POLICY.activeDurations ?? DEFAULT_BOOKING_POLICY.allowedDurations)],
-          allowedDurations: resolvedActiveDurations.length > 0
-            ? resolvedActiveDurations
-            : [...DEFAULT_BOOKING_POLICY.allowedDurations],
-          allowCustomDuration: false,
-          presetDurations: resolvedActiveDurations.length > 0
-            ? resolvedActiveDurations
-            : [...DEFAULT_BOOKING_POLICY.presetDurations],
-        };
-        if (!nextPolicy.allowedDurations.length) {
-          nextPolicy.allowedDurations = [...DEFAULT_BOOKING_POLICY.allowedDurations];
-        }
-        if (!nextPolicy.activeDurations?.length) {
-          nextPolicy.activeDurations = [...(DEFAULT_BOOKING_POLICY.activeDurations ?? DEFAULT_BOOKING_POLICY.allowedDurations)];
-        }
-        if (!nextPolicy.presetDurations.length) {
-          nextPolicy.presetDurations = [...DEFAULT_BOOKING_POLICY.presetDurations];
-        }
-        setBookingPolicy(nextPolicy);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setBookingPolicy(DEFAULT_BOOKING_POLICY);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [organization.id]);
-
-  useEffect(() => {
     if (durationOverrideMinutes == null) return;
     const isPreset = presetDurationOptions.includes(durationOverrideMinutes);
     if (isPreset) return;
@@ -1090,7 +1046,7 @@ export default function ReservasBookingClient({
         if (json?.error === "RESERVA_EXPIRADA") {
           setBookingPending(null);
         }
-        throw new Error(json?.message || json?.error || "Erro ao iniciar pagamento.");
+        throw new Error(resolveBookingApiErrorMessage(json, "Erro ao iniciar pagamento."));
       }
       setCheckout({
         clientSecret: json.clientSecret,
@@ -1238,7 +1194,7 @@ export default function ReservasBookingClient({
           setActiveStep(4);
           return;
         }
-        throw new Error(json?.message || json?.error || "Não foi possível criar a pré-reserva.");
+        throw new Error(resolveBookingApiErrorMessage(json, "Não foi possível criar a pré-reserva."));
       }
       setBookingPending({
         id: json.booking.id,
@@ -1598,8 +1554,6 @@ export default function ReservasBookingClient({
   return (
     <section className={mode === "modal" ? "h-full" : "space-y-5 sm:space-y-6"}>
       <div className={cn(shellClass, shellHeightClass, shellRadiusClass)}>
-        <div className="pointer-events-none absolute -left-24 -top-28 h-56 w-56 rounded-full bg-[radial-gradient(circle_at_center,_rgba(255,0,200,0.25),_transparent_65%)] blur-2xl" />
-        <div className="pointer-events-none absolute -right-24 -bottom-28 h-64 w-64 rounded-full bg-[radial-gradient(circle_at_center,_rgba(107,255,255,0.28),_transparent_65%)] blur-2xl" />
         <div className="relative flex h-full flex-col gap-5 overflow-y-auto p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:p-6 lg:overflow-hidden">
           <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">

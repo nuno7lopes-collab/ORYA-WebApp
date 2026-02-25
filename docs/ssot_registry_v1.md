@@ -1465,7 +1465,7 @@ DORG.09) Perfil Mobile — UI/UX baseline (EM_REVIEW_SEPARADA)
 		–	`AGENDA_PUBLICA -> RESERVAS -> FORMULARIOS -> LOJA`.
 	•	Perfil público de organização é fixo (sem editor de layout/blocos customizáveis).
 	•	`Hero`, `Sobre`, `Galeria`, `FAQ`, `Contacto`, `PADEL oficial` e `Treinadores` não são blocos públicos renderizáveis.
-	•	`Loja` é condicional: só aparece quando `status=ACTIVE`, `showOnProfile=true` e existe `>=1` produto `PUBLIC`.
+	•	`Loja` é condicional no perfil público: só aparece quando `status=ACTIVE`, `showOnProfile=true`, `checkoutEnabled=true`, `catalogLocked=false`, `paymentsReady=true` e existe `>=1` produto `PUBLIC`.
 
 
 #### G03.003 (origem: D01.02)
@@ -2022,6 +2022,7 @@ Princípios
 - Mapeamento financeiro por `orgType` é obrigatório:
   - `orgType=EXTERNAL` usa Stripe Connect (tipo Standard por defeito nesta fase) com `Organization.stripeAccountId`.
   - `orgType=PLATFORM` usa conta Stripe da ORYA (não-Connect / sem `transfer_data.destination`); `stripeAccountId` é opcional e apenas de referência.
+  - Escopo canónico: `orgType` e modo de pagamentos são **por organização**; grupos não propagam automaticamente herança de pagamentos.
 - **Finanças é o único gateway lógico**: nenhum módulo cria PaymentIntents/CheckoutSessions diretamente no Stripe.
   Endpoints especializados de checkout são permitidos **apenas** se delegarem ao domínio Finanças e respeitarem idempotência/policies canónicas.
 - Idempotência obrigatória em todas as operações: `idempotencyKey` por createCheckout/refund/reconcile.
@@ -4691,6 +4692,7 @@ D09.03) Loja — bloco canónico FECHADO (3 pilares)
   - Enum canónico: `DISABLED | HIDDEN | LOCKED | CHECKOUT_DISABLED | ACTIVE`.
   - Precedência obrigatória: `DISABLED > HIDDEN > LOCKED > CHECKOUT_DISABLED > ACTIVE`.
   - Guardrail: só `lib/storeAccess.ts` pode resolver estado; duplicação de lógica é proibida.
+  - Visibilidade do bloco/tab de Loja no perfil público exige cumulativamente: `status=ACTIVE`, `showOnProfile=true`, `checkoutEnabled=true`, `catalogLocked=false`, `paymentsReady=true`, `publicProductCount>=1`.
 - Pilar 2 — Ownership org-only:
   - apenas ORGANIZAÇÕES podem ser owner de Store/Produtos/Checkout;
   - constraints canónicas: `ownerOrganizationId NOT NULL` e `ownerUserId NULL`;
@@ -5612,8 +5614,9 @@ expected execution order.
 
 ## 100) Integridade Reprodutível
 ```bash
-node scripts/rebuild_ssot_registry_by_groups.mjs
-node scripts/verify_ssot_canonical_groups.mjs
+node scripts/ssot_normative_gate.mjs
+node scripts/v9_parity_gate.mjs
+node scripts/v9_api_ui_baseline_gate.mjs
 ```
 
 ## 101) Aditamento Normativo Owner (2026-02-17)

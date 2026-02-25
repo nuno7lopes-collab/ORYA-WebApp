@@ -10,6 +10,7 @@ const prismaMock = vi.hoisted(() => ({
   padelClub: { findFirst: vi.fn() },
   padelClubCourt: { findFirst: vi.fn() },
   organizationModuleEntry: { findMany: vi.fn() },
+  organizationSettings: { findUnique: vi.fn() },
 }));
 
 vi.mock("@/domain/agendaReadModel/query", () => ({ getAgendaItemsForOrganization }));
@@ -44,6 +45,8 @@ beforeEach(async () => {
   prismaMock.padelClub.findFirst.mockReset();
   prismaMock.padelClubCourt.findFirst.mockReset();
   prismaMock.organizationModuleEntry.findMany.mockReset();
+  prismaMock.organizationSettings.findUnique.mockReset();
+  prismaMock.organizationSettings.findUnique.mockResolvedValue({ bookingAcceptNewReservations: true });
   vi.resetModules();
   GET = (await import("@/app/api/org/[orgId]/agenda/route")).GET;
 });
@@ -78,10 +81,31 @@ describe("organization agenda route", () => {
     expect(res.status).toBe(200);
     expect(body.ok).toBe(true);
     expect(body.result.items).toHaveLength(1);
+    expect(body.result.reservasOperational).toEqual({ acceptsNewBookings: true });
     expect(getAgendaItemsForOrganization).toHaveBeenCalledWith(
       expect.objectContaining({
         sourceTypes: expect.arrayContaining([SourceType.BOOKING, SourceType.CLASS_SESSION]),
       }),
     );
+  });
+
+  it("expõe estado operacional OFF de reservas", async () => {
+    getActiveOrganizationForUser.mockResolvedValue({
+      organization: { id: 1 },
+      membership: { role: "ADMIN", rolePack: null },
+    });
+    ensureReservasModuleAccess.mockResolvedValue({ ok: true });
+    ensureMemberModuleAccess.mockResolvedValue({ ok: true });
+    prismaMock.organizationModuleEntry.findMany.mockResolvedValue([{ moduleKey: "RESERVAS" }]);
+    prismaMock.organizationSettings.findUnique.mockResolvedValue({ bookingAcceptNewReservations: false });
+    getAgendaItemsForOrganization.mockResolvedValue([]);
+
+    const req = new NextRequest("http://localhost/api/org/1/agenda?from=2024-01-01&to=2024-01-31");
+    const res = await GET(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.result.reservasOperational).toEqual({ acceptsNewBookings: false });
   });
 });

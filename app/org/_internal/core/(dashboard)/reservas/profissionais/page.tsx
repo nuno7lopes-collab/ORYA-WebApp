@@ -289,7 +289,7 @@ export default function ProfissionaisPage() {
                         </button>
                         <Link
                           href={appendOrganizationIdToHref(
-                            `/org/bookings/availability?scopeType=PROFESSIONAL&scopeId=${item.id}`,
+                            `/org/calendar/availability?scopeType=PROFESSIONAL&scopeId=${item.id}`,
                             canonicalOrganizationId,
                           )}
                           className={CTA_PRIMARY}

@@ -15,6 +15,13 @@ export const CRON_JOBS: CronJobDefinition[] = [
     endpoint: "/api/cron/operations",
   },
   {
+    key: "messages-followers-grace",
+    envIntervalMs: "CRON_MESSAGES_FOLLOWERS_GRACE_INTERVAL_MS",
+    defaultIntervalMs: 300_000,
+    method: "POST",
+    endpoint: "/api/cron/messages/followers-grace",
+  },
+  {
     key: "bookings-cleanup",
     envIntervalMs: "CRON_BOOKINGS_INTERVAL_MS",
     defaultIntervalMs: 60_000,

@@ -7,6 +7,7 @@ import { getAvailableSlotsForScope } from "@/lib/reservas/availabilitySelect";
 import { groupByScope, type AvailabilityScopeType, type ScopedOverride, type ScopedSchedule, type ScopedTemplate } from "@/lib/reservas/scopedAvailability";
 import { resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
 import { resolveServicePartySizeRules } from "@/lib/reservas/servicePartySize";
+import { resolveBookingGridPolicy } from "@/lib/reservas/gridPolicy";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { buildCacheKey, getCache, setCache } from "@/lib/geo/cache";
 import { PORTUGAL_CITIES } from "@/config/cities";
@@ -250,7 +251,7 @@ async function _GET(req: NextRequest) {
     const trimmed = hasMore ? services.slice(0, take) : services;
     const organizationIds = Array.from(new Set(trimmed.map((service) => service.organization.id)));
 
-    const [schedules, overrides, bookings, professionals, resources] = await Promise.all([
+    const [schedules, overrides, bookings, professionals, resources, bookingSettings] = await Promise.all([
       prisma.availabilitySchedule.findMany({
         where: { organizationId: { in: organizationIds } },
         select: { id: true, organizationId: true, scopeType: true, scopeId: true, startDate: true, endDate: true, createdAt: true },
@@ -294,6 +295,18 @@ async function _GET(req: NextRequest) {
         select: { id: true, organizationId: true, capacity: true, priority: true, courtId: true },
         orderBy: [{ capacity: "asc" }, { priority: "asc" }, { id: "asc" }],
       }),
+      (prisma as unknown as { organizationSettings?: { findMany?: (args: unknown) => Promise<any[]> } }).organizationSettings
+        ?.findMany
+        ? prisma.organizationSettings.findMany({
+            where: { organizationId: { in: organizationIds } },
+            select: {
+              organizationId: true,
+              bookingGridMinutes: true,
+              bookingAllowedDurations: true,
+              bookingAllowCustomDuration: true,
+            },
+          })
+        : Promise.resolve([]),
     ]);
 
     const scheduleIds = schedules.map((schedule) => schedule.id);
@@ -353,9 +366,20 @@ async function _GET(req: NextRequest) {
       list.push({ id: resource.id, capacity: resource.capacity, priority: resource.priority, courtId: resource.courtId ?? null });
       resourcesByOrg.set(resource.organizationId, list);
     });
+    const bookingPolicyByOrg = new Map(
+      bookingSettings.map((settings) => [
+        settings.organizationId,
+        resolveBookingGridPolicy({
+          gridMinutes: settings.bookingGridMinutes,
+          allowedDurations: settings.bookingAllowedDurations,
+          allowCustomDuration: settings.bookingAllowCustomDuration,
+        }),
+      ]),
+    );
 
     const mapped = trimmed.map((service) => {
       const orgId = service.organization.id;
+      const bookingPolicy = bookingPolicyByOrg.get(orgId) ?? resolveBookingGridPolicy({});
       const orgTemplatesAll = templatesByOrg.get(orgId) ?? [];
       const orgOverridesAll = overridesByOrg.get(orgId) ?? [];
       const blocks = bookingsByOrg.get(orgId) ?? [];
@@ -415,6 +439,7 @@ async function _GET(req: NextRequest) {
             rangeEnd: endBoundary,
             timezone,
             durationMinutes: service.durationMinutes,
+            stepMinutes: bookingPolicy.gridMinutes,
             now,
             scopeType: "RESOURCE",
             scopeId: resource.id,
@@ -440,6 +465,7 @@ async function _GET(req: NextRequest) {
             rangeEnd: endBoundary,
             timezone,
             durationMinutes: service.durationMinutes,
+            stepMinutes: bookingPolicy.gridMinutes,
             now,
             scopeType: scope.scopeType,
             scopeId: scope.scopeId,
@@ -467,6 +493,7 @@ async function _GET(req: NextRequest) {
             rangeEnd: endBoundary,
             timezone,
             durationMinutes: service.durationMinutes,
+            stepMinutes: bookingPolicy.gridMinutes,
             now,
             scopeType: "PROFESSIONAL",
             scopeId: professional.id,
@@ -489,6 +516,7 @@ async function _GET(req: NextRequest) {
             rangeEnd: endBoundary,
             timezone,
             durationMinutes: service.durationMinutes,
+            stepMinutes: bookingPolicy.gridMinutes,
             now,
             scopeType: "RESOURCE",
             scopeId: resource.id,

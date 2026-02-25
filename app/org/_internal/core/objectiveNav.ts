@@ -147,8 +147,8 @@ export function getObjectiveSections(
         },
         {
           id: "disponibilidade",
-          label: "Disponibilidade (reservas)",
-          href: `${baseHref}/availability`,
+          label: "Disponibilidade (calendário)",
+          href: "/org/calendar/availability",
         },
         {
           id: "clientes",

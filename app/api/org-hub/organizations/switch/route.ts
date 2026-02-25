@@ -6,6 +6,7 @@ import { parseOrganizationId } from "@/lib/organizationId";
 import { OrganizationStatus } from "@prisma/client";
 import { setActiveOrganizationForUser } from "@/lib/organizationContext";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { AuthUnavailableError, EmailNotVerifiedError, UnauthenticatedError } from "@/lib/security";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const COOKIE_NAME = "orya_organization";
@@ -71,6 +72,9 @@ async function _POST(req: NextRequest) {
       userAgent: req.headers.get("user-agent"),
     });
     if (!result.ok) {
+      if (result.error === "INVALID_ORGANIZATION_ID") {
+        return jsonWrap({ ok: false, error: "INVALID_ORGANIZATION_ID" }, { status: 400 });
+      }
       return jsonWrap({ ok: false, error: "NOT_MEMBER" }, { status: 403 });
     }
 
@@ -89,6 +93,15 @@ async function _POST(req: NextRequest) {
     });
     return res;
   } catch (err: unknown) {
+    if (err instanceof EmailNotVerifiedError || (err instanceof Error && err.message === "EMAIL_NOT_VERIFIED")) {
+      return jsonWrap({ ok: false, error: "EMAIL_NOT_VERIFIED" }, { status: 403 });
+    }
+    if (err instanceof AuthUnavailableError || (err instanceof Error && err.message === "AUTH_UNAVAILABLE")) {
+      return jsonWrap({ ok: false, error: "AUTH_UNAVAILABLE" }, { status: 503 });
+    }
+    if (err instanceof UnauthenticatedError || (err instanceof Error && err.message === "UNAUTHENTICATED")) {
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+    }
     console.error("[organização/organizations/switch][POST]", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }

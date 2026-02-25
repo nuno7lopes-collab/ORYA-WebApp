@@ -52,15 +52,14 @@ export default function MobileTopBar({
         ) : (
           <div className="flex items-center justify-between">
             <Link href={logoHref} className="flex items-center gap-2" aria-label="Ir para Início">
-              <span className="relative inline-flex h-7 w-7 items-center justify-center overflow-hidden rounded-full border border-white/12 bg-white/[0.04]">
+              <span className="relative inline-flex h-6 w-6 items-center justify-center">
                 <Image
-                  src="/brand/logo_icon.png"
+                  src="/brand/logo_mark_white.png"
                   alt="ORYA"
-                  width={34}
-                  height={34}
+                  width={24}
+                  height={24}
                   priority
                   className="h-full w-full object-contain"
-                  style={{ transform: "scale(1.35)" }}
                 />
               </span>
               <span className="text-[12px] font-semibold tracking-[0.28em] text-white/85">ORYA</span>

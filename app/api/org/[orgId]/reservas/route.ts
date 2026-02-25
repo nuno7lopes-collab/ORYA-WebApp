@@ -39,6 +39,7 @@ import {
   validateDurationAgainstPolicy,
   validateStartAtAgainstPolicy,
 } from "@/lib/reservas/gridPolicy";
+import { ensureReservasOperationalOpen } from "@/lib/reservas/operationalState";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -48,8 +49,6 @@ const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
 ];
 
 const PENDING_HOLD_MINUTES = 10;
-const SLOT_STEP_MINUTES = 5;
-
 type CalendarPaymentStatus = "PAID" | "PARTIAL" | "PROCESSING" | "PENDING" | "UNKNOWN";
 type CalendarChannel = "ONLINE" | "PRESENTIAL" | "BACKOFFICE" | "UNKNOWN";
 
@@ -494,6 +493,13 @@ async function _POST(req: NextRequest) {
     });
     if (!reservasAccess.ok) {
       return fail(ctx, 403, "RESERVAS_UNAVAILABLE", reservasAccess.error ?? "Reservas indisponíveis.");
+    }
+    const reservasOperational = await ensureReservasOperationalOpen({
+      organizationId: organization.id,
+      tx: prisma,
+    });
+    if (!reservasOperational.ok) {
+      return fail(ctx, 409, reservasOperational.errorCode, reservasOperational.message);
     }
 
     const isStaff = membership.role === OrganizationMemberRole.STAFF;
@@ -940,7 +946,6 @@ async function _POST(req: NextRequest) {
       return fail(ctx, 409, "NO_AVAILABILITY", "Sem disponibilidade para este serviço.");
     }
 
-    const shouldUseOrgOnly = false;
     const bookingEndsAt = new Date(startsAt.getTime() + service.durationMinutes * 60 * 1000);
     const professionalScopeIds =
       availabilityMode === "HYBRID"
@@ -980,18 +985,14 @@ async function _POST(req: NextRequest) {
       prisma.availabilitySchedule.findMany({
         where: {
           organizationId: service.organizationId,
-          ...(shouldUseOrgOnly ? { scopeType: "ORGANIZATION", scopeId: 0 } : { OR: scopeFilters }),
+          OR: scopeFilters,
         },
         select: { id: true, scopeType: true, scopeId: true, startDate: true, endDate: true, createdAt: true },
       }),
       prisma.availabilityOverride.findMany({
         where: {
           organizationId: service.organizationId,
-          ...(shouldUseOrgOnly
-            ? { scopeType: "ORGANIZATION", scopeId: 0 }
-            : {
-                OR: scopeFilters,
-              }),
+          OR: scopeFilters,
           date: new Date(Date.UTC(dateParts.year, dateParts.month - 1, dateParts.day)),
         },
         orderBy: [{ date: "asc" }, { createdAt: "asc" }],
@@ -1046,7 +1047,7 @@ async function _POST(req: NextRequest) {
         rangeEnd: dayEnd,
         timezone,
         durationMinutes: service.durationMinutes,
-        stepMinutes: SLOT_STEP_MINUTES,
+        stepMinutes: bookingPolicy.gridMinutes,
         now,
         professionals: professionalScopes,
         resources: resourceScopes,
@@ -1075,9 +1076,7 @@ async function _POST(req: NextRequest) {
         return fail(ctx, 409, "SERVICE_CONFIG_INVALID", "Par híbrido sem ligação a campo.");
       }
     } else {
-      const scopesToCheck = shouldUseOrgOnly
-        ? [{ scopeType: "ORGANIZATION" as const, scopeId: 0, assignable: false }]
-        : scopeIds.map((id) => ({ scopeType, scopeId: id, assignable: true }));
+      const scopesToCheck = scopeIds.map((id) => ({ scopeType, scopeId: id, assignable: true }));
 
       for (const scope of scopesToCheck) {
         const slots = getAvailableSlotsForScope({
@@ -1085,7 +1084,7 @@ async function _POST(req: NextRequest) {
           rangeEnd: dayEnd,
           timezone,
           durationMinutes: service.durationMinutes,
-          stepMinutes: SLOT_STEP_MINUTES,
+          stepMinutes: bookingPolicy.gridMinutes,
           now,
           scopeType: scope.scopeType,
           scopeId: scope.scopeId,

@@ -361,8 +361,8 @@ async function _POST(req: NextRequest) {
       );
     }
 
-    // Mantém resposta opaca para evitar enumeração de contas.
-    return jsonWrap({ ok: true, otpType: "signup" });
+    const otpType = otp ? "signup" : "magiclink";
+    return jsonWrap({ ok: true, otpType });
   } catch (err) {
     const ctx = getRequestContext(req);
     console.error("[send-otp] error:", {

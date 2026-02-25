@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { getEventCoverUrl } from "@/lib/eventCover";
 import ReservasBookingClient from "@/app/[username]/_components/ReservasBookingClient";
+import { Avatar } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 
 type ReservationAssignmentMode =
@@ -91,6 +92,7 @@ type ReservasBookingSectionProps = {
   initialServiceId?: number | null;
   featuredServiceIds?: number[];
   servicesLayout?: "grid" | "carousel";
+  acceptNewBookings?: boolean;
 };
 
 const cardBaseClass =
@@ -117,6 +119,7 @@ export default function ReservasBookingSection({
   initialServiceId,
   featuredServiceIds = [],
   servicesLayout = "grid",
+  acceptNewBookings = true,
 }: ReservasBookingSectionProps) {
   const activeServices = useMemo(
     () => services.filter((service) => service.isActive),
@@ -133,6 +136,7 @@ export default function ReservasBookingSection({
   const [canScrollRight, setCanScrollRight] = useState(false);
 
   useEffect(() => {
+    if (!acceptNewBookings) return;
     if (!initialServiceId) return;
     if (!activeServices.some((service) => service.id === initialServiceId)) return;
     setSelectedServiceId(initialServiceId);
@@ -140,7 +144,15 @@ export default function ReservasBookingSection({
     setModalProfessionalId(null);
     setModalInitialServiceId(initialServiceId);
     setModalOpen(true);
-  }, [activeServices, initialServiceId]);
+  }, [acceptNewBookings, activeServices, initialServiceId]);
+
+  useEffect(() => {
+    if (acceptNewBookings) return;
+    setModalOpen(false);
+    setModalServiceId(null);
+    setModalProfessionalId(null);
+    setModalInitialServiceId(null);
+  }, [acceptNewBookings]);
 
   useEffect(() => {
     if (!modalOpen || typeof document === "undefined") return;
@@ -153,6 +165,7 @@ export default function ReservasBookingSection({
   }, [modalOpen]);
 
   const openModal = (serviceId: number) => {
+    if (!acceptNewBookings) return;
     setSelectedServiceId(serviceId);
     setModalServiceId(serviceId);
     setModalProfessionalId(null);
@@ -161,6 +174,7 @@ export default function ReservasBookingSection({
   };
 
   const openModalWithProfessional = (serviceId: number, professionalId: number) => {
+    if (!acceptNewBookings) return;
     setSelectedServiceId(serviceId);
     setModalServiceId(serviceId);
     setModalProfessionalId(professionalId);
@@ -169,6 +183,7 @@ export default function ReservasBookingSection({
   };
 
   const openModalForProfessional = (professionalId: number) => {
+    if (!acceptNewBookings) return;
     const candidate =
       servicesByProfessional.get(professionalId)?.[0]?.id ?? null;
     setModalServiceId(null);
@@ -252,8 +267,9 @@ export default function ReservasBookingSection({
       <button
         key={service.id}
         type="button"
-        className={`${cardBaseClass} ${isSelected ? cardActiveClass : ""} ${extraClassName}`}
+        className={`${cardBaseClass} ${isSelected ? cardActiveClass : ""} ${extraClassName} ${acceptNewBookings ? "" : "cursor-not-allowed opacity-70"}`}
         onClick={() => openModal(service.id)}
+        disabled={!acceptNewBookings}
       >
         <div className="absolute inset-0">
           <Image
@@ -274,7 +290,7 @@ export default function ReservasBookingSection({
               </p>
             </div>
             <span className="rounded-full border border-white/20 bg-white/10 px-2 py-1 text-[10px] text-white/70">
-              Reservar
+              {acceptNewBookings ? "Reservar" : "Indisponível"}
             </span>
           </div>
           <div className="space-y-2">
@@ -303,6 +319,11 @@ export default function ReservasBookingSection({
   return (
     <>
       <section className="space-y-4">
+        {!acceptNewBookings ? (
+          <div className="rounded-2xl border border-amber-300/35 bg-amber-400/10 p-3 text-[12px] text-amber-100">
+            Reservas temporariamente indisponíveis. A consulta de serviços mantém-se ativa.
+          </div>
+        ) : null}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">
@@ -406,21 +427,13 @@ export default function ReservasBookingSection({
                   <div className="relative z-10 flex min-h-[180px] flex-col justify-between gap-3">
                     <div>
                       <div className="flex items-center gap-3">
-                        <div className="h-11 w-11 overflow-hidden rounded-full border border-white/15 bg-white/10">
-                          {professional.avatarUrl ? (
-                            <Image
-                              src={professional.avatarUrl}
-                              alt={professional.name}
-                              width={44}
-                              height={44}
-                              className="h-full w-full object-cover"
-                            />
-                          ) : (
-                            <div className="flex h-full w-full items-center justify-center text-[12px] text-white/60">
-                              {professional.name?.slice(0, 2).toUpperCase()}
-                            </div>
-                          )}
-                        </div>
+                        <Avatar
+                          src={professional.avatarUrl}
+                          name={professional.name}
+                          className="h-11 w-11"
+                          textClassName="text-[12px] font-semibold uppercase tracking-[0.16em] text-white/75"
+                          fallbackText={professional.name?.slice(0, 2).toUpperCase() || "PR"}
+                        />
                         <div>
                           <p className="text-sm font-semibold text-white">{professional.name}</p>
                           <p className="text-[12px] text-white/60">{professional.roleTitle || "Profissional"}</p>
@@ -437,6 +450,7 @@ export default function ReservasBookingSection({
                             key={`${professional.id}-${service.id}`}
                             type="button"
                             onClick={() => openModalWithProfessional(service.id, professional.id)}
+                            disabled={!acceptNewBookings}
                             className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] text-white/70 transition hover:border-white/35 hover:bg-white/15"
                           >
                             {service.title}
@@ -450,7 +464,7 @@ export default function ReservasBookingSection({
                         <button
                           type="button"
                           onClick={() => openModalForProfessional(professional.id)}
-                          disabled={proServices.length === 0}
+                          disabled={proServices.length === 0 || !acceptNewBookings}
                           className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/70 transition hover:border-white/35 hover:bg-white/10 disabled:opacity-40 disabled:hover:border-white/15 disabled:hover:bg-white/5"
                         >
                           Ver serviços
@@ -468,7 +482,7 @@ export default function ReservasBookingSection({
         )}
       </section>
 
-      {modalOpen && activeServices.length > 0 ? (
+      {acceptNewBookings && modalOpen && activeServices.length > 0 ? (
         <div className="fixed inset-0 z-[70] flex items-center justify-center">
           <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" aria-hidden="true" />
           <div className="relative max-h-[100dvh] w-full p-0 sm:p-6">

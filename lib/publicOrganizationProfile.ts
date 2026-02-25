@@ -45,6 +45,7 @@ type PublicReservasResourceInput = {
 
 type PublicReservasVisibilityInput = {
   moduleEnabled?: boolean | null;
+  acceptNewBookings?: boolean | null;
   organizationAssignmentMode?: string | null;
   services?: PublicReservasServiceInput[] | null;
   professionals?: PublicReservasProfessionalInput[] | null;
@@ -153,6 +154,11 @@ export function canShowPublicReservasSection(input: PublicReservasVisibilityInpu
 
     return hasAvailableProfessional && hasAvailableResource;
   });
+}
+
+export function canAcceptPublicReservasBookings(input: PublicReservasVisibilityInput): boolean {
+  if (input.acceptNewBookings === false) return false;
+  return canShowPublicReservasSection(input);
 }
 
 export function canPublishStoreOnProfile(publicProductCount: number): { ok: true } | { ok: false; error: string } {

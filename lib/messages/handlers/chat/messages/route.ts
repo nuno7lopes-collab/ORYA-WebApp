@@ -28,7 +28,7 @@ import {
 
 const PREVIEW_MAX = 180;
 const CHAT_ATTACHMENTS_PUBLIC = process.env.CHAT_ATTACHMENTS_PUBLIC === "true";
-const B2C_CONTEXT_TYPES = new Set(["ORG_CONTACT", "BOOKING", "SERVICE"]);
+const B2C_CONTEXT_TYPES = new Set(["ORG_CONTACT", "BOOKING", "SERVICE", "ORG_COMMUNITY"]);
 const ACTIVE_MEMBER_FILTER = {
   leftAt: null,
   accessRevokedAt: null,

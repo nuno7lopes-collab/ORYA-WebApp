@@ -12,6 +12,7 @@ export default function CalendarSubnav({ orgId, className }: { orgId: number | n
       items={[
         { id: "week", label: "Semana", href: buildOrgHref(orgId, "/calendar") },
         { id: "day", label: "Dia", href: buildOrgHref(orgId, "/calendar/day") },
+        { id: "availability", label: "Disponibilidade", href: buildOrgHref(orgId, "/calendar/availability") },
       ]}
     />
   );

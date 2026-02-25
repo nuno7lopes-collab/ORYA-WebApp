@@ -101,7 +101,8 @@ const isAllowedPathname = (pathname: string) => {
     case "inscricoes":
       return segments.length === 2;
     case "messages":
-      return segments.length === 2;
+      if (segments.length === 2) return true;
+      return segments.length === 3 && second === "community-invite";
     case "service":
       return segments.length === 2 || (segments.length === 3 && third === "booking");
     case "store":

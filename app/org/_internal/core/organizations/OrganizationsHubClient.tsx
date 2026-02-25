@@ -11,6 +11,7 @@ import { resolveGroupDisplayName } from "@/lib/orgHub/groupDisplayName";
 import OrgHubTopNav from "@/app/org/_internal/core/organizations/OrgHubTopNav";
 
 const ORG_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
+const ORG_SWITCH_TIMEOUT_MS = 8_000;
 
 type OrgItem = {
   organizationId: number;
@@ -151,11 +152,14 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
     if (loadingSwitch) return;
     setLoadingSwitch(true);
     setActionMessage(null);
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), ORG_SWITCH_TIMEOUT_MS);
     try {
       const res = await fetch(resolveCanonicalOrgApiPath("/api/org-hub/organizations/switch"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ organizationId }),
+        signal: controller.signal,
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
@@ -186,9 +190,14 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
         }
       }, 50);
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setActionMessage("A troca de organização expirou. Tenta novamente.");
+        return;
+      }
       console.error("[org hub] switch error", err);
       setActionMessage("Erro inesperado ao mudar de organização.");
     } finally {
+      window.clearTimeout(timeoutId);
       setLoadingSwitch(false);
     }
   };

@@ -36,8 +36,6 @@ import {
   validateStartAtAgainstPolicy,
 } from "@/lib/reservas/gridPolicy";
 
-const SLOT_STEP_MINUTES = 5;
-
 function parseId(value: string) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
@@ -540,7 +538,7 @@ async function _POST(
         rangeEnd: dayEnd,
         timezone,
         durationMinutes: booking.durationMinutes,
-        stepMinutes: SLOT_STEP_MINUTES,
+        stepMinutes: bookingPolicy.gridMinutes,
         now,
         professionals: professionalScopes,
         resources: resourceScopes,
@@ -620,7 +618,7 @@ async function _POST(
           rangeEnd: dayEnd,
           timezone,
           durationMinutes: booking.durationMinutes,
-          stepMinutes: SLOT_STEP_MINUTES,
+          stepMinutes: bookingPolicy.gridMinutes,
           now,
           scopeType: scope.scopeType,
           scopeId: scope.scopeId,

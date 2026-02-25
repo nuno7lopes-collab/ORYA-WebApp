@@ -7,7 +7,7 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureLojaModuleAccess } from "@/lib/loja/access";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { canPublishStoreOnProfile } from "@/lib/publicOrganizationProfile";
-import { getPublicStorePaymentsGate } from "@/lib/store/publicPaymentsGate";
+import { evaluatePaidWriteGate } from "@/lib/organizationPayments";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { OrganizationMemberRole, StoreStatus } from "@prisma/client";
 import { z } from "zod";
@@ -326,25 +326,24 @@ async function _PATCH(req: NextRequest) {
       (nextStatus === StoreStatus.ACTIVE || nextShowOnProfile === true || nextCheckoutEnabled === true);
 
     if (wantsPublicActivation) {
-      const paymentsGate = getPublicStorePaymentsGate({
+      const paidWriteGate = evaluatePaidWriteGate({
+        organizationId: organization.id,
         orgType: organizationPayments.orgType,
         officialEmail: organizationPayments.officialEmail,
         officialEmailVerifiedAt: organizationPayments.officialEmailVerifiedAt,
         stripeAccountId: organizationPayments.stripeAccountId,
         stripeChargesEnabled: organizationPayments.stripeChargesEnabled,
         stripePayoutsEnabled: organizationPayments.stripePayoutsEnabled,
+        amountCents: 1,
       });
-      if (!paymentsGate.ok) {
+      if (!paidWriteGate.ok) {
         return respondError(
           ctx,
           {
-            errorCode: "PAYMENTS_NOT_READY",
-            message: "A organização ainda não está pronta para pagamentos.",
+            errorCode: paidWriteGate.errorCode,
+            message: paidWriteGate.message,
             retryable: false,
-            details: {
-              missingEmail: paymentsGate.missingEmail,
-              missingStripe: paymentsGate.missingStripe,
-            },
+            details: paidWriteGate.details,
           },
           { status: 409 },
         );

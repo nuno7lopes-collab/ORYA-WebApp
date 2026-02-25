@@ -7,6 +7,7 @@ import { useParams, usePathname, useRouter, useSearchParams } from "next/navigat
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
 import { appendOrganizationIdToHref, parseOrganizationId, parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
+import { mapPaymentGateUiState, parseApiError } from "@/lib/payments/paymentGateUi";
 import { getEventCoverUrl } from "@/lib/eventCover";
 import { AddressCombobox } from "@/components/ui/address-combobox";
 import { OryaDateField, OryaTimeField } from "@/components/ui/datetime";
@@ -249,6 +250,8 @@ export default function ServicoDetalhePage() {
   const [linkedResourceIds, setLinkedResourceIds] = useState<number[]>([]);
   const [serviceSaving, setServiceSaving] = useState(false);
   const [serviceError, setServiceError] = useState<string | null>(null);
+  const [serviceErrorCtaHref, setServiceErrorCtaHref] = useState<string | null>(null);
+  const [serviceErrorCtaLabel, setServiceErrorCtaLabel] = useState<string | null>(null);
 
   const [addonLabel, setAddonLabel] = useState("");
   const [addonDescription, setAddonDescription] = useState("");
@@ -371,6 +374,8 @@ export default function ServicoDetalhePage() {
   const toggleService = async () => {
     if (!serviceId || !service) return;
     setServiceError(null);
+    setServiceErrorCtaHref(null);
+    setServiceErrorCtaLabel(null);
     const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}`), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -378,7 +383,16 @@ export default function ServicoDetalhePage() {
     });
     const json = await res.json().catch(() => null);
     if (!res.ok || !json?.ok) {
-      setServiceError(json?.error || "Não foi possível atualizar o serviço.");
+      const parsedError = parseApiError(json, "Não foi possível atualizar o serviço.");
+      const uiError = mapPaymentGateUiState({
+        organizationId,
+        errorCode: parsedError.errorCode,
+        message: parsedError.message,
+        details: parsedError.details,
+      });
+      setServiceError(uiError.message);
+      setServiceErrorCtaHref(uiError.ctaHref);
+      setServiceErrorCtaLabel(uiError.ctaLabel);
       return;
     }
     mutateService();
@@ -415,6 +429,8 @@ export default function ServicoDetalhePage() {
   const uploadCoverFile = async (file: File) => {
     setUploadingCover(true);
     setServiceError(null);
+    setServiceErrorCtaHref(null);
+    setServiceErrorCtaLabel(null);
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -433,6 +449,8 @@ export default function ServicoDetalhePage() {
     } catch (err) {
       console.error("Erro upload cover", err);
       setServiceError(err instanceof Error ? err.message : "Não foi possível carregar a imagem.");
+      setServiceErrorCtaHref(null);
+      setServiceErrorCtaLabel(null);
     } finally {
       setUploadingCover(false);
     }
@@ -452,8 +470,12 @@ export default function ServicoDetalhePage() {
   const handleServiceSave = async () => {
     if (!serviceId) return;
     setServiceError(null);
+    setServiceErrorCtaHref(null);
+    setServiceErrorCtaLabel(null);
     if (formLocationMode === "FIXED" && !formAddressId) {
       setServiceError("Seleciona uma morada Apple Maps.");
+      setServiceErrorCtaHref(null);
+      setServiceErrorCtaLabel(null);
       return;
     }
     setServiceSaving(true);
@@ -479,11 +501,23 @@ export default function ServicoDetalhePage() {
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "Erro ao guardar serviço.");
+        const parsedError = parseApiError(json, "Erro ao guardar serviço.");
+        const uiError = mapPaymentGateUiState({
+          organizationId,
+          errorCode: parsedError.errorCode,
+          message: parsedError.message,
+          details: parsedError.details,
+        });
+        setServiceError(uiError.message);
+        setServiceErrorCtaHref(uiError.ctaHref);
+        setServiceErrorCtaLabel(uiError.ctaLabel);
+        return;
       }
       mutateService();
     } catch (err) {
       setServiceError(err instanceof Error ? err.message : "Erro ao guardar serviço.");
+      setServiceErrorCtaHref(null);
+      setServiceErrorCtaLabel(null);
     } finally {
       setServiceSaving(false);
     }
@@ -1020,7 +1054,16 @@ export default function ServicoDetalhePage() {
 
         {serviceError && (
           <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-100">
-            {serviceError}
+            <p>{serviceError}</p>
+            {serviceErrorCtaHref && serviceErrorCtaLabel ? (
+              <button
+                type="button"
+                onClick={() => router.push(serviceErrorCtaHref)}
+                className="mt-3 rounded-full border border-red-200/50 bg-red-200/15 px-3 py-1.5 text-xs font-semibold text-red-50 transition hover:bg-red-200/25"
+              >
+                {serviceErrorCtaLabel}
+              </button>
+            ) : null}
           </div>
         )}
 

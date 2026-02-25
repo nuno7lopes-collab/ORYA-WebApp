@@ -17,8 +17,7 @@ import {
   parseEventCoverToken,
 } from "@/lib/eventCover";
 import { resolveMemberModuleAccess } from "@/lib/organizationRbac";
-import { OrganizationMemberRole, OrganizationModule, OrganizationRolePack } from "@prisma/client";
-import type { Prisma } from "@prisma/client";
+import type { OrganizationMemberRole, OrganizationRolePack, Prisma } from "@prisma/client";
 import { parseOrganizationTools, resolvePrimaryModule } from "@/lib/organizationCategories";
 import { AppleMapsLoader } from "@/app/components/maps/AppleMapsLoader";
 import { AppleLocationMapPreview } from "@/app/components/maps/AppleLocationMapPreview";
@@ -429,7 +428,7 @@ export function NewOrganizationEventPage({
   const hasActiveOrganization = Boolean(organizationStatus?.organization?.id);
   const organizationStatusValue = organizationStatus?.organization?.status ?? null;
   const organizationInactive = Boolean(organizationStatusValue && organizationStatusValue !== "ACTIVE");
-  const canCreateEvents = moduleAccess[OrganizationModule.EVENTOS] === "EDIT";
+  const canCreateEvents = moduleAccess.EVENTOS === "EDIT";
   const organizationOrgType =
     organizationStatus?.organization?.orgType ??
     (organizationStatus?.paymentsMode === "PLATFORM" ? "PLATFORM" : "EXTERNAL");

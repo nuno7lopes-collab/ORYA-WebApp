@@ -59,6 +59,10 @@ type AvailabilityResponse = {
   templates: AvailabilityTemplate[];
   overrides: AvailabilityOverride[];
   inheritsOrganization?: boolean;
+  bookingPolicy?: {
+    gridMinutes?: number;
+    allowedDurations?: number[];
+  };
 };
 
 type AvailabilityEditorProps = {
@@ -172,13 +176,17 @@ export default function AvailabilityEditor({
     : true;
   const minuteHeight = hourHeight / 60;
   const gridHeight = hourHeight * 24;
+  const resolvedGridMinutes =
+    typeof availabilityData?.bookingPolicy?.gridMinutes === "number" && Number.isFinite(availabilityData.bookingPolicy.gridMinutes)
+      ? availabilityData.bookingPolicy.gridMinutes
+      : gridMinutes;
   const slotMinutes =
-    Number.isFinite(gridMinutes) &&
-    gridMinutes > 0 &&
-    gridMinutes <= 60 &&
-    gridMinutes % 5 === 0 &&
-    60 % gridMinutes === 0
-      ? Math.floor(gridMinutes)
+    Number.isFinite(resolvedGridMinutes) &&
+    resolvedGridMinutes > 0 &&
+    resolvedGridMinutes <= 60 &&
+    resolvedGridMinutes % 5 === 0 &&
+    60 % resolvedGridMinutes === 0
+      ? Math.floor(resolvedGridMinutes)
       : DEFAULT_SLOT_MINUTES;
   const timePickerStepMinutes = normalizeStepMinutes(slotMinutes);
   const slotHeight = minuteHeight * slotMinutes;
@@ -212,6 +220,7 @@ export default function AvailabilityEditor({
   const [overrideSaving, setOverrideSaving] = useState(false);
   const [hasUnsavedBarDismissed, setHasUnsavedBarDismissed] = useState(false);
   const hydrationSignatureRef = useRef<string | null>(null);
+  const editorRootRef = useRef<HTMLElement | null>(null);
   const dragStateRef = useRef<{
     dayIdx: number;
     blockId: string;
@@ -267,6 +276,7 @@ export default function AvailabilityEditor({
       const target = event.target as HTMLElement | null;
       const anchor = target?.closest("a[href]") as HTMLAnchorElement | null;
       if (!anchor) return;
+      if (!editorRootRef.current?.contains(anchor)) return;
       const href = anchor.getAttribute("href");
       if (!href || href.startsWith("#") || href.startsWith("javascript:")) return;
       if (anchor.target === "_blank") return;
@@ -379,14 +389,14 @@ export default function AvailabilityEditor({
           const changeSetId = Number(details?.changeSetId);
           setIsDirty(false);
           setHasUnsavedBarDismissed(false);
-          router.push(buildOrgHref(orgId, `/bookings/availability/conflicts/${changeSetId}`));
+          router.push(buildOrgHref(orgId, `/calendar/availability/conflicts/${changeSetId}`));
           return;
         }
         throw new Error(String(json?.message ?? json?.error ?? "Erro ao aplicar alterações."));
       }
 
       if (payload?.changeSetId && payload?.status === "PENDING") {
-        router.push(buildOrgHref(orgId, `/bookings/availability/conflicts/${payload.changeSetId}`));
+        router.push(buildOrgHref(orgId, `/calendar/availability/conflicts/${payload.changeSetId}`));
         return;
       }
 
@@ -478,7 +488,7 @@ export default function AvailabilityEditor({
         const errorCode = String(json?.errorCode ?? json?.code ?? "");
         const details = (json?.details ?? json?.data ?? null) as { changeSetId?: number } | null;
         if (errorCode === "AVAILABILITY_CONFLICTS_FOUND" && Number.isFinite(details?.changeSetId)) {
-          router.push(buildOrgHref(orgId, `/bookings/availability/conflicts/${Number(details?.changeSetId)}`));
+          router.push(buildOrgHref(orgId, `/calendar/availability/conflicts/${Number(details?.changeSetId)}`));
           return;
         }
         throw new Error(String(json?.message ?? json?.error ?? "Erro ao guardar disponibilidade."));
@@ -785,7 +795,7 @@ export default function AvailabilityEditor({
   }, [minuteHeight]);
 
   return (
-    <section className={cn(DASHBOARD_CARD, "p-5 space-y-4")}>
+    <section ref={editorRootRef} className={cn(DASHBOARD_CARD, "p-5 space-y-4")}>
       <div>
         <h2 className="text-base font-semibold text-white">{title}</h2>
         <p className={DASHBOARD_MUTED}>{subtitle}</p>

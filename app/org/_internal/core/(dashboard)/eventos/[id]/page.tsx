@@ -15,7 +15,7 @@ import { getEventCoverSuggestionIds, getEventCoverUrl } from "@/lib/eventCover";
 import { cn } from "@/lib/utils";
 import { getEventLocationDisplay } from "@/lib/location/eventLocation";
 import { TOURNAMENT_LIFECYCLE_LABELS, TOURNAMENT_LIFECYCLE_ORDER } from "@/domain/padel/tournamentLifecycle";
-import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
+import { appendOrganizationIdToHref, buildOrgHref } from "@/lib/organizationIdUtils";
 
 type PageProps = {
   params: Promise<{
@@ -165,7 +165,10 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
   }
 
   const isPadelEvent = event.templateType === "PADEL";
-  const eventRouteBase = isPadelEvent ? "/org/padel/tournaments" : "/org/events";
+  const eventRouteBase = buildOrgHref(
+    event.organizationId,
+    isPadelEvent ? "/padel/tournaments" : "/events",
+  );
   const primaryLabel = isPadelEvent ? "torneio" : "evento";
   const ticketLabelPlural = isPadelEvent ? "inscrições" : "bilhetes";
   const ticketLabelPluralCap = isPadelEvent ? "Inscrições" : "Bilhetes";
@@ -417,11 +420,25 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
     : [];
   const backHref = eventRouteBase;
   const operationsHref = isPadelEvent ? "#padel-torneio" : `${eventRouteBase}/${event.id}`;
-  const hubBaseHref = isPadelEvent ? `/org/padel/tournaments?section=padel-tournaments` : null;
+  const hubBaseHref = isPadelEvent
+    ? buildOrgHref(event.organizationId, "/padel/tournaments", {
+        section: "padel-tournaments",
+      })
+    : null;
   const hubCalendarHref = hubBaseHref ? `${hubBaseHref}&padel=calendar&eventId=${event.id}` : null;
   const hubCalendarAutoHref = hubCalendarHref ? `${hubCalendarHref}#auto-schedule` : null;
-  const hubClubHref = isPadelEvent ? `/org/padel/clubs?section=padel-club&padel=clubs` : null;
-  const hubCourtsHref = isPadelEvent ? `/org/padel/clubs?section=padel-club&padel=clubs` : null;
+  const hubClubHref = isPadelEvent
+    ? buildOrgHref(event.organizationId, "/padel/clubs", {
+        section: "padel-club",
+        padel: "clubs",
+      })
+    : null;
+  const hubCourtsHref = isPadelEvent
+    ? buildOrgHref(event.organizationId, "/padel/clubs", {
+        section: "padel-club",
+        padel: "clubs",
+      })
+    : null;
   const hubCategoriesHref = hubBaseHref ? `${hubBaseHref}&padel=categories` : null;
 
   const activePadelLinks = isPadelEvent ? padelLinks.filter((link) => link.isEnabled !== false) : [];

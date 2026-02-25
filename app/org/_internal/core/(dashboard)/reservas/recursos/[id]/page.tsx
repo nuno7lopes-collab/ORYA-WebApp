@@ -17,7 +17,7 @@ export default function RecursoDisponibilidadeRedirectPage({ params }: PageProps
   }
 
   redirect(
-    buildOrgHref(orgId, "/bookings/availability", {
+    buildOrgHref(orgId, "/calendar/availability", {
       scopeType: "RESOURCE",
       scopeId: resourceId,
     }),

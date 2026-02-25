@@ -53,6 +53,9 @@ type AgendaResponse = {
   items: AgendaItem[];
   capabilities?: AgendaCapabilities;
   operationalMode?: OrganizationOperationalMode;
+  reservasOperational?: {
+    acceptsNewBookings: boolean;
+  };
 };
 
 type CollectionResponse<T> = {
@@ -649,6 +652,7 @@ export default function WeekCalendarReadClient() {
   const { data, error, isLoading } = useSWR<AgendaResponse>(apiUrl, fetchJson);
   const agendaCapabilities = data?.capabilities ?? null;
   const operationalMode = data?.operationalMode ?? null;
+  const acceptsNewBookings = data?.reservasOperational?.acceptsNewBookings ?? true;
   const reservationsCapability = agendaCapabilities?.reservas;
   const reservationsEnabled = reservationsCapability === true;
   const scopeSelectionEnabled = reservationsCapability !== false;
@@ -995,6 +999,36 @@ export default function WeekCalendarReadClient() {
         </div>
       </div>
 
+      {reservationsEnabled ? (
+        <section
+          className={cn(
+            "rounded-2xl border p-4 shadow-[0_18px_54px_rgba(0,0,0,0.4)]",
+            acceptsNewBookings
+              ? "border-emerald-300/30 bg-[linear-gradient(145deg,rgba(16,185,129,0.16),rgba(7,10,22,0.86))]"
+              : "border-rose-300/35 bg-[linear-gradient(145deg,rgba(244,63,94,0.2),rgba(7,10,22,0.86))]",
+          )}
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/75">
+                Reservas {acceptsNewBookings ? "ON" : "OFF"}
+              </p>
+              <p className="mt-1 text-sm font-semibold text-white">
+                {acceptsNewBookings
+                  ? "Novas reservas ativas, limitadas pela disponibilidade."
+                  : "Novas reservas bloqueadas. Historico preservado."}
+              </p>
+            </div>
+            <Link
+              href={buildOrgHref(organizationId, "/calendar/availability")}
+              className="rounded-full border border-white/25 px-3 py-1.5 text-xs text-white/85 transition hover:border-white/45 hover:text-white"
+            >
+              Gerir reservas ON/OFF
+            </Link>
+          </div>
+        </section>
+      ) : null}
+
       <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -1170,7 +1204,7 @@ export default function WeekCalendarReadClient() {
               </button>
               {reservationsEnabled ? (
                 <Link
-                  href={buildOrgHref(organizationId, "/bookings/availability")}
+                  href={buildOrgHref(organizationId, "/calendar/availability")}
                   className="rounded-full border border-cyan-300/40 px-3 py-1 text-xs text-cyan-100 transition hover:border-cyan-300/75"
                 >
                   Gerir disponibilidade

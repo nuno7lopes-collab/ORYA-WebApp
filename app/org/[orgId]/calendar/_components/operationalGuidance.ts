@@ -83,7 +83,7 @@ export function buildCalendarOperationalGuidance(input: {
       pushAction(actions, {
         id: "manage-availability",
         label: "Gerir disponibilidade",
-        href: buildOrgHref(organizationId, "/bookings/availability"),
+        href: buildOrgHref(organizationId, "/calendar/availability"),
         tone: "primary",
       });
       pushAction(actions, {
@@ -110,7 +110,7 @@ export function buildCalendarOperationalGuidance(input: {
       pushAction(actions, {
         id: "manage-availability",
         label: "Gerir disponibilidade",
-        href: buildOrgHref(organizationId, "/bookings/availability"),
+        href: buildOrgHref(organizationId, "/calendar/availability"),
         tone: "primary",
       });
     }
@@ -153,7 +153,7 @@ export function buildCalendarOperationalGuidance(input: {
     pushAction(actions, {
       id: "manage-availability",
       label: "Gerir disponibilidade",
-      href: buildOrgHref(organizationId, "/bookings/availability"),
+      href: buildOrgHref(organizationId, "/calendar/availability"),
       tone: "primary",
     });
   }

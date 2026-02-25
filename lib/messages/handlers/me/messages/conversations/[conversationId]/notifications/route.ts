@@ -15,6 +15,7 @@ const B2C_CONTEXT_TYPES: ChatConversationContextType[] = [
   ChatConversationContextType.ORG_CONTACT,
   ChatConversationContextType.BOOKING,
   ChatConversationContextType.SERVICE,
+  ChatConversationContextType.ORG_COMMUNITY,
 ];
 const LEVELS = new Set(["ALL", "MENTIONS_ONLY", "OFF"]);
 const ACTIVE_MEMBER_FILTER = {

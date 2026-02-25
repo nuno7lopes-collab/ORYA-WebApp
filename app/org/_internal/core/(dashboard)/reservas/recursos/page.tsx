@@ -24,6 +24,12 @@ type ResourceItem = {
   capacity: number;
   isActive: boolean;
   priority: number;
+  sourceType?: "RESOURCE" | "COURT";
+  resourceId?: number | null;
+  availabilityScopeId?: number | null;
+  courtId?: number | null;
+  padelClubId?: number | null;
+  clubName?: string | null;
 };
 
 export default function RecursosPage() {
@@ -48,6 +54,11 @@ export default function RecursosPage() {
   const [editSavingId, setEditSavingId] = useState<number | null>(null);
 
   const items = data?.items ?? [];
+
+  const resolveMutableResourceId = (item: ResourceItem) => {
+    if ((item.sourceType ?? "RESOURCE") === "COURT") return item.resourceId ?? null;
+    return item.resourceId ?? item.id;
+  };
 
   const handleCreate = async () => {
     if (saving) return;
@@ -79,8 +90,13 @@ export default function RecursosPage() {
   };
 
   const handleToggle = async (item: ResourceItem) => {
+    const mutationResourceId = resolveMutableResourceId(item);
+    if (!mutationResourceId) {
+      setError("Este campo não está ligado a um recurso editável em Reservas.");
+      return;
+    }
     try {
-      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas/recursos/${item.id}`), {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas/recursos/${mutationResourceId}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isActive: !item.isActive }),
@@ -112,6 +128,11 @@ export default function RecursosPage() {
   };
 
   const handleEditSave = async (item: ResourceItem) => {
+    const mutationResourceId = resolveMutableResourceId(item);
+    if (!mutationResourceId) {
+      setError("Este campo não está ligado a um recurso editável em Reservas.");
+      return;
+    }
     if (editSavingId) return;
     const nextLabel = editLabel.trim();
     if (!nextLabel) {
@@ -131,7 +152,7 @@ export default function RecursosPage() {
     setEditSavingId(item.id);
     setError(null);
     try {
-      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas/recursos/${item.id}`), {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas/recursos/${mutationResourceId}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -203,16 +224,26 @@ export default function RecursosPage() {
 
       <section className={cn(DASHBOARD_CARD, "p-5 space-y-3")}>
         <div>
-          <h2 className="text-base font-semibold text-white">Recursos ativos</h2>
-          <p className={DASHBOARD_MUTED}>Define disponibilidade e prioridade.</p>
+          <h2 className="text-base font-semibold text-white">Recursos e campos</h2>
+          <p className={DASHBOARD_MUTED}>Recursos editáveis e campos de padel ligados.</p>
         </div>
         {items.length === 0 ? (
           <p className="text-sm text-white/60">Sem recursos.</p>
         ) : (
           <div className="space-y-2">
-            {items.map((item) => (
-              <div key={item.id} className="rounded-xl border border-white/10 bg-white/5 p-3">
-                {editingId === item.id ? (
+            {items.map((item) => {
+              const sourceType = item.sourceType ?? "RESOURCE";
+              const isCourt = sourceType === "COURT";
+              const mutableResourceId = resolveMutableResourceId(item);
+              const availabilityScopeId =
+                item.availabilityScopeId ?? item.resourceId ?? (isCourt ? null : item.id);
+              const padelHubHref = appendOrganizationIdToHref(
+                "/org/padel/clubs?tab=manage&section=padel-club&padel=clubs",
+                canonicalOrganizationId,
+              );
+              return (
+              <div key={`${sourceType}-${item.id}`} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                {editingId === item.id && !isCourt ? (
                   <div className="space-y-3">
                     <div className="grid gap-3 md:grid-cols-3">
                       <label className="text-[12px] text-white/70">
@@ -258,26 +289,79 @@ export default function RecursosPage() {
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <p className="text-sm font-semibold text-white">{item.label}</p>
-                      <p className="text-[12px] text-white/60">Capacidade {item.capacity} · Prioridade {item.priority}</p>
+                      <p className="text-[12px] text-white/60">
+                        Capacidade {item.capacity} · Prioridade {item.priority}
+                        {isCourt && item.clubName ? ` · ${item.clubName}` : ""}
+                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <span
+                          className={cn(
+                            "rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.14em]",
+                            isCourt
+                              ? "border-sky-300/45 bg-sky-400/10 text-sky-100"
+                              : "border-emerald-300/45 bg-emerald-400/10 text-emerald-100",
+                          )}
+                        >
+                          {isCourt ? "Campo" : "Recurso"}
+                        </span>
+                        {isCourt && !availabilityScopeId ? (
+                          <span className="rounded-full border border-amber-300/45 bg-amber-400/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-amber-100">
+                            Sem recurso ligado
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <button type="button" className={CTA_SECONDARY} onClick={() => handleEditStart(item)}>
-                        Editar
-                      </button>
-                      <button type="button" className={CTA_SECONDARY} onClick={() => handleToggle(item)}>
-                        {item.isActive ? "Desativar" : "Ativar"}
-                      </button>
-                      <Link
-                        href={appendOrganizationIdToHref(`/org/bookings/resources/${item.id}`, canonicalOrganizationId)}
-                        className={CTA_PRIMARY}
-                      >
-                        Disponibilidade
-                      </Link>
+                      {isCourt ? (
+                        <>
+                          <Link href={padelHubHref} className={CTA_SECONDARY}>
+                            Gerir campo
+                          </Link>
+                          {availabilityScopeId ? (
+                            <Link
+                              href={appendOrganizationIdToHref(
+                                `/org/calendar/availability?scopeType=RESOURCE&scopeId=${availabilityScopeId}`,
+                                canonicalOrganizationId,
+                              )}
+                              className={CTA_PRIMARY}
+                            >
+                              Disponibilidade
+                            </Link>
+                          ) : (
+                            <span className="rounded-full border border-white/20 px-3 py-1.5 text-[12px] text-white/65">
+                              Disponibilidade indisponível
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <button type="button" className={CTA_SECONDARY} onClick={() => handleEditStart(item)}>
+                            Editar
+                          </button>
+                          <button
+                            type="button"
+                            className={CTA_SECONDARY}
+                            onClick={() => handleToggle(item)}
+                            disabled={!mutableResourceId}
+                          >
+                            {item.isActive ? "Desativar" : "Ativar"}
+                          </button>
+                          <Link
+                            href={appendOrganizationIdToHref(
+                              `/org/calendar/availability?scopeType=RESOURCE&scopeId=${availabilityScopeId ?? item.id}`,
+                              canonicalOrganizationId,
+                            )}
+                            className={CTA_PRIMARY}
+                          >
+                            Disponibilidade
+                          </Link>
+                        </>
+                      )}
                     </div>
                   </div>
                 )}
               </div>
-            ))}
+            )})}
           </div>
         )}
       </section>

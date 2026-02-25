@@ -27,6 +27,7 @@ import {
   getPaidSalesGate,
 } from "@/lib/organizationPayments";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
+import { ensureReservasOperationalOpen } from "@/lib/reservas/operationalState";
 import { cancelBooking, updateBooking } from "@/domain/bookings/commands";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
@@ -222,8 +223,18 @@ async function _POST(
       id: booking.service.organizationId,
       primaryModule: booking.service.organization?.primaryModule ?? null,
     });
-    if (!booking.service.isActive || !reservasAccess.ok) {
+    if (!reservasAccess.ok) {
+      return fail("RESERVAS_UNAVAILABLE", reservasAccess.error ?? "Reservas indisponíveis.", 403);
+    }
+    if (!booking.service.isActive) {
       return fail("SERVICO_INATIVO", "Serviço inativo.", 409);
+    }
+    const reservasOperational = await ensureReservasOperationalOpen({
+      organizationId: booking.service.organizationId,
+      tx: prisma,
+    });
+    if (!reservasOperational.ok) {
+      return fail(reservasOperational.errorCode, reservasOperational.message, 409);
     }
     if (!["PENDING_CONFIRMATION", "PENDING"].includes(booking.status)) {
       return fail("RESERVA_INATIVA", "Reserva inativa.", 409);

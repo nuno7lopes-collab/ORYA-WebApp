@@ -16,11 +16,13 @@ describe("bookings x calendar boundary guardrails", () => {
     expect(reservasDashboard).not.toContain("calendarView === \"week\"");
   });
 
-  it("keeps bookings availability as dedicated setup page", () => {
-    const availabilityPage = readLocal("app/org/[orgId]/bookings/availability/page.tsx");
+  it("mantém disponibilidade canónica no calendário e rota legacy em compatibilidade", () => {
+    const calendarAvailabilityPage = readLocal("app/org/[orgId]/calendar/availability/page.tsx");
+    const legacyAvailabilityPage = readLocal("app/org/[orgId]/bookings/availability/page.tsx");
 
-    expect(availabilityPage).toContain("AvailabilityEditor");
-    expect(availabilityPage).not.toContain("export { default } from \"@/app/org/_internal/core/(dashboard)/reservas/page\"");
+    expect(calendarAvailabilityPage).toContain("AvailabilityEditor");
+    expect(legacyAvailabilityPage).toContain('buildOrgHref(organizationId, "/calendar/availability")');
+    expect(legacyAvailabilityPage).toContain("redirect(");
   });
 
   it("keeps services as canonical bookings home and operations in dedicated route", () => {

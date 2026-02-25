@@ -136,8 +136,8 @@ export default function OrganizationAgendaTabs({
   ];
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
         <div className="flex flex-wrap items-center gap-2">
           {tabs.map((tabItem) => {
             const isActive = tabItem.key === tab;
@@ -148,16 +148,16 @@ export default function OrganizationAgendaTabs({
                 onClick={() => setTab(tabItem.key)}
                 className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] transition ${
                   isActive
-                    ? "border-white/35 bg-white/20 text-white shadow-[0_8px_20px_rgba(255,255,255,0.14)]"
-                    : "border-white/15 bg-black/20 text-white/70 hover:border-white/30 hover:text-white"
+                    ? "border-white/45 bg-white/18 text-white shadow-[0_8px_20px_rgba(255,255,255,0.16)]"
+                    : "border-white/20 bg-white/[0.04] text-white/84 hover:border-white/40 hover:text-white"
                 }`}
               >
-                {TAB_LABELS[tabItem.key]} <span className="text-[10px] opacity-70">{tabItem.count}</span>
+                {TAB_LABELS[tabItem.key]} <span className="text-[10px] opacity-80">{tabItem.count}</span>
               </button>
             );
           })}
         </div>
-        <span className="text-[11px] text-white/60">
+        <span className="text-[11px] text-white/82">
           {tab === "upcoming"
             ? `${upcomingFlat.length} próximo${upcomingFlat.length === 1 ? "" : "s"}`
             : `${pastFlat.length} no histórico`}
@@ -165,15 +165,15 @@ export default function OrganizationAgendaTabs({
       </div>
 
       {activeGroups.length === 0 ? (
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-[12px] text-white/70">
+        <div className="rounded-2xl border border-white/18 bg-white/[0.03] p-4 text-[12px] text-white/86">
           {emptyLabel}
         </div>
       ) : (
         <div className="space-y-3">
           {activeGroups.map((group) => (
             <div key={group.key} className="space-y-2">
-              <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">{group.label}</p>
-              <div className="space-y-2">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/80">{group.label}</p>
+              <div className="divide-y divide-white/10 border-y border-white/12">
                 {group.items.map((item) => {
                   const href = item.isPast ? `/eventos/${item.slug}` : `/eventos/${item.slug}?checkout=1#bilhetes`;
                   const isPadel = item.templateType === "PADEL";
@@ -181,9 +181,9 @@ export default function OrganizationAgendaTabs({
                     <Link
                       key={item.id}
                       href={href}
-                      className="group flex items-center gap-3 rounded-2xl border border-white/12 bg-black/20 p-2.5 transition hover:border-white/30 hover:bg-white/10"
+                      className="group flex items-center gap-3 px-1 py-3 transition hover:bg-white/[0.04]"
                     >
-                      <div className="relative h-[72px] w-[108px] shrink-0 overflow-hidden rounded-xl border border-white/15 bg-[radial-gradient(circle_at_30%_20%,rgba(120,240,255,0.35),transparent_52%),radial-gradient(circle_at_80%_80%,rgba(234,88,255,0.3),transparent_56%),#0b1020]">
+                      <div className="relative h-[72px] w-[108px] shrink-0 overflow-hidden rounded-xl border border-white/20 bg-[radial-gradient(circle_at_30%_20%,rgba(120,240,255,0.35),transparent_52%),radial-gradient(circle_at_80%_80%,rgba(234,88,255,0.3),transparent_56%),#0b1020]">
                         <div
                           className="absolute inset-0 bg-cover bg-center transition duration-300 group-hover:scale-[1.03]"
                           style={item.coverUrl ? { backgroundImage: `url(${item.coverUrl})` } : undefined}
@@ -191,14 +191,14 @@ export default function OrganizationAgendaTabs({
                         <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/15 to-transparent" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">{item.timeLabel}</p>
+                        <p className="text-[10px] uppercase tracking-[0.2em] text-white/78">{item.timeLabel}</p>
                         <p className="truncate text-sm font-semibold text-white">{item.title}</p>
-                        <p className="truncate text-[12px] text-white/60">{item.locationLabel}</p>
+                        <p className="truncate text-[12px] text-white/84">{item.locationLabel}</p>
                       </div>
                       <span
                         className={`shrink-0 rounded-full border px-3 py-1 text-[11px] ${
                           item.isPast
-                            ? "border-white/15 bg-white/8 text-white/70"
+                            ? "border-white/30 bg-white/10 text-white/90"
                             : "border-emerald-300/40 bg-emerald-400/10 text-emerald-100"
                         }`}
                       >
@@ -230,7 +230,7 @@ export default function OrganizationAgendaTabs({
                   [tab]: Math.min(activeItems.length, initialByTab[tab]),
                 }))
               }
-              className="rounded-full border border-white/20 bg-black/20 px-3 py-1.5 text-[11px] text-white/75 transition hover:border-white/35 hover:text-white"
+              className="rounded-full border border-white/25 bg-white/[0.04] px-3 py-1.5 text-[11px] text-white/88 transition hover:border-white/40 hover:text-white"
             >
               Mostrar menos
             </button>
@@ -244,7 +244,7 @@ export default function OrganizationAgendaTabs({
                   [tab]: Math.min(activeItems.length, (prev[tab] ?? initialByTab[tab]) + Math.max(1, pageSize)),
                 }))
               }
-              className="rounded-full border border-white/20 bg-white/8 px-3 py-1.5 text-[11px] text-white/85 transition hover:border-white/35 hover:bg-white/14 hover:text-white"
+              className="rounded-full border border-white/30 bg-white/12 px-3 py-1.5 text-[11px] text-white transition hover:border-white/45 hover:bg-white/18"
             >
               Ver mais {Math.min(remainingCount, Math.max(1, pageSize))}
             </button>

@@ -8,6 +8,7 @@ import { ensureLojaModuleAccess } from "@/lib/loja/access";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { OrganizationMemberRole } from "@prisma/client";
 import { z } from "zod";
+import { evaluatePaidWriteGate } from "@/lib/organizationPayments";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
@@ -33,6 +34,7 @@ async function getOrganizationContext(req: NextRequest, userId: string, options?
   const { organization, membership } = await getActiveOrganizationForUser(userId, {
     organizationId: organizationId ?? undefined,
     roles: [...ROLE_ALLOWLIST],
+    includeOrganizationFields: "settings",
   });
 
   if (!organization || !membership) {
@@ -165,6 +167,32 @@ async function _PATCH(
     if (payload.label !== undefined) data.label = payload.label ?? null;
     if (payload.priceDeltaCents !== undefined) data.priceDeltaCents = payload.priceDeltaCents;
     if (payload.sortOrder !== undefined) data.sortOrder = payload.sortOrder;
+    if (payload.priceDeltaCents !== undefined) {
+      const paidWriteGate = evaluatePaidWriteGate({
+        organizationId: context.organization.id,
+        orgType: (context.organization as { orgType?: string | null }).orgType ?? null,
+        officialEmail: context.organization.officialEmail ?? null,
+        officialEmailVerifiedAt: context.organization.officialEmailVerifiedAt ?? null,
+        stripeAccountId: (context.organization as { stripeAccountId?: string | null }).stripeAccountId ?? null,
+        stripeChargesEnabled:
+          (context.organization as { stripeChargesEnabled?: boolean | null }).stripeChargesEnabled ?? false,
+        stripePayoutsEnabled:
+          (context.organization as { stripePayoutsEnabled?: boolean | null }).stripePayoutsEnabled ?? false,
+        amountCents: payload.priceDeltaCents ?? 0,
+      });
+      if (!paidWriteGate.ok) {
+        return respondError(
+          ctx,
+          {
+            errorCode: paidWriteGate.errorCode,
+            message: paidWriteGate.message,
+            retryable: false,
+            details: paidWriteGate.details,
+          },
+          { status: 403 },
+        );
+      }
+    }
 
     const updated = await prisma.storeProductOptionValue.update({
       where: { id: valueId.id },

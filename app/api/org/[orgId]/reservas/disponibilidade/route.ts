@@ -7,6 +7,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { resolveScheduleForDate } from "@/lib/reservas/availability";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
+import { getOrganizationBookingPolicy } from "@/lib/reservas/gridPolicy";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -141,11 +142,17 @@ async function _GET(req: NextRequest) {
     const scheduleIdParam = parseScopeId(req.nextUrl.searchParams.get("scheduleId"));
     const includeTemplatesAll = req.nextUrl.searchParams.get("includeTemplates") === "all";
 
-    const schedules = await prisma.availabilitySchedule.findMany({
-      where: { organizationId: organization.id, scopeType, scopeId },
-      orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
-      select: { id: true, startDate: true, endDate: true, createdAt: true, updatedAt: true },
-    });
+    const [schedules, bookingPolicy] = await Promise.all([
+      prisma.availabilitySchedule.findMany({
+        where: { organizationId: organization.id, scopeType, scopeId },
+        orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
+        select: { id: true, startDate: true, endDate: true, createdAt: true, updatedAt: true },
+      }),
+      getOrganizationBookingPolicy({
+        organizationId: organization.id,
+        tx: prisma,
+      }),
+    ]);
     const activeSchedule = resolveScheduleForDate(schedules, new Date(), timezone);
     const selectedSchedule = scheduleIdParam
       ? schedules.find((schedule) => schedule.id === scheduleIdParam) ?? null
@@ -184,6 +191,10 @@ async function _GET(req: NextRequest) {
       templates,
       overrides,
       inheritsOrganization: scopeType !== "ORGANIZATION" && !activeSchedule,
+      bookingPolicy: {
+        gridMinutes: bookingPolicy.gridMinutes,
+        allowedDurations: bookingPolicy.allowedDurations,
+      },
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {

@@ -341,8 +341,12 @@ export default function PadelTournamentTabs({
   organizationId?: number | null;
   coverImageUrl?: string | null;
 }) {
+  const resolvedOrganizationId =
+    typeof organizationId === "number" && Number.isFinite(organizationId) && organizationId > 0
+      ? organizationId
+      : null;
   const orgApi = (suffix: string, explicitOrgId?: number | null) =>
-    resolveCanonicalOrgApiPath(`/api/org/[orgId]${suffix}`, explicitOrgId ?? null);
+    resolveCanonicalOrgApiPath(`/api/org/[orgId]${suffix}`, explicitOrgId ?? resolvedOrganizationId);
 
   const searchParams = useSearchParams();
   const locale = resolveLocale(searchParams?.get("lang"));
@@ -683,8 +687,8 @@ export default function PadelTournamentTabs({
   const scheduledMatchesCount = matches.filter((match) => Boolean(match.plannedStartAt || match.startTime)).length;
   const unscheduledMatchesCount = Math.max(0, matches.length - scheduledMatchesCount);
   const autoScheduleBaseHref =
-    typeof organizationId === "number" && organizationId > 0
-      ? buildOrgHref(organizationId, "/padel/tournaments", {
+    resolvedOrganizationId
+      ? buildOrgHref(resolvedOrganizationId, "/padel/tournaments", {
           section: "padel-tournaments",
           padel: "calendar",
           eventId,

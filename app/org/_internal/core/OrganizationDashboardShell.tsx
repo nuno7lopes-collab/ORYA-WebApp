@@ -81,6 +81,7 @@ const DashboardShellSkeleton = () => (
     <SkeletonBlock className="h-40" />
   </div>
 );
+const ORG_SWITCH_TIMEOUT_MS = 8_000;
 
 function parseOrganizationIdFromPathnameSafe(pathname: string | null | undefined): number | null {
   return parseOrgIdFromPathnameStrict(pathname);
@@ -190,6 +191,8 @@ export default function OrganizationDashboardShell({
     }
 
     let cancelled = false;
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), ORG_SWITCH_TIMEOUT_MS);
     syncInFlightRef.current = true;
     lastSyncAttemptRef.current = { id: requestedOrgId, at: now };
 
@@ -199,6 +202,7 @@ export default function OrganizationDashboardShell({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ organizationId: requestedOrgId }),
+          signal: controller.signal,
         });
         const json = await res.json().catch(() => null);
         if (!res.ok || json?.ok === false) {
@@ -212,6 +216,7 @@ export default function OrganizationDashboardShell({
         // Mantém a rota atual para evitar redirects em cascata quando há falhas transitórias
         // de sync de contexto (rede/auth). O server layout já resolve o orgId canónico.
       } finally {
+        window.clearTimeout(timeoutId);
         syncInFlightRef.current = false;
       }
     };
@@ -220,6 +225,8 @@ export default function OrganizationDashboardShell({
 
     return () => {
       cancelled = true;
+      window.clearTimeout(timeoutId);
+      controller.abort();
     };
   }, [activeOrg?.id, pathname, router]);
 

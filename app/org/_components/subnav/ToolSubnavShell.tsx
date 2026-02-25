@@ -64,7 +64,7 @@ export default function ToolSubnavShell({ items, className }: ToolSubnavShellPro
   return (
     <div
       className={cn(
-        "relative w-full max-w-full rounded-full border border-white/20 bg-black/35 px-1 py-1 text-[12px] shadow-[0_10px_32px_rgba(0,0,0,0.45)] backdrop-blur-xl",
+        "org-topbar-subnav-glass relative w-full max-w-full rounded-full border border-white/20 bg-black/35 px-1 py-1 text-[12px] shadow-[0_10px_32px_rgba(0,0,0,0.45)]",
         className,
       )}
     >

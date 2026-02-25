@@ -128,6 +128,12 @@ const jobs = [
     intervalMs: getInterval("CRON_OPERATIONS_INTERVAL_MS", 1000),
   },
   {
+    name: "messages-followers-grace",
+    method: "POST",
+    path: "/api/cron/messages/followers-grace",
+    intervalMs: getInterval("CRON_MESSAGES_FOLLOWERS_GRACE_INTERVAL_MS", 300000),
+  },
+  {
     name: "bookings-cleanup",
     method: "GET",
     path: "/api/cron/bookings/cleanup",

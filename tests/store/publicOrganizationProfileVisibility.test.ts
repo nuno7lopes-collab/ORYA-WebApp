@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { canOpenPublicStorefront, canShowPublicReservasSection } from "@/lib/publicOrganizationProfile";
+import {
+  canAcceptPublicReservasBookings,
+  canOpenPublicStorefront,
+  canShowPublicReservasSection,
+} from "@/lib/publicOrganizationProfile";
 
 describe("publicOrganizationProfile store visibility", () => {
   it("only opens storefront when all operational gates pass", () => {
@@ -158,5 +162,18 @@ describe("publicOrganizationProfile reservas visibility", () => {
         resources: [{ id: 20, capacity: 4, courtId: 7 }],
       }),
     ).toBe(true);
+  });
+
+  it("separa visibilidade pública da aceitação operacional de novas reservas", () => {
+    const input = {
+      moduleEnabled: true,
+      acceptNewBookings: false,
+      organizationAssignmentMode: "RESOURCE_ONLY",
+      services: [{ kind: "COURT", assignmentMode: "RESOURCE_ONLY" }],
+      resources: [{ id: 20, capacity: 4, courtId: 7 }],
+    };
+
+    expect(canShowPublicReservasSection(input)).toBe(true);
+    expect(canAcceptPublicReservasBookings(input)).toBe(false);
   });
 });

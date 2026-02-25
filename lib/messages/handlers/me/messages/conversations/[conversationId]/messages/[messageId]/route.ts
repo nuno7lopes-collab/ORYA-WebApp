@@ -16,6 +16,7 @@ const B2C_CONTEXT_TYPES: ChatConversationContextType[] = [
   ChatConversationContextType.ORG_CONTACT,
   ChatConversationContextType.BOOKING,
   ChatConversationContextType.SERVICE,
+  ChatConversationContextType.ORG_COMMUNITY,
 ];
 const UNDO_WINDOW_MS = 2 * 60 * 1000;
 const ACTIVE_MEMBER_FILTER = {

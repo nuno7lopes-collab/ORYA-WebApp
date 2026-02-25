@@ -1,12 +1,82 @@
 import type { NextRequest } from "next/server";
+import { isIP } from "node:net";
+
+function normalizeIpCandidate(rawValue: string | null | undefined): string | null {
+  if (!rawValue) return null;
+  let value = rawValue.trim();
+  if (!value) return null;
+
+  // RFC 7239: for=1.2.3.4;proto=https
+  if (value.toLowerCase().startsWith("for=")) {
+    const token = value.split(";")[0] ?? value;
+    value = token.slice(4).trim();
+  }
+
+  if (value.startsWith("\"") && value.endsWith("\"")) {
+    value = value.slice(1, -1).trim();
+  }
+
+  // [2001:db8::1]:443
+  if (value.startsWith("[")) {
+    const end = value.indexOf("]");
+    if (end > 1) {
+      value = value.slice(1, end);
+    }
+  } else if (value.includes(":") && (value.match(/:/g)?.length ?? 0) === 1) {
+    // IPv4 with port.
+    const [host, maybePort] = value.split(":");
+    if (host && maybePort && /^\d+$/.test(maybePort) && isIP(host) === 4) {
+      value = host;
+    }
+  }
+
+  // Strip zone id from IPv6 literal (fe80::1%eth0).
+  const zoneIndex = value.indexOf("%");
+  if (zoneIndex > 0) {
+    value = value.slice(0, zoneIndex);
+  }
+
+  return isIP(value) ? value : null;
+}
+
+function parseForwardedFor(forwardedFor: string | null): string | null {
+  if (!forwardedFor) return null;
+  const tokens = forwardedFor
+    .split(",")
+    .map((token) => normalizeIpCandidate(token))
+    .filter((token): token is string => Boolean(token));
+  if (!tokens.length) return null;
+
+  // Right-most hop is closest to this app and less spoofable than left-most.
+  return tokens[tokens.length - 1] ?? null;
+}
+
+function parseForwardedHeader(forwardedHeader: string | null): string | null {
+  if (!forwardedHeader) return null;
+  const tokens = forwardedHeader
+    .split(",")
+    .map((token) => token.trim())
+    .map((token) => normalizeIpCandidate(token))
+    .filter((token): token is string => Boolean(token));
+  if (!tokens.length) return null;
+  return tokens[tokens.length - 1] ?? null;
+}
 
 export function getClientIp(req: NextRequest): string {
-  const header =
-    req.headers.get("x-forwarded-for") ||
-    req.headers.get("x-real-ip") ||
-    "";
-  const first = header.split(",")[0]?.trim();
-  return first || "unknown";
+  const preferredHeaders = [
+    req.headers.get("cf-connecting-ip"),
+    req.headers.get("true-client-ip"),
+    req.headers.get("x-real-ip"),
+    parseForwardedHeader(req.headers.get("forwarded")),
+    parseForwardedFor(req.headers.get("x-forwarded-for")),
+  ];
+
+  for (const candidate of preferredHeaders) {
+    const normalized = normalizeIpCandidate(candidate);
+    if (normalized) return normalized;
+  }
+
+  return "unknown";
 }
 
 export function isSameOrigin(

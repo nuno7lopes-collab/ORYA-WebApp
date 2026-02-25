@@ -24,6 +24,10 @@ import {
 } from "@/lib/messages/postingWindow";
 import { env } from "@/lib/env";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import {
+  isUserFollowingOrganization,
+  resolveCommunityReadOnlyReason,
+} from "@/lib/messages/communityAccess";
 
 const B2C_CONTEXT_TYPES: ChatConversationContextType[] = [
   ChatConversationContextType.EVENT,
@@ -32,6 +36,7 @@ const B2C_CONTEXT_TYPES: ChatConversationContextType[] = [
   ChatConversationContextType.ORG_CONTACT,
   ChatConversationContextType.BOOKING,
   ChatConversationContextType.SERVICE,
+  ChatConversationContextType.ORG_COMMUNITY,
 ];
 const CHAT_ATTACHMENTS_PUBLIC = process.env.CHAT_ATTACHMENTS_PUBLIC === "true";
 const ACTIVE_MEMBER_FILTER = {
@@ -303,6 +308,73 @@ async function isDmBlockedForConversation(params: {
   return Boolean(block);
 }
 
+async function resolveConversationPosting(params: {
+  viewerId: string;
+  membership: {
+    organizationId: number | null;
+    followGraceEndsAt: Date | null;
+    writeMutedAt: Date | null;
+    writeMutedUntil: Date | null;
+  };
+  conversation: {
+    contextType: ChatConversationContextType;
+    contextId: string | null;
+    organizationId: number | null;
+    community: {
+      talkPolicy: "EVERYONE" | "TEAM_ONLY";
+      accessMode: "PUBLIC" | "FOLLOWERS" | "APPROVAL" | "INVITE";
+      title: string;
+      coverImageUrl: string | null;
+    } | null;
+  };
+}) {
+  if (params.conversation.contextType !== ChatConversationContextType.ORG_COMMUNITY) {
+    return resolvePostingWindow({
+      contextType: params.conversation.contextType,
+      contextId: params.conversation.contextId,
+      organizationId: params.conversation.organizationId,
+    });
+  }
+
+  const community = params.conversation.community;
+  if (!community || !params.conversation.organizationId) {
+    return { canPost: false as const, reason: "READ_ONLY" as const };
+  }
+
+  const isTeamMember =
+    params.membership.organizationId != null &&
+    params.membership.organizationId === params.conversation.organizationId;
+  const isFollowing = await isUserFollowingOrganization({
+    userId: params.viewerId,
+    organizationId: params.conversation.organizationId,
+  });
+
+  const readOnlyReason = resolveCommunityReadOnlyReason({
+    talkPolicy: community.talkPolicy,
+    accessMode: community.accessMode,
+    isTeamMember,
+    isFollowing,
+    followGraceEndsAt: params.membership.followGraceEndsAt,
+    writeMutedAt: params.membership.writeMutedAt,
+    writeMutedUntil: params.membership.writeMutedUntil,
+  });
+
+  if (!readOnlyReason) return { canPost: true as const };
+  return { canPost: false as const, reason: readOnlyReason };
+}
+
+function resolvePostingStatusFromReason(reason: string | null | undefined) {
+  if (!reason) return 403;
+  if (
+    reason === "COMMUNITY_TEAM_ONLY" ||
+    reason === "COMMUNITY_WRITE_MUTED" ||
+    reason === "FOLLOW_REQUIRED"
+  ) {
+    return 403;
+  }
+  return resolvePostingWindowStatus(reason as any);
+}
+
 async function _GET(req: NextRequest, context: { params: { conversationId: string } }) {
   try {
     const supabase = await createSupabaseServer();
@@ -331,6 +403,14 @@ async function _GET(req: NextRequest, context: { params: { conversationId: strin
             createdAt: true,
             organization: {
               select: { id: true, publicName: true, businessName: true, username: true, brandingAvatarUrl: true },
+            },
+            community: {
+              select: {
+                title: true,
+                coverImageUrl: true,
+                talkPolicy: true,
+                accessMode: true,
+              },
             },
             members: {
               where: ACTIVE_MEMBER_FILTER,
@@ -361,6 +441,15 @@ async function _GET(req: NextRequest, context: { params: { conversationId: strin
     const members = viewerIsCustomer
       ? allMembers.filter((member) => !member.hiddenFromCustomer || member.userId === user.id)
       : allMembers;
+    const posting = await resolveConversationPosting({
+      viewerId: user.id,
+      membership,
+      conversation,
+    });
+    const followGraceEndsAt =
+      conversation.contextType === ChatConversationContextType.ORG_COMMUNITY
+        ? membership.followGraceEndsAt?.toISOString() ?? null
+        : null;
 
     const limit = parseLimit(req.nextUrl.searchParams.get("limit"));
     const cursor = decodeCursor(req.nextUrl.searchParams.get("cursor"));
@@ -400,6 +489,14 @@ async function _GET(req: NextRequest, context: { params: { conversationId: strin
           organizationId: conversation.organizationId,
           customerId: conversation.customerId,
           professionalId: conversation.professionalId,
+          community: conversation.community
+            ? {
+                title: conversation.community.title,
+                coverImageUrl: conversation.community.coverImageUrl ?? null,
+                talkPolicy: conversation.community.talkPolicy,
+                accessMode: conversation.community.accessMode,
+              }
+            : null,
         },
         members: members.map((member) => ({
           userId: member.userId,
@@ -408,6 +505,9 @@ async function _GET(req: NextRequest, context: { params: { conversationId: strin
           username: member.user.username,
           avatarUrl: member.user.avatarUrl,
         })),
+        canPost: posting.canPost,
+        readOnlyReason: posting.canPost ? null : posting.reason ?? "READ_ONLY",
+        followGraceEndsAt,
         items: resolvedItems.map((item) => ({
           id: item.id,
           body: item.deletedAt ? null : item.body,
@@ -455,12 +555,6 @@ async function _GET(req: NextRequest, context: { params: { conversationId: strin
     const nextCursor = items.length === limit ? encodeCursor(items[items.length - 1]) : null;
     const latestCursor = ordered.length > 0 ? encodeCursor(ordered[ordered.length - 1]) : null;
 
-    const posting = await resolvePostingWindow({
-      contextType: conversation.contextType,
-      contextId: conversation.contextId,
-      organizationId: conversation.organizationId,
-    });
-
     return jsonWrap({
       conversation: {
         id: conversation.id,
@@ -471,6 +565,14 @@ async function _GET(req: NextRequest, context: { params: { conversationId: strin
         organizationId: conversation.organizationId,
         customerId: conversation.customerId,
         professionalId: conversation.professionalId,
+        community: conversation.community
+          ? {
+              title: conversation.community.title,
+              coverImageUrl: conversation.community.coverImageUrl ?? null,
+              talkPolicy: conversation.community.talkPolicy,
+              accessMode: conversation.community.accessMode,
+            }
+          : null,
       },
       members: members.map((member) => ({
         userId: member.userId,
@@ -481,6 +583,7 @@ async function _GET(req: NextRequest, context: { params: { conversationId: strin
       })),
       canPost: posting.canPost,
       readOnlyReason: posting.canPost ? null : posting.reason ?? "READ_ONLY",
+      followGraceEndsAt,
       items: resolvedOrdered.map((item) => ({
         id: item.id,
         body: item.deletedAt ? null : item.body,
@@ -534,6 +637,14 @@ async function _POST(req: NextRequest, context: { params: { conversationId: stri
             organization: {
               select: { id: true, publicName: true, businessName: true, username: true, brandingAvatarUrl: true },
             },
+            community: {
+              select: {
+                title: true,
+                coverImageUrl: true,
+                talkPolicy: true,
+                accessMode: true,
+              },
+            },
             members: {
               where: ACTIVE_MEMBER_FILTER,
               select: {
@@ -580,15 +691,15 @@ async function _POST(req: NextRequest, context: { params: { conversationId: stri
       return jsonWrap({ error: preparedAssets.error }, { status: 400 });
     }
 
-    const posting = await resolvePostingWindow({
-      contextType: conversation.contextType,
-      contextId: conversation.contextId,
-      organizationId: conversation.organizationId,
+    const posting = await resolveConversationPosting({
+      viewerId: user.id,
+      membership,
+      conversation,
     });
     if (!posting.canPost) {
       return jsonWrap(
         { error: posting.reason ?? "READ_ONLY" },
-        { status: resolvePostingWindowStatus(posting.reason) },
+        { status: resolvePostingStatusFromReason(posting.reason) },
       );
     }
 

@@ -17,7 +17,7 @@ export default function ProfissionalDisponibilidadeRedirectPage({ params }: Page
   }
 
   redirect(
-    buildOrgHref(orgId, "/bookings/availability", {
+    buildOrgHref(orgId, "/calendar/availability", {
       scopeType: "PROFESSIONAL",
       scopeId: professionalId,
     }),

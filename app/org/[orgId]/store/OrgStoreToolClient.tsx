@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
+import { mapPaymentGateUiState, parseApiError } from "@/lib/payments/paymentGateUi";
 import { cn } from "@/lib/utils";
 import StoreActivationCard from "@/components/store/StoreActivationCard";
 import StoreOverviewPanel from "@/components/store/StoreOverviewPanel";
@@ -41,6 +42,13 @@ type StorePreviewCounts = {
 
 type OrgStoreToolClientProps = {
   orgId: number;
+};
+
+type StoreUiError = {
+  code: string | null;
+  message: string;
+  ctaHref: string | null;
+  ctaLabel: string | null;
 };
 
 const STORE_VIEWS = ["overview", "catalog", "orders", "shipping", "marketing"] as const;
@@ -144,6 +152,32 @@ function formatStoreError(errorCode: string | null) {
   return errorCode;
 }
 
+function buildStoreUiError(payload: unknown, fallbackStatus: number, orgId: number): StoreUiError {
+  const parsedError = parseApiError(payload, "Não foi possível carregar a Loja. Tenta novamente.");
+  const paymentUi = mapPaymentGateUiState({
+    organizationId: orgId,
+    errorCode: parsedError.errorCode,
+    message: parsedError.message,
+    details: parsedError.details,
+  });
+  if (paymentUi.ctaHref || paymentUi.ctaLabel) {
+    return {
+      code: parsedError.errorCode,
+      message: paymentUi.message,
+      ctaHref: paymentUi.ctaHref,
+      ctaLabel: paymentUi.ctaLabel,
+    };
+  }
+
+  const errorCode = parsedError.errorCode ?? resolveErrorCode(payload, fallbackStatus);
+  return {
+    code: errorCode,
+    message: formatStoreError(errorCode) ?? parsedError.message,
+    ctaHref: null,
+    ctaLabel: null,
+  };
+}
+
 export default function OrgStoreToolClient({ orgId }: OrgStoreToolClientProps) {
   const searchParams = useSearchParams();
   const view = parseStoreView(searchParams?.get("view") ?? null);
@@ -168,7 +202,7 @@ export default function OrgStoreToolClient({ orgId }: OrgStoreToolClientProps) {
   const [store, setStore] = useState<StoreSnapshot | null>(null);
   const [previewCounts, setPreviewCounts] = useState<StorePreviewCounts | null>(null);
   const [loadingStore, setLoadingStore] = useState(false);
-  const [storeError, setStoreError] = useState<string | null>(null);
+  const [storeError, setStoreError] = useState<StoreUiError | null>(null);
   const [activatingLoja, setActivatingLoja] = useState(false);
 
   const loadStore = useCallback(async () => {
@@ -183,7 +217,8 @@ export default function OrgStoreToolClient({ orgId }: OrgStoreToolClientProps) {
       const body = unwrapped && typeof unwrapped === "object" ? (unwrapped as Record<string, unknown>) : null;
       const hasErrorFlag = topLevel?.ok === false || body?.ok === false;
       if (!res.ok || hasErrorFlag) {
-        throw new Error(resolveErrorCode(payload, res.status));
+        setStoreError(buildStoreUiError(payload, res.status, orgId));
+        return;
       }
       setStore((body?.store ?? topLevel?.store ?? null) as StoreSnapshot | null);
       try {
@@ -219,7 +254,12 @@ export default function OrgStoreToolClient({ orgId }: OrgStoreToolClientProps) {
         // Preview é informativo; falha não deve bloquear painel principal da loja.
       }
     } catch (err) {
-      setStoreError(err instanceof Error ? err.message : "Erro inesperado.");
+      setStoreError({
+        code: null,
+        message: err instanceof Error ? err.message : "Erro inesperado.",
+        ctaHref: null,
+        ctaLabel: null,
+      });
     } finally {
       setLoadingStore(false);
     }
@@ -244,12 +284,18 @@ export default function OrgStoreToolClient({ orgId }: OrgStoreToolClientProps) {
           : null;
       const patchHasError = patchTopLevel?.ok === false || patchBody?.ok === false;
       if (!patchRes.ok || patchHasError) {
-        throw new Error(resolveErrorCode(patchPayload, patchRes.status));
+        setStoreError(buildStoreUiError(patchPayload, patchRes.status, orgId));
+        return;
       }
 
       await loadStore();
     } catch (err) {
-      setStoreError(err instanceof Error ? err.message : "Nao foi possivel ativar a ferramenta Loja.");
+      setStoreError({
+        code: null,
+        message: err instanceof Error ? err.message : "Nao foi possivel ativar a ferramenta Loja.",
+        ctaHref: null,
+        ctaLabel: null,
+      });
     } finally {
       setActivatingLoja(false);
     }
@@ -273,8 +319,8 @@ export default function OrgStoreToolClient({ orgId }: OrgStoreToolClientProps) {
 
   const storeLocked = Boolean(store?.catalogLocked);
   const hasStore = Boolean(store);
-  const lojaUnavailable = isLojaUnavailableError(storeError);
-  const storeErrorMessage = formatStoreError(storeError);
+  const lojaUnavailable = isLojaUnavailableError(storeError?.code ?? null);
+  const storeErrorMessage = storeError?.message ?? null;
 
   const renderPanel = () => {
     if (!hasStore) return null;
@@ -394,6 +440,14 @@ export default function OrgStoreToolClient({ orgId }: OrgStoreToolClientProps) {
       {storeError ? (
         <div className="rounded-2xl border border-rose-500/35 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
           <p>{storeErrorMessage}</p>
+          {storeError.ctaHref && storeError.ctaLabel ? (
+            <a
+              href={storeError.ctaHref}
+              className="mt-3 inline-flex rounded-lg border border-rose-200/50 bg-rose-200/20 px-3 py-1.5 text-xs font-semibold text-rose-50 transition hover:bg-rose-200/35"
+            >
+              {storeError.ctaLabel}
+            </a>
+          ) : null}
           {lojaUnavailable ? (
             <button
               type="button"
@@ -409,6 +463,7 @@ export default function OrgStoreToolClient({ orgId }: OrgStoreToolClientProps) {
 
       {view === "overview" || !hasStore ? (
         <StoreActivationCard
+          organizationId={orgId}
           title="Loja da organização"
           description="Controla publicação da loja no perfil público."
           endpoint={endpoints.base}

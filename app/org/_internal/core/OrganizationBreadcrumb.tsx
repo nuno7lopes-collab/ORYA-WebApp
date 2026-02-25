@@ -23,7 +23,7 @@ const SECTION_LABELS: Record<string, string> = {
   inscricoes: "Formulários",
   reservas: "Reservas",
   agenda: "Agenda",
-  disponibilidade: "Disponibilidade (reservas)",
+  disponibilidade: "Disponibilidade (calendário)",
   servicos: "Serviços",
   clientes: "Clientes",
   profissionais: "Profissionais",
@@ -89,13 +89,19 @@ function resolveLabel(
     return "Eventos";
   }
   if (/^\/org\/(?:\d+\/)?calendar\/day(?:\/|$)/.test(pathname)) return "Calendário · Dia";
+  if (/^\/org\/(?:\d+\/)?calendar\/availability\/conflicts(?:\/|$)/.test(pathname)) {
+    return "Calendário · Conflitos de disponibilidade";
+  }
+  if (/^\/org\/(?:\d+\/)?calendar\/availability(?:\/|$)/.test(pathname)) {
+    return "Calendário · Disponibilidade";
+  }
   if (/^\/org\/(?:\d+\/)?calendar(?:\/|$)/.test(pathname)) return "Calendário";
   if (/^\/org\/(?:\d+\/)?bookings\/new(?:\/|$)/.test(pathname)) return "Reservas · Criar serviço";
   if (/^\/org\/(?:\d+\/)?bookings\/customers(?:\/|$)/.test(pathname)) return "Reservas · Clientes";
   if (/^\/org\/(?:\d+\/)?bookings\/professionals(?:\/|$)/.test(pathname)) return "Reservas · Profissionais";
   if (/^\/org\/(?:\d+\/)?bookings\/resources(?:\/|$)/.test(pathname)) return "Reservas · Recursos";
   if (/^\/org\/(?:\d+\/)?bookings(?:\/|$)/.test(pathname)) {
-    if (/^\/org\/(?:\d+\/)?bookings\/availability(?:\/|$)/.test(pathname)) return "Reservas · Disponibilidade (reservas)";
+    if (/^\/org\/(?:\d+\/)?bookings\/availability(?:\/|$)/.test(pathname)) return "Calendário · Disponibilidade";
     const sectionLabel = section ? SECTION_LABELS[section] : null;
     if (sectionLabel && section !== "reservas") {
       return `Reservas · ${sectionLabel}`;

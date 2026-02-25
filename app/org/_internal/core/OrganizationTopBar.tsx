@@ -11,7 +11,6 @@ import { cn } from "@/lib/utils";
 import { RoleBadge } from "@/app/org/_internal/core/RoleBadge";
 import { OrganizationNotificationBell } from "@/app/components/notifications/NotificationBell";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
-import { OrganizationMemberRole } from "@prisma/client";
 import { ORG_SHELL_GUTTER } from "@/app/org/_internal/core/layoutTokens";
 import {
   normalizeOrganizationPathname,
@@ -37,6 +36,7 @@ import PadelTournamentsSubnav from "@/app/org/_components/subnav/PadelTournament
 import MarketingSubnav from "@/app/org/_components/subnav/MarketingSubnav";
 
 const ORG_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
+const ORG_SWITCH_TIMEOUT_MS = 8_000;
 const TOPBAR_MIN_HEIGHT = 64;
 const TOPBAR_MAX_HEIGHT = 220;
 const TOPBAR_MIN_RENDERED_HEIGHT = TOPBAR_MIN_HEIGHT;
@@ -135,6 +135,14 @@ const TOPBAR_CUSTOM_ICON_BY_TOOL: Record<OrgToolKey, string | null> = {
 };
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
+type RoleBadgeRole = ComponentProps<typeof RoleBadge>["role"];
+const ROLE_BADGE_ROLE_SET: ReadonlySet<RoleBadgeRole> = new Set([
+  "OWNER",
+  "CO_OWNER",
+  "ADMIN",
+  "STAFF",
+  "PROMOTER",
+]);
 
 export default function OrganizationTopBar({
   activeOrg,
@@ -147,7 +155,6 @@ export default function OrganizationTopBar({
   user: UserInfo | null;
   role?: string | null;
 }) {
-  type RoleBadgeRole = ComponentProps<typeof RoleBadge>["role"];
   const router = useRouter();
   const pathname = usePathname();
   const topbarRef = useRef<HTMLDivElement | null>(null);
@@ -206,9 +213,7 @@ export default function OrganizationTopBar({
     orgMeUrl,
     fetcher,
   );
-  const roleBadge = role && Object.values(OrganizationMemberRole).includes(role as OrganizationMemberRole)
-    ? (role as RoleBadgeRole)
-    : null;
+  const roleBadge = role && ROLE_BADGE_ROLE_SET.has(role as RoleBadgeRole) ? (role as RoleBadgeRole) : null;
   const isOrgDataLoading = Boolean(activeOrg) && !orgData && !orgDataError;
   const shouldAutoRefreshOrg = useMemo(() => {
     if (!orgData) return false;
@@ -418,11 +423,14 @@ export default function OrganizationTopBar({
   const switchOrg = async (orgId: number) => {
     if (switchingOrgId) return;
     setSwitchingOrgId(orgId);
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), ORG_SWITCH_TIMEOUT_MS);
     try {
       const res = await fetch("/api/org-hub/organizations/switch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ organizationId: orgId }),
+        signal: controller.signal,
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
@@ -439,8 +447,13 @@ export default function OrganizationTopBar({
       router.replace(buildOrgHref(orgId, "/overview"));
       router.refresh();
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        console.warn("[topbar][org switch] timeout");
+        return;
+      }
       console.error("[topbar][org switch] erro", err);
     } finally {
+      window.clearTimeout(timeoutId);
       setSwitchingOrgId(null);
     }
   };
@@ -483,9 +496,9 @@ export default function OrganizationTopBar({
     >
       <div
         className={cn(
-          "relative w-full border-b transition-all duration-300",
+          "org-topbar-glass relative w-full border-b transition-all duration-300",
           isAtTop
-            ? "border-transparent bg-transparent shadow-none"
+            ? "border-white/14 bg-[linear-gradient(120deg,rgba(20,20,20,0.78),rgba(20,20,20,0.86))] shadow-[0_8px_24px_rgba(0,0,0,0.3)]"
             : "border-white/20 bg-[linear-gradient(120deg,rgba(20,20,20,0.9),rgba(20,20,20,0.96))] shadow-[0_8px_24px_rgba(0,0,0,0.38)]",
         )}
       >

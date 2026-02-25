@@ -25,7 +25,7 @@ const LAST_SEEN_DEBOUNCE_SECONDS = Number(process.env.CHAT_LAST_SEEN_DEBOUNCE_SE
 const AUTH_RECHECK_MS = Number(process.env.CHAT_WS_AUTH_RECHECK_MS || 10 * 60 * 1000);
 
 const ALLOWED_ROLES = new Set(["OWNER", "CO_OWNER", "ADMIN", "STAFF", "TRAINER"]);
-const B2C_CONTEXT_TYPES = new Set(["EVENT", "USER_DM", "USER_GROUP", "ORG_CONTACT", "BOOKING", "SERVICE"]);
+const B2C_CONTEXT_TYPES = new Set(["EVENT", "USER_DM", "USER_GROUP", "ORG_CONTACT", "BOOKING", "SERVICE", "ORG_COMMUNITY"]);
 
 function emitWsMetric(metricName, payload = {}) {
   try {

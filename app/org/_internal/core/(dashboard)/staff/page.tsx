@@ -329,6 +329,8 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   const [scopeDraftType, setScopeDraftType] = useState<string>("COURT");
   const [scopeDraftId, setScopeDraftId] = useState<string>("");
   const [scopeDraftLevel, setScopeDraftLevel] = useState<string>("VIEW");
+  const [communityScopeDraftId, setCommunityScopeDraftId] = useState<string>("GLOBAL");
+  const [communityScopeDraftLevel, setCommunityScopeDraftLevel] = useState<string>("EDIT");
 
   const eventIdParam = searchParams?.get("eventId");
   const eventId = eventIdParam ? Number(eventIdParam) : null;
@@ -439,6 +441,8 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
     setScopeDraftType("COURT");
     setScopeDraftId("");
     setScopeDraftLevel("VIEW");
+    setCommunityScopeDraftId("GLOBAL");
+    setCommunityScopeDraftLevel("EDIT");
   }, [selectedMember?.userId]);
 
   useEffect(() => {
@@ -1027,7 +1031,8 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                     )}
 
                     {selectedMember && (
-                      <div className="mt-4 rounded-xl border border-white/10 bg-white/5 px-3 py-3">
+                      <div className="mt-4 space-y-4">
+                        <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-3">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div>
                             <p className="text-sm font-semibold text-white">Scopes de Reservas</p>
@@ -1121,6 +1126,104 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                           >
                             Adicionar scope
                           </button>
+                        </div>
+                      </div>
+
+                        <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-semibold text-white">Comunidades</p>
+                            <p className="text-[11px] text-white/60">
+                              Scope `CHAT_COMMUNITIES` no módulo Mensagens.
+                            </p>
+                          </div>
+                          <span className="text-[11px] text-white/50">
+                            {(permissionsByUser.get(selectedMember.userId) ?? []).filter(
+                              (perm) =>
+                                perm.moduleKey === "MENSAGENS" &&
+                                perm.scopeType === "CHAT_COMMUNITIES",
+                            ).length}{" "}
+                            scope(s)
+                          </span>
+                        </div>
+
+                        <div className="mt-3 space-y-2">
+                          {(permissionsByUser.get(selectedMember.userId) ?? [])
+                            .filter(
+                              (perm) =>
+                                perm.moduleKey === "MENSAGENS" &&
+                                perm.scopeType === "CHAT_COMMUNITIES",
+                            )
+                            .map((perm) => {
+                              const isSaving =
+                                permissionSavingKey ===
+                                `${selectedMember.userId}:${perm.moduleKey}:${perm.scopeType}:${perm.scopeId ?? "ALL"}`;
+                              return (
+                                <div
+                                  key={`${perm.id}:${perm.scopeType}:${perm.scopeId ?? "GLOBAL"}`}
+                                  className="flex flex-col gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 md:flex-row md:items-center md:justify-between"
+                                >
+                                  <div className="space-y-1">
+                                    <p className="text-sm font-semibold text-white">
+                                      {perm.scopeId || "GLOBAL"}
+                                    </p>
+                                    <p className="text-[11px] text-white/60">
+                                      Acesso: {ACCESS_LABELS[normalizeAccessLevel(perm.accessLevel) ?? "EDIT"]}
+                                    </p>
+                                  </div>
+                                  <select
+                                    value={normalizeAccessLevel(perm.accessLevel) ?? "EDIT"}
+                                    disabled={!canManageMember(viewerRole, selectedMember.role) || isSaving}
+                                    onChange={(e) =>
+                                      handlePermissionUpdate(
+                                        selectedMember.userId,
+                                        "MENSAGENS",
+                                        e.target.value,
+                                        "CHAT_COMMUNITIES",
+                                        perm.scopeId || "GLOBAL",
+                                      )
+                                    }
+                                    className="rounded-full border border-white/15 bg-black/40 px-4 py-2 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,0.35)] outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)] disabled:opacity-60"
+                                  >
+                                    <option value="DEFAULT">Remover</option>
+                                    <option value="EDIT">Editar</option>
+                                  </select>
+                                </div>
+                              );
+                            })}
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <input
+                            value={communityScopeDraftId}
+                            onChange={(e) => setCommunityScopeDraftId(e.target.value)}
+                            placeholder="GLOBAL ou conversationId"
+                            className="min-w-[220px] flex-1 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
+                          />
+                          <select
+                            value={communityScopeDraftLevel}
+                            onChange={(e) => setCommunityScopeDraftLevel(e.target.value)}
+                            className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
+                          >
+                            <option value="EDIT">Editar</option>
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handlePermissionUpdate(
+                                selectedMember.userId,
+                                "MENSAGENS",
+                                communityScopeDraftLevel,
+                                "CHAT_COMMUNITIES",
+                                communityScopeDraftId.trim() || "GLOBAL",
+                              )
+                            }
+                            disabled={!canManageMember(viewerRole, selectedMember.role)}
+                            className="rounded-full border border-cyan-200/50 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(34,211,238,0.25)] transition hover:border-cyan-200/80 disabled:opacity-60"
+                          >
+                            Adicionar scope
+                          </button>
+                        </div>
                         </div>
                       </div>
                     )}

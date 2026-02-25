@@ -7,6 +7,7 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { ensureOrganizationWriteAccess } from "@/lib/organizationWriteAccess";
+import { evaluatePaidWriteGate } from "@/lib/organizationPayments";
 import { OrganizationMemberRole } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
@@ -73,6 +74,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
     const { organization, membership } = await getActiveOrganizationForUser(profile.id, {
       organizationId: organizationId ?? undefined,
       roles: [...ROLE_ALLOWLIST],
+      includeOrganizationFields: "settings",
     });
 
     if (!organization || !membership) {
@@ -84,7 +86,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
     }
 
     const writeAccess = ensureOrganizationWriteAccess(organization, {
-      requireStripeForServices: true,
+      requireStripeForServices: false,
     });
     if (!writeAccess.ok) {
       return fail(403, writeAccess.errorCode);
@@ -155,6 +157,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     const { organization } = await getActiveOrganizationForUser(profile.id, {
       organizationId: organizationId ?? undefined,
       roles: [...ROLE_ALLOWLIST],
+      includeOrganizationFields: "settings",
     });
 
     if (!organization) {
@@ -166,7 +169,8 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     }
 
     const writeAccess = ensureOrganizationWriteAccess(organization, {
-      requireStripeForServices: true,
+      requireStripeForServices: false,
+      skipEmailGate: true,
     });
     if (!writeAccess.ok) {
       return fail(403, writeAccess.errorCode);
@@ -198,6 +202,28 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     }
     if (!Number.isFinite(deltaPriceCentsRaw) || deltaPriceCentsRaw < 0) {
       return fail(400, "Preço inválido.");
+    }
+    const paidWriteGate = evaluatePaidWriteGate({
+      organizationId: organization.id,
+      orgType: (organization as { orgType?: string | null }).orgType ?? null,
+      officialEmail: organization.officialEmail ?? null,
+      officialEmailVerifiedAt: organization.officialEmailVerifiedAt ?? null,
+      stripeAccountId: (organization as { stripeAccountId?: string | null }).stripeAccountId ?? null,
+      stripeChargesEnabled: (organization as { stripeChargesEnabled?: boolean | null }).stripeChargesEnabled ?? false,
+      stripePayoutsEnabled: (organization as { stripePayoutsEnabled?: boolean | null }).stripePayoutsEnabled ?? false,
+      amountCents: Math.round(deltaPriceCentsRaw),
+    });
+    if (!paidWriteGate.ok) {
+      return respondError(
+        ctx,
+        {
+          errorCode: paidWriteGate.errorCode,
+          message: paidWriteGate.message,
+          retryable: false,
+          details: paidWriteGate.details,
+        },
+        { status: 403 },
+      );
     }
     const maxQty =
       maxQtyRaw == null || maxQtyRaw === ""

@@ -28,7 +28,12 @@ import { getEventCoverSuggestionIds, getEventCoverUrl } from "@/lib/eventCover";
 import { getOrganizationRoleFlags } from "@/lib/organizationUiPermissions";
 import { hasModuleAccess, normalizeAccessLevel, resolveMemberModuleAccess } from "@/lib/organizationRbac";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
-import { appendOrganizationIdToHref, getOrganizationIdFromBrowser, parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
+import {
+  appendOrganizationIdToHref,
+  getOrganizationIdFromBrowser,
+  parseOrganizationId,
+  parseOrganizationIdFromPathname,
+} from "@/lib/organizationIdUtils";
 import {
   canManageOrganizationTools as canManageOrganizationToolsByRole,
   getEnabledDashboardToolActivationCards,
@@ -719,16 +724,13 @@ function OrganizacaoPageInner({
   }, [toolsModalOpen]);
 
   const organizationIdParam = searchParams?.get("organizationId");
-  const organizationIdFromQuery = organizationIdParam ? Number(organizationIdParam) : null;
+  const organizationIdFromQuery = parseOrganizationId(organizationIdParam);
   const organizationIdFromPath = parseOrganizationIdFromPathname(pathname);
   const organizationIdFromBrowser = useMemo(
     () => getOrganizationIdFromBrowser(),
     [pathname, organizationIdParam],
   );
-  const organizationId =
-    organizationIdFromQuery && !Number.isNaN(organizationIdFromQuery)
-      ? organizationIdFromQuery
-      : organizationIdFromPath ?? organizationIdFromBrowser;
+  const organizationId = organizationIdFromQuery ?? organizationIdFromPath ?? organizationIdFromBrowser;
   const orgMeUrl = useMemo(() => {
     if (!organizationId || Number.isNaN(organizationId)) return null;
     return `/api/org/${organizationId}/me`;
@@ -3631,9 +3633,6 @@ function OrganizacaoPageInner({
         <section className={cn("space-y-4", fadeClass)} id="eventos">
           <div className="relative overflow-hidden rounded-3xl border border-white/16 bg-[linear-gradient(180deg,rgba(255,255,255,0.09),rgba(20,20,20,0.92))] p-5 backdrop-blur-3xl">
             <div className="pointer-events-none absolute inset-0">
-              <div className="absolute -left-20 top-2 h-56 w-56 rounded-full bg-[#22D3EE]/10 blur-[120px]" />
-              <div className="absolute right-10 top-0 h-48 w-48 rounded-full bg-white/6 blur-[120px]" />
-              <div className="absolute -right-18 -bottom-20 h-64 w-64 rounded-full bg-[#22D3EE]/8 blur-[120px]" />
               <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-white/8 to-transparent" />
             </div>
 

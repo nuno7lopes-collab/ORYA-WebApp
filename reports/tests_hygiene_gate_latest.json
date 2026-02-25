@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-02-24T15:08:45.117Z",
+  "generatedAt": "2026-02-25T13:12:38.642Z",
   "totals": {
-    "files": 457,
-    "tests": 1335,
-    "expects": 3866,
-    "mocks": 2528,
-    "routeImports": 133
+    "files": 471,
+    "tests": 1405,
+    "expects": 4045,
+    "mocks": 2561,
+    "routeImports": 135
   },
   "smells": {
     "zeroExpect": [],

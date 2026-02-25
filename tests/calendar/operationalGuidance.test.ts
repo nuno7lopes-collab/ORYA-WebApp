@@ -24,6 +24,9 @@ describe("calendar operational guidance", () => {
     expect(guidance.badge).toBe("Modo reservas");
     expect(guidance.actions.map((action) => action.id)).toContain("manage-availability");
     expect(guidance.actions.map((action) => action.id)).toContain("open-operations");
+    expect(guidance.actions.find((action) => action.id === "manage-availability")?.href).toContain(
+      "/calendar/availability",
+    );
   });
 
   it("resolves hybrid guidance with both reservations and event guidance", () => {
@@ -38,4 +41,3 @@ describe("calendar operational guidance", () => {
     expect(guidance.actions.map((action) => action.id)).toContain("create-event");
   });
 });
-

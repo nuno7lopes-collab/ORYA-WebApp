@@ -5,6 +5,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 const DEFAULT_FALLBACK = "OR";
+const DEFAULT_SIZE = 40;
+
+type AvatarRingMode = "auto" | "none" | "subtle" | "story";
+type AvatarRingVariant = "none" | "subtle" | "story-soft" | "story";
 
 function getInitials(name?: string | null) {
   if (!name) return "";
@@ -23,6 +27,10 @@ export type AvatarProps = {
   name?: string | null;
   alt?: string;
   version?: string | number | Date | null;
+  ringMode?: AvatarRingMode;
+  /**
+   * @deprecated prefer ringMode. Kept for backwards compatibility.
+   */
   ring?: boolean;
   className?: string;
   imageClassName?: string;
@@ -37,6 +45,7 @@ export function Avatar({
   name,
   alt,
   version,
+  ringMode,
   ring = true,
   className,
   imageClassName,
@@ -62,6 +71,11 @@ export function Avatar({
   }, [fallbackText, name]);
   const hasImage = Boolean(resolvedSrc) && !hasError;
 
+  const requestedRingMode = useMemo<AvatarRingMode>(() => {
+    if (ringMode) return ringMode;
+    return ring ? "auto" : "none";
+  }, [ring, ringMode]);
+
   useEffect(() => {
     setHasError(false);
   }, [resolvedSrc]);
@@ -83,53 +97,89 @@ export function Avatar({
     return () => observer.disconnect();
   }, []);
 
-  const ringInset = useMemo(() => {
-    if (!ring) return 0;
-    if (!avatarSize) return 1.1;
-    if (avatarSize <= 36) return 0.9;
-    if (avatarSize <= 64) return 1.1;
-    if (avatarSize <= 96) return 1.4;
-    return 1.8;
-  }, [avatarSize, ring]);
+  const resolvedRingVariant = useMemo<AvatarRingVariant>(() => {
+    const effectiveSize = avatarSize ?? DEFAULT_SIZE;
+    if (requestedRingMode === "none") return "none";
+    if (requestedRingMode === "subtle") return "subtle";
+
+    // Micro avatars ficam mais nítidos sem "story ring" completo.
+    if (effectiveSize <= 20) return "none";
+    if (effectiveSize <= 32) return "subtle";
+    if (effectiveSize <= 48) return "story-soft";
+
+    return "story";
+  }, [avatarSize, requestedRingMode]);
+
+  const ringMetrics = useMemo(() => {
+    const effectiveSize = avatarSize ?? DEFAULT_SIZE;
+    if (resolvedRingVariant === "none") {
+      return { width: 0, gap: 0, glow: 0 };
+    }
+    if (resolvedRingVariant === "subtle") {
+      return { width: 1, gap: 0, glow: 0 };
+    }
+    if (resolvedRingVariant === "story-soft") {
+      if (effectiveSize <= 40) return { width: 1, gap: 1, glow: 1 };
+      return { width: 2, gap: 1, glow: 2 };
+    }
+    if (effectiveSize <= 56) return { width: 2, gap: 1, glow: 2 };
+    if (effectiveSize <= 96) return { width: 2, gap: 1, glow: 3 };
+    return { width: 3, gap: 1, glow: 4 };
+  }, [avatarSize, resolvedRingVariant]);
+
+  const ringTotalInset = ringMetrics.width + ringMetrics.gap;
 
   const fallbackFontSize = useMemo(() => {
     if (!avatarSize) return null;
-    const innerSize = ring ? Math.max(0, avatarSize - ringInset * 2) : avatarSize;
-    return Math.max(6, Math.round(innerSize * 0.125));
-  }, [avatarSize, ring, ringInset]);
+    const innerSize = Math.max(0, avatarSize - ringTotalInset * 2);
+    return Math.max(6, Math.round(innerSize * 0.28));
+  }, [avatarSize, ringTotalInset]);
 
-  const ringGlow = useMemo(() => {
-    if (!ring) return 0;
-    if (!avatarSize) return 6;
-    if (avatarSize <= 36) return 5;
-    if (avatarSize <= 64) return 6;
-    if (avatarSize <= 96) return 7;
-    return 8;
-  }, [avatarSize, ring]);
+  const textClassHasExplicitSize = useMemo(() => {
+    const value = textClassName ?? "";
+    return /(?:^|\s)text-(?:xs|sm|base|lg|xl|[2-9]xl)(?:\s|$)|text-\[[0-9.]+(?:px|rem|em)\]/.test(value);
+  }, [textClassName]);
+
+  const normalizedClassName = useMemo(() => {
+    if (resolvedRingVariant === "none" || !className) return className;
+    return className
+      .split(/\s+/)
+      .filter(Boolean)
+      .filter((token) => {
+        const base = token.split(":").pop() ?? token;
+        if (base === "border" || base.startsWith("border-")) return false;
+        if (base === "ring" || base.startsWith("ring-")) return false;
+        if (base === "outline" || base.startsWith("outline-")) return false;
+        return true;
+      })
+      .join(" ");
+  }, [className, resolvedRingVariant]);
 
   const ringStyle = useMemo<CSSProperties>(() => {
-    if (!ring) return style ?? {};
     return {
       ...(style ?? {}),
-      ["--orya-avatar-ring-padding" as string]: `${ringInset}px`,
-      ["--orya-avatar-ring-glow" as string]: `${ringGlow}px`,
+      ["--orya-avatar-ring-width" as string]: `${ringMetrics.width}px`,
+      ["--orya-avatar-ring-gap" as string]: `${ringMetrics.gap}px`,
+      ["--orya-avatar-ring-glow" as string]: `${ringMetrics.glow}px`,
     };
-  }, [ring, ringGlow, ringInset, style]);
+  }, [ringMetrics.gap, ringMetrics.glow, ringMetrics.width, style]);
 
   return (
     <div
       ref={containerRef}
       className={cn(
-        "relative inline-flex items-center justify-center rounded-full",
-        ring && "orya-avatar-ring",
-        className,
+        "orya-avatar relative inline-flex items-center justify-center rounded-full",
+        resolvedRingVariant !== "none" && "orya-avatar--with-ring",
+        resolvedRingVariant === "subtle" && "orya-avatar--ring-subtle",
+        resolvedRingVariant === "story-soft" && "orya-avatar--ring-story-soft",
+        resolvedRingVariant === "story" && "orya-avatar--ring-story",
+        normalizedClassName,
       )}
       style={ringStyle}
     >
       <div
         className={cn(
-          "relative flex h-full w-full items-center justify-center overflow-hidden rounded-full",
-          ring && "border border-transparent",
+          "orya-avatar-inner absolute flex items-center justify-center overflow-hidden rounded-full",
           !hasImage && "orya-avatar-fallback",
         )}
       >
@@ -146,7 +196,11 @@ export function Avatar({
           />
         ) : (
           <span
-            style={fallbackFontSize ? { fontSize: `${fallbackFontSize}px` } : undefined}
+            style={
+              fallbackFontSize && !textClassHasExplicitSize
+                ? { fontSize: `${fallbackFontSize}px` }
+                : undefined
+            }
             className={cn(
               "font-semibold uppercase tracking-[0.08em] leading-none text-white/90 text-center",
               textClassName,

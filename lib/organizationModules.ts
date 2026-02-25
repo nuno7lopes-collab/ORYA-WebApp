@@ -26,6 +26,7 @@ type OrganizationModelWithFindUnique = {
 };
 
 type OrganizationModuleEntryModelWithUpsert = {
+  findMany?: (args: unknown) => Promise<Array<{ moduleKey: string | null }>>;
   upsert?: (args: unknown) => Promise<unknown>;
 };
 
@@ -78,7 +79,17 @@ export async function getOrganizationActiveModules(
   primaryModule?: string | null,
   client: PrismaClientLike = prisma,
 ): Promise<OrganizationModuleState> {
-  const modulesRows = await client.organizationModuleEntry.findMany({
+  const moduleEntryModel = (client as unknown as { organizationModuleEntry?: OrganizationModuleEntryModelWithUpsert })
+    .organizationModuleEntry;
+  if (!moduleEntryModel?.findMany) {
+    const resolvedPrimary = resolvePrimaryModule(primaryModule ?? null, null);
+    return {
+      activeModules: getDefaultOrganizationModules(resolvedPrimary),
+      primaryModule: resolvedPrimary,
+    };
+  }
+
+  const modulesRows = await moduleEntryModel.findMany({
     where: { organizationId, enabled: true },
     select: { moduleKey: true },
     orderBy: { moduleKey: "asc" },

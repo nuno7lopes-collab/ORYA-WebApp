@@ -1,6 +1,6 @@
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
@@ -63,6 +63,29 @@ async function _POST(req: NextRequest) {
       console.warn("[social/follow-organization] CRM ingest failed", err);
     }
   }
+
+  await prisma.chatConversationMember.updateMany({
+    where: {
+      userId: user.id,
+      organizationId: null,
+      leftAt: null,
+      accessRevokedAt: null,
+      bannedAt: null,
+      followGraceEndsAt: { not: null },
+      conversation: {
+        contextType: "ORG_COMMUNITY",
+        organizationId,
+        community: {
+          is: {
+            accessMode: "FOLLOWERS",
+          },
+        },
+      },
+    },
+    data: {
+      followGraceEndsAt: null,
+    },
+  });
 
   return jsonWrap({ ok: true }, { status: 200 });
 }

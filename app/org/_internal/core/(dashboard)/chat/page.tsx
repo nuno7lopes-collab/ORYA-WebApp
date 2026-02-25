@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { OrganizationMemberRole } from "@prisma/client";
 import ChatInternoClient from "./ChatInternoClient";
 import ChannelRequestsPanel from "./ChannelRequestsPanel";
+import CommunitiesManagerClient from "./CommunitiesManagerClient";
 import { buildOrgHref, buildOrgHubHref, parseOrganizationId } from "@/lib/organizationIdUtils";
 
 type RouteParamsInput = Promise<{ orgId?: string }> | { orgId?: string } | undefined;
@@ -29,6 +30,10 @@ export default async function OrganizationChatPage({
   const routeOrgId = parseOrganizationId(resolvedParams?.orgId);
   const parsedSearchParams =
     (resolvedSearchParams ?? {}) as Record<string, string | string[] | undefined>;
+  const rawTab = Array.isArray(parsedSearchParams.tab)
+    ? parsedSearchParams.tab[0]
+    : parsedSearchParams.tab;
+  const activeTab = rawTab?.trim().toLowerCase() === "comunidades" ? "comunidades" : "inbox";
   const { user } = await getCurrentUser();
 
   if (!user) {
@@ -117,10 +122,18 @@ export default async function OrganizationChatPage({
   return (
     <div className={cn("h-full min-h-0 w-full text-white")}>
       <div className="flex h-full min-h-0 flex-col gap-3">
-        <ChannelRequestsPanel />
-        <div className="min-h-0 flex-1">
-          <ChatInternoClient />
-        </div>
+        {activeTab === "inbox" ? (
+          <>
+            <ChannelRequestsPanel />
+            <div className="min-h-0 flex-1">
+              <ChatInternoClient />
+            </div>
+          </>
+        ) : (
+          <div className="min-h-0 flex-1">
+            <CommunitiesManagerClient />
+          </div>
+        )}
       </div>
     </div>
   );

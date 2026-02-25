@@ -10,6 +10,7 @@ import { normalizeStoreVisibility } from "@/lib/store/visibility";
 import { OrganizationMemberRole, StoreBundlePricingMode, StoreVisibility } from "@prisma/client";
 import { z } from "zod";
 import { computeBundleTotals } from "@/lib/store/bundles";
+import { evaluatePaidWriteGate } from "@/lib/organizationPayments";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
@@ -47,6 +48,7 @@ async function getOrganizationContext(req: NextRequest, userId: string, options?
   const { organization, membership } = await getActiveOrganizationForUser(userId, {
     organizationId: organizationId ?? undefined,
     roles: [...ROLE_ALLOWLIST],
+    includeOrganizationFields: "settings",
   });
 
   if (!organization || !membership) {
@@ -209,6 +211,30 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     }
     if (nextPricingMode === StoreBundlePricingMode.PERCENT_DISCOUNT) {
       data.priceCents = null;
+    }
+    const paidWriteGate = evaluatePaidWriteGate({
+      organizationId: context.organization.id,
+      orgType: (context.organization as { orgType?: string | null }).orgType ?? null,
+      officialEmail: context.organization.officialEmail ?? null,
+      officialEmailVerifiedAt: context.organization.officialEmailVerifiedAt ?? null,
+      stripeAccountId: (context.organization as { stripeAccountId?: string | null }).stripeAccountId ?? null,
+      stripeChargesEnabled:
+        (context.organization as { stripeChargesEnabled?: boolean | null }).stripeChargesEnabled ?? false,
+      stripePayoutsEnabled:
+        (context.organization as { stripePayoutsEnabled?: boolean | null }).stripePayoutsEnabled ?? false,
+      amountCents: nextPricingMode === StoreBundlePricingMode.FIXED ? nextPriceCents ?? 0 : 0,
+    });
+    if (!paidWriteGate.ok) {
+      return respondError(
+        ctx,
+        {
+          errorCode: paidWriteGate.errorCode,
+          message: paidWriteGate.message,
+          retryable: false,
+          details: paidWriteGate.details,
+        },
+        { status: 403 },
+      );
     }
 
     const nextVisibility = data.visibility ?? existing.visibility;

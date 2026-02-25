@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { mapPaymentGateUiState, parseApiError } from "@/lib/payments/paymentGateUi";
 
 type StoreSnapshot = {
   id: number;
@@ -14,6 +15,7 @@ type StoreSnapshot = {
 };
 
 type StoreActivationCardProps = {
+  organizationId: number;
   title: string;
   description: string;
   endpoint: string;
@@ -22,7 +24,14 @@ type StoreActivationCardProps = {
   onStoreChange?: (store: StoreSnapshot | null) => void;
 };
 
+type CardError = {
+  message: string;
+  ctaHref: string | null;
+  ctaLabel: string | null;
+};
+
 export default function StoreActivationCard({
+  organizationId,
   title,
   description,
   endpoint,
@@ -32,7 +41,7 @@ export default function StoreActivationCard({
 }: StoreActivationCardProps) {
   const [store, setStore] = useState<StoreSnapshot | null>(initialStore);
   const [pendingAction, setPendingAction] = useState<"toggle" | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<CardError | null>(null);
   const loading = pendingAction !== null;
 
   useEffect(() => {
@@ -54,13 +63,25 @@ export default function StoreActivationCard({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        throw new Error(json?.message || json?.error || "Erro ao atualizar loja.");
+        const parsedError = parseApiError(json, "Erro ao atualizar loja.");
+        const uiError = mapPaymentGateUiState({
+          organizationId,
+          errorCode: parsedError.errorCode,
+          message: parsedError.message,
+          details: parsedError.details,
+        });
+        setError(uiError);
+        return;
       }
       const nextStore = json.store ?? null;
       setStore(nextStore);
       onStoreChange?.(nextStore);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro inesperado.");
+      setError({
+        message: err instanceof Error ? err.message : "Erro inesperado.",
+        ctaHref: null,
+        ctaLabel: null,
+      });
     } finally {
       setPendingAction(null);
     }
@@ -120,7 +141,15 @@ export default function StoreActivationCard({
 
         {error ? (
           <div className="rounded-2xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-100">
-            {error}
+            <p>{error.message}</p>
+            {error.ctaHref && error.ctaLabel ? (
+              <a
+                href={error.ctaHref}
+                className="mt-3 inline-flex rounded-full border border-red-200/50 bg-red-200/15 px-3 py-1.5 text-xs font-semibold text-red-50 transition hover:bg-red-200/25"
+              >
+                {error.ctaLabel}
+              </a>
+            ) : null}
           </div>
         ) : null}
       </div>

@@ -6,6 +6,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { getDateParts } from "@/lib/reservas/availability";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
+import { cn } from "@/lib/utils";
 import { ContextDrawer } from "@/components/ui/context-drawer";
 import { buildCalendarOperationalGuidance } from "../operationalGuidance";
 import {
@@ -117,6 +118,7 @@ type ColumnSeed = {
   id: string;
   entityKind: "PROFESSIONAL" | "RESOURCE" | "COURT" | "GENERAL";
   entityId: number;
+  availabilityScopeId?: number | null;
   label: string;
   subtitle: string | null;
   avatarUrl: string | null;
@@ -142,6 +144,7 @@ function buildColumnSeeds(params: {
       id: `P-${professional.id}`,
       entityKind: "PROFESSIONAL",
       entityId: professional.id,
+      availabilityScopeId: null,
       label: professional.name,
       subtitle: professional.roleTitle ?? professional.user?.fullName ?? null,
       avatarUrl: professional.user?.avatarUrl ?? null,
@@ -155,6 +158,7 @@ function buildColumnSeeds(params: {
       id: `R-${resource.id}`,
       entityKind: "RESOURCE",
       entityId: resource.id,
+      availabilityScopeId: resource.availabilityScopeId ?? resource.resourceId ?? resource.id,
       label: resource.label,
       subtitle: `Capacidade ${resource.capacity}`,
       avatarUrl: null,
@@ -168,6 +172,7 @@ function buildColumnSeeds(params: {
       id: `C-${court.id}`,
       entityKind: "COURT",
       entityId: court.id,
+      availabilityScopeId: court.availabilityScopeId ?? court.resourceId ?? null,
       label: court.label,
       subtitle: court.clubName ? `Campo · ${court.clubName}` : "Campo de padel",
       avatarUrl: null,
@@ -184,6 +189,7 @@ function buildColumnSeeds(params: {
       id: "GENERAL",
       entityKind: "GENERAL" as const,
       entityId: 0,
+      availabilityScopeId: null,
       label: "Geral",
       subtitle: "Calendário consolidado",
       avatarUrl: null,
@@ -305,6 +311,7 @@ export default function DayCalendarReadClient() {
   const { data: agendaData, error: agendaError, isLoading: agendaLoading } = useSWR<AgendaResponse>(agendaUrl, fetchJson);
   const agendaCapabilities = agendaData?.capabilities ?? null;
   const operationalMode = agendaData?.operationalMode ?? null;
+  const acceptsNewBookings = agendaData?.reservasOperational?.acceptsNewBookings ?? true;
   const reservationsCapability = agendaCapabilities?.reservas;
   const reservationsEnabled = reservationsCapability === true;
   const scopeSelectionEnabled = reservationsCapability !== false;
@@ -398,12 +405,17 @@ export default function DayCalendarReadClient() {
     async () => {
       const entries = await Promise.all(
         columnSeeds.map(async (seed) => {
-          if (seed.entityKind === "COURT" || seed.entityKind === "GENERAL") {
+          if (seed.entityKind === "GENERAL") {
+            return [seed.id, undefined] as const;
+          }
+          const scopeType = seed.entityKind === "COURT" ? "RESOURCE" : seed.entityKind;
+          const scopeId = seed.entityKind === "COURT" ? seed.availabilityScopeId : seed.entityId;
+          if (!scopeId || !Number.isFinite(scopeId) || scopeId <= 0) {
             return [seed.id, undefined] as const;
           }
           const query = new URLSearchParams({
-            scopeType: seed.entityKind,
-            scopeId: String(seed.entityId),
+            scopeType,
+            scopeId: String(scopeId),
           });
           query.set("includeTemplates", "all");
           const url = `/api/org/${organizationId}/reservas/disponibilidade?${query.toString()}`;
@@ -441,9 +453,9 @@ export default function DayCalendarReadClient() {
     () =>
       columnSeeds.map((seed) => {
         const normalized =
-          seed.entityKind === "COURT" || seed.entityKind === "GENERAL"
+          seed.entityKind === "GENERAL"
             ? organizationAvailability
-            : availabilityMap?.[seed.id];
+            : availabilityMap?.[seed.id] ?? (seed.entityKind === "COURT" ? organizationAvailability : undefined);
         const intervals = resolveIntervalsForDay(normalized, selectedDate, timezone);
         return {
           id: seed.id,
@@ -727,6 +739,36 @@ export default function DayCalendarReadClient() {
           ) : null}
         </div>
       </section>
+
+      {reservationsEnabled ? (
+        <section
+          className={cn(
+            "rounded-2xl border p-4 shadow-[0_18px_54px_rgba(0,0,0,0.4)]",
+            acceptsNewBookings
+              ? "border-emerald-300/30 bg-[linear-gradient(145deg,rgba(16,185,129,0.16),rgba(7,10,22,0.86))]"
+              : "border-rose-300/35 bg-[linear-gradient(145deg,rgba(244,63,94,0.2),rgba(7,10,22,0.86))]",
+          )}
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/75">
+                Reservas {acceptsNewBookings ? "ON" : "OFF"}
+              </p>
+              <p className="mt-1 text-sm font-semibold text-white">
+                {acceptsNewBookings
+                  ? "Novas reservas ativas, sujeitas a disponibilidade."
+                  : "Novas reservas bloqueadas. Historico preservado."}
+              </p>
+            </div>
+            <Link
+              href={buildOrgHref(organizationId, "/calendar/availability")}
+              className="rounded-full border border-white/25 px-3 py-1.5 text-xs text-white/85 transition hover:border-white/45 hover:text-white"
+            >
+              Gerir reservas ON/OFF
+            </Link>
+          </div>
+        </section>
+      ) : null}
 
       <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">

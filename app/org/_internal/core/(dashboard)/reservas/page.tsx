@@ -445,8 +445,8 @@ export default function ReservasDashboardPage() {
   const bookingsServicesHref = organizationId
     ? buildOrgHref(organizationId, "/bookings")
     : buildOrgHubHref("/organizations");
-  const bookingsAvailabilityHref = organizationId
-    ? buildOrgHref(organizationId, "/bookings/availability")
+  const calendarAvailabilityHref = organizationId
+    ? buildOrgHref(organizationId, "/calendar/availability")
     : buildOrgHubHref("/organizations");
   const eventsCreateHref = organizationId
     ? buildOrgHref(organizationId, "/events/new")
@@ -1710,7 +1710,7 @@ export default function ReservasDashboardPage() {
               <p className="mt-2 text-sm text-white/80">{operationsGuidance.body}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Link href={bookingsAvailabilityHref} className={CTA_SECONDARY}>
+              <Link href={calendarAvailabilityHref} className={CTA_SECONDARY}>
                 Gerir disponibilidade
               </Link>
               {operationalMode === "HYBRID" && canCreateEvents ? (
@@ -2023,7 +2023,7 @@ export default function ReservasDashboardPage() {
                   </button>
                 )}
                 <Link
-                  href={bookingsAvailabilityHref}
+                  href={calendarAvailabilityHref}
                   className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 transition hover:border-white/35 hover:text-white"
                 >
                   Ver disponibilidade

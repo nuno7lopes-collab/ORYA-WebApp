@@ -4,6 +4,8 @@ import { toPublicEventCardFromIndex, PublicEventCard, isPublicEventCardComplete 
 import { filterOrphanedEventSearchItems } from "@/domain/searchIndex/guard";
 
 const DEFAULT_PAGE_SIZE = 12;
+const PUBLIC_VISIBILITY = (SearchIndexVisibility as Record<string, string> | undefined)?.PUBLIC ?? "PUBLIC";
+const EVENT_SOURCE_TYPE = (SourceType as Record<string, string> | undefined)?.EVENT ?? "EVENT";
 
 function clampTake(value: number | null): number {
   if (!value || Number.isNaN(value)) return DEFAULT_PAGE_SIZE;
@@ -129,8 +131,8 @@ export async function searchPublicEvents(
   const priceMaxCents = priceMax !== null ? Math.round(priceMax * 100) : null;
 
   const where: Prisma.SearchIndexItemWhereInput = {
-    visibility: SearchIndexVisibility.PUBLIC,
-    sourceType: SourceType.EVENT,
+    visibility: PUBLIC_VISIBILITY as Prisma.SearchIndexItemWhereInput["visibility"],
+    sourceType: EVENT_SOURCE_TYPE as Prisma.SearchIndexItemWhereInput["sourceType"],
   };
 
   if (q) {

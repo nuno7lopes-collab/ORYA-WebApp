@@ -10,8 +10,15 @@ import { GlassCard } from "../../components/liquid/GlassCard";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { tokens, useTranslation } from "@orya/shared";
 import { useAuth } from "../../lib/auth";
-import { useMessageRequests } from "../../features/messages/hooks";
-import { acceptMessageRequest, declineMessageRequest } from "../../features/messages/api";
+import {
+  useMessageRequests,
+  useMessageCommunityInvites,
+} from "../../features/messages/hooks";
+import {
+  acceptMessageRequest,
+  acceptCommunityInvite,
+  declineMessageRequest,
+} from "../../features/messages/api";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { safeBack, safePush } from "../../lib/navigation";
 import { useNavigation } from "@react-navigation/native";
@@ -41,11 +48,22 @@ export default function MessageRequestsScreen() {
   const { session } = useAuth();
   const accessToken = session?.access_token ?? null;
   const requestsQuery = useMessageRequests(Boolean(session?.user?.id), accessToken, session?.user?.id);
+  const communityInvitesQuery = useMessageCommunityInvites(
+    Boolean(session?.user?.id),
+    accessToken,
+    session?.user?.id,
+  );
   const requestItems = requestsQuery.data?.items ?? [];
+  const communityInviteItems = communityInvitesQuery.data?.items ?? [];
   const items = useMemo(
     () => requestItems.filter((item) => item.status === "PENDING"),
     [requestItems],
   );
+  const pendingCommunityInvites = useMemo(
+    () => communityInviteItems.filter((invite) => invite.status === "PENDING"),
+    [communityInviteItems],
+  );
+  const hasAnyPending = items.length > 0 || pendingCommunityInvites.length > 0;
   const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
   const hasPendingAction = Boolean(pendingRequestId);
 
@@ -96,7 +114,7 @@ export default function MessageRequestsScreen() {
     setPendingRequestId(requestId);
     try {
       await declineMessageRequest(requestId, accessToken);
-      await requestsQuery.refetch();
+      await Promise.all([requestsQuery.refetch(), communityInvitesQuery.refetch()]);
     } catch (err) {
       Alert.alert(
         t("messages:requests"),
@@ -104,6 +122,28 @@ export default function MessageRequestsScreen() {
       );
     } finally {
       setPendingRequestId((current) => (current === requestId ? null : current));
+    }
+  };
+
+  const handleAcceptCommunityInvite = async (inviteId: string) => {
+    if (!accessToken || hasPendingAction) return;
+    setPendingRequestId(inviteId);
+    try {
+      const response = await acceptCommunityInvite(inviteId, accessToken);
+      if (response.conversationId) {
+        safePush(router, {
+          pathname: "/messages/[threadId]",
+          params: { threadId: response.conversationId, source: "conversation" },
+        });
+      }
+      await Promise.all([requestsQuery.refetch(), communityInvitesQuery.refetch()]);
+    } catch (err) {
+      Alert.alert(
+        t("messages:requests"),
+        getUserFacingError(err, t("messages:requestsScreen.error")),
+      );
+    } finally {
+      setPendingRequestId((current) => (current === inviteId ? null : current));
     }
   };
 
@@ -129,17 +169,20 @@ export default function MessageRequestsScreen() {
             </Text>
             <Text className="text-white/65 text-sm">{t("messages:requestsScreen.signinBody")}</Text>
           </GlassCard>
-        ) : requestsQuery.isLoading ? (
+        ) : requestsQuery.isLoading || communityInvitesQuery.isLoading ? (
           <View className="mt-5 gap-3">
             {Array.from({ length: 3 }, (_, idx) => (
               <GlassSkeleton key={`req-skel-${idx}`} height={86} />
             ))}
           </View>
-        ) : requestsQuery.isError ? (
+        ) : requestsQuery.isError || communityInvitesQuery.isError ? (
           <GlassCard intensity={55} className="mt-5">
             <Text className="text-red-300 text-sm mb-2">{t("messages:requestsScreen.error")}</Text>
             <Pressable
-              onPress={() => requestsQuery.refetch()}
+              onPress={() => {
+                requestsQuery.refetch();
+                communityInvitesQuery.refetch();
+              }}
               className="rounded-2xl bg-white/10 px-4 py-3"
               style={{ minHeight: tokens.layout.touchTarget }}
               accessibilityRole="button"
@@ -150,7 +193,7 @@ export default function MessageRequestsScreen() {
               </Text>
             </Pressable>
           </GlassCard>
-        ) : items.length === 0 ? (
+        ) : !hasAnyPending ? (
           <GlassCard intensity={52} className="mt-5" padding={16}>
             <View className="flex-row items-center gap-2">
               <Ionicons name="mail-open-outline" size={16} color="rgba(255,255,255,0.78)" />
@@ -160,6 +203,79 @@ export default function MessageRequestsScreen() {
           </GlassCard>
         ) : (
           <View className="mt-4 gap-3">
+            {pendingCommunityInvites.map((invite) => {
+              const label =
+                invite.community?.title?.trim() ||
+                t("messages:thread.conversationTitleFallback");
+              const isBusy = pendingRequestId === invite.id;
+              return (
+                <GlassCard key={`community-invite-${invite.id}`} intensity={58} padding={14}>
+                  <View className="gap-3">
+                    <View className="flex-row items-center gap-3">
+                      <AvatarCircle
+                        size={48}
+                        uri={invite.community?.coverImageUrl ?? null}
+                        iconName="people-outline"
+                        iconColor="rgba(255,255,255,0.72)"
+                        borderColor="rgba(255,255,255,0.12)"
+                        backgroundColor="rgba(255,255,255,0.08)"
+                      />
+
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <View className="flex-row items-center gap-2">
+                          <Text className="text-white text-sm font-semibold" numberOfLines={1} style={{ flex: 1 }}>
+                            {label}
+                          </Text>
+                          <Text className="text-white/45 text-[11px]">
+                            {formatRequestTimestamp(invite.createdAt)}
+                          </Text>
+                        </View>
+                        <Text className="text-white/60 text-xs" numberOfLines={1}>
+                          Convite para comunidade
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View className="flex-row gap-2">
+                      <Pressable
+                        onPress={() => handleDecline(invite.id)}
+                        disabled={hasPendingAction}
+                        className="rounded-2xl border border-white/15 bg-white/5 px-4 py-2.5"
+                        style={{ minHeight: tokens.layout.touchTarget, minWidth: tokens.layout.touchTarget }}
+                        accessibilityRole="button"
+                        accessibilityLabel={t("common:actions.decline")}
+                        accessibilityState={{ disabled: hasPendingAction }}
+                      >
+                        {isBusy ? (
+                          <ActivityIndicator color="rgba(255,255,255,0.9)" />
+                        ) : (
+                          <Ionicons name="close" size={16} color="rgba(255,255,255,0.9)" />
+                        )}
+                      </Pressable>
+
+                      <Pressable
+                        onPress={() => handleAcceptCommunityInvite(invite.id)}
+                        disabled={hasPendingAction}
+                        className="flex-1 rounded-2xl bg-white/90 px-4 py-2"
+                        style={{ minHeight: tokens.layout.touchTarget }}
+                        accessibilityRole="button"
+                        accessibilityLabel="Entrar"
+                        accessibilityState={{ disabled: hasPendingAction }}
+                      >
+                        {isBusy ? (
+                          <ActivityIndicator color="#0b101a" />
+                        ) : (
+                          <Text className="text-center text-sm font-semibold" style={{ color: "#0b101a" }}>
+                            Entrar
+                          </Text>
+                        )}
+                      </Pressable>
+                    </View>
+                  </View>
+                </GlassCard>
+              );
+            })}
+
             {items.map((request) => {
               const name =
                 request.requester.fullName?.trim() ||

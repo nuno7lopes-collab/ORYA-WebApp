@@ -19,9 +19,8 @@ import {
   validateDurationAgainstPolicy,
 } from "@/lib/reservas/gridPolicy";
 import { resolveCourtDurationPrice } from "@/lib/reservas/serviceDurationPrices";
+import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
-
-const SLOT_STEP_MINUTES = 5;
 
 function parseMonthParam(value: string | null) {
   if (!value) return null;
@@ -47,6 +46,22 @@ function parseDayParam(value: string | null) {
 function buildDateKey(parts: { year: number; month: number; day: number }) {
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`;
+}
+
+function isAlignedToGrid(startsAt: Date, timezone: string, gridMinutes: number) {
+  if (!Number.isFinite(gridMinutes) || gridMinutes <= 0) return true;
+  const timeParts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(startsAt);
+  const map = new Map(timeParts.map((part) => [part.type, part.value]));
+  const hour = Number(map.get("hour"));
+  const minute = Number(map.get("minute"));
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return false;
+  const totalMinutes = hour * 60 + minute;
+  return totalMinutes % gridMinutes === 0;
 }
 
 function buildMonthRange(params: { year: number; month: number; timezone: string }) {
@@ -84,26 +99,6 @@ function parsePositiveInt(value: string | null) {
   if (!value) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-}
-
-function getMinutesOfDay(date: Date, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    hour12: false,
-    hour: "2-digit",
-    minute: "2-digit",
-  }).formatToParts(date);
-  const map = new Map(parts.map((part) => [part.type, part.value]));
-  const rawHour = Number(map.get("hour"));
-  const hour = rawHour === 24 ? 0 : rawHour;
-  const minute = Number(map.get("minute"));
-  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
-  return hour * 60 + minute;
-}
-
-function isSlotAlignedWithGrid(startsAt: Date, timeZone: string, gridMinutes: number) {
-  const minutesOfDay = getMinutesOfDay(startsAt, timeZone);
-  return minutesOfDay != null && minutesOfDay % gridMinutes === 0;
 }
 
 function buildSelectionRulesPayload(params: {
@@ -167,6 +162,7 @@ async function _GET(
         },
         organization: {
           select: {
+            primaryModule: true,
             timezone: true,
             reservationAssignmentMode: true,
             orgType: true,
@@ -182,6 +178,43 @@ async function _GET(
 
     if (!service) {
       return jsonWrap({ ok: false, error: "Serviço não encontrado." }, { status: 404 });
+    }
+
+    const timezone = service.organization?.timezone || "Europe/Lisbon";
+    const todayPartsForRange = getDateParts(new Date(), timezone);
+    const minMonthKey = (todayPartsForRange.year * 12) + (todayPartsForRange.month - 1);
+    const maxMonthKey = minMonthKey + 3;
+
+    const dayParamForRange = parseDayParam(req.nextUrl.searchParams.get("day"));
+    if (dayParamForRange) {
+      const dayKey = (dayParamForRange.year * 12) + (dayParamForRange.month - 1);
+      if (dayKey < minMonthKey || dayKey > maxMonthKey) {
+        return jsonWrap({ ok: false, error: "RANGE_NOT_ALLOWED" }, { status: 400 });
+      }
+    } else {
+      const monthParamForRange = parseMonthParam(req.nextUrl.searchParams.get("month"));
+      const targetMonthForRange = monthParamForRange ?? {
+        year: todayPartsForRange.year,
+        month: todayPartsForRange.month,
+      };
+      const monthKey = (targetMonthForRange.year * 12) + (targetMonthForRange.month - 1);
+      if (monthKey < minMonthKey || monthKey > maxMonthKey) {
+        return jsonWrap({ ok: false, error: "RANGE_NOT_ALLOWED" }, { status: 400 });
+      }
+    }
+
+    const reservasAccess = await ensureReservasModuleAccess(
+      {
+        id: service.organizationId,
+        primaryModule: service.organization?.primaryModule ?? null,
+      },
+      prisma,
+    );
+    if (!reservasAccess.ok) {
+      return jsonWrap(
+        { ok: false, error: reservasAccess.errorCode ?? "RESERVAS_UNAVAILABLE", message: reservasAccess.error },
+        { status: 403 },
+      );
     }
 
     const assignmentConfig = resolveServiceAssignmentMode({
@@ -203,8 +236,6 @@ async function _GET(
       requiresProfessional: assignmentConfig.requiresProfessional,
       requiresResource: assignmentConfig.requiresResource,
     });
-
-    const timezone = service.organization?.timezone || "Europe/Lisbon";
     const bookingPolicy = await getOrganizationBookingPolicy({
       organizationId: service.organizationId,
       tx: prisma,
@@ -267,7 +298,6 @@ async function _GET(
         return jsonWrap({ ok: false, error: "Pacote inválido." }, { status: 400 });
       }
 
-      const shouldUseOrgOnly = false;
       const now = new Date();
       const isCourtService = service.kind === "COURT";
       let effectiveDurationMinutes = service.durationMinutes;
@@ -488,7 +518,7 @@ async function _GET(
           rangeEnd,
           timezone,
           durationMinutes: effectiveDurationMinutes,
-          stepMinutes: SLOT_STEP_MINUTES,
+          stepMinutes: bookingPolicy.gridMinutes,
           now,
           professionals,
           resources,
@@ -500,7 +530,7 @@ async function _GET(
           blocks,
         });
         const items = matrix.slots
-          .filter((slot) => isSlotAlignedWithGrid(slot.startsAt, timezone, bookingPolicy.gridMinutes))
+          .filter((slot) => isAlignedToGrid(slot.startsAt, timezone, bookingPolicy.gridMinutes))
           .map((slot) => ({
             slotKey: slot.startsAt.toISOString(),
             startsAt: slot.startsAt.toISOString(),
@@ -572,18 +602,14 @@ async function _GET(
         prisma.availabilitySchedule.findMany({
           where: {
             organizationId: service.organizationId,
-            ...(shouldUseOrgOnly ? { scopeType: "ORGANIZATION", scopeId: 0 } : { OR: scopeFilters }),
+            OR: scopeFilters,
           },
           select: { id: true, scopeType: true, scopeId: true, startDate: true, endDate: true, createdAt: true },
         }),
         prisma.availabilityOverride.findMany({
           where: {
             organizationId: service.organizationId,
-            ...(shouldUseOrgOnly
-              ? { scopeType: "ORGANIZATION", scopeId: 0 }
-              : {
-                  OR: scopeFilters,
-                }),
+            OR: scopeFilters,
             date: new Date(Date.UTC(dayParam.year, dayParam.month - 1, dayParam.day)),
           },
           orderBy: [{ date: "asc" }, { createdAt: "asc" }],
@@ -627,9 +653,10 @@ async function _GET(
       const overridesByScope = groupByScope(overrides);
       const blocks = [...buildBlocks(bookings), ...buildSessionBlocks(classSessions)];
       const slotMap = new Map<string, { startsAt: Date; durationMinutes: number }>();
-      const scopesToCheck: Array<{ scopeType: AvailabilityScopeType; scopeId: number }> = shouldUseOrgOnly
-        ? [{ scopeType: "ORGANIZATION", scopeId: 0 }]
-        : scopeIds.map((id) => ({ scopeType, scopeId: id }));
+      const scopesToCheck: Array<{ scopeType: AvailabilityScopeType; scopeId: number }> = scopeIds.map((id) => ({
+        scopeType,
+        scopeId: id,
+      }));
 
       scopesToCheck.forEach((scope) => {
         const slots = getAvailableSlotsForScope({
@@ -637,7 +664,7 @@ async function _GET(
           rangeEnd,
           timezone,
           durationMinutes: effectiveDurationMinutes,
-          stepMinutes: SLOT_STEP_MINUTES,
+          stepMinutes: bookingPolicy.gridMinutes,
           now,
           scopeType: scope.scopeType,
           scopeId: scope.scopeId,
@@ -649,7 +676,7 @@ async function _GET(
           blocks,
         });
         slots.forEach((slot) => {
-          if (!isSlotAlignedWithGrid(slot.startsAt, timezone, bookingPolicy.gridMinutes)) return;
+          if (!isAlignedToGrid(slot.startsAt, timezone, bookingPolicy.gridMinutes)) return;
           slotMap.set(slot.startsAt.toISOString(), { startsAt: slot.startsAt, durationMinutes: slot.durationMinutes });
         });
       });
@@ -809,7 +836,6 @@ async function _GET(
       }
     }
 
-    const shouldUseOrgOnly = false;
     const now = new Date();
     if (availabilityMode === "HYBRID") {
       let professionals: Array<{ id: number; priority: number }> = [];
@@ -938,7 +964,7 @@ async function _GET(
         rangeEnd: end,
         timezone,
         durationMinutes: effectiveDurationMinutes,
-        stepMinutes: SLOT_STEP_MINUTES,
+        stepMinutes: bookingPolicy.gridMinutes,
         now,
         professionals,
         resources,
@@ -952,7 +978,7 @@ async function _GET(
 
       const slotMap = new Map<string, number>();
       matrix.slots.forEach((slot) => {
-        if (!isSlotAlignedWithGrid(slot.startsAt, timezone, bookingPolicy.gridMinutes)) return;
+        if (!isAlignedToGrid(slot.startsAt, timezone, bookingPolicy.gridMinutes)) return;
         const parts = getDateParts(slot.startsAt, timezone);
         const key = buildDateKey(parts);
         slotMap.set(key, (slotMap.get(key) ?? 0) + 1);
@@ -1030,18 +1056,14 @@ async function _GET(
       prisma.availabilitySchedule.findMany({
         where: {
           organizationId: service.organizationId,
-          ...(shouldUseOrgOnly ? { scopeType: "ORGANIZATION", scopeId: 0 } : { OR: scopeFilters }),
+          OR: scopeFilters,
         },
         select: { id: true, scopeType: true, scopeId: true, startDate: true, endDate: true, createdAt: true },
       }),
       prisma.availabilityOverride.findMany({
         where: {
           organizationId: service.organizationId,
-          ...(shouldUseOrgOnly
-            ? { scopeType: "ORGANIZATION", scopeId: 0 }
-            : {
-                OR: scopeFilters,
-              }),
+          OR: scopeFilters,
           date: {
             gte: new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate())),
             lte: new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate())),
@@ -1089,9 +1111,10 @@ async function _GET(
     const blocks = [...buildBlocks(bookings), ...buildSessionBlocks(classSessions)];
 
     const slotMap = new Map<string, number>();
-    const scopesToCheck: Array<{ scopeType: AvailabilityScopeType; scopeId: number }> = shouldUseOrgOnly
-      ? [{ scopeType: "ORGANIZATION", scopeId: 0 }]
-      : scopeIds.map((id) => ({ scopeType, scopeId: id }));
+    const scopesToCheck: Array<{ scopeType: AvailabilityScopeType; scopeId: number }> = scopeIds.map((id) => ({
+      scopeType,
+      scopeId: id,
+    }));
 
     scopesToCheck.forEach((scope) => {
       const slots = getAvailableSlotsForScope({
@@ -1099,7 +1122,7 @@ async function _GET(
         rangeEnd: end,
         timezone,
         durationMinutes: effectiveDurationMinutes,
-        stepMinutes: SLOT_STEP_MINUTES,
+        stepMinutes: bookingPolicy.gridMinutes,
         now,
         scopeType: scope.scopeType,
         scopeId: scope.scopeId,
@@ -1111,7 +1134,7 @@ async function _GET(
         blocks,
       });
       slots.forEach((slot) => {
-        if (!isSlotAlignedWithGrid(slot.startsAt, timezone, bookingPolicy.gridMinutes)) return;
+        if (!isAlignedToGrid(slot.startsAt, timezone, bookingPolicy.gridMinutes)) return;
         const parts = getDateParts(slot.startsAt, timezone);
         const key = buildDateKey(parts);
         slotMap.set(key, (slotMap.get(key) ?? 0) + 1);

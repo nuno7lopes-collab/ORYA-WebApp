@@ -41,6 +41,9 @@ export type AgendaResponse = {
   items: AgendaItem[];
   capabilities?: AgendaCapabilities;
   operationalMode?: OrganizationOperationalMode;
+  reservasOperational?: {
+    acceptsNewBookings: boolean;
+  };
 };
 
 export type ResourceItem = {
@@ -50,6 +53,8 @@ export type ResourceItem = {
   isActive: boolean;
   priority: number;
   sourceType?: "RESOURCE" | "COURT";
+  resourceId?: number | null;
+  availabilityScopeId?: number | null;
   courtId?: number | null;
   padelClubId?: number | null;
   clubName?: string | null;

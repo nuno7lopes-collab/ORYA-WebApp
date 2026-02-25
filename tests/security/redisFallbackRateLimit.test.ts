@@ -41,20 +41,21 @@ describe("rateLimit fallback sem redis", () => {
     expect(result.allowed).toBe(true);
   });
 
-  it("faz fallback para memória quando redis falha", async () => {
+  it("falha com erro explícito quando redis está configurado mas indisponível", async () => {
     isRedisConfigured.mockReturnValue(true);
     getRedisCommandClient.mockRejectedValueOnce(new Error("redis down"));
 
-    const result = await rateLimit(makeRequest(), {
-      windowMs: 60_000,
-      max: 5,
-      keyPrefix: "test:redis-error-fallback",
-      requireDistributed: true,
+    await expect(
+      rateLimit(makeRequest(), {
+        windowMs: 60_000,
+        max: 5,
+        keyPrefix: "test:redis-error-strict",
+        requireDistributed: true,
+      }),
+    ).rejects.toMatchObject({
+      code: "RATE_LIMIT_BACKEND_UNAVAILABLE",
+      name: "RateLimitBackendUnavailableError",
     });
-
-    expect(result.backend).toBe("memory");
-    expect(result.degraded).toBe(true);
-    expect(result.allowed).toBe(true);
   });
 
   it("mantém backend redis quando redis responde", async () => {
@@ -74,6 +75,21 @@ describe("rateLimit fallback sem redis", () => {
 
     expect(result.backend).toBe("redis");
     expect(result.degraded).toBe(false);
+    expect(result.allowed).toBe(true);
+  });
+
+  it("mantém fallback memória quando redis não está configurado", async () => {
+    isRedisConfigured.mockReturnValue(false);
+
+    const result = await rateLimit(makeRequest(), {
+      windowMs: 60_000,
+      max: 5,
+      keyPrefix: "test:missing-redis-fallback",
+      requireDistributed: true,
+    });
+
+    expect(result.backend).toBe("memory");
+    expect(result.degraded).toBe(true);
     expect(result.allowed).toBe(true);
   });
 });

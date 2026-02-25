@@ -25,8 +25,6 @@ import {
   validateStartAtAgainstPolicy,
 } from "@/lib/reservas/gridPolicy";
 
-const SLOT_STEP_MINUTES = 5;
-
 type ConfirmBookingResult =
   | { ok: true; bookingId: number; alreadyConfirmed: boolean; professionalId: number | null; resourceId: number | null }
   | {
@@ -484,7 +482,6 @@ export async function confirmPendingBooking({
               { resourceId: { in: resourceScopeIds } },
             ],
           };
-  const shouldUseOrgOnly = false;
   const activeBookingFilter = {
     // Keep status arrays mutable for Prisma's generated enum filter type.
     OR: (() => {
@@ -511,20 +508,14 @@ export async function confirmPendingBooking({
     tx.availabilitySchedule.findMany({
       where: {
         organizationId: booking.organizationId,
-        ...(shouldUseOrgOnly
-          ? { scopeType: "ORGANIZATION", scopeId: 0 }
-          : { OR: scopeFilters }),
+        OR: scopeFilters,
       },
       select: { id: true, scopeType: true, scopeId: true, startDate: true, endDate: true, createdAt: true },
     }),
     tx.availabilityOverride.findMany({
       where: {
         organizationId: booking.organizationId,
-        ...(shouldUseOrgOnly
-          ? { scopeType: "ORGANIZATION", scopeId: 0 }
-          : {
-              OR: scopeFilters,
-            }),
+        OR: scopeFilters,
         date: new Date(Date.UTC(dayParts.year, dayParts.month - 1, dayParts.day)),
       },
       orderBy: [{ date: "asc" }, { createdAt: "asc" }],
@@ -575,7 +566,7 @@ export async function confirmPendingBooking({
       rangeEnd: dayEnd,
       timezone,
       durationMinutes: booking.durationMinutes,
-      stepMinutes: SLOT_STEP_MINUTES,
+      stepMinutes: bookingPolicy.gridMinutes,
       now,
       professionals: professionalScopes,
       resources: resourceScopes,
@@ -640,9 +631,7 @@ export async function confirmPendingBooking({
       allowed = true;
     }
   } else {
-    const scopesToCheck: Array<{ scopeType: AvailabilityScopeType; scopeId: number }> = shouldUseOrgOnly
-      ? [{ scopeType: "ORGANIZATION", scopeId: 0 }]
-      : candidateScopes;
+    const scopesToCheck: Array<{ scopeType: AvailabilityScopeType; scopeId: number }> = candidateScopes;
 
     let assignedScope: { scopeType: AvailabilityScopeType; scopeId: number } | null = null;
     for (const scope of scopesToCheck) {
@@ -651,7 +640,7 @@ export async function confirmPendingBooking({
         rangeEnd: dayEnd,
         timezone,
         durationMinutes: booking.durationMinutes,
-        stepMinutes: SLOT_STEP_MINUTES,
+        stepMinutes: bookingPolicy.gridMinutes,
         now,
         scopeType: scope.scopeType,
         scopeId: scope.scopeId,

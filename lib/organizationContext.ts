@@ -1,7 +1,7 @@
 import { Organization, OrganizationMemberRole, OrganizationRolePack, OrganizationStatus, Prisma } from "@prisma/client";
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
-import { resolveOrganizationIdFromCookies } from "@/lib/organizationId";
+import { parseOrganizationId, resolveOrganizationIdFromCookies } from "@/lib/organizationId";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { appendEventLog } from "@/domain/eventLog/append";
@@ -143,11 +143,12 @@ export const getActiveOrganizationForUser = cache(
     const allowedStatuses = opts.allowedStatuses ? [...opts.allowedStatuses] : [OrganizationStatus.ACTIVE];
     const { select: organizationSelect, kind: organizationSelectKind } = resolveOrganizationSelect(opts);
     const shouldHydrateOrganization = organizationSelectKind !== "minimal";
-    const directOrganizationId =
-      typeof opts.organizationId === "number" && Number.isFinite(opts.organizationId)
-        ? opts.organizationId
-        : null;
-    const hasExplicitOrganizationId = directOrganizationId !== null;
+    const hasExplicitOrganizationId =
+      opts.organizationId !== null && typeof opts.organizationId !== "undefined";
+    const directOrganizationId = parseOrganizationId(opts.organizationId);
+    if (hasExplicitOrganizationId && !directOrganizationId) {
+      return { organization: null, membership: null };
+    }
     const profileActive =
       directOrganizationId || !allowFallback
         ? null
@@ -187,12 +188,12 @@ export const getActiveOrganizationForUser = cache(
               },
             };
           }
+        }
       }
     }
     // Se o organizationId foi pedido explicitamente e não existe membership, não faz fallback.
     if (hasExplicitOrganizationId || !allowFallback) {
       return { organization: null, membership: null };
-    }
     }
 
     const groupMembers = await prisma.organizationGroupMember.findMany({
@@ -292,7 +293,12 @@ export async function setActiveOrganizationForUser(params: {
   userAgent?: string | null;
 }) {
   const { userId, organizationId, correlationId, ip, userAgent } = params;
-  const membership = await resolveGroupMemberForOrg({ organizationId, userId });
+  const normalizedOrganizationId = parseOrganizationId(organizationId);
+  if (!normalizedOrganizationId) {
+    return { ok: false as const, error: "INVALID_ORGANIZATION_ID" as const };
+  }
+
+  const membership = await resolveGroupMemberForOrg({ organizationId: normalizedOrganizationId, userId });
   if (!membership) {
     return { ok: false as const, error: "NOT_MEMBER" as const };
   }
@@ -302,7 +308,7 @@ export async function setActiveOrganizationForUser(params: {
     select: { activeOrganizationId: true },
   });
   const fromOrgId = profile?.activeOrganizationId ?? null;
-  if (fromOrgId === organizationId) {
+  if (fromOrgId === normalizedOrganizationId) {
     return { ok: true as const, changed: false as const, membership };
   }
 
@@ -310,10 +316,10 @@ export async function setActiveOrganizationForUser(params: {
   return prisma.$transaction(async (tx) => {
     await tx.profile.update({
       where: { id: userId },
-      data: { activeOrganizationId: organizationId },
+      data: { activeOrganizationId: normalizedOrganizationId },
     });
 
-    const dedupeKey = `org.context.changed:${userId}:${fromOrgId ?? "NONE"}:${organizationId}`;
+    const dedupeKey = `org.context.changed:${userId}:${fromOrgId ?? "NONE"}:${normalizedOrganizationId}`;
     const outbox = await recordOutboxEvent(
       {
         eventType: "org.context.changed",
@@ -321,7 +327,7 @@ export async function setActiveOrganizationForUser(params: {
         payload: {
           userId,
           fromOrganizationId: fromOrgId,
-          toOrganizationId: organizationId,
+          toOrganizationId: normalizedOrganizationId,
           groupId: membership.groupId,
         },
         correlationId: corr,
@@ -332,33 +338,33 @@ export async function setActiveOrganizationForUser(params: {
     await appendEventLog(
       {
         eventId: outbox.eventId,
-        organizationId,
+        organizationId: normalizedOrganizationId,
         eventType: "org.context.changed",
         idempotencyKey: outbox.eventId,
         payload: {
           userId,
           fromOrganizationId: fromOrgId,
-          toOrganizationId: organizationId,
+          toOrganizationId: normalizedOrganizationId,
           groupId: membership.groupId,
         },
         actorUserId: userId,
-        sourceId: String(organizationId),
+        sourceId: String(normalizedOrganizationId),
         correlationId: corr,
       },
       tx,
     );
 
     await recordOrganizationAudit(tx, {
-      organizationId,
+      organizationId: normalizedOrganizationId,
       groupId: membership.groupId,
       actorUserId: userId,
       action: "ORG_CONTEXT_SWITCH",
       entityType: "organization_context",
-      entityId: String(organizationId),
+      entityId: String(normalizedOrganizationId),
       correlationId: corr,
       metadata: {
         fromOrganizationId: fromOrgId,
-        toOrganizationId: organizationId,
+        toOrganizationId: normalizedOrganizationId,
       },
       ip,
       userAgent,

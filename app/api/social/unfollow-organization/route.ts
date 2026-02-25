@@ -1,6 +1,6 @@
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
@@ -8,6 +8,7 @@ import { parseOrganizationId } from "@/lib/organizationId";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { CrmInteractionSource, CrmInteractionType } from "@prisma/client";
+import { FOLLOWER_GRACE_MS } from "@/lib/messages/communityAccess";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 async function _POST(req: NextRequest) {
@@ -49,6 +50,28 @@ async function _POST(req: NextRequest) {
       console.warn("[social/unfollow-organization] CRM ingest failed", err);
     }
   }
+
+  await prisma.chatConversationMember.updateMany({
+    where: {
+      userId: user.id,
+      organizationId: null,
+      leftAt: null,
+      accessRevokedAt: null,
+      bannedAt: null,
+      conversation: {
+        contextType: "ORG_COMMUNITY",
+        organizationId,
+        community: {
+          is: {
+            accessMode: "FOLLOWERS",
+          },
+        },
+      },
+    },
+    data: {
+      followGraceEndsAt: new Date(Date.now() + FOLLOWER_GRACE_MS),
+    },
+  });
 
   return jsonWrap({ ok: true }, { status: 200 });
 }

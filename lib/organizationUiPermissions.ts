@@ -1,11 +1,16 @@
-import { OrganizationRolePack } from "@prisma/client";
-
 export type OrganizationUiRole =
   | "OWNER"
   | "CO_OWNER"
   | "ADMIN"
   | "STAFF"
   | "PROMOTER";
+
+type OrganizationUiRolePack =
+  | "CLUB_MANAGER"
+  | "TOURNAMENT_DIRECTOR"
+  | "FRONT_DESK"
+  | "COACH"
+  | "REFEREE";
 
 const ROLE_SET = new Set<OrganizationUiRole>([
   "OWNER",
@@ -15,12 +20,12 @@ const ROLE_SET = new Set<OrganizationUiRole>([
   "PROMOTER",
 ]);
 
-const ROLE_PACK_SET = new Set<OrganizationRolePack>([
-  OrganizationRolePack.CLUB_MANAGER,
-  OrganizationRolePack.TOURNAMENT_DIRECTOR,
-  OrganizationRolePack.FRONT_DESK,
-  OrganizationRolePack.COACH,
-  OrganizationRolePack.REFEREE,
+const ROLE_PACK_SET = new Set<OrganizationUiRolePack>([
+  "CLUB_MANAGER",
+  "TOURNAMENT_DIRECTOR",
+  "FRONT_DESK",
+  "COACH",
+  "REFEREE",
 ]);
 
 export function normalizeOrganizationUiRole(role?: string | null): OrganizationUiRole | null {
@@ -31,8 +36,8 @@ export function normalizeOrganizationUiRole(role?: string | null): OrganizationU
 
 export function getOrganizationRoleFlags(role?: string | null, rolePack?: string | null) {
   const normalized = normalizeOrganizationUiRole(role);
-  const normalizedPack = rolePack && ROLE_PACK_SET.has(rolePack as OrganizationRolePack)
-    ? (rolePack as OrganizationRolePack)
+  const normalizedPack = rolePack && ROLE_PACK_SET.has(rolePack as OrganizationUiRolePack)
+    ? (rolePack as OrganizationUiRolePack)
     : null;
   const isOwner = normalized === "OWNER";
   const isCoOwner = normalized === "CO_OWNER";
@@ -42,7 +47,7 @@ export function getOrganizationRoleFlags(role?: string | null, rolePack?: string
   const isAdminOrAbove = isOwner || isCoOwner || isAdmin;
   const isManager = isAdminOrAbove;
   const isPromoterOnly = isPromoter && !isAdminOrAbove;
-  const isCoach = normalized === "STAFF" && normalizedPack === OrganizationRolePack.COACH;
+  const isCoach = normalized === "STAFF" && normalizedPack === "COACH";
   return {
     role: normalized,
     rolePack: normalizedPack,

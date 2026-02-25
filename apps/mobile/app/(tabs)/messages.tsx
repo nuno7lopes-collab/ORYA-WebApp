@@ -18,7 +18,11 @@ import { Ionicons } from "../../components/icons/Ionicons";
 import { tokens, useTranslation } from "@orya/shared";
 import { useRouter } from "expo-router";
 import { useAuth } from "../../lib/auth";
-import { useMessagesInbox, useMessageRequests } from "../../features/messages/hooks";
+import {
+  useMessagesInbox,
+  useMessageRequests,
+  useMessageCommunityInvites,
+} from "../../features/messages/hooks";
 import { createMessageRequest } from "../../features/messages/api";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
@@ -73,13 +77,23 @@ export default function MessagesTabScreen() {
     accessToken,
     session?.user?.id,
   );
+  const communityInvitesQuery = useMessageCommunityInvites(
+    Boolean(session?.user?.id) && isFocused,
+    accessToken,
+    session?.user?.id,
+  );
   const items = inboxQuery.data?.items ?? [];
   const requestItems = requestsQuery.data?.items ?? [];
+  const communityInviteItems = communityInvitesQuery.data?.items ?? [];
   const pendingRequests = useMemo(
     () => requestItems.filter((item) => item.status === "PENDING"),
     [requestItems],
   );
-  const requestsCount = pendingRequests.length;
+  const pendingCommunityInvites = useMemo(
+    () => communityInviteItems.filter((item) => item.status === "PENDING"),
+    [communityInviteItems],
+  );
+  const requestsCount = pendingRequests.length + pendingCommunityInvites.length;
   const sortedItems = useMemo(
     () =>
       [...items].sort((a, b) => {
@@ -311,6 +325,7 @@ export default function MessagesTabScreen() {
           if (session?.user?.id) {
             inboxQuery.refetch();
             requestsQuery.refetch();
+            communityInvitesQuery.refetch();
           }
         }}
         refreshing={Boolean(session?.user?.id) && inboxQuery.isFetching}

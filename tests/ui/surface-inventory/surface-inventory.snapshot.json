@@ -95,8 +95,11 @@
     "app/org/[orgId]/bookings/professionals/page.tsx",
     "app/org/[orgId]/bookings/resources/[id]/page.tsx",
     "app/org/[orgId]/bookings/resources/page.tsx",
+    "app/org/[orgId]/calendar/availability/conflicts/[changeSetId]/page.tsx",
+    "app/org/[orgId]/calendar/availability/page.tsx",
     "app/org/[orgId]/calendar/day/page.tsx",
     "app/org/[orgId]/calendar/page.tsx",
+    "app/org/[orgId]/chat/comunidades/page.tsx",
     "app/org/[orgId]/chat/page.tsx",
     "app/org/[orgId]/chat/preview/page.tsx",
     "app/org/[orgId]/check-in/devices/page.tsx",
@@ -149,6 +152,7 @@
     "app/org/[orgId]/store/page.tsx",
     "app/org/[orgId]/team/page.tsx",
     "app/org/[orgId]/team/trainers/page.tsx",
+    "app/org/_internal/core/(dashboard)/chat/comunidades/page.tsx",
     "app/org/_internal/core/(dashboard)/chat/page.tsx",
     "app/org/_internal/core/(dashboard)/crm/campanhas/page.tsx",
     "app/org/_internal/core/(dashboard)/crm/clientes/[customerId]/page.tsx",
@@ -216,6 +220,7 @@
     "apps/mobile/app/inscricoes/[id].tsx",
     "apps/mobile/app/map/index.tsx",
     "apps/mobile/app/messages/[threadId].tsx",
+    "apps/mobile/app/messages/community-invite/[token].tsx",
     "apps/mobile/app/messages/requests.tsx",
     "apps/mobile/app/notifications/index.tsx",
     "apps/mobile/app/onboarding/index.tsx",
@@ -255,8 +260,11 @@
       "app/org/[orgId]/bookings/professionals/page.tsx",
       "app/org/[orgId]/bookings/resources/[id]/page.tsx",
       "app/org/[orgId]/bookings/resources/page.tsx",
+      "app/org/[orgId]/calendar/availability/conflicts/[changeSetId]/page.tsx",
+      "app/org/[orgId]/calendar/availability/page.tsx",
       "app/org/[orgId]/calendar/day/page.tsx",
       "app/org/[orgId]/calendar/page.tsx",
+      "app/org/[orgId]/chat/comunidades/page.tsx",
       "app/org/[orgId]/chat/page.tsx",
       "app/org/[orgId]/chat/preview/page.tsx",
       "app/org/[orgId]/check-in/devices/page.tsx",
@@ -407,6 +415,7 @@
       "app/suporte/page.tsx"
     ],
     "legacy_compat": [
+      "app/org/_internal/core/(dashboard)/chat/comunidades/page.tsx",
       "app/org/_internal/core/(dashboard)/chat/page.tsx",
       "app/org/_internal/core/(dashboard)/crm/campanhas/page.tsx",
       "app/org/_internal/core/(dashboard)/crm/clientes/[customerId]/page.tsx",
@@ -439,12 +448,12 @@
     ]
   },
   "counts": {
-    "webTotal": 189,
-    "mobileTotal": 44,
-    "org": 70,
+    "webTotal": 193,
+    "mobileTotal": 45,
+    "org": 73,
     "admin": 17,
     "user": 20,
     "public": 53,
-    "legacyCompat": 29
+    "legacyCompat": 30
   }
 }

@@ -8,6 +8,7 @@ import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureDefaultPolicies } from "@/lib/organizationPolicies";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { ensureOrganizationWriteAccess } from "@/lib/organizationWriteAccess";
+import { evaluatePaidWriteGate } from "@/lib/organizationPayments";
 import { getOrganizationBookingPolicy } from "@/lib/reservas/gridPolicy";
 import {
   normalizeReservationAssignmentMode,
@@ -102,6 +103,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
     const { organization, membership } = await getActiveOrganizationForUser(profile.id, {
       organizationId: organizationId ?? undefined,
       roles: [...ROLE_ALLOWLIST],
+      includeOrganizationFields: "settings",
     });
 
     if (!organization || !membership) {
@@ -114,7 +116,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
     }
 
     const writeAccess = ensureOrganizationWriteAccess(organization, {
-      requireStripeForServices: true,
+      requireStripeForServices: false,
     });
     if (!writeAccess.ok) {
       return fail(403, writeAccess.errorCode);
@@ -212,6 +214,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     const { organization, membership } = await getActiveOrganizationForUser(profile.id, {
       organizationId: organizationId ?? undefined,
       roles: [...ROLE_ALLOWLIST],
+      includeOrganizationFields: "settings",
     });
 
     if (!organization || !membership) {
@@ -221,6 +224,13 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     const reservasAccess = await ensureReservasModuleAccess(organization);
     if (!reservasAccess.ok) {
       return fail(403, reservasAccess.error);
+    }
+    const writeAccess = ensureOrganizationWriteAccess(organization, {
+      requireStripeForServices: false,
+      skipEmailGate: true,
+    });
+    if (!writeAccess.ok) {
+      return fail(403, writeAccess.errorCode);
     }
 
     const existing = await prisma.service.findFirst({
@@ -333,6 +343,37 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
       }
     } else if (nextCourtDurationPrices && nextCourtDurationPrices.length > 0) {
       return fail(400, "durationPrices só é permitido para serviços COURT.");
+    }
+    const hasUnitPriceChange = Object.prototype.hasOwnProperty.call(updates, "unitPriceCents");
+    const hasDurationPricesChange = payload?.durationPrices !== undefined;
+    const becameCourtService = resolvedKind === ServiceKind.COURT && existing.kind !== ServiceKind.COURT;
+    if (hasUnitPriceChange || hasDurationPricesChange || becameCourtService) {
+      const maxDurationPriceCents =
+        nextCourtDurationPrices && nextCourtDurationPrices.length > 0
+          ? Math.max(...nextCourtDurationPrices.map((row) => Math.round(row.priceCents)))
+          : 0;
+      const paidWriteGate = evaluatePaidWriteGate({
+        organizationId: organization.id,
+        orgType: (organization as { orgType?: string | null }).orgType ?? null,
+        officialEmail: organization.officialEmail ?? null,
+        officialEmailVerifiedAt: organization.officialEmailVerifiedAt ?? null,
+        stripeAccountId: (organization as { stripeAccountId?: string | null }).stripeAccountId ?? null,
+        stripeChargesEnabled: (organization as { stripeChargesEnabled?: boolean | null }).stripeChargesEnabled ?? false,
+        stripePayoutsEnabled: (organization as { stripePayoutsEnabled?: boolean | null }).stripePayoutsEnabled ?? false,
+        amountCents: Math.max(resolvedUnitPriceCents, maxDurationPriceCents),
+      });
+      if (!paidWriteGate.ok) {
+        return respondError(
+          ctx,
+          {
+            errorCode: paidWriteGate.errorCode,
+            message: paidWriteGate.message,
+            retryable: false,
+            details: paidWriteGate.details,
+          },
+          { status: 403 },
+        );
+      }
     }
     const hasPartySizeRequired = Object.prototype.hasOwnProperty.call(payload, "partySizeRequired");
     const hasPartySizeMin = Object.prototype.hasOwnProperty.call(payload, "partySizeMin");
@@ -667,6 +708,7 @@ async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: str
     const { organization, membership } = await getActiveOrganizationForUser(profile.id, {
       organizationId: organizationId ?? undefined,
       roles: [...ROLE_ALLOWLIST],
+      includeOrganizationFields: "settings",
     });
 
     if (!organization || !membership) {

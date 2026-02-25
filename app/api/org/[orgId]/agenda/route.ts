@@ -12,6 +12,7 @@ import { prisma } from "@/lib/prisma";
 import { resolveReservasScopesForMember, resolveTrainerProfessionalIds, intersectIds } from "@/lib/reservas/memberScopes";
 import { getOrganizationActiveModules } from "@/lib/organizationModules";
 import { resolveOrganizationOperationalMode } from "@/lib/organizationOperationalMode";
+import { getOrganizationReservasOperationalState } from "@/lib/reservas/operationalState";
 
 async function _GET(req: NextRequest) {
   const url = new URL(req.url);
@@ -89,6 +90,13 @@ async function _GET(req: NextRequest) {
     eventos: eventsAccess.ok,
     torneios: tournamentsAccess.ok,
   };
+  const reservasOperationalState = await getOrganizationReservasOperationalState({
+    organizationId: organization.id,
+    tx: prisma,
+  });
+  const reservasOperational = {
+    acceptsNewBookings: reservasOperationalState.acceptNewBookings,
+  };
 
   const sourceTypes: SourceType[] = [];
   if (capabilities.reservas) {
@@ -98,14 +106,14 @@ async function _GET(req: NextRequest) {
   if (capabilities.torneios) sourceTypes.push(SourceType.TOURNAMENT);
 
   if (sourceTypes.length === 0) {
-    return jsonWrap({ ok: true, items: [], capabilities, operationalMode }, { status: 200 });
+    return jsonWrap({ ok: true, items: [], capabilities, operationalMode, reservasOperational }, { status: 200 });
   }
 
   const now = new Date();
   const limitEnd = new Date(Date.UTC(now.getUTCFullYear() + 2, 11, 31, 23, 59, 59, 999));
   const boundedTo = to.getTime() > limitEnd.getTime() ? limitEnd : to;
   if (from.getTime() > boundedTo.getTime()) {
-    return jsonWrap({ ok: true, items: [], capabilities, operationalMode }, { status: 200 });
+    return jsonWrap({ ok: true, items: [], capabilities, operationalMode, reservasOperational }, { status: 200 });
   }
 
   let resolvedClubId: number | null = padelClubId && Number.isFinite(padelClubId) ? padelClubId : null;
@@ -140,7 +148,7 @@ async function _GET(req: NextRequest) {
       userId: user.id,
     });
     if (!scopes.hasAny) {
-      return jsonWrap({ ok: true, items: [], capabilities, operationalMode }, { status: 200 });
+      return jsonWrap({ ok: true, items: [], capabilities, operationalMode, reservasOperational }, { status: 200 });
     }
     if (isCoach) {
       const trainerProfessionalIds = await resolveTrainerProfessionalIds({
@@ -148,7 +156,7 @@ async function _GET(req: NextRequest) {
         userId: user.id,
       });
       if (trainerProfessionalIds.length === 0) {
-        return jsonWrap({ ok: true, items: [], capabilities, operationalMode }, { status: 200 });
+        return jsonWrap({ ok: true, items: [], capabilities, operationalMode, reservasOperational }, { status: 200 });
       }
       scopeFilter = {
         courtIds: scopes.courtIds,
@@ -175,6 +183,6 @@ async function _GET(req: NextRequest) {
     scopeFilter,
     scopeMode,
   });
-  return jsonWrap({ ok: true, items, capabilities, operationalMode }, { status: 200 });
+  return jsonWrap({ ok: true, items, capabilities, operationalMode, reservasOperational }, { status: 200 });
 }
 export const GET = withApiEnvelope(_GET);

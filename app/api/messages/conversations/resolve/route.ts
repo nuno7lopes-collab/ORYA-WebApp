@@ -12,6 +12,7 @@ import { listEffectiveOrganizationMembers } from "@/lib/organizationMembers";
 import { requireChatContext, ChatContextError } from "@/lib/chat/context";
 import { publishChatEvent } from "@/lib/chat/redis";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { hashCommunityInviteToken, isUserFollowingOrganization } from "@/lib/messages/communityAccess";
 import {
   enforceMobileClientRequest,
   getMessagesScope,
@@ -27,6 +28,7 @@ type ResolvePayload = {
   targetOrganizationId?: unknown;
   title?: unknown;
   memberIds?: unknown;
+  inviteToken?: unknown;
 };
 
 function parseNumber(value: unknown) {
@@ -429,6 +431,275 @@ async function _POST(req: NextRequest) {
 
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
+
+    if (contextTypeRaw === "ORG_COMMUNITY") {
+      const conversationIdRaw =
+        typeof payload?.contextId === "string"
+          ? payload.contextId.trim()
+          : typeof payload?.contextId === "number"
+            ? String(payload.contextId)
+            : "";
+      if (!conversationIdRaw) {
+        return jsonWrap({ ok: false, error: "INVALID_COMMUNITY" }, { status: 400 });
+      }
+
+      const community = await prisma.chatCommunity.findUnique({
+        where: { conversationId: conversationIdRaw },
+        select: {
+          conversationId: true,
+          organizationId: true,
+          title: true,
+          accessMode: true,
+        },
+      });
+      if (!community) {
+        return jsonWrap({ ok: false, error: "COMMUNITY_NOT_FOUND" }, { status: 404 });
+      }
+
+      const bannedMembership = await prisma.chatConversationMember.findFirst({
+        where: {
+          conversationId: community.conversationId,
+          userId: user.id,
+          bannedAt: { not: null },
+        },
+        select: { userId: true },
+      });
+      if (bannedMembership) {
+        return jsonWrap({ ok: false, error: "BANNED" }, { status: 403 });
+      }
+
+      const joinConversation = async () => {
+        await prisma.chatConversationMember.upsert({
+          where: {
+            conversationId_userId: {
+              conversationId: community.conversationId,
+              userId: user.id,
+            },
+          },
+          update: {
+            role: "MEMBER",
+            organizationId: null,
+            leftAt: null,
+            accessRevokedAt: null,
+            bannedAt: null,
+            followGraceEndsAt: null,
+          },
+          create: {
+            conversationId: community.conversationId,
+            userId: user.id,
+            role: "MEMBER",
+            organizationId: null,
+          },
+        });
+
+        return jsonWrap({
+          ok: true,
+          contextType: "ORG_COMMUNITY",
+          conversationId: community.conversationId,
+        });
+      };
+
+      const activeMembership = await prisma.chatConversationMember.findFirst({
+        where: {
+          conversationId: community.conversationId,
+          userId: user.id,
+          leftAt: null,
+          accessRevokedAt: null,
+          bannedAt: null,
+        },
+        select: { userId: true },
+      });
+      if (activeMembership) {
+        return jsonWrap({
+          ok: true,
+          contextType: "ORG_COMMUNITY",
+          conversationId: community.conversationId,
+        });
+      }
+
+      if (community.accessMode === "PUBLIC") {
+        return joinConversation();
+      }
+
+      if (community.accessMode === "FOLLOWERS") {
+        const isFollowing = await isUserFollowingOrganization({
+          userId: user.id,
+          organizationId: community.organizationId,
+        });
+        if (!isFollowing) {
+          return jsonWrap({ ok: false, error: "FOLLOW_REQUIRED" }, { status: 403 });
+        }
+        return joinConversation();
+      }
+
+      if (community.accessMode === "APPROVAL") {
+        const accepted = await prisma.chatAccessGrant.findFirst({
+          where: {
+            kind: "COMMUNITY_JOIN_REQUEST",
+            status: { in: ["ACCEPTED", "AUTO_ACCEPTED"] },
+            requesterId: user.id,
+            conversationId: community.conversationId,
+          },
+          select: { id: true, status: true, createdAt: true },
+          orderBy: { createdAt: "desc" },
+        });
+        if (accepted) {
+          return joinConversation();
+        }
+
+        const existingPending = await prisma.chatAccessGrant.findFirst({
+          where: {
+            kind: "COMMUNITY_JOIN_REQUEST",
+            status: "PENDING",
+            requesterId: user.id,
+            conversationId: community.conversationId,
+          },
+          select: { id: true, status: true, createdAt: true },
+          orderBy: { createdAt: "desc" },
+        });
+        if (existingPending) {
+          return jsonWrap({
+            ok: true,
+            contextType: "ORG_COMMUNITY",
+            request: {
+              id: existingPending.id,
+              status: existingPending.status,
+              createdAt: existingPending.createdAt.toISOString(),
+            },
+            grantId: existingPending.id,
+            grantStatus: existingPending.status,
+            requiresApproval: true,
+          });
+        }
+
+        const grant = await upsertGrantByCanonicalKey({
+          key: `community-join:${community.conversationId}:requester:${user.id}`,
+          kind: "COMMUNITY_JOIN_REQUEST",
+          status: "PENDING",
+          contextType: "ORG_COMMUNITY",
+          contextId: community.conversationId,
+          conversationId: community.conversationId,
+          requesterId: user.id,
+          organizationId: community.organizationId,
+          targetOrganizationId: community.organizationId,
+          title: community.title,
+          metadata: { canonical: true },
+        });
+
+        return jsonWrap({
+          ok: true,
+          contextType: "ORG_COMMUNITY",
+          request: {
+            id: grant.id,
+            status: grant.status,
+            createdAt: grant.createdAt.toISOString(),
+          },
+          grantId: grant.id,
+          grantStatus: grant.status,
+          requiresApproval: true,
+        });
+      }
+
+      if (community.accessMode === "INVITE") {
+        const acceptedInvite = await prisma.chatAccessGrant.findFirst({
+          where: {
+            kind: "COMMUNITY_INVITE",
+            status: { in: ["ACCEPTED", "AUTO_ACCEPTED"] },
+            targetUserId: user.id,
+            conversationId: community.conversationId,
+          },
+          select: { id: true },
+          orderBy: { createdAt: "desc" },
+        });
+        if (acceptedInvite) {
+          return joinConversation();
+        }
+
+        const rawInviteToken =
+          typeof payload?.inviteToken === "string" ? payload.inviteToken.trim() : "";
+        if (rawInviteToken) {
+          const tokenHash = hashCommunityInviteToken(rawInviteToken);
+          const link = await prisma.chatCommunityInviteLink.findFirst({
+            where: {
+              conversationId: community.conversationId,
+              tokenHash,
+              revokedAt: null,
+              OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+            },
+            select: { id: true },
+          });
+          if (link) {
+            await prisma.chatAccessGrant.upsert({
+              where: {
+                sourceTable_sourceId: {
+                  sourceTable: "messages_resolve",
+                  sourceId: toDeterministicUuid(
+                    `community-invite-link:${community.conversationId}:user:${user.id}:link:${link.id}`,
+                  ),
+                },
+              },
+              create: {
+                kind: "COMMUNITY_INVITE",
+                status: "ACCEPTED",
+                contextType: "ORG_COMMUNITY",
+                contextId: community.conversationId,
+                conversationId: community.conversationId,
+                requesterId: null,
+                targetUserId: user.id,
+                organizationId: community.organizationId,
+                targetOrganizationId: community.organizationId,
+                title: community.title,
+                sourceTable: "messages_resolve",
+                sourceId: toDeterministicUuid(
+                  `community-invite-link:${community.conversationId}:user:${user.id}:link:${link.id}`,
+                ),
+                acceptedAt: new Date(),
+                resolvedAt: new Date(),
+                metadata: {
+                  canonical: true,
+                  inviteLinkId: link.id,
+                } as Prisma.InputJsonValue,
+              },
+              update: {
+                status: "ACCEPTED",
+                acceptedAt: new Date(),
+                resolvedAt: new Date(),
+                declinedAt: null,
+                revokedAt: null,
+                cancelledAt: null,
+                updatedAt: new Date(),
+              },
+            });
+
+            return joinConversation();
+          }
+        }
+
+        const pendingInvite = await prisma.chatAccessGrant.findFirst({
+          where: {
+            kind: "COMMUNITY_INVITE",
+            status: "PENDING",
+            targetUserId: user.id,
+            conversationId: community.conversationId,
+          },
+          select: { id: true, status: true, createdAt: true },
+          orderBy: { createdAt: "desc" },
+        });
+        if (pendingInvite) {
+          return jsonWrap({
+            ok: true,
+            contextType: "ORG_COMMUNITY",
+            grantId: pendingInvite.id,
+            grantStatus: pendingInvite.status,
+            requiresGrantAccept: true,
+          });
+        }
+
+        return jsonWrap({ ok: false, error: "INVITE_REQUIRED" }, { status: 403 });
+      }
+
+      return jsonWrap({ ok: false, error: "UNSUPPORTED_ACCESS_MODE" }, { status: 400 });
+    }
 
     if (contextTypeRaw === "USER_DM" || contextTypeRaw === "ORG_CONTACT" || contextTypeRaw === "SERVICE") {
       if (contextTypeRaw === "USER_DM") {

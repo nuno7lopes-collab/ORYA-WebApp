@@ -33,6 +33,8 @@ import {
   markConversationRead,
   muteConversation,
   undoConversationMessage,
+  reactToMessage,
+  unreactToMessage,
 } from "../../features/messages/api";
 import type { ConversationMessage, ConversationMember, ConversationMessagesResponse } from "../../features/messages/types";
 import { getUserFacingError } from "../../lib/errors";
@@ -51,7 +53,18 @@ type UnifiedMessage = {
   createdAt: string;
   deletedAt?: string | null;
   kind?: "USER" | "ANNOUNCEMENT" | "SYSTEM";
-  reactions?: unknown[];
+  reactions?: Array<{
+    messageId: string;
+    userId: string;
+    emoji: string;
+    createdAt: string;
+    user?: {
+      id: string;
+      fullName: string | null;
+      username: string | null;
+      avatarUrl: string | null;
+    } | null;
+  }>;
   pins?: unknown[];
   sender: {
     id: string;
@@ -79,12 +92,25 @@ const resolveChatError = (err: unknown, fallback: string, t: (key: string) => st
   return getUserFacingError(err, fallback);
 };
 
+const resolveReadOnlyReasonMessage = (
+  reason: string | null | undefined,
+  t: (key: string) => string,
+) => {
+  const normalized = reason?.trim().toUpperCase() ?? "";
+  if (normalized === "BOOKING_INACTIVE") return t("messages:thread.readOnly.bookingInactive");
+  if (normalized === "COMMUNITY_TEAM_ONLY") return "Só a equipa da organização pode escrever nesta comunidade.";
+  if (normalized === "COMMUNITY_WRITE_MUTED") return "A tua escrita está desativada nesta comunidade.";
+  if (normalized === "FOLLOW_REQUIRED") return "Precisas de seguir a organização para escrever.";
+  return t("messages:thread.readOnly.adminsOnly");
+};
+
 const toUnified = (message: ConversationMessage): UnifiedMessage => {
   return {
     id: message.id,
     body: message.body ?? null,
     createdAt: message.createdAt,
     deletedAt: message.deletedAt ?? null,
+    reactions: message.reactions ?? [],
     sender: message.sender,
   };
 };
@@ -166,7 +192,9 @@ export default function ChatThreadScreen() {
   const [members, setMembers] = useState<ConversationMember[]>([]);
   const [conversationCanPost, setConversationCanPost] = useState(true);
   const [conversationReadOnlyReason, setConversationReadOnlyReason] = useState<string | null>(null);
+  const [followGraceEndsAt, setFollowGraceEndsAt] = useState<string | null>(null);
   const [mutedUntil, setMutedUntil] = useState<string | null>(null);
+  const [pendingReactionKey, setPendingReactionKey] = useState<string | null>(null);
 
   const eventTitle = useMemo(() => {
     const raw = Array.isArray(params.title) ? params.title[0] : params.title;
@@ -192,6 +220,13 @@ export default function ChatThreadScreen() {
 
   const canPost = Boolean(conversationCanPost);
   const statusLabel = canPost ? t("messages:status.open") : t("messages:status.readOnly");
+  const followGraceMessage = useMemo(() => {
+    if (!followGraceEndsAt) return null;
+    const graceDate = new Date(followGraceEndsAt);
+    if (Number.isNaN(graceDate.getTime())) return null;
+    if (graceDate.getTime() <= Date.now()) return null;
+    return `Se deixares de seguir, a permanência termina em ${formatTime(followGraceEndsAt)}.`;
+  }, [followGraceEndsAt]);
 
   const loadInitial = useCallback(async () => {
     if (!threadId || !accessToken) return;
@@ -203,6 +238,7 @@ export default function ChatThreadScreen() {
       setMembers(response.members ?? []);
       setConversationCanPost(Boolean(response.canPost));
       setConversationReadOnlyReason(response.readOnlyReason ?? null);
+      setFollowGraceEndsAt(response.followGraceEndsAt ?? null);
       setMessages(response.items?.map(toUnified) ?? []);
       setCursor(response.nextCursor ?? null);
       const lastMessage = response.items?.[response.items.length - 1];
@@ -416,6 +452,54 @@ export default function ChatThreadScreen() {
       setSending(false);
     }
   }, [accessToken, input, sending, threadId, t]);
+
+  const handleToggleReaction = useCallback(
+    async (message: UnifiedMessage, emoji = "👍") => {
+      if (!accessToken || !userId || message.deletedAt) return;
+      const actionKey = `${message.id}:${emoji}`;
+      if (pendingReactionKey === actionKey) return;
+
+      const existingReaction = (message.reactions ?? []).find(
+        (reaction) => reaction.userId === userId && reaction.emoji === emoji,
+      );
+
+      setPendingReactionKey(actionKey);
+      setMessages((prev) =>
+        prev.map((item) => {
+          if (item.id !== message.id) return item;
+          const current = item.reactions ?? [];
+          const withoutMine = current.filter((reaction) => reaction.userId !== userId);
+          const next = existingReaction
+            ? withoutMine
+            : [
+                ...withoutMine,
+                {
+                  messageId: item.id,
+                  userId,
+                  emoji,
+                  createdAt: new Date().toISOString(),
+                  user: null,
+                },
+              ];
+          return { ...item, reactions: next };
+        }),
+      );
+
+      try {
+        if (existingReaction) {
+          await unreactToMessage(message.id, emoji, accessToken);
+        } else {
+          await reactToMessage(message.id, emoji, accessToken);
+        }
+      } catch (err) {
+        setError(resolveChatError(err, t("messages:thread.errors.send"), t));
+        await loadInitial();
+      } finally {
+        setPendingReactionKey((current) => (current === actionKey ? null : current));
+      }
+    },
+    [accessToken, loadInitial, pendingReactionKey, t, userId],
+  );
 
   const handleUndo = useCallback(
     async (messageId: string, createdAt: string) => {
@@ -673,10 +757,14 @@ export default function ChatThreadScreen() {
                 {t("messages:thread.readOnly.title")}
               </Text>
               <Text className="text-white/65 text-sm">
-                {conversationReadOnlyReason === "BOOKING_INACTIVE"
-                  ? t("messages:thread.readOnly.bookingInactive")
-                  : t("messages:thread.readOnly.adminsOnly")}
+                {resolveReadOnlyReasonMessage(conversationReadOnlyReason, t)}
               </Text>
+            </GlassCard>
+          ) : null}
+
+          {followGraceMessage ? (
+            <GlassCard intensity={44} className="mt-3">
+              <Text className="text-white/75 text-xs">{followGraceMessage}</Text>
             </GlassCard>
           ) : null}
 
@@ -733,6 +821,12 @@ export default function ChatThreadScreen() {
                 const isMine = message.sender?.id === userId;
                 const isAnnouncement = message.kind === "ANNOUNCEMENT";
                 const isDeleted = Boolean(message.deletedAt);
+                const reactions = message.reactions ?? [];
+                const myThumbReaction = reactions.some(
+                  (reaction) => reaction.userId === userId && reaction.emoji === "👍",
+                );
+                const thumbCount = reactions.filter((reaction) => reaction.emoji === "👍").length;
+                const reactionBusy = pendingReactionKey === `${message.id}:👍`;
                 if (isAnnouncement) {
                   return (
                     <View key={message.id} className="items-center">
@@ -813,6 +907,31 @@ export default function ChatThreadScreen() {
                         <Text className="text-white/45 text-[10px] mt-1 text-right">
                           {formatTime(message.createdAt)}
                         </Text>
+                        {thumbCount > 0 ? (
+                          <Text className="mt-1 text-right text-[10px] text-white/60">
+                            👍 {thumbCount}
+                          </Text>
+                        ) : null}
+                        {!canPost && !isDeleted ? (
+                          <View className="mt-2 items-end">
+                            <Pressable
+                              onPress={() => handleToggleReaction(message, "👍")}
+                              disabled={reactionBusy}
+                              className="rounded-full border border-white/18 bg-white/8 px-2.5 py-1"
+                              accessibilityRole="button"
+                              accessibilityLabel="Reagir com gosto"
+                              accessibilityState={{ disabled: reactionBusy }}
+                            >
+                              {reactionBusy ? (
+                                <ActivityIndicator size="small" color="rgba(255,255,255,0.9)" />
+                              ) : (
+                                <Text className={`text-[11px] ${myThumbReaction ? "text-white" : "text-white/78"}`}>
+                                  👍
+                                </Text>
+                              )}
+                            </Pressable>
+                          </View>
+                        ) : null}
                       </View>
                     </Pressable>
                   </View>
@@ -860,7 +979,7 @@ export default function ChatThreadScreen() {
           ) : (
             <Text className="text-white/60 text-xs text-center">
               {conversationReadOnlyReason
-                ? t("messages:thread.readOnly.footer")
+                ? resolveReadOnlyReasonMessage(conversationReadOnlyReason, t)
                 : t("messages:thread.readOnly.announcementsOnly")}
             </Text>
           )}

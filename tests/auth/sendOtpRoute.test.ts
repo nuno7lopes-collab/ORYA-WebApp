@@ -98,6 +98,7 @@ describe("POST /api/auth/send-otp", () => {
 
     expect(res.status).toBe(200);
     expect(body.ok).toBe(true);
+    expect(body.otpType).toBe("magiclink");
     expect(sendEmail).toHaveBeenCalledTimes(1);
     expect(sendEmail).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -148,6 +149,7 @@ describe("POST /api/auth/send-otp", () => {
 
     expect(res.status).toBe(200);
     expect(body.ok).toBe(true);
+    expect(body.otpType).toBe("signup");
     expect(sendEmail).toHaveBeenCalledTimes(1);
   });
 });

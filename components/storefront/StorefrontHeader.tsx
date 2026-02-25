@@ -10,8 +10,6 @@ export default function StorefrontHeader({ title, subtitle, cartHref }: Storefro
   return (
     <header className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-[#0b1226]/85 via-[#111a33]/75 to-[#080e18]/95 p-6 shadow-[0_24px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -left-10 -top-8 h-32 w-32 rounded-full bg-[#6BFFFF]/15 blur-[90px]" />
-        <div className="absolute -right-8 top-6 h-28 w-28 rounded-full bg-[#FF7AD1]/15 blur-[90px]" />
         <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-white/8 to-transparent" />
       </div>
       <div className="relative flex flex-wrap items-center justify-between gap-5">

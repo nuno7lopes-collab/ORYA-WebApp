@@ -68,12 +68,13 @@ async function _GET(req: NextRequest) {
           ? {
               organizationId: organization.id,
               type: "CHANNEL",
+              contextType: "ORG_CHANNEL",
               OR: [
                 { lastMessageAt: { gt: updatedAfter } },
                 { lastMessageAt: null, createdAt: { gt: updatedAfter } },
               ],
             }
-          : { organizationId: organization.id, type: "CHANNEL" },
+          : { organizationId: organization.id, type: "CHANNEL", contextType: "ORG_CHANNEL" },
       },
       include: {
         lastReadMessage: { select: { id: true, createdAt: true } },

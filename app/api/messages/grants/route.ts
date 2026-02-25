@@ -46,6 +46,14 @@ type GrantListItem = {
     status: string | null;
     threadId: string | null;
   } | null;
+  community: {
+    conversationId: string;
+    title: string;
+    coverImageUrl: string | null;
+    talkPolicy: string;
+    accessMode: string;
+    organizationId: number;
+  } | null;
 };
 
 type GrantRequesterProfile = {
@@ -67,6 +75,15 @@ type GrantEventSummary = {
   status: string | null;
 };
 
+type GrantCommunitySummary = {
+  conversationId: string;
+  organizationId: number;
+  title: string;
+  coverImageUrl: string | null;
+  talkPolicy: string;
+  accessMode: string;
+};
+
 function parseKinds(req: NextRequest) {
   const raw = req.nextUrl.searchParams.get("kind")?.trim();
   if (!raw) return null;
@@ -81,6 +98,8 @@ function parseKinds(req: NextRequest) {
         "ORG_CONTACT_REQUEST",
         "SERVICE_REQUEST",
         "CHANNEL_CREATE_REQUEST",
+        "COMMUNITY_INVITE",
+        "COMMUNITY_JOIN_REQUEST",
       ].includes(value),
     );
   return items.length ? items : null;
@@ -134,8 +153,16 @@ async function mapGrantItems(
   const eventIds = Array.from(
     new Set(grants.map((grant) => grant.eventId).filter((id): id is number => Number.isFinite(id))),
   );
+  const communityConversationIds = Array.from(
+    new Set(
+      grants
+        .filter((grant) => grant.kind === "COMMUNITY_INVITE" || grant.kind === "COMMUNITY_JOIN_REQUEST")
+        .map((grant) => grant.conversationId)
+        .filter((id): id is string => typeof id === "string" && id.trim().length > 0),
+    ),
+  );
 
-  const [profiles, events] = await Promise.all([
+  const [profiles, events, communities] = await Promise.all([
     requesterIds.length
       ? prisma.profile.findMany({
           where: { id: { in: requesterIds } },
@@ -158,6 +185,19 @@ async function mapGrantItems(
           },
         })
       : Promise.resolve([] as GrantEventSummary[]),
+    communityConversationIds.length
+      ? prisma.chatCommunity.findMany({
+          where: { conversationId: { in: communityConversationIds } },
+          select: {
+            conversationId: true,
+            organizationId: true,
+            title: true,
+            coverImageUrl: true,
+            talkPolicy: true,
+            accessMode: true,
+          },
+        })
+      : Promise.resolve([] as GrantCommunitySummary[]),
   ]);
 
   const eventContextConversations = eventIds.length
@@ -176,6 +216,9 @@ async function mapGrantItems(
   const eventMap = new Map<number, GrantEventSummary>(
     events.map((event) => [event.id, event] as const),
   );
+  const communityMap = new Map<string, GrantCommunitySummary>(
+    communities.map((community) => [community.conversationId, community] as const),
+  );
   const eventConversationMap = new Map<number, string>(
     eventContextConversations
       .map((conversation) => {
@@ -189,7 +232,10 @@ async function mapGrantItems(
   return grants.map((grant) => {
     const requester = grant.requesterId ? profileMap.get(grant.requesterId) : null;
     const event = grant.eventId ? eventMap.get(grant.eventId) : null;
-    const conversationId = grant.conversationId ?? (grant.eventId ? eventConversationMap.get(grant.eventId) ?? null : null);
+    const conversationId =
+      grant.conversationId ?? (grant.eventId ? eventConversationMap.get(grant.eventId) ?? null : null);
+    const community = conversationId ? communityMap.get(conversationId) ?? null : null;
+    const resolvedTitle = grant.title ?? community?.title ?? null;
 
     return {
       id: grant.id,
@@ -204,7 +250,7 @@ async function mapGrantItems(
       conversationId,
       threadId: grant.threadId,
       eventId: grant.eventId,
-      title: grant.title,
+      title: resolvedTitle,
       createdAt: grant.createdAt.toISOString(),
       updatedAt: grant.updatedAt.toISOString(),
       expiresAt: grant.expiresAt ? grant.expiresAt.toISOString() : null,
@@ -228,6 +274,16 @@ async function mapGrantItems(
             locationFormattedAddress: event.addressRef?.formattedAddress ?? null,
             status: event.status ?? null,
             threadId: grant.threadId,
+          }
+        : null,
+      community: community
+        ? {
+            conversationId: community.conversationId,
+            title: community.title,
+            coverImageUrl: community.coverImageUrl,
+            talkPolicy: community.talkPolicy,
+            accessMode: community.accessMode,
+            organizationId: community.organizationId,
           }
         : null,
     } satisfies GrantListItem;

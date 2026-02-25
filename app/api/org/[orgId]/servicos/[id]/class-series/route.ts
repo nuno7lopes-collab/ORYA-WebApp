@@ -107,6 +107,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
     const { organization, membership } = await getActiveOrganizationForUser(profile.id, {
       organizationId: organizationId ?? undefined,
       roles: [...ROLE_ALLOWLIST],
+      includeOrganizationFields: "settings",
     });
     if (!organization || !membership) return fail(403, "Sem permissões.");
 
@@ -161,13 +162,14 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     const { organization, membership } = await getActiveOrganizationForUser(profile.id, {
       organizationId: organizationId ?? undefined,
       roles: [...ROLE_ALLOWLIST],
+      includeOrganizationFields: "settings",
     });
     if (!organization || !membership) return fail(403, "Sem permissões.");
 
     const reservasAccess = await ensureReservasModuleAccess(organization);
     if (!reservasAccess.ok) return fail(403, reservasAccess.error ?? "Reservas indisponíveis.");
 
-    const writeAccess = ensureOrganizationWriteAccess(organization, { requireStripeForServices: true });
+    const writeAccess = ensureOrganizationWriteAccess(organization, { requireStripeForServices: false });
     if (!writeAccess.ok) return fail(403, writeAccess.errorCode ?? "Operação indisponível.");
 
     const service = await prisma.service.findFirst({

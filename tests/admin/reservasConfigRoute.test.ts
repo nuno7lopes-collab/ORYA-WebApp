@@ -58,11 +58,13 @@ beforeEach(async () => {
     bookingGridMinutes: 30,
     bookingAllowedDurations: [60, 90],
     bookingAllowCustomDuration: false,
+    bookingAcceptNewReservations: true,
   });
   prismaMock.organizationSettings.upsert.mockResolvedValue({
     bookingGridMinutes: 30,
     bookingAllowedDurations: [60, 90],
     bookingAllowCustomDuration: false,
+    bookingAcceptNewReservations: true,
   });
   prismaMock.$transaction.mockImplementation(async (callback: (tx: typeof prismaMock) => unknown) => callback(prismaMock));
 
@@ -90,6 +92,7 @@ describe("/api/org/[orgId]/reservas/config", () => {
         allowedDurations: [60, 90],
         allowCustomDuration: false,
         presetDurations: [60, 90],
+        acceptNewBookings: true,
       }),
     );
   });
@@ -128,6 +131,7 @@ describe("/api/org/[orgId]/reservas/config", () => {
       bookingGridMinutes: 15,
       bookingAllowedDurations: [30, 60],
       bookingAllowCustomDuration: false,
+      bookingAcceptNewReservations: true,
     });
 
     const res = await PATCH(req);
@@ -151,6 +155,7 @@ describe("/api/org/[orgId]/reservas/config", () => {
         allowedDurations: [30, 60],
         allowCustomDuration: false,
         presetDurations: [30, 60],
+        acceptNewBookings: true,
       }),
     );
     expect(recordOrganizationAudit).toHaveBeenCalledWith(
@@ -158,6 +163,60 @@ describe("/api/org/[orgId]/reservas/config", () => {
       expect.objectContaining({
         organizationId: 77,
         action: "booking.config.updated",
+      }),
+    );
+  });
+
+  it("permite patch parcial para estado operacional ON/OFF", async () => {
+    prismaMock.organizationSettings.findUnique.mockResolvedValueOnce({
+      bookingGridMinutes: 30,
+      bookingAllowedDurations: [60, 90],
+      bookingAllowCustomDuration: false,
+      bookingAcceptNewReservations: true,
+    });
+    prismaMock.organizationSettings.findUnique.mockResolvedValueOnce({
+      bookingGridMinutes: 30,
+      bookingAllowedDurations: [60, 90],
+      bookingAllowCustomDuration: false,
+      bookingAcceptNewReservations: false,
+    });
+    prismaMock.organizationSettings.upsert.mockResolvedValueOnce({
+      bookingGridMinutes: 30,
+      bookingAllowedDurations: [60, 90],
+      bookingAllowCustomDuration: false,
+      bookingAcceptNewReservations: false,
+    });
+
+    const req = new NextRequest("http://localhost/api/org/77/reservas/config", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        acceptNewBookings: false,
+      }),
+    });
+
+    const res = await PATCH(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(prismaMock.organizationSettings.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({
+          bookingAcceptNewReservations: false,
+        }),
+      }),
+    );
+    expect(recordOrganizationAudit).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        organizationId: 77,
+        action: "booking.operational.updated",
+      }),
+    );
+    expect(body.data?.data).toEqual(
+      expect.objectContaining({
+        acceptNewBookings: false,
       }),
     );
   });

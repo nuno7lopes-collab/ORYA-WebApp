@@ -14,6 +14,7 @@ import {
   resolveBookingGridPolicy,
   validateBookingConfigInput,
 } from "@/lib/reservas/gridPolicy";
+import { getOrganizationReservasOperationalState } from "@/lib/reservas/operationalState";
 import { OrganizationMemberRole } from "@prisma/client";
 
 const ADMIN_ROLES: OrganizationMemberRole[] = [
@@ -72,7 +73,10 @@ async function resolveAdminOrganization(req: NextRequest) {
   return { profile, organization, membership, reservasAccess };
 }
 
-function buildPolicyPayload(policy: { gridMinutes: number; allowedDurations: number[] }) {
+function buildPolicyPayload(
+  policy: { gridMinutes: number; allowedDurations: number[] },
+  params?: { acceptNewBookings?: boolean },
+) {
   return {
     gridMinutes: policy.gridMinutes,
     durationCatalog: [...BOOKING_DURATION_CATALOG],
@@ -80,6 +84,7 @@ function buildPolicyPayload(policy: { gridMinutes: number; allowedDurations: num
     allowedDurations: policy.allowedDurations,
     allowCustomDuration: false,
     presetDurations: policy.allowedDurations,
+    acceptNewBookings: params?.acceptNewBookings ?? true,
   };
 }
 
@@ -100,6 +105,7 @@ async function _GET(req: NextRequest) {
         bookingGridMinutes: true,
         bookingAllowedDurations: true,
         bookingAllowCustomDuration: true,
+        bookingAcceptNewReservations: true,
       },
     });
 
@@ -110,7 +116,9 @@ async function _GET(req: NextRequest) {
     });
 
     return respondOk(ctx, {
-      data: buildPolicyPayload(policy),
+      data: buildPolicyPayload(policy, {
+        acceptNewBookings: settings?.bookingAcceptNewReservations ?? true,
+      }),
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) return fail(ctx, 401, "UNAUTHENTICATED");
@@ -136,58 +144,123 @@ async function _PATCH(req: NextRequest) {
           activeDurations?: unknown;
           allowedDurations?: unknown;
           allowCustomDuration?: unknown;
+          acceptNewBookings?: unknown;
         }
       | null;
     if (!payload) {
       return fail(ctx, 400, "INVALID_BOOKING_CONFIG", "INVALID_BOOKING_CONFIG");
     }
 
-    const validation = validateBookingConfigInput({
-      gridMinutes: payload.gridMinutes,
-      activeDurations: payload.activeDurations,
-      allowedDurations: payload.allowedDurations,
-      allowCustomDuration: payload.allowCustomDuration,
-    });
-    if (!validation.ok) {
-      return fail(ctx, 400, validation.errorCode, validation.errorCode, false, {
-        reason: validation.message,
+    const hasConfigInput =
+      payload.gridMinutes !== undefined ||
+      payload.activeDurations !== undefined ||
+      payload.allowedDurations !== undefined ||
+      payload.allowCustomDuration !== undefined;
+    const hasOperationalInput = payload.acceptNewBookings !== undefined;
+    if (!hasConfigInput && !hasOperationalInput) {
+      return fail(ctx, 400, "INVALID_BOOKING_CONFIG", "INVALID_BOOKING_CONFIG");
+    }
+
+    if (hasOperationalInput && typeof payload.acceptNewBookings !== "boolean") {
+      return fail(ctx, 400, "INVALID_BOOKING_CONFIG", "INVALID_BOOKING_CONFIG", false, {
+        reason: "acceptNewBookings inválido.",
       });
     }
 
+    let validation:
+      | ReturnType<typeof validateBookingConfigInput>
+      | { ok: true; data: { gridMinutes: number; activeDurations: number[]; allowCustomDuration: false } }
+      | null = null;
+    if (hasConfigInput) {
+      validation = validateBookingConfigInput({
+        gridMinutes: payload.gridMinutes,
+        activeDurations: payload.activeDurations,
+        allowedDurations: payload.allowedDurations,
+        allowCustomDuration: payload.allowCustomDuration,
+      });
+      if (!validation.ok) {
+        return fail(ctx, 400, validation.errorCode, validation.errorCode, false, {
+          reason: validation.message,
+        });
+      }
+    }
+
     const updated = await prisma.$transaction(async (tx) => {
+      const existingSettings = await tx.organizationSettings.findUnique({
+        where: { organizationId: context.organization.id },
+        select: {
+          bookingGridMinutes: true,
+          bookingAllowedDurations: true,
+          bookingAllowCustomDuration: true,
+          bookingAcceptNewReservations: true,
+        },
+      });
+      const existingPolicy = resolveBookingGridPolicy({
+        gridMinutes: existingSettings?.bookingGridMinutes,
+        allowedDurations: existingSettings?.bookingAllowedDurations,
+        allowCustomDuration: false,
+      });
+      const nextGridMinutes = validation?.ok ? validation.data.gridMinutes : existingPolicy.gridMinutes;
+      const nextActiveDurations = validation?.ok
+        ? validation.data.activeDurations
+        : existingPolicy.allowedDurations;
+      const previousAcceptNewBookings = existingSettings?.bookingAcceptNewReservations ?? true;
+      const nextAcceptNewBookings =
+        typeof payload.acceptNewBookings === "boolean"
+          ? payload.acceptNewBookings
+          : previousAcceptNewBookings;
+
       const settings = await tx.organizationSettings.upsert({
         where: { organizationId: context.organization.id },
         update: {
-          bookingGridMinutes: validation.data.gridMinutes,
-          bookingAllowedDurations: validation.data.activeDurations,
+          bookingGridMinutes: nextGridMinutes,
+          bookingAllowedDurations: nextActiveDurations,
           bookingAllowCustomDuration: false,
+          bookingAcceptNewReservations: nextAcceptNewBookings,
         },
         create: {
           organizationId: context.organization.id,
-          bookingGridMinutes: validation.data.gridMinutes,
-          bookingAllowedDurations: validation.data.activeDurations,
+          bookingGridMinutes: nextGridMinutes,
+          bookingAllowedDurations: nextActiveDurations,
           bookingAllowCustomDuration: false,
+          bookingAcceptNewReservations: nextAcceptNewBookings,
         },
         select: {
           bookingGridMinutes: true,
           bookingAllowedDurations: true,
           bookingAllowCustomDuration: true,
+          bookingAcceptNewReservations: true,
         },
       });
 
-      await recordOrganizationAudit(tx, {
-        organizationId: context.organization.id,
-        actorUserId: context.profile.id,
-        action: "booking.config.updated",
-        entityType: "BOOKING_CONFIG",
-        entityId: String(context.organization.id),
-        metadata: {
-          gridMinutes: settings.bookingGridMinutes,
-          durationCatalog: [...BOOKING_DURATION_CATALOG],
-          activeDurations: settings.bookingAllowedDurations,
-          allowCustomDuration: false,
-        },
-      });
+      if (hasConfigInput) {
+        await recordOrganizationAudit(tx, {
+          organizationId: context.organization.id,
+          actorUserId: context.profile.id,
+          action: "booking.config.updated",
+          entityType: "BOOKING_CONFIG",
+          entityId: String(context.organization.id),
+          metadata: {
+            gridMinutes: settings.bookingGridMinutes,
+            durationCatalog: [...BOOKING_DURATION_CATALOG],
+            activeDurations: settings.bookingAllowedDurations,
+            allowCustomDuration: false,
+          },
+        });
+      }
+
+      if (previousAcceptNewBookings !== nextAcceptNewBookings) {
+        await recordOrganizationAudit(tx, {
+          organizationId: context.organization.id,
+          actorUserId: context.profile.id,
+          action: "booking.operational.updated",
+          entityType: "BOOKING_OPERATIONAL_STATE",
+          entityId: String(context.organization.id),
+          metadata: {
+            acceptNewBookings: nextAcceptNewBookings,
+          },
+        });
+      }
 
       return settings;
     });
@@ -197,9 +270,15 @@ async function _PATCH(req: NextRequest) {
       allowedDurations: updated.bookingAllowedDurations,
       allowCustomDuration: false,
     });
+    const operationalState = await getOrganizationReservasOperationalState({
+      organizationId: context.organization.id,
+      tx: prisma,
+    });
 
     return respondOk(ctx, {
-      data: buildPolicyPayload(policy),
+      data: buildPolicyPayload(policy, {
+        acceptNewBookings: operationalState.acceptNewBookings,
+      }),
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) return fail(ctx, 401, "UNAUTHENTICATED");

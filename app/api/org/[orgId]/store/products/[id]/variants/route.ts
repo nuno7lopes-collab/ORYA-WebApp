@@ -8,6 +8,7 @@ import { ensureLojaModuleAccess } from "@/lib/loja/access";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { OrganizationMemberRole } from "@prisma/client";
 import { z } from "zod";
+import { evaluatePaidWriteGate } from "@/lib/organizationPayments";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
@@ -33,6 +34,7 @@ async function getOrganizationContext(req: NextRequest, userId: string, options?
   const { organization, membership } = await getActiveOrganizationForUser(userId, {
     organizationId: organizationId ?? undefined,
     roles: [...ROLE_ALLOWLIST],
+    includeOrganizationFields: "settings",
   });
 
   if (!organization || !membership) {
@@ -188,6 +190,30 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     }
 
     const payload = parsed.data;
+    const paidWriteGate = evaluatePaidWriteGate({
+      organizationId: context.organization.id,
+      orgType: (context.organization as { orgType?: string | null }).orgType ?? null,
+      officialEmail: context.organization.officialEmail ?? null,
+      officialEmailVerifiedAt: context.organization.officialEmailVerifiedAt ?? null,
+      stripeAccountId: (context.organization as { stripeAccountId?: string | null }).stripeAccountId ?? null,
+      stripeChargesEnabled:
+        (context.organization as { stripeChargesEnabled?: boolean | null }).stripeChargesEnabled ?? false,
+      stripePayoutsEnabled:
+        (context.organization as { stripePayoutsEnabled?: boolean | null }).stripePayoutsEnabled ?? false,
+      amountCents: payload.priceCents ?? 0,
+    });
+    if (!paidWriteGate.ok) {
+      return respondError(
+        ctx,
+        {
+          errorCode: paidWriteGate.errorCode,
+          message: paidWriteGate.message,
+          retryable: false,
+          details: paidWriteGate.details,
+        },
+        { status: 403 },
+      );
+    }
     const created = await prisma.storeProductVariant.create({
       data: {
         productId: productId.id,

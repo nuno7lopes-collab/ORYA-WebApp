@@ -16,7 +16,8 @@ const prisma = vi.hoisted(() => ({
   availabilitySchedule: { findMany: vi.fn() },
   weeklyAvailabilityTemplate: { findMany: vi.fn() },
   availabilityOverride: { findMany: vi.fn() },
-  booking: { findMany: vi.fn(), count: vi.fn() },
+  booking: { findMany: vi.fn(), findFirst: vi.fn(), count: vi.fn() },
+  organizationModuleEntry: { findMany: vi.fn() },
   classSession: { findMany: vi.fn() },
   serviceDurationPrice: { findFirst: vi.fn() },
   address: { findUnique: vi.fn() },
@@ -72,7 +73,9 @@ beforeEach(() => {
   prisma.weeklyAvailabilityTemplate.findMany.mockReset();
   prisma.availabilityOverride.findMany.mockReset();
   prisma.booking.findMany.mockReset();
+  prisma.booking.findFirst.mockReset();
   prisma.booking.count.mockReset();
+  prisma.organizationModuleEntry.findMany.mockReset();
   prisma.classSession.findMany.mockReset();
   prisma.serviceDurationPrice.findFirst.mockReset();
   prisma.address.findUnique.mockReset();
@@ -84,11 +87,14 @@ beforeEach(() => {
   prisma.weeklyAvailabilityTemplate.findMany.mockResolvedValue([]);
   prisma.availabilityOverride.findMany.mockResolvedValue([]);
   prisma.booking.findMany.mockResolvedValue([]);
+  prisma.booking.findFirst.mockResolvedValue(null);
   prisma.classSession.findMany.mockResolvedValue([]);
+  prisma.organizationModuleEntry.findMany.mockResolvedValue([{ moduleKey: "RESERVAS" }]);
   prisma.organizationSettings.findUnique.mockResolvedValue({
     bookingGridMinutes: 30,
     bookingAllowedDurations: [60, 90],
     bookingAllowCustomDuration: false,
+    bookingAcceptNewReservations: true,
   });
   prisma.serviceDurationPrice.findFirst.mockImplementation(async ({ where }: { where?: { durationMinutes?: number } }) => ({
     durationMinutes: where?.durationMinutes ?? 60,
@@ -333,5 +339,128 @@ describe("POST /api/servicos/[id]/reservar (HYBRID)", () => {
     expect(args?.data?.professionalId).toBe(1);
     expect(args?.data?.resourceId).toBe(2);
     expect(args?.data?.courtId).toBe(99);
+  });
+
+  it("bloqueia novas reservas quando estado operacional está OFF", async () => {
+    const day = formatLisbonYmd(new Date(Date.now() + 24 * 60 * 60 * 1000));
+    const slot = new Date(`${day}T10:00:00.000Z`);
+    prisma.service.findFirst.mockResolvedValue({
+      id: 1,
+      organizationId: 10,
+      kind: "COURT",
+      assignmentMode: "PROFESSIONAL_AND_RESOURCE",
+      partySizeRequired: true,
+      partySizeMin: 2,
+      partySizeMax: 4,
+      partySizeStep: 1,
+      durationMinutes: 90,
+      unitPriceCents: 0,
+      currency: "EUR",
+      locationMode: "FIXED",
+      addressId: "addr_1",
+      policy: { guestBookingAllowed: true },
+      organization: {
+        id: 10,
+        status: "ACTIVE",
+        timezone: "Europe/Lisbon",
+        reservationAssignmentMode: null,
+        orgType: "CLUB",
+        officialEmail: null,
+        officialEmailVerifiedAt: null,
+        stripeAccountId: null,
+        stripeChargesEnabled: false,
+        stripePayoutsEnabled: false,
+        addressId: "addr_1",
+      },
+      professionalLinks: [],
+      resourceLinks: [],
+    });
+    prisma.organizationSettings.findUnique.mockResolvedValueOnce({
+      bookingGridMinutes: 30,
+      bookingAllowedDurations: [60, 90],
+      bookingAllowCustomDuration: false,
+      bookingAcceptNewReservations: false,
+    });
+
+    const { POST } = await import("@/app/api/servicos/[id]/reservar/route");
+    const req = new NextRequest("http://localhost/api/servicos/1/reservar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        startsAt: slot.toISOString(),
+        partySize: 2,
+        guest: { name: "Guest", email: "guest@example.com", phone: "+351912345678", consent: true },
+      }),
+    });
+    const res = await POST(req, { params: Promise.resolve({ id: "1" }) });
+    const body = await res.json();
+
+    expect(res.status).toBe(409);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode ?? body.error).toBe("RESERVAS_OPERATIONAL_OFF");
+  });
+});
+
+describe("POST /api/servicos/[id]/checkout (HYBRID)", () => {
+  it("bloqueia checkout de novas pré-reservas quando estado operacional está OFF", async () => {
+    prisma.booking.findFirst.mockResolvedValue({
+      id: 123,
+      serviceId: 1,
+      organizationId: 10,
+      userId: null,
+      guestEmail: "guest@example.com",
+      status: "PENDING_CONFIRMATION",
+      paymentIntentId: null,
+      pendingExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
+      createdAt: new Date(Date.now() - 60 * 1000),
+      price: 0,
+      currency: "EUR",
+      service: {
+        id: 1,
+        policyId: null,
+        isActive: true,
+        unitPriceCents: 0,
+        currency: "EUR",
+        organizationId: 10,
+        organization: {
+          id: 10,
+          orgType: "CLUB",
+          stripeAccountId: null,
+          stripeChargesEnabled: false,
+          stripePayoutsEnabled: false,
+          officialEmail: null,
+          officialEmailVerifiedAt: null,
+          feeMode: null,
+          platformFeeBps: null,
+          platformFeeFixedCents: null,
+          primaryModule: null,
+        },
+      },
+      splitPayment: null,
+    });
+    prisma.organizationSettings.findUnique.mockResolvedValueOnce({
+      bookingGridMinutes: 30,
+      bookingAllowedDurations: [60, 90],
+      bookingAllowCustomDuration: false,
+      bookingAcceptNewReservations: false,
+    });
+
+    const { POST } = await import("@/app/api/servicos/[id]/checkout/route");
+    const req = new NextRequest("http://localhost/api/servicos/1/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        bookingId: 123,
+        paymentMethod: "card",
+        guest: { name: "Guest", email: "guest@example.com", phone: "+351912345678", consent: true },
+      }),
+    });
+
+    const res = await POST(req, { params: Promise.resolve({ id: "1" }) });
+    const body = await res.json();
+
+    expect(res.status).toBe(409);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode).toBe("RESERVAS_OPERATIONAL_OFF");
   });
 });

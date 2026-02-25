@@ -14,6 +14,7 @@ import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organization
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveRequiredOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
+import { ensureReservasOperationalOpen } from "@/lib/reservas/operationalState";
 import { OrganizationMemberRole, PaymentStatus, ProcessorFeesStatus, SourceType } from "@prisma/client";
 import { cancelBooking, updateBooking } from "@/domain/bookings/commands";
 import { getRequestContext } from "@/lib/http/requestContext";
@@ -128,6 +129,13 @@ async function _POST(
     }
     if (!booking.service.isActive) {
       return fail("SERVICO_INATIVO", "Serviço inativo.", 409);
+    }
+    const reservasOperational = await ensureReservasOperationalOpen({
+      organizationId: booking.service.organizationId,
+      tx: prisma,
+    });
+    if (!reservasOperational.ok) {
+      return fail(reservasOperational.errorCode, reservasOperational.message, 409);
     }
     if (!["PENDING_CONFIRMATION", "PENDING"].includes(booking.status)) {
       return fail("RESERVA_INATIVA", "Reserva inativa.", 409);

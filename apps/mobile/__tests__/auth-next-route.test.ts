@@ -42,6 +42,9 @@ describe("resolveSafeNextRoute", () => {
   it("aceita rotas dinâmicas permitidas", () => {
     expect(resolveSafeNextRoute("/store/nuno/product/raquete-1")).toBe("/store/nuno/product/raquete-1");
     expect(resolveSafeNextRoute("/messages/thread_123")).toBe("/messages/thread_123");
+    expect(resolveSafeNextRoute("/messages/community-invite/token_123")).toBe(
+      "/messages/community-invite/token_123",
+    );
   });
 
   it("usa o primeiro valor quando vem como array", () => {

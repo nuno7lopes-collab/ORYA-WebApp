@@ -76,7 +76,7 @@ const buildFallbackPayload = (reason: string) => ({
   meta: { fallback: reason },
 });
 
-export async function _GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   let userId: string | null = null;
   let scope: NotificationScope = "user";

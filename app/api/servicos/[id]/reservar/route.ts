@@ -45,14 +45,14 @@ import {
   validateStartAtAgainstPolicy,
 } from "@/lib/reservas/gridPolicy";
 import { resolveCourtDurationPrice } from "@/lib/reservas/serviceDurationPrices";
+import { ensureReservasModuleAccess } from "@/lib/reservas/access";
+import { ensureReservasOperationalOpen } from "@/lib/reservas/operationalState";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 const PENDING_HOLD_MINUTES = 10;
 const MAX_PENDING_PER_USER = 1;
-const SLOT_STEP_MINUTES = 5;
-
 function getRequestMeta(req: NextRequest) {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
   const userAgent = req.headers.get("user-agent") ?? null;
@@ -180,6 +180,7 @@ async function _POST(
         },
         organization: {
           select: {
+            primaryModule: true,
             timezone: true,
             addressId: true,
             reservationAssignmentMode: true,
@@ -196,6 +197,29 @@ async function _POST(
 
     if (!service) {
       return jsonWrap({ ok: false, error: "Serviço não encontrado." }, { status: 404 });
+    }
+    const reservasAccess = await ensureReservasModuleAccess(
+      {
+        id: service.organizationId,
+        primaryModule: service.organization?.primaryModule ?? null,
+      },
+      prisma,
+    );
+    if (!reservasAccess.ok) {
+      return jsonWrap(
+        { ok: false, error: reservasAccess.errorCode ?? "RESERVAS_UNAVAILABLE", message: reservasAccess.error },
+        { status: 403 },
+      );
+    }
+    const reservasOperational = await ensureReservasOperationalOpen({
+      organizationId: service.organizationId,
+      tx: prisma,
+    });
+    if (!reservasOperational.ok) {
+      return jsonWrap(
+        { ok: false, error: reservasOperational.errorCode, message: reservasOperational.message },
+        { status: 409 },
+      );
     }
 
     if (user) {
@@ -591,7 +615,6 @@ async function _POST(
     const dayEnd = makeUtcDateFromLocal({ ...dateParts, hour: 23, minute: 59 }, timezone);
     const conflictWindowStart = getConflictWindowStart(dayStart);
 
-    const shouldUseOrgOnly = false;
     const bookingEndsAt = new Date(startsAt.getTime() + effectiveDurationMinutes * 60 * 1000);
     const professionalScopeIds =
       availabilityMode === "HYBRID"
@@ -639,18 +662,14 @@ async function _POST(
       prisma.availabilitySchedule.findMany({
         where: {
           organizationId: service.organizationId,
-          ...(shouldUseOrgOnly ? { scopeType: "ORGANIZATION", scopeId: 0 } : { OR: scopeFilters }),
+          OR: scopeFilters,
         },
         select: { id: true, scopeType: true, scopeId: true, startDate: true, endDate: true, createdAt: true },
       }),
       prisma.availabilityOverride.findMany({
         where: {
           organizationId: service.organizationId,
-          ...(shouldUseOrgOnly
-            ? { scopeType: "ORGANIZATION", scopeId: 0 }
-            : {
-                OR: scopeFilters,
-              }),
+          OR: scopeFilters,
           date: new Date(Date.UTC(dateParts.year, dateParts.month - 1, dateParts.day)),
         },
         orderBy: [{ date: "asc" }, { createdAt: "asc" }],
@@ -701,7 +720,7 @@ async function _POST(
         rangeEnd: dayEnd,
         timezone,
         durationMinutes: effectiveDurationMinutes,
-        stepMinutes: SLOT_STEP_MINUTES,
+        stepMinutes: bookingPolicy.gridMinutes,
         now,
         professionals: professionalScopes,
         resources: resourceScopes,
@@ -769,9 +788,7 @@ async function _POST(
     } else {
       const localScopeType: AvailabilityScopeType = availabilityMode === "RESOURCE" ? "RESOURCE" : "PROFESSIONAL";
       const localScopeIds = availabilityMode === "RESOURCE" ? resourceScopeIds : professionalScopeIds;
-      const scopesToCheck = shouldUseOrgOnly
-        ? [{ scopeType: "ORGANIZATION" as const, scopeId: 0 }]
-        : localScopeIds.map((id) => ({ scopeType: localScopeType, scopeId: id }));
+      const scopesToCheck = localScopeIds.map((id) => ({ scopeType: localScopeType, scopeId: id }));
       let selectedScopeId: number | null = null;
       const slotIsAvailable = scopesToCheck.some((scope) => {
         const slots = getAvailableSlotsForScope({
@@ -779,7 +796,7 @@ async function _POST(
           rangeEnd: dayEnd,
           timezone,
           durationMinutes: effectiveDurationMinutes,
-        stepMinutes: SLOT_STEP_MINUTES,
+        stepMinutes: bookingPolicy.gridMinutes,
         now,
         scopeType: scope.scopeType,
         scopeId: scope.scopeId,

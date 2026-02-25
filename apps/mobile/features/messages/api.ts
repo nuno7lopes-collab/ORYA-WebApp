@@ -4,12 +4,15 @@ import {
   MessageInviteStatus,
   MessageInvitesResponse,
   MessageInviteAcceptResponse,
+  MessageCommunityInvitesResponse,
+  CommunityInviteRedeemResponse,
   MessageRequestsResponse,
   MessageRequestResponse,
   ConversationMessagesResponse,
   ConversationMessageSendResponse,
   ConversationReadResponse,
   ConversationNotificationResponse,
+  MessageReactionResponse,
 } from "./types";
 
 function withB2CScope(path: string) {
@@ -58,6 +61,14 @@ type GrantItemPayload = {
   expiresAt: string | null;
   requester: GrantRequesterPayload | null;
   event: GrantEventPayload | null;
+  community?: {
+    conversationId: string;
+    title: string;
+    coverImageUrl: string | null;
+    talkPolicy: string;
+    accessMode: string;
+    organizationId: number;
+  } | null;
 };
 
 type GrantsListPayload = {
@@ -147,6 +158,48 @@ export const fetchMessageInvites = async (
   };
 };
 
+export const fetchMessageCommunityInvites = async (
+  currentUserId?: string | null,
+  accessToken?: string | null,
+): Promise<MessageCommunityInvitesResponse> => {
+  const path = withB2CScope("/api/messages/grants");
+  const url = new URL(path, "https://orya.local");
+  url.searchParams.set("kind", "COMMUNITY_INVITE");
+  url.searchParams.set("status", "PENDING");
+
+  const payload = await requestMessagesApi<GrantsListPayload>(
+    `${url.pathname}?${url.searchParams.toString()}`,
+    accessToken,
+  );
+
+  const items = (payload.items ?? []).filter((item) => {
+    if (item.kind !== "COMMUNITY_INVITE") return false;
+    if (item.status !== "PENDING") return false;
+    if (!item.community || !item.conversationId) return false;
+    if (
+      typeof currentUserId === "string" &&
+      currentUserId.trim().length > 0 &&
+      item.targetUserId &&
+      item.targetUserId !== currentUserId
+    ) {
+      return false;
+    }
+    return true;
+  });
+
+  return {
+    items: items.map((item) => ({
+      id: item.id,
+      conversationId: item.conversationId as string,
+      status: item.status,
+      createdAt: item.createdAt,
+      expiresAt: item.expiresAt ?? null,
+      community: item.community ?? null,
+      requester: item.requester ?? null,
+    })),
+  };
+};
+
 export const acceptMessageInvite = async (
   inviteId: string,
   accessToken?: string | null,
@@ -177,6 +230,44 @@ export const acceptMessageInvite = async (
     status,
     expiresAt,
   };
+};
+
+export const acceptCommunityInvite = async (
+  inviteId: string,
+  accessToken?: string | null,
+): Promise<MessageInviteAcceptResponse> => {
+  const payload = await requestMessagesApi<AcceptGrantPayload>(
+    withB2CScope(`/api/messages/grants/${encodeURIComponent(inviteId)}/accept`),
+    accessToken,
+    { method: "POST" },
+  );
+  const conversationId =
+    typeof payload.conversationId === "string"
+      ? payload.conversationId
+      : typeof payload.invite?.conversationId === "string"
+        ? payload.invite.conversationId
+        : null;
+  return {
+    conversationId,
+    threadId: conversationId,
+    status: payload.status ?? payload.invite?.status ?? "ACCEPTED",
+    expiresAt: payload.expiresAt ?? payload.invite?.expiresAt ?? null,
+  };
+};
+
+export const redeemCommunityInviteLink = async (
+  token: string,
+  accessToken?: string | null,
+): Promise<CommunityInviteRedeemResponse> => {
+  return requestMessagesApi<CommunityInviteRedeemResponse>(
+    withB2CScope("/api/messages/communities/invite-links/redeem"),
+    accessToken,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    },
+  );
 };
 
 export const fetchMessageRequests = async (
@@ -356,5 +447,37 @@ export const undoConversationMessage = async (
     `/api/messages/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}?scope=b2c`,
     accessToken,
     { method: "DELETE" },
+  );
+};
+
+export const reactToMessage = async (
+  messageId: string,
+  emoji: string,
+  accessToken?: string | null,
+): Promise<MessageReactionResponse> => {
+  return requestMessagesApi<MessageReactionResponse>(
+    `/api/messages/messages/${encodeURIComponent(messageId)}/reactions?scope=b2c`,
+    accessToken,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ emoji }),
+    },
+  );
+};
+
+export const unreactToMessage = async (
+  messageId: string,
+  emoji: string,
+  accessToken?: string | null,
+): Promise<MessageReactionResponse> => {
+  return requestMessagesApi<MessageReactionResponse>(
+    `/api/messages/messages/${encodeURIComponent(messageId)}/reactions?scope=b2c`,
+    accessToken,
+    {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ emoji }),
+    },
   );
 };

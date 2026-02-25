@@ -7,6 +7,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { AuthGate } from "@/app/components/autenticação/AuthGate";
 import OrganizationsHubClient from "@/app/org/_internal/core/organizations/OrganizationsHubClient";
 import { listOrgHubOrganizationsForUser, type OrgHubOrganizationPayload } from "@/lib/orgHub/listOrganizationsForUser";
+import { parseOrganizationId } from "@/lib/organizationIdUtils";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,10 +57,7 @@ export default async function OrgHubOrganizationsPage() {
   }
 
   const cookieStore = await cookies();
-  const cookieOrgId = cookieStore.get("orya_organization")?.value;
-  const forcedOrgId = cookieOrgId ? Number(cookieOrgId) : undefined;
-  const normalizedForcedOrgId =
-    typeof forcedOrgId === "number" && Number.isFinite(forcedOrgId) ? forcedOrgId : null;
+  const normalizedForcedOrgId = parseOrganizationId(cookieStore.get("orya_organization")?.value);
   const { organization: activeOrganization } = await getActiveOrganizationForUser(user.id, {
     organizationId: normalizedForcedOrgId ?? undefined,
     allowFallback: true,

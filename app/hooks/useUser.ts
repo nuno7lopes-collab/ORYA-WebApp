@@ -115,8 +115,8 @@ export function useUser() {
     };
     const emailVerified =
       Boolean((data?.user as any)?.emailConfirmedAt) ||
-      Boolean((data?.user as any)?.emailConfirmed) ||
-      Boolean(data?.user?.email);
+      Boolean((data?.user as any)?.email_confirmed_at) ||
+      Boolean((data?.user as any)?.emailConfirmed);
 
     const userKey = data?.user?.id ?? data?.user?.email ?? null;
     if (!data?.user || !emailVerified || !userKey) return;

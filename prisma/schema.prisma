@@ -118,7 +118,10 @@ model Profile {
   trainerProfiles                                                 TrainerProfile[]
   chatConversationsCreated                                        ChatConversation[]               @relation("ChatConversationCreator")
   chatConversationMembers                                         ChatConversationMember[]         @relation("ChatConversationMemberUser")
+  chatConversationMembersWriteMutedBy                             ChatConversationMember[]         @relation("ChatConversationMemberWriteMutedBy")
   chatConversationMessages                                        ChatConversationMessage[]        @relation("ChatConversationMessageSender")
+  chatCommunitiesCreated                                          ChatCommunity[]                  @relation("ChatCommunityCreator")
+  chatCommunityInviteLinksCreated                                 ChatCommunityInviteLink[]        @relation("ChatCommunityInviteLinkCreator")
   chatMessageReportsAuthored                                      ChatMessageReport[]              @relation("ChatMessageReportReporter")
   chatMessageReactions                                            ChatMessageReaction[]
   chatMessagePins                                                 ChatMessagePin[]
@@ -287,6 +290,7 @@ model Organization {
   bookingSplitSettlementSnapshots                                          BookingSplitSettlementSnapshot[]
   scheduleDelays                                                           ScheduleDelay[]
   chatConversations                                                        ChatConversation[]
+  chatCommunities                                                          ChatCommunity[]
   classSeries                                                              ClassSeries[]
   classSessions                                                            ClassSession[]
   availabilitySchedules                                                    AvailabilitySchedule[]
@@ -330,6 +334,7 @@ model OrganizationSettings {
   bookingGridMinutes                Int            @default(30) @map("booking_grid_minutes")
   bookingAllowedDurations           Int[]          @default([60, 90]) @map("booking_allowed_durations")
   bookingAllowCustomDuration        Boolean        @default(false) @map("booking_allow_custom_duration")
+  bookingAcceptNewReservations      Boolean        @default(true) @map("booking_accept_new_reservations")
   storeReturnPolicyMode             String?        @map("store_return_policy_mode")
   storeReturnWindowDays             Int?           @map("store_return_window_days")
   invoicingMode                     InvoicingMode? @map("invoicing_mode")
@@ -1221,6 +1226,7 @@ model ChatConversation {
   organization Organization?             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdBy    Profile?                  @relation("ChatConversationCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
   lastMessage  ChatConversationMessage?  @relation("ChatConversationLastMessage", fields: [lastMessageId], references: [id], onDelete: SetNull)
+  community    ChatCommunity?
   members      ChatConversationMember[]
   messages     ChatConversationMessage[] @relation("ChatConversationMessages")
 
@@ -1230,6 +1236,50 @@ model ChatConversation {
   @@index([customerId], map: "chat_conversations_customer_idx")
   @@index([professionalId], map: "chat_conversations_professional_idx")
   @@map("chat_conversations")
+  @@schema("app_v3")
+}
+
+model ChatCommunity {
+  env             String                 @default("prod")
+  conversationId  String                 @id @map("conversation_id") @db.Uuid
+  organizationId  Int                    @map("organization_id")
+  title           String
+  description     String?
+  coverImageUrl   String?                @map("cover_image_url")
+  talkPolicy      ChatCommunityTalkPolicy @default(EVERYONE) @map("talk_policy")
+  accessMode      ChatCommunityAccessMode @default(PUBLIC) @map("access_mode")
+  createdByUserId String?                @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  conversation ChatConversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  organization Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    Profile?                  @relation("ChatCommunityCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  inviteLinks   ChatCommunityInviteLink[]
+
+  @@index([organizationId], map: "chat_communities_org_idx")
+  @@index([organizationId, accessMode], map: "chat_communities_org_access_mode_idx")
+  @@map("chat_communities")
+  @@schema("app_v3")
+}
+
+model ChatCommunityInviteLink {
+  env             String   @default("prod")
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversationId  String   @map("conversation_id") @db.Uuid
+  tokenHash       String   @map("token_hash") @db.Text
+  createdByUserId String?  @map("created_by_user_id") @db.Uuid
+  expiresAt       DateTime? @map("expires_at") @db.Timestamptz(6)
+  revokedAt       DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  conversation ChatCommunity @relation(fields: [conversationId], references: [conversationId], onDelete: Cascade)
+  createdBy    Profile?      @relation("ChatCommunityInviteLinkCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([tokenHash], map: "chat_community_invite_links_token_hash_unique")
+  @@index([conversationId], map: "chat_community_invite_links_conversation_idx")
+  @@index([conversationId, revokedAt], map: "chat_community_invite_links_conversation_revoked_idx")
+  @@map("chat_community_invite_links")
   @@schema("app_v3")
 }
 
@@ -1249,14 +1299,20 @@ model ChatConversationMember {
   lastReadAt         DateTime?                         @map("last_read_at") @db.Timestamptz(6)
   displayAs          ChatMemberDisplayAs               @default(ORGANIZATION) @map("display_as")
   hiddenFromCustomer Boolean                           @default(false) @map("hidden_from_customer")
+  writeMutedAt       DateTime?                         @map("write_muted_at") @db.Timestamptz(6)
+  writeMutedUntil    DateTime?                         @map("write_muted_until") @db.Timestamptz(6)
+  writeMutedByUserId String?                           @map("write_muted_by_user_id") @db.Uuid
+  followGraceEndsAt  DateTime?                         @map("follow_grace_ends_at") @db.Timestamptz(6)
 
-  conversation    ChatConversation         @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  user            Profile                  @relation("ChatConversationMemberUser", fields: [userId], references: [id], onDelete: Cascade)
+  conversation  ChatConversation         @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user          Profile                  @relation("ChatConversationMemberUser", fields: [userId], references: [id], onDelete: Cascade)
   lastReadMessage ChatConversationMessage? @relation("ChatConversationMemberLastRead", fields: [lastReadMessageId], references: [id], onDelete: SetNull)
+  writeMutedBy  Profile?                 @relation("ChatConversationMemberWriteMutedBy", fields: [writeMutedByUserId], references: [id], onDelete: SetNull)
 
   @@id([conversationId, userId])
   @@index([userId], map: "chat_conversation_members_user_idx")
   @@index([conversationId], map: "chat_conversation_members_conversation_idx")
+  @@index([followGraceEndsAt], map: "chat_conversation_members_follow_grace_idx")
   @@map("chat_conversation_members")
   @@schema("app_v3")
 }
@@ -4728,7 +4784,7 @@ model AvailabilityChangeSet {
   scheduleId        Int?                        @map("schedule_id")
   status            AvailabilityChangeSetStatus @default(PENDING)
   requestedByUserId String?                     @map("requested_by_user_id") @db.Uuid
-  draftPayload      Json
+  draftPayload      Json                        @map("draft_payload")
   preflightSummary  Json?                       @map("preflight_summary")
   appliedAt         DateTime?                   @map("applied_at") @db.Timestamptz(6)
   cancelledAt       DateTime?                   @map("cancelled_at") @db.Timestamptz(6)
@@ -5943,6 +5999,7 @@ enum NotificationType {
 
 enum ChatConversationContextType {
   ORG_CHANNEL
+  ORG_COMMUNITY
   ORG_CONTACT
   EVENT
   BOOKING
@@ -5990,6 +6047,24 @@ enum ChatAccessGrantKind {
   ORG_CONTACT_REQUEST
   SERVICE_REQUEST
   CHANNEL_CREATE_REQUEST
+  COMMUNITY_INVITE
+  COMMUNITY_JOIN_REQUEST
+
+  @@schema("app_v3")
+}
+
+enum ChatCommunityTalkPolicy {
+  EVERYONE
+  TEAM_ONLY
+
+  @@schema("app_v3")
+}
+
+enum ChatCommunityAccessMode {
+  PUBLIC
+  FOLLOWERS
+  APPROVAL
+  INVITE
 
   @@schema("app_v3")
 }

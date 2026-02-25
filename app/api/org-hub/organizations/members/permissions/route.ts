@@ -168,7 +168,12 @@ async function _PATCH(req: NextRequest) {
         ? String(scopeIdRaw).trim()
         : null;
     const scopeType = scopeTypeRaw || null;
-    const ALLOWED_SCOPE_TYPES = new Set(["COURT", "RESOURCE", "PROFESSIONAL"]);
+    const ALLOWED_SCOPE_TYPES = new Set([
+      "COURT",
+      "RESOURCE",
+      "PROFESSIONAL",
+      "CHAT_COMMUNITIES",
+    ]);
 
     if (!organizationId || !targetUserId || !moduleKey) {
       return fail(400, "INVALID_PAYLOAD");

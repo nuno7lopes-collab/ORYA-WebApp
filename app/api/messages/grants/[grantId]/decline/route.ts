@@ -10,6 +10,7 @@ import { enforceB2CMobileOnly, getMessagesScope } from "@/app/api/messages/_scop
 import { ChatContextError, requireChatContext } from "@/lib/chat/context";
 import { buildEntitlementOwnerClauses, getUserIdentityIds } from "@/lib/chat/access";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { canManageCommunity } from "@/lib/messages/communityAccess";
 
 const ORG_GRANT_KINDS = new Set<string>([
   "ORG_CONTACT_REQUEST",
@@ -25,6 +26,35 @@ const ORG_GRANT_ADMIN_ROLES = new Set<OrganizationMemberRole>([
 
 function canResolveOrgGrant(role: OrganizationMemberRole | null | undefined) {
   return Boolean(role && ORG_GRANT_ADMIN_ROLES.has(role));
+}
+
+async function canResolveCommunityJoinRequest(params: {
+  orgContext:
+    | {
+        organization: { id: number };
+        membership: { role: OrganizationMemberRole | null | undefined };
+      }
+    | null;
+  grant: {
+    conversationId: string | null;
+    targetOrganizationId: number | null;
+    organizationId: number | null;
+  };
+  userId: string;
+}) {
+  if (!params.orgContext?.organization?.id) return false;
+  const orgId = params.grant.targetOrganizationId ?? params.grant.organizationId;
+  if (!orgId || orgId !== params.orgContext.organization.id) return false;
+
+  if (canResolveOrgGrant(params.orgContext.membership.role)) return true;
+  if (!params.grant.conversationId) return false;
+
+  return canManageCommunity({
+    organizationId: orgId,
+    userId: params.userId,
+    role: params.orgContext.membership.role,
+    conversationId: params.grant.conversationId,
+  });
 }
 
 async function canAccessEventGrant(params: {
@@ -96,6 +126,25 @@ async function _POST(
     if (ORG_GRANT_KINDS.has(grant.kind) && !canResolveOrgGrant(orgContext?.membership?.role)) {
       return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
+    if (grant.kind === "COMMUNITY_JOIN_REQUEST") {
+      const allowed = await canResolveCommunityJoinRequest({
+        orgContext: orgContext
+          ? {
+              organization: { id: orgContext.organization.id },
+              membership: { role: orgContext.membership.role },
+            }
+          : null,
+        grant: {
+          conversationId: grant.conversationId,
+          targetOrganizationId: grant.targetOrganizationId,
+          organizationId: grant.organizationId,
+        },
+        userId: user.id,
+      });
+      if (!allowed) {
+        return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      }
+    }
     if (grant.status !== "PENDING") {
       return jsonWrap({ ok: false, error: "INVALID_STATUS" }, { status: 409 });
     }
@@ -111,10 +160,12 @@ async function _POST(
       ) {
         return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
       }
-    } else if (grant.kind === "USER_DM_REQUEST") {
+    } else if (grant.kind === "USER_DM_REQUEST" || grant.kind === "COMMUNITY_INVITE") {
       if (grant.targetUserId && grant.targetUserId !== user.id) {
         return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
       }
+    } else if (grant.kind === "COMMUNITY_JOIN_REQUEST") {
+      // already validated above
     } else {
       const orgId = grant.targetOrganizationId ?? grant.organizationId;
       if (!orgContext?.organization?.id || !orgId || orgId !== orgContext.organization.id) {

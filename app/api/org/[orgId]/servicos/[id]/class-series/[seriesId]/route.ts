@@ -117,13 +117,14 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     const { organization, membership } = await getActiveOrganizationForUser(profile.id, {
       organizationId: organizationId ?? undefined,
       roles: [...ROLE_ALLOWLIST],
+      includeOrganizationFields: "settings",
     });
     if (!organization || !membership) return fail(403, "Sem permissões.");
 
     const reservasAccess = await ensureReservasModuleAccess(organization);
     if (!reservasAccess.ok) return fail(403, reservasAccess.error ?? "Reservas indisponíveis.");
 
-    const writeAccess = ensureOrganizationWriteAccess(organization, { requireStripeForServices: true });
+    const writeAccess = ensureOrganizationWriteAccess(organization, { requireStripeForServices: false });
     if (!writeAccess.ok) return fail(403, writeAccess.errorCode ?? "Operação indisponível.");
 
     const series = await prisma.classSeries.findFirst({
@@ -312,13 +313,14 @@ async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: str
     const { organization, membership } = await getActiveOrganizationForUser(profile.id, {
       organizationId: organizationId ?? undefined,
       roles: [...ROLE_ALLOWLIST],
+      includeOrganizationFields: "settings",
     });
     if (!organization || !membership) return fail(403, "Sem permissões.");
 
     const reservasAccess = await ensureReservasModuleAccess(organization);
     if (!reservasAccess.ok) return fail(403, reservasAccess.error ?? "Reservas indisponíveis.");
 
-    const writeAccess = ensureOrganizationWriteAccess(organization, { requireStripeForServices: true });
+    const writeAccess = ensureOrganizationWriteAccess(organization, { requireStripeForServices: false });
     if (!writeAccess.ok) return fail(403, writeAccess.errorCode ?? "Operação indisponível.");
 
     const series = await prisma.classSeries.findFirst({

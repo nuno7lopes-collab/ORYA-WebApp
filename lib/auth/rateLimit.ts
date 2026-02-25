@@ -17,7 +17,14 @@ type RateLimitResult = {
   degraded: boolean;
 };
 
-const buckets = new Map<string, number[]>();
+type MemoryBucket = {
+  hits: number[];
+  expiresAt: number;
+};
+
+const buckets = new Map<string, MemoryBucket>();
+const MEMORY_BUCKET_CLEANUP_INTERVAL_MS = 30_000;
+let nextMemoryCleanupAt = 0;
 
 export class RateLimitBackendUnavailableError extends Error {
   readonly code = "RATE_LIMIT_BACKEND_UNAVAILABLE";
@@ -33,7 +40,17 @@ export function isRateLimitBackendUnavailableError(err: unknown): err is RateLim
 }
 
 function shouldFailFastDistributed(requireDistributed: boolean) {
-  return requireDistributed && process.env.NODE_ENV === "production";
+  return requireDistributed;
+}
+
+function cleanupExpiredMemoryBuckets(now: number) {
+  if (now < nextMemoryCleanupAt) return;
+  nextMemoryCleanupAt = now + MEMORY_BUCKET_CLEANUP_INTERVAL_MS;
+  for (const [key, bucket] of buckets.entries()) {
+    if (bucket.expiresAt <= now) {
+      buckets.delete(key);
+    }
+  }
 }
 
 export async function rateLimit(
@@ -61,20 +78,23 @@ export async function rateLimit(
       const retryAfter = limitOk ? 0 : Math.max(1, Math.ceil(effectiveTtl / 1000));
       return { allowed: limitOk, retryAfter, backend: "redis", degraded: false };
     } catch (err) {
+      if (mustUseDistributed) {
+        throw new RateLimitBackendUnavailableError("Redis indisponível para rate limit distribuído.");
+      }
       console.warn(
-        `[rateLimit] redis falhou${mustUseDistributed ? " (fallback distributed->memory)" : ""}, a usar memória.`,
+        "[rateLimit] redis falhou, a usar memória.",
         err
       );
     }
-  } else if (mustUseDistributed) {
-    console.warn("[rateLimit] redis indisponível em produção; fallback para memória.");
   }
 
   const now = Date.now();
+  cleanupExpiredMemoryBuckets(now);
+
   const windowStart = now - windowMs;
-  const hits = (buckets.get(key) ?? []).filter((ts) => ts > windowStart);
+  const hits = (buckets.get(key)?.hits ?? []).filter((ts) => ts > windowStart);
   hits.push(now);
-  buckets.set(key, hits);
+  buckets.set(key, { hits, expiresAt: now + windowMs });
 
   const limitOk = hits.length <= max;
   const retryAfter = limitOk

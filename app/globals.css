@@ -1229,6 +1229,16 @@ body {
   margin-right: auto;
 }
 
+.org-topbar-glass {
+  -webkit-backdrop-filter: blur(18px) saturate(145%);
+  backdrop-filter: blur(18px) saturate(145%);
+}
+
+.org-topbar-subnav-glass {
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  backdrop-filter: blur(16px) saturate(140%);
+}
+
 .orya-mobile-topbar {
   border-bottom: 0.5px solid var(--orya-topbar-separator);
   background: var(--orya-topbar-bg);
@@ -1279,10 +1289,62 @@ body {
   box-shadow: inset 0 0 26px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-.orya-avatar-ring {
-  --orya-avatar-ring-padding: 2px;
+.orya-avatar {
+  --orya-avatar-ring-width: 0px;
+  --orya-avatar-ring-gap: 0px;
   --orya-avatar-ring-glow: 8px;
-  padding: var(--orya-avatar-ring-padding);
+  isolation: isolate;
+}
+
+.orya-avatar-inner {
+  inset: calc(var(--orya-avatar-ring-width) + var(--orya-avatar-ring-gap));
+}
+
+.orya-avatar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.orya-avatar--with-ring::before {
+  opacity: 1;
+  -webkit-mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - var(--orya-avatar-ring-width)),
+    #000 calc(100% - var(--orya-avatar-ring-width) + 0.5px)
+  );
+  mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - var(--orya-avatar-ring-width)),
+    #000 calc(100% - var(--orya-avatar-ring-width) + 0.5px)
+  );
+}
+
+.orya-avatar--ring-subtle::before {
+  background-image: linear-gradient(160deg, rgba(255, 255, 255, 0.56), rgba(255, 255, 255, 0.2));
+  box-shadow: 0 0 var(--orya-avatar-ring-glow) rgba(255, 255, 255, 0.2);
+}
+
+.orya-avatar--ring-story-soft::before {
+  background-image: conic-gradient(
+    from 220deg,
+    #f8d772 0deg,
+    #f2a34f 68deg,
+    #cf3f89 138deg,
+    #8f46c8 214deg,
+    #5867cf 300deg,
+    #2ec6bb 332deg,
+    #f8d772 360deg
+  );
+  box-shadow:
+    0 0 var(--orya-avatar-ring-glow) rgba(88, 103, 207, 0.2),
+    0 0 calc(var(--orya-avatar-ring-glow) * 1.3) rgba(207, 63, 137, 0.18);
+}
+
+.orya-avatar--ring-story::before {
   background-image: conic-gradient(
     from 220deg,
     #feda75 0deg,
@@ -1295,9 +1357,9 @@ body {
   );
   background-color: transparent;
   box-shadow:
-    0 0 var(--orya-avatar-ring-glow) rgba(79, 91, 213, 0.2),
-    0 0 calc(var(--orya-avatar-ring-glow) * 1.2) rgba(250, 126, 30, 0.22),
-    0 0 calc(var(--orya-avatar-ring-glow) * 1.45) rgba(214, 41, 118, 0.2);
+    0 0 var(--orya-avatar-ring-glow) rgba(79, 91, 213, 0.24),
+    0 0 calc(var(--orya-avatar-ring-glow) * 1.2) rgba(250, 126, 30, 0.2),
+    0 0 calc(var(--orya-avatar-ring-glow) * 1.45) rgba(214, 41, 118, 0.18);
 }
 
 .orya-profile-cover-fallback {

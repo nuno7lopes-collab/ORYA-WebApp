@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import useSWR from "swr";
 import { useSearchParams } from "next/navigation";
 import { resolveLocale, t } from "@/lib/i18n";
+import { Avatar } from "@/components/ui/avatar";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { loadStripe, type StripeElementsOptions } from "@stripe/stripe-js";
 import { getStripePublishableKey } from "@/lib/stripePublic";
@@ -318,18 +318,13 @@ export default function InviteClient({ token }: { token: string }) {
           {!isLoading && !loadError && payload && (
             <div className="space-y-4">
               <div className="flex flex-wrap items-center gap-3">
-                <div className="h-10 w-10 overflow-hidden rounded-full border border-white/10 bg-white/10">
-                  {payload.organization?.brandingAvatarUrl ? (
-                    <Image
-                      src={payload.organization.brandingAvatarUrl}
-                      alt={orgName}
-                      width={40}
-                      height={40}
-                      sizes="40px"
-                      className="h-full w-full object-cover"
-                    />
-                  ) : null}
-                </div>
+                <Avatar
+                  src={payload.organization?.brandingAvatarUrl ?? null}
+                  name={orgName}
+                  className="h-10 w-10"
+                  textClassName="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/80"
+                  fallbackText={orgName.slice(0, 2).toUpperCase() || "OR"}
+                />
                 <div>
                   <p className="text-sm font-semibold text-white">{orgName}</p>
                   {payload.organization?.addressRef?.formattedAddress && (

@@ -52,9 +52,6 @@ export default function ModalCheckout() {
             exit={{ opacity: 0, y: 30 }}
           >
             <div className="relative w-full max-w-3xl max-h-[88vh] rounded-3xl border border-white/12 bg-white/[0.08] backdrop-blur-2xl shadow-[0_30px_100px_rgba(0,0,0,0.6)] text-white overflow-hidden">
-              {/* ambient glows */}
-              <div className="pointer-events-none absolute -left-24 -top-32 h-72 w-72 rounded-full bg-[radial-gradient(circle_at_center,_rgba(255,0,200,0.35),_transparent_60%)] blur-2xl" />
-              <div className="pointer-events-none absolute -right-24 -bottom-32 h-72 w-72 rounded-full bg-[radial-gradient(circle_at_center,_rgba(107,255,255,0.32),_transparent_60%)] blur-2xl" />
               <div className="relative">
                 <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-white/5 backdrop-blur-xl">
                   {passo > 1 && passo !== 3 ? (

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 import Link from "next/link";
 import OrganizationFollowClient from "@/app/components/profile/OrganizationFollowClient";
 import ProfileHeaderLayout, { ProfileStatPill } from "@/app/components/profile/ProfileHeaderLayout";
@@ -42,6 +42,118 @@ type OrganizationFollowerItem = {
   fullName: string | null;
   avatarUrl: string | null;
 };
+
+type SocialIconLinkProps = {
+  href: string;
+  ariaLabel: string;
+  tooltipText: string;
+  className: string;
+  external?: boolean;
+  children: ReactNode;
+};
+
+function compactTooltipText(value: string) {
+  const compact = value.replace(/\s+/g, " ").trim();
+  if (compact.length <= 84) return compact;
+  return `${compact.slice(0, 81).trimEnd()}...`;
+}
+
+function decodeUrlValue(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function resolveRedirectLabel(href: string, fallback?: string | null) {
+  const fallbackLabel = fallback?.trim() ?? "";
+  const normalizedHref = href.trim();
+  if (!normalizedHref) return compactTooltipText(fallbackLabel || "destino externo");
+
+  if (normalizedHref.toLowerCase().startsWith("mailto:")) {
+    const email = normalizedHref.replace(/^mailto:/i, "").trim();
+    return compactTooltipText(email || fallbackLabel || "email");
+  }
+
+  try {
+    const url = new URL(normalizedHref);
+    const queryHint = url.searchParams.get("query") ?? url.searchParams.get("q");
+    if (queryHint) {
+      const decodedQuery = decodeUrlValue(queryHint.replace(/\+/g, " "));
+      if (decodedQuery.trim()) return compactTooltipText(decodedQuery);
+    }
+    const host = url.hostname.replace(/^www\./i, "");
+    const path = decodeUrlValue(url.pathname).replace(/\/$/, "");
+    const destination = `${host}${path}${url.search}${url.hash}`.trim();
+    return compactTooltipText(destination || host || fallbackLabel || normalizedHref);
+  } catch {
+    return compactTooltipText(fallbackLabel || normalizedHref);
+  }
+}
+
+function SocialIconLink({
+  href,
+  ariaLabel,
+  tooltipText,
+  className,
+  external = true,
+  children,
+}: SocialIconLinkProps) {
+  const [tooltipVisible, setTooltipVisible] = useState(false);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearHoverTimer = () => {
+    if (!hoverTimerRef.current) return;
+    clearTimeout(hoverTimerRef.current);
+    hoverTimerRef.current = null;
+  };
+
+  useEffect(() => {
+    return () => clearHoverTimer();
+  }, []);
+
+  const showTooltipWithDelay = () => {
+    clearHoverTimer();
+    hoverTimerRef.current = setTimeout(() => {
+      setTooltipVisible(true);
+    }, 1000);
+  };
+
+  const showTooltipImmediately = () => {
+    clearHoverTimer();
+    setTooltipVisible(true);
+  };
+
+  const hideTooltip = () => {
+    clearHoverTimer();
+    setTooltipVisible(false);
+  };
+
+  return (
+    <a
+      href={href}
+      target={external ? "_blank" : undefined}
+      rel={external ? "noreferrer" : undefined}
+      className={className}
+      aria-label={ariaLabel}
+      onMouseEnter={showTooltipWithDelay}
+      onMouseLeave={hideTooltip}
+      onFocus={showTooltipImmediately}
+      onBlur={hideTooltip}
+      onTouchStart={hideTooltip}
+    >
+      {children}
+      <span
+        className={`pointer-events-none absolute bottom-[calc(100%+0.6rem)] left-1/2 z-30 w-max max-w-[17.75rem] -translate-x-1/2 rounded-md border border-white/15 bg-[#060913]/95 px-2.5 py-1.5 text-center text-[11px] leading-tight text-white/90 shadow-[0_14px_34px_rgba(0,0,0,0.6)] backdrop-blur-md transition-all duration-150 ${
+          tooltipVisible ? "translate-y-0 opacity-100" : "translate-y-1 opacity-0"
+        }`}
+      >
+        {tooltipText}
+      </span>
+    </a>
+  );
+}
 
 function GroupOrganizationsChips({
   organizations,
@@ -158,7 +270,7 @@ export default function OrganizationProfileHeader({
   const linkedPopoverContainerRef = useRef<HTMLDivElement | null>(null);
   const mailtoHref = contactEmail ? `mailto:${contactEmail}` : null;
   const iconBaseClass =
-    "inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-[radial-gradient(circle_at_35%_25%,rgba(255,255,255,0.22),rgba(255,255,255,0.08)_52%,rgba(255,255,255,0.02))] text-white/90 shadow-[0_10px_24px_rgba(0,0,0,0.35)] transition duration-200 hover:-translate-y-[1px] hover:border-white/40 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050913]";
+    "group relative inline-flex h-10 w-10 items-center justify-center rounded-full border text-white shadow-[0_10px_24px_rgba(0,0,0,0.35)] transition duration-200 hover:-translate-y-[1px] hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050913]";
   const iconGlyphClass = "h-[18px] w-[18px]";
   const editProfileHref = buildOrgHref(organizationId, "/settings");
 
@@ -263,16 +375,15 @@ export default function OrganizationProfileHeader({
   const linksSlot = (
     <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/75">
       {instagramHref && (
-        <a
+        <SocialIconLink
           href={instagramHref}
-          target="_blank"
-          rel="noreferrer"
-          className={`${iconBaseClass} border-pink-200/55 bg-gradient-to-br from-[#f9ce34]/55 via-[#ee2a7b]/38 to-[#6228d7]/52 text-white`}
-          aria-label="Instagram"
+          className={`${iconBaseClass} border-[#f7d078]/80 bg-[linear-gradient(135deg,#f9ce34_0%,#ee2a7b_45%,#6228d7_100%)] text-white shadow-[0_10px_24px_rgba(214,51,132,0.48)] hover:shadow-[0_14px_30px_rgba(214,51,132,0.56)]`}
+          ariaLabel="Instagram"
+          tooltipText={`Vai para: ${resolveRedirectLabel(instagramHref)}`}
         >
           <svg
             viewBox="0 0 24 24"
-            className={iconGlyphClass}
+            className={`${iconGlyphClass} scale-[0.9]`}
             aria-hidden="true"
             fill="none"
             stroke="currentColor"
@@ -284,15 +395,14 @@ export default function OrganizationProfileHeader({
             <circle cx="12" cy="12" r="3.9" />
             <circle cx="17.2" cy="6.8" r="1.05" fill="currentColor" stroke="none" />
           </svg>
-        </a>
+        </SocialIconLink>
       )}
       {youtubeHref && (
-        <a
+        <SocialIconLink
           href={youtubeHref}
-          target="_blank"
-          rel="noreferrer"
-          className={`${iconBaseClass} border-red-300/45 bg-red-500/16 text-red-100`}
-          aria-label="YouTube"
+          className={`${iconBaseClass} border-[#ffc1c1]/75 bg-[#ff0033] text-white shadow-[0_10px_24px_rgba(255,0,51,0.45)] hover:shadow-[0_14px_30px_rgba(255,0,51,0.55)]`}
+          ariaLabel="YouTube"
+          tooltipText={`Vai para: ${resolveRedirectLabel(youtubeHref)}`}
         >
           <svg
             viewBox="0 0 24 24"
@@ -311,15 +421,14 @@ export default function OrganizationProfileHeader({
               stroke="none"
             />
           </svg>
-        </a>
+        </SocialIconLink>
       )}
       {tiktokHref && (
-        <a
+        <SocialIconLink
           href={tiktokHref}
-          target="_blank"
-          rel="noreferrer"
-          className={`${iconBaseClass} border-white/35 bg-white/16 text-white`}
-          aria-label="TikTok"
+          className={`${iconBaseClass} border-white/55 bg-[#101014] text-white shadow-[0_10px_24px_rgba(0,0,0,0.52)] hover:shadow-[0_14px_30px_rgba(0,0,0,0.62)]`}
+          ariaLabel="TikTok"
+          tooltipText={`Vai para: ${resolveRedirectLabel(tiktokHref)}`}
         >
           <svg viewBox="0 0 24 24" className={iconGlyphClass} aria-hidden="true">
             <path
@@ -327,19 +436,18 @@ export default function OrganizationProfileHeader({
               d="M14.6 4.2c.63 1.4 1.62 2.26 3.05 2.55V9.2c-1.08-.03-2.14-.35-3.05-.95v5.37a4.9 4.9 0 1 1-4.87-4.93c.34 0 .67.03 1 .1v2.47a2.34 2.34 0 1 0 1.33 2.1V4.2h2.48Z"
             />
           </svg>
-        </a>
+        </SocialIconLink>
       )}
       {linkedinHref && (
-        <a
+        <SocialIconLink
           href={linkedinHref}
-          target="_blank"
-          rel="noreferrer"
-          className={`${iconBaseClass} border-blue-300/45 bg-blue-500/14 text-blue-100`}
-          aria-label="LinkedIn"
+          className={`${iconBaseClass} border-[#b8dcff]/75 bg-[#0A66C2] text-white shadow-[0_10px_24px_rgba(10,102,194,0.45)] hover:shadow-[0_14px_30px_rgba(10,102,194,0.55)]`}
+          ariaLabel="LinkedIn"
+          tooltipText={`Vai para: ${resolveRedirectLabel(linkedinHref)}`}
         >
           <svg
             viewBox="0 0 24 24"
-            className={iconGlyphClass}
+            className={`${iconGlyphClass} scale-[0.9]`}
             aria-hidden="true"
             fill="none"
             stroke="currentColor"
@@ -354,15 +462,14 @@ export default function OrganizationProfileHeader({
               stroke="none"
             />
           </svg>
-        </a>
+        </SocialIconLink>
       )}
       {websiteHref && (
-        <a
+        <SocialIconLink
           href={websiteHref}
-          target="_blank"
-          rel="noreferrer"
-          className={`${iconBaseClass} border-sky-300/45 bg-sky-400/15 text-sky-100`}
-          aria-label="Website"
+          className={`${iconBaseClass} border-[#c8f0ff]/75 bg-[#4cc9f0] text-[#05334a] shadow-[0_10px_24px_rgba(76,201,240,0.46)] hover:shadow-[0_14px_30px_rgba(76,201,240,0.56)]`}
+          ariaLabel="Website"
+          tooltipText={`Vai para: ${resolveRedirectLabel(websiteHref)}`}
         >
           <svg
             viewBox="0 0 24 24"
@@ -378,16 +485,14 @@ export default function OrganizationProfileHeader({
             <path d="M3.8 12h16.4" />
             <path d="M12 3.4c2.3 2.05 3.6 5.08 3.6 8.6c0 3.52-1.3 6.55-3.6 8.6c-2.3-2.05-3.6-5.08-3.6-8.6c0-3.52 1.3-6.55 3.6-8.6Z" />
           </svg>
-        </a>
+        </SocialIconLink>
       )}
       {addressMapHref && addressLabel && (
-        <a
+        <SocialIconLink
           href={addressMapHref}
-          target="_blank"
-          rel="noreferrer"
-          className={`${iconBaseClass} border-emerald-300/45 bg-emerald-400/14 text-emerald-100`}
-          aria-label="Abrir morada no mapa"
-          title={addressLabel}
+          className={`${iconBaseClass} border-[#c0ffe6]/75 bg-[#18b97c] text-[#07351f] shadow-[0_10px_24px_rgba(24,185,124,0.45)] hover:shadow-[0_14px_30px_rgba(24,185,124,0.55)]`}
+          ariaLabel="Abrir morada no mapa"
+          tooltipText={`Vai para: ${resolveRedirectLabel(addressMapHref, addressLabel)}`}
         >
           <svg
             viewBox="0 0 24 24"
@@ -404,13 +509,19 @@ export default function OrganizationProfileHeader({
             />
             <circle cx="12" cy="10.9" r="2.15" />
           </svg>
-        </a>
+        </SocialIconLink>
       )}
       {mailtoHref && (
-        <a href={mailtoHref} className={`${iconBaseClass} border-white/25`} aria-label="Email">
+        <SocialIconLink
+          href={mailtoHref}
+          className={`${iconBaseClass} border-[#d2e6ff]/75 bg-[#67b0ff] text-[#082e58] shadow-[0_10px_24px_rgba(103,176,255,0.45)] hover:shadow-[0_14px_30px_rgba(103,176,255,0.55)]`}
+          ariaLabel="Email"
+          tooltipText={`Vai para: ${resolveRedirectLabel(mailtoHref, contactEmail)}`}
+          external={false}
+        >
           <svg
             viewBox="0 0 24 24"
-            className={iconGlyphClass}
+            className={`${iconGlyphClass} scale-[0.9]`}
             aria-hidden="true"
             fill="none"
             stroke="currentColor"
@@ -423,7 +534,7 @@ export default function OrganizationProfileHeader({
             />
             <path d="m5.5 7.9 6.02 4.18a.8.8 0 0 0 .96 0l6.02-4.18" />
           </svg>
-        </a>
+        </SocialIconLink>
       )}
       {!isPublic && (
         <span className="rounded-full border border-white/25 bg-white/10 px-2.5 py-1 text-[11px] text-white/75">

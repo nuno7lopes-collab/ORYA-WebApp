@@ -7957,7 +7957,7 @@ export default function PadelHubClient({
                         <Link
                           href={
                             organizationId
-                              ? buildOrgHref(organizationId, `/bookings/availability`, {
+                              ? buildOrgHref(organizationId, `/calendar/availability`, {
                                   scopeType: "PROFESSIONAL",
                                   scopeId: trainer.professionalId,
                                 })
