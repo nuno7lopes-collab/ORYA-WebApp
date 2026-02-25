@@ -8,6 +8,8 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
+const NO_STORE_HEADERS = { "Cache-Control": "no-store, max-age=0" };
+
 const SUBMISSION_STATUSES = new Set([
   "SUBMITTED",
   "IN_REVIEW",
@@ -119,7 +121,7 @@ async function _GET(req: NextRequest, context: { params: Promise<{ id: string }>
           answers: submission.answers,
         })),
       },
-      { status: 200 },
+      { status: 200, headers: NO_STORE_HEADERS },
     );
   } catch (err) {
     if (err instanceof AuthRequiredError) {

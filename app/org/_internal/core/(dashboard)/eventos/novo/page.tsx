@@ -3396,8 +3396,8 @@ export function NewOrganizationEventPage({
                     value={startsAt}
                     onChange={setStartsAt}
                     className="w-full"
-                    dateButtonClassName="h-9 flex-1 rounded-full text-[11px]"
-                    timeButtonClassName="h-9 rounded-full text-[11px]"
+                    dateButtonClassName="h-9 flex-1 rounded-xl text-[11px]"
+                    timeButtonClassName="h-9 rounded-xl text-[11px]"
                   />
                 </div>
                 <div ref={endsAtFieldRef} className="space-y-1">
@@ -3407,8 +3407,8 @@ export function NewOrganizationEventPage({
                     onChange={setEndsAt}
                     minDateTime={startsAt || undefined}
                     className="w-full"
-                    dateButtonClassName="h-9 flex-1 rounded-full text-[11px]"
-                    timeButtonClassName="h-9 rounded-full text-[11px]"
+                    dateButtonClassName="h-9 flex-1 rounded-xl text-[11px]"
+                    timeButtonClassName="h-9 rounded-xl text-[11px]"
                   />
                 </div>
                 {scheduleError && <p className="text-[10px] text-pink-200">{scheduleError}</p>}
@@ -3908,8 +3908,8 @@ export function NewOrganizationEventPage({
                               value={padelRegistrationStartsAt}
                               onChange={setPadelRegistrationStartsAt}
                               className="mt-1 w-full"
-                              dateButtonClassName="h-10 flex-1 rounded-lg"
-                              timeButtonClassName="h-10 rounded-lg"
+                              dateButtonClassName="h-10 flex-1 rounded-xl"
+                              timeButtonClassName="h-10 rounded-xl"
                             />
                           </label>
                           <label className="text-[11px] text-white/70">
@@ -3919,8 +3919,8 @@ export function NewOrganizationEventPage({
                               onChange={setPadelRegistrationEndsAt}
                               minDateTime={padelRegistrationStartsAt || undefined}
                               className="mt-1 w-full"
-                              dateButtonClassName="h-10 flex-1 rounded-lg"
-                              timeButtonClassName="h-10 rounded-lg"
+                              dateButtonClassName="h-10 flex-1 rounded-xl"
+                              timeButtonClassName="h-10 rounded-xl"
                             />
                           </label>
                         </div>

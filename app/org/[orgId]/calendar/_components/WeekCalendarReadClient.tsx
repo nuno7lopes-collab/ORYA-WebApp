@@ -1026,7 +1026,7 @@ export default function WeekCalendarReadClient() {
                 if (!nextDate) return;
                 replaceState({ nextDate });
               }}
-              buttonClassName="rounded-full px-3 py-1 text-xs"
+              buttonClassName="rounded-xl px-3 py-1 text-xs"
             />
             <span className="text-sm font-medium text-white">{range.label}</span>
             <label className="flex items-center gap-2 rounded-full border border-white/20 bg-black/30 px-3 py-1 text-xs text-white/80">

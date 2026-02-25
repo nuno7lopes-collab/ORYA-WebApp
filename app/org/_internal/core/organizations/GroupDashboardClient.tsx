@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import OrgHubTopNav from "@/app/org/_internal/core/organizations/OrgHubTopNav";
+import { OryaDateField } from "@/components/ui/datetime";
 import { buildOrgHref, buildOrgHubHref } from "@/lib/organizationIdUtils";
 import { resolveGroupDisplayName } from "@/lib/orgHub/groupDisplayName";
 import { cn } from "@/lib/utils";
@@ -696,20 +697,18 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
               <div className="flex flex-wrap items-center gap-3">
                 <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-white/70">
                   <span>De</span>
-                  <input
-                    type="date"
+                  <OryaDateField
                     value={toDateInputValue(fromDate)}
-                    onChange={(event) => setFromDate(new Date(`${event.target.value}T00:00:00`))}
-                    className="rounded-xl border border-white/20 bg-black/30 px-2.5 py-1.5 text-[12px] text-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55"
+                    onChange={(next) => setFromDate(new Date(`${next}T00:00:00`))}
+                    buttonClassName="h-9 min-w-[148px] rounded-xl border-white/20 bg-black/30 px-2.5 py-1.5 text-[12px] text-white/90"
                   />
                 </div>
                 <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-white/70">
                   <span>Até</span>
-                  <input
-                    type="date"
+                  <OryaDateField
                     value={toDateInputValue(toDate)}
-                    onChange={(event) => setToDate(new Date(`${event.target.value}T23:59:59`))}
-                    className="rounded-xl border border-white/20 bg-black/30 px-2.5 py-1.5 text-[12px] text-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55"
+                    onChange={(next) => setToDate(new Date(`${next}T23:59:59`))}
+                    buttonClassName="h-9 min-w-[148px] rounded-xl border-white/20 bg-black/30 px-2.5 py-1.5 text-[12px] text-white/90"
                   />
                 </div>
               </div>

@@ -1608,8 +1608,8 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
                 value={newTicket.startsAt}
                 onChange={(next) => setNewTicket((p) => ({ ...p, startsAt: next }))}
                 className="mt-1 w-full"
-                dateButtonClassName="h-10 flex-1 rounded-md"
-                timeButtonClassName="h-10 rounded-md"
+                dateButtonClassName="h-10 flex-1 rounded-xl"
+                timeButtonClassName="h-10 rounded-xl"
               />
             </div>
             <div className="text-[11px] text-white/70">
@@ -1619,8 +1619,8 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
                 onChange={(next) => setNewTicket((p) => ({ ...p, endsAt: next }))}
                 minDateTime={newTicket.startsAt || undefined}
                 className="mt-1 w-full"
-                dateButtonClassName="h-10 flex-1 rounded-md"
-                timeButtonClassName="h-10 rounded-md"
+                dateButtonClassName="h-10 flex-1 rounded-xl"
+                timeButtonClassName="h-10 rounded-xl"
               />
             </div>
           </div>

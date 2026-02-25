@@ -10,6 +10,7 @@ import {
   isValidLocalTime,
   normalizeStepMinutes,
 } from "@/lib/datetime/localInput";
+import { ORYA_TIME_OPTION_SSOT_CLASS, ORYA_TIME_TRIGGER_SSOT_CLASS } from "./ssot";
 import { useAdaptiveOverlayPosition } from "./useAdaptiveOverlayPosition";
 
 type OryaTimeFieldProps = {
@@ -235,7 +236,7 @@ export function OryaTimeField({
               onMouseEnter={() => setActive(option)}
               onClick={() => commit(option)}
               className={cn(
-                "flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[16px] transition",
+                ORYA_TIME_OPTION_SSOT_CLASS,
                 selected
                   ? "bg-cyan-300 text-black shadow-[0_10px_24px_rgba(107,255,255,0.34)]"
                   : "text-white/86 hover:bg-white/10",
@@ -272,9 +273,7 @@ export function OryaTimeField({
           }
         }}
         className={cn(
-          "inline-flex h-10 min-w-[112px] items-center justify-between gap-2 rounded-full border border-white/20",
-          "bg-black/30 px-3 text-sm text-white/85 transition hover:border-white/35 hover:text-white",
-          "focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/50",
+          ORYA_TIME_TRIGGER_SSOT_CLASS,
           disabled && "cursor-not-allowed opacity-60",
           open && "border-cyan-300/60 text-white",
           buttonClassName,

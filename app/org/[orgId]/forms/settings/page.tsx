@@ -6,5 +6,5 @@ export default async function Page({
   params: Promise<{ orgId: string }>;
 }) {
   const { orgId } = await params;
-  redirect(`/org/${orgId}/forms?view=rascunhos&forms=settings`);
+  redirect(`/org/${orgId}/forms?section=settings`);
 }

@@ -438,7 +438,7 @@ type OperationModule = (typeof OPERATION_MODULES)[number];
 const OPERATION_LABELS: Record<OperationModule, string> = {
   EVENTOS: "Eventos",
   RESERVAS: "Reservas",
-  TORNEIOS: "Padel",
+  TORNEIOS: "PADEL",
 };
 
 const PADEL_CLUB_SECTION = "padel-club";
@@ -476,24 +476,6 @@ const MODULE_ICON_GRADIENTS: Record<string, string> = {
   TOOL_DEFINICOES: "from-[#94A3B8]/52 via-[#64748B]/38 to-[#60A5FA]/48",
   TOOL_POLITICAS: "from-[#60A5FA]/54 via-[#22D3EE]/42 to-[#A78BFA]/50",
 };
-const MODULE_ICON_SURFACE_GLOWS: Record<string, string> = {
-  TOOL_EVENTOS: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.45),0_0_24px_rgba(255,78,205,0.35)]",
-  TOOL_RESERVAS: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.45),0_0_24px_rgba(34,211,238,0.34)]",
-  TOOL_CALENDARIO: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.45),0_0_24px_rgba(96,165,250,0.34)]",
-  TOOL_PADEL_CLUBE: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.46),0_0_24px_rgba(245,158,11,0.34)]",
-  TOOL_PADEL_TORNEIOS: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.46),0_0_24px_rgba(167,139,250,0.34)]",
-  TOOL_CHECKIN: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.45),0_0_24px_rgba(52,211,153,0.34)]",
-  TOOL_FORMULARIOS: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.45),0_0_24px_rgba(20,184,166,0.34)]",
-  TOOL_CHAT_INTERNO: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.45),0_0_24px_rgba(167,139,250,0.34)]",
-  TOOL_FINANCAS: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.46),0_0_24px_rgba(249,115,22,0.34)]",
-  TOOL_ANALYTICS: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.45),0_0_24px_rgba(34,211,238,0.35)]",
-  TOOL_PROMOCOES: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.46),0_0_24px_rgba(251,113,133,0.34)]",
-  TOOL_CRM: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.45),0_0_24px_rgba(56,189,248,0.34)]",
-  TOOL_LOJA: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.46),0_0_24px_rgba(251,146,60,0.34)]",
-  TOOL_EQUIPA: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.45),0_0_24px_rgba(96,165,250,0.34)]",
-  TOOL_DEFINICOES: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.45),0_0_24px_rgba(148,163,184,0.32)]",
-  TOOL_POLITICAS: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.45),0_0_24px_rgba(96,165,250,0.34)]",
-};
 const MODULE_ICON_BG_STYLES: Record<string, string> = {
   TOOL_EVENTOS: "linear-gradient(145deg, rgba(255,78,205,0.85) 0%, rgba(127,224,255,0.72) 46%, rgba(106,123,255,0.86) 100%)",
   TOOL_RESERVAS: "linear-gradient(145deg, rgba(34,211,238,0.84) 0%, rgba(77,180,255,0.7) 46%, rgba(106,123,255,0.84) 100%)",
@@ -513,22 +495,22 @@ const MODULE_ICON_BG_STYLES: Record<string, string> = {
   TOOL_POLITICAS: "linear-gradient(145deg, rgba(96,165,250,0.86) 0%, rgba(34,211,238,0.72) 44%, rgba(167,139,250,0.8) 100%)",
 };
 const TOOL_CUSTOM_ICON_BY_ID: Record<string, string> = {
-  eventos: "/icons/tools/eventos.png",
-  reservas: "/icons/tools/reservas.png",
-  calendar: "/icons/tools/calendario.png",
-  "padel-club": "/icons/tools/padel-club.png",
-  "padel-tournaments": "/icons/tools/padel-tournaments.png",
-  checkin: "/icons/tools/checkin.png",
-  inscricoes: "/icons/tools/formularios.png",
-  mensagens: "/icons/tools/mensagens.png",
-  financeiro: "/icons/tools/financas.png",
-  analytics: "/icons/tools/analises.png",
-  marketing: "/icons/tools/marketing.png",
-  crm: "/icons/tools/crm.png",
-  loja: "/icons/tools/loja.png",
-  staff: "/icons/tools/equipa.png",
-  politicas: "/icons/tools/politicas.png",
-  settings: "/icons/tools/definicoes.png",
+  eventos: "/icons/tools/eventos.avif",
+  reservas: "/icons/tools/reservas.avif",
+  calendar: "/icons/tools/calendario.avif",
+  "padel-club": "/icons/tools/padel-club.avif",
+  "padel-tournaments": "/icons/tools/padel-tournaments.avif",
+  checkin: "/icons/tools/checkin.avif",
+  inscricoes: "/icons/tools/formularios.avif",
+  mensagens: "/icons/tools/mensagens.avif",
+  financeiro: "/icons/tools/financas.avif",
+  analytics: "/icons/tools/analises.avif",
+  marketing: "/icons/tools/marketing.avif",
+  crm: "/icons/tools/crm.avif",
+  loja: "/icons/tools/loja.avif",
+  staff: "/icons/tools/equipa.avif",
+  politicas: "/icons/tools/politicas.avif",
+  settings: "/icons/tools/definicoes.avif",
 };
 
 const OBJECTIVE_TABS: ObjectiveTab[] = ["create", "manage", "promote", "analyze"];
@@ -781,9 +763,9 @@ function OrganizacaoPageInner({
 
   const organization = organizationData?.organization ?? null;
   const scopedOrganizationId = organization?.id ?? organizationId ?? null;
-  const Link = ({ href, ...props }: ComponentProps<typeof NextLink>) => {
+  const Link = ({ href, prefetch = false, ...props }: ComponentProps<typeof NextLink>) => {
     const resolvedHref = typeof href === "string" ? appendOrganizationIdToHref(href, scopedOrganizationId) : href;
-    return <NextLink href={resolvedHref} {...props} />;
+    return <NextLink href={resolvedHref} prefetch={prefetch} {...props} />;
   };
   const isSuspended = organization?.status === "SUSPENDED";
   const isActive = organization?.status === "ACTIVE";
@@ -885,7 +867,7 @@ function OrganizacaoPageInner({
           plural: "torneios",
         }
       : primaryCreateMeta;
-  const managePrimaryLabel = isPadelContext ? "Padel" : "Eventos";
+  const managePrimaryLabel = isPadelContext ? "PADEL" : "Eventos";
   const managePrimaryLabelLower = isPadelContext ? "torneio" : "evento";
   const managePrimaryLabelTitle = isPadelContext ? "Torneio" : "Evento";
   const managePrimarySingularLabel = manageCreateMeta.singular;
@@ -2332,8 +2314,8 @@ function OrganizacaoPageInner({
               moduleKey: "EVENTOS",
               iconKey: "TOOL_EVENTOS",
               title: "Eventos",
-              summary: "Eventos públicos e privados com operação completa.",
-              bullets: ["Bilhetes e regras", "Participantes + check-in", "Operação + anúncios"],
+              summary: "Gestão de eventos públicos e privados.",
+              bullets: ["Bilhetes e regras", "Participantes e check-in", "Comunicação operacional"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/events` : undefined,
               flow: "Operações",
             }
@@ -2344,8 +2326,8 @@ function OrganizacaoPageInner({
               moduleKey: "RESERVAS",
               iconKey: "TOOL_RESERVAS",
               title: "Reservas",
-              summary: "Serviços e marcações com gestão diária.",
-              bullets: ["Serviços + disponibilidade", "Marcações + estados", "Check-in operacional"],
+              summary: "Gestão diária de serviços e marcações.",
+              bullets: ["Serviços e disponibilidade", "Marcações e estados", "Recursos e agenda"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/bookings` : undefined,
               flow: "Operações",
             }
@@ -2356,8 +2338,8 @@ function OrganizacaoPageInner({
               moduleKey: calendarModuleKey,
               iconKey: "TOOL_CALENDARIO",
               title: "Calendário",
-              summary: "Agenda operacional consolidada da organização.",
-              bullets: ["Eventos, torneios e reservas quando ativos", "Vista semanal e diária", "Sem escrita direta de serviços"],
+              summary: "Agenda unificada da organização.",
+              bullets: ["Eventos, torneios e reservas", "Vista semanal e diária", "Consulta operacional"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/calendar` : undefined,
               flow: "Operações",
             }
@@ -2367,9 +2349,9 @@ function OrganizacaoPageInner({
               id: "padel-club",
               moduleKey: "TORNEIOS",
               iconKey: "TOOL_PADEL_CLUBE",
-              title: "Clube de padel",
-              summary: "Operação diária do clube e gestão de campos.",
-              bullets: ["Clube base + campos", "Campos + staff operacional", "Jogadores + treinadores"],
+              title: "PADEL Clubes",
+              summary: "Gestão de clubes, campos e staff.",
+              bullets: ["Clubes e campos", "Staff de clube", "Jogadores e treinadores"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/padel/clubs` : undefined,
               flow: "Operações",
             }
@@ -2379,9 +2361,9 @@ function OrganizacaoPageInner({
               id: "padel-tournaments",
               moduleKey: "TORNEIOS",
               iconKey: "TOOL_PADEL_TORNEIOS",
-              title: "Torneios de padel",
-              summary: "Calendário competitivo, equipas de competição e operação ao vivo.",
-              bullets: ["Criação + calendário", "Categorias + equipas", "Staff + operação live"],
+              title: "PADEL Torneios",
+              summary: "Gestão competitiva e calendário.",
+              bullets: ["Criar torneios", "Categorias e equipas", "Calendário e live"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/padel/tournaments` : undefined,
               flow: "Operações",
             }
@@ -2392,8 +2374,8 @@ function OrganizacaoPageInner({
               moduleKey: "CHECKIN",
               iconKey: "TOOL_CHECKIN",
               title: "Check-in",
-              summary: "Scanner rápido para eventos e torneios.",
-              bullets: ["Leitor QR", "Confirmação explícita", "Histórico por evento"],
+              summary: "Leitura de QR para entradas.",
+              bullets: ["Leitor QR", "Confirmação", "Histórico"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/check-in` : undefined,
               flow: "Operações",
             }
@@ -2404,8 +2386,8 @@ function OrganizacaoPageInner({
               moduleKey: "INSCRICOES",
               iconKey: "TOOL_FORMULARIOS",
               title: "Formulários",
-              summary: "Recolha de inscrições e dados operacionais.",
-              bullets: ["Formulários rápidos", "Listas e vagas", "Exportação de dados"],
+              summary: "Formulários e inscrições.",
+              bullets: ["Formulários", "Listas e vagas", "Exportação"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/forms` : undefined,
               flow: "Operações",
             }
@@ -2416,8 +2398,8 @@ function OrganizacaoPageInner({
               moduleKey: "MENSAGENS",
               iconKey: "TOOL_CHAT_INTERNO",
               title: "Mensagens",
-              summary: "Canal privado entre membros da organização.",
-              bullets: ["Conversas da equipa", "Canais internos", "Histórico completo"],
+              summary: "Comunicação interna da equipa.",
+              bullets: ["Conversas", "Canais", "Histórico"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/chat` : undefined,
               flow: "Operações",
             }
@@ -2428,8 +2410,8 @@ function OrganizacaoPageInner({
               moduleKey: "FINANCEIRO",
               iconKey: "TOOL_FINANCAS",
               title: "Finanças",
-              summary: "Operação financeira e compliance transacional.",
-              bullets: ["Faturação + reconciliação", "Reembolsos + disputas", "Transferências + exportações"],
+              summary: "Faturação e controlo financeiro.",
+              bullets: ["Faturação e reconciliação", "Reembolsos e disputas", "Transferências e exportações"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/finance` : undefined,
               flow: "Gestão",
             }
@@ -2440,8 +2422,8 @@ function OrganizacaoPageInner({
               moduleKey: "ANALYTICS",
               iconKey: "TOOL_ANALYTICS",
               title: "Análises",
-              summary: "BI financeiro com conversão, coortes e tendências de receita.",
-              bullets: ["Visão geral monetária", "Conversão + coortes", "Performance por dimensão financeira"],
+              summary: "Métricas de negócio.",
+              bullets: ["Visão geral", "Conversão e coortes", "Receita por dimensão"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/analytics` : undefined,
               flow: "Gestão",
             }
@@ -2452,8 +2434,8 @@ function OrganizacaoPageInner({
               moduleKey: "MARKETING",
               iconKey: "TOOL_PROMOCOES",
               title: "Marketing",
-              summary: "Códigos, parcerias e partilha.",
-              bullets: ["Códigos promocionais", "Promotores e parcerias", "Links + QR"],
+              summary: "Promoções e parcerias.",
+              bullets: ["Códigos promocionais", "Promotores e parceiros", "Links e QR"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/marketing` : undefined,
               flow: "Gestão",
             }
@@ -2464,8 +2446,8 @@ function OrganizacaoPageInner({
               moduleKey: "CRM",
               iconKey: "TOOL_CRM",
               title: "CRM",
-              summary: "Clientes, segmentos e fidelização.",
-              bullets: ["Clientes + histórico", "Segmentos + campanhas", "Pontos + recompensas"],
+              summary: "Clientes e segmentação.",
+              bullets: ["Clientes e histórico", "Segmentos e campanhas", "Pontos e recompensas"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/crm/customers` : undefined,
               flow: "Gestão",
             }
@@ -2476,8 +2458,8 @@ function OrganizacaoPageInner({
               moduleKey: "LOJA",
               iconKey: "TOOL_LOJA",
               title: "Loja",
-              summary: "Produtos físicos e digitais com checkout único.",
-              bullets: ["Catálogo + imagens", "Portes + descontos", "Encomendas + envio"],
+              summary: "Catálogo, checkout e encomendas.",
+              bullets: ["Catálogo", "Portes e descontos", "Encomendas e envio"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/store` : undefined,
               flow: "Gestão",
             }
@@ -2488,8 +2470,8 @@ function OrganizacaoPageInner({
               moduleKey: "STAFF",
               iconKey: "TOOL_EQUIPA",
               title: "Equipa",
-              summary: "Gestão de equipa, funções e permissões.",
-              bullets: ["Dono / Co-dono / Administrador / Equipa / Scanner", "Permissões por ferramenta", "Registo de ações"],
+              summary: "Utilizadores, funções e permissões.",
+              bullets: ["Perfis e funções", "Permissões por ferramenta", "Registo de ações"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/team` : undefined,
               flow: "Administração",
             }
@@ -2500,8 +2482,8 @@ function OrganizacaoPageInner({
               moduleKey: "DEFINICOES",
               iconKey: "TOOL_POLITICAS",
               title: "Políticas",
-              summary: "Políticas personalizáveis, termos e guardrails operacionais.",
-              bullets: ["Cancelamento e reagendamento", "Termos e condições", "Defaults editáveis por dropdown e texto"],
+              summary: "Regras operacionais da organização.",
+              bullets: ["Cancelamento e reagendamento", "Termos e condições", "Configuração por ferramenta"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/policies` : undefined,
               flow: "Administração",
             }
@@ -2512,8 +2494,8 @@ function OrganizacaoPageInner({
               moduleKey: "DEFINICOES",
               iconKey: "TOOL_DEFINICOES",
               title: "Definições",
-              summary: "Pagamentos, políticas e preferências.",
-              bullets: ["Pagamentos e políticas", "Notificações globais", "Regras de chat"],
+              summary: "Configuração geral da organização.",
+              bullets: ["Pagamentos", "Notificações", "Preferências"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/settings` : undefined,
               flow: "Administração",
             }
@@ -2745,33 +2727,6 @@ function OrganizacaoPageInner({
     const timer = window.setTimeout(() => setModuleActivationSuccess(null), 2800);
     return () => window.clearTimeout(timer);
   }, [moduleActivationSuccess]);
-  const modulePrefetchTargets = useMemo(() => {
-    if (!scopedOrganizationId) return [];
-    const coreTargets = [
-      `/org/${scopedOrganizationId}/overview`,
-      `/org/${scopedOrganizationId}/events`,
-      `/org/${scopedOrganizationId}/analytics`,
-      `/org/${scopedOrganizationId}/settings`,
-    ];
-    const moduleTargets = visibleDashboardTools
-      .map((module) => module.href)
-      .filter((href): href is string => typeof href === "string")
-      .map((href) => appendOrganizationIdToHref(href, scopedOrganizationId));
-    return Array.from(new Set([...coreTargets, ...moduleTargets])).slice(0, 12);
-  }, [scopedOrganizationId, visibleDashboardTools]);
-  useEffect(() => {
-    if (loading || loadingTimedOut || modulePrefetchTargets.length === 0) return;
-    const timer = window.setTimeout(() => {
-      modulePrefetchTargets.forEach((href) => {
-        try {
-          router.prefetch(href);
-        } catch {
-          // Best effort.
-        }
-      });
-    }, 350);
-    return () => window.clearTimeout(timer);
-  }, [loading, loadingTimedOut, modulePrefetchTargets, router]);
   useEffect(() => {
     const params = new URLSearchParams(currentQuery);
     const setParam = (key: string, value: string, defaultVal: string) => {
@@ -2866,9 +2821,7 @@ function OrganizacaoPageInner({
     const iconBgStyle =
       MODULE_ICON_BG_STYLES[tool.iconKey] ??
       "linear-gradient(145deg, rgba(34,211,238,0.82) 0%, rgba(96,165,250,0.72) 48%, rgba(167,139,250,0.82) 100%)";
-    const iconSurfaceGlow =
-      MODULE_ICON_SURFACE_GLOWS[tool.iconKey] ??
-      "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_22px_42px_rgba(34,211,238,0.34)]";
+    const iconSurfaceGlow = "shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_10px_24px_rgba(0,0,0,0.34)]";
     const canHide = canCustomizeTools && !NON_HIDEABLE_DASHBOARD_TOOL_IDS.has(tool.id);
     const customAppIconSrc = TOOL_CUSTOM_ICON_BY_ID[tool.id];
     const isCustomAppIcon = Boolean(customAppIconSrc);
@@ -2878,7 +2831,7 @@ function OrganizacaoPageInner({
           "group relative flex min-h-[172px] flex-col items-center justify-center gap-3 px-3 py-4 text-center sm:min-h-[192px] sm:gap-4 sm:px-4 sm:py-5",
           isCustomAppIcon
             ? "w-full min-h-[214px] gap-1 overflow-visible py-1 sm:min-h-[248px] sm:gap-2"
-            : "overflow-hidden rounded-[26px] border border-white/22 bg-[linear-gradient(180deg,rgba(255,255,255,0.11),rgba(255,255,255,0.03)_48%,rgba(20,20,20,0.88))] shadow-[0_24px_70px_rgba(0,0,0,0.6)] transition hover:-translate-y-0.5 hover:border-[#22D3EE]/42 hover:shadow-[0_28px_78px_rgba(0,0,0,0.68)]",
+            : "overflow-hidden rounded-[22px] border border-white/18 bg-[#0c1424]/90 shadow-[0_10px_30px_rgba(0,0,0,0.42)]",
         )}
       >
         <div className="pointer-events-none absolute inset-0">
@@ -2899,8 +2852,7 @@ function OrganizacaoPageInner({
           </button>
         )}
         {customAppIconSrc ? (
-          <div className="relative mx-auto flex items-center justify-center transition-transform duration-300 ease-out group-hover:-translate-y-1">
-            <span className="pointer-events-none absolute inset-0 scale-[0.86] rounded-full bg-[radial-gradient(circle,rgba(148,190,255,0.26)_0%,rgba(148,190,255,0.08)_48%,transparent_74%)] opacity-0 blur-xl transition-opacity duration-300 ease-out group-hover:opacity-100" />
+          <div className="relative mx-auto flex items-center justify-center">
             {canHide && (
               <button
                 type="button"
@@ -2919,17 +2871,19 @@ function OrganizacaoPageInner({
               src={customAppIconSrc}
               alt=""
               aria-hidden="true"
-              width={1024}
-              height={1024}
-              priority
-              className="tool-custom-icon pointer-events-none h-[188px] w-[188px] select-none object-contain [transform:translateZ(0)] drop-shadow-[0_12px_20px_rgba(0,0,0,0.38)] transition-all duration-300 ease-out group-hover:scale-[1.085] group-hover:brightness-110 group-hover:drop-shadow-[0_18px_28px_rgba(0,0,0,0.48)] sm:h-[220px] sm:w-[220px]"
+              width={384}
+              height={384}
+              loading="lazy"
+              sizes="(min-width: 640px) 220px, 188px"
+              decoding="async"
+              className="tool-custom-icon pointer-events-none h-[188px] w-[188px] select-none object-contain [transform:translateZ(0)] sm:h-[220px] sm:w-[220px]"
               draggable={false}
             />
           </div>
         ) : (
           <div
             className={cn(
-              "relative flex items-center justify-center border border-white/32 text-white transition-transform duration-200 group-hover:scale-[1.04]",
+              "relative flex items-center justify-center border border-white/26 text-white",
               "h-[84px] w-[84px] rounded-full sm:h-[102px] sm:w-[102px]",
               iconGradient,
               iconSurfaceGlow,
@@ -2937,9 +2891,7 @@ function OrganizacaoPageInner({
             style={{ background: iconBgStyle }}
           >
             <span className="pointer-events-none absolute inset-[2px] rounded-full bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.34),rgba(255,255,255,0.1)_40%,rgba(255,255,255,0)_70%)]" />
-            <span className="pointer-events-none absolute inset-[8px] rounded-full bg-[radial-gradient(circle_at_50%_55%,rgba(8,12,20,0.12),rgba(8,12,20,0.28)_72%,rgba(6,10,18,0.38)_100%)]" />
-            <span className="pointer-events-none absolute inset-[10px] rounded-full border border-white/18" />
-            <span className="pointer-events-none absolute inset-x-5 top-2 h-4 rounded-full bg-white/35 blur-[6px] sm:inset-x-6 sm:top-2.5 sm:h-5" />
+            <span className="pointer-events-none absolute inset-[8px] rounded-full border border-white/18" />
             <ModuleIcon moduleKey={tool.iconKey} className="relative h-9 w-9 sm:h-11 sm:w-11" aria-hidden="true" />
           </div>
         )}
@@ -2963,7 +2915,7 @@ function OrganizacaoPageInner({
           href={tool.href}
           className={cn(
             "block rounded-[24px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b1014]",
-            isCustomAppIcon && "rounded-[32px] transition-transform duration-300 ease-out hover:-translate-y-0.5",
+            isCustomAppIcon && "rounded-[32px]",
           )}
         >
           {cardInner}
@@ -2993,21 +2945,15 @@ function OrganizacaoPageInner({
       type="button"
       onClick={openToolManager}
       aria-label={toolManagerCtaLabel}
-      className="group block w-full rounded-[32px] transition-transform duration-300 ease-out hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b1014]"
+      className="group block w-full rounded-[20px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b1014]"
     >
-      <div className="relative flex w-full min-h-[214px] flex-col items-center justify-center gap-1 overflow-visible px-3 py-1 text-center sm:min-h-[248px] sm:gap-2 sm:px-4">
-        <div className="relative mx-auto flex items-center justify-center transition-transform duration-300 ease-out group-hover:-translate-y-1 group-hover:scale-[1.03]">
-          <div className="pointer-events-none absolute inset-0 scale-[0.86] rounded-full bg-[radial-gradient(circle,rgba(148,190,255,0.28)_0%,rgba(148,190,255,0.1)_48%,transparent_74%)] opacity-90 blur-xl transition-opacity duration-300 ease-out group-hover:opacity-100" />
-          <svg
-            viewBox="0 0 220 220"
-            aria-hidden="true"
-            className="pointer-events-none relative z-[1] h-[188px] w-[188px] drop-shadow-[0_14px_24px_rgba(0,0,0,0.46)] sm:h-[220px] sm:w-[220px]"
-          >
-            <path d="M110 30V190M30 110H190" fill="none" stroke="rgba(246,252,255,0.96)" strokeWidth="26" strokeLinecap="round" />
-            <path d="M110 30V190M30 110H190" fill="none" stroke="rgba(162,226,255,0.72)" strokeWidth="12" strokeLinecap="round" />
-          </svg>
+      <div className="flex min-h-[214px] w-full flex-col items-center justify-center gap-2 px-3 py-2 text-center sm:min-h-[248px] sm:gap-2.5 sm:px-4">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/22 bg-white/[0.04] text-white/90 transition-colors duration-150 group-hover:border-white/40 group-hover:bg-white/[0.08] sm:h-16 sm:w-16">
+          <span aria-hidden="true" className="-mt-0.5 text-[36px] font-light leading-none sm:text-[40px]">
+            +
+          </span>
         </div>
-        <span className="relative mx-auto max-w-[220px] leading-tight text-[15px] font-semibold text-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.62)] sm:max-w-[250px] sm:text-[17px]">
+        <span className="mx-auto max-w-[180px] leading-tight text-[13px] font-medium text-white/80 sm:max-w-[200px] sm:text-[14px]">
           {toolManagerCtaLabel}
         </span>
       </div>
@@ -3148,7 +3094,16 @@ function OrganizacaoPageInner({
           <div className="flex items-start gap-3">
             {customAppIconSrc ? (
               <div className="relative h-14 w-14 overflow-hidden rounded-[16px] border border-white/20 bg-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_12px_28px_rgba(0,0,0,0.32)]">
-                <Image src={customAppIconSrc} alt="" fill sizes="56px" className="object-cover" aria-hidden="true" />
+                <Image
+                  src={customAppIconSrc}
+                  alt=""
+                  fill
+                  sizes="56px"
+                  loading="lazy"
+                  decoding="async"
+                  className="object-cover"
+                  aria-hidden="true"
+                />
               </div>
             ) : (
               <div
@@ -3213,7 +3168,7 @@ function OrganizacaoPageInner({
                   <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Gestor de ferramentas</p>
                   <h3 className="text-xl font-semibold text-white">Ativar e organizar ferramentas</h3>
                   <p className="text-[12px] text-white/65">
-                    Ativa ou desativa ferramentas da organizacao e volta a mostrar ferramentas ocultas no dashboard.
+                    Ativa, desativa e mostra ferramentas ocultas do dashboard.
                   </p>
                 </div>
                 <button
@@ -3516,7 +3471,7 @@ function OrganizacaoPageInner({
 
           <div className={cn("space-y-4", fadeClass)}>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              <div className="rounded-3xl border border-white/16 bg-[linear-gradient(180deg,rgba(255,255,255,0.09),rgba(20,20,20,0.92))] p-4 shadow-[0_22px_70px_rgba(0,0,0,0.58)]">
+              <div className="rounded-3xl border border-white/16 bg-[#0c1424]/90 p-4 shadow-[0_10px_28px_rgba(0,0,0,0.42)]">
                 <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Conta</p>
                 <h3 className="text-lg font-semibold text-white">Estado da conta</h3>
                 <div className="mt-3 space-y-2 text-[12px] text-white/75">
@@ -3546,7 +3501,7 @@ function OrganizacaoPageInner({
               </div>
 
               {isReservasOrg ? (
-                <div className="rounded-3xl border border-white/16 bg-[linear-gradient(180deg,rgba(255,255,255,0.09),rgba(20,20,20,0.92))] p-4 shadow-[0_22px_70px_rgba(0,0,0,0.58)]">
+                <div className="rounded-3xl border border-white/16 bg-[#0c1424]/90 p-4 shadow-[0_10px_28px_rgba(0,0,0,0.42)]">
                   <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Serviços</p>
                   <h3 className="text-lg font-semibold text-white">Oferta ativa</h3>
                   <div className="mt-3 grid gap-2 text-[12px] text-white/75">
@@ -3565,7 +3520,7 @@ function OrganizacaoPageInner({
                   </div>
                 </div>
               ) : (
-                <div className="rounded-3xl border border-white/16 bg-[linear-gradient(180deg,rgba(255,255,255,0.09),rgba(20,20,20,0.92))] p-4 shadow-[0_22px_70px_rgba(0,0,0,0.58)]">
+                <div className="rounded-3xl border border-white/16 bg-[#0c1424]/90 p-4 shadow-[0_10px_28px_rgba(0,0,0,0.42)]">
                   <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">
                     {primaryOperation === "TORNEIOS" ? "Torneios" : "Eventos"}
                   </p>
@@ -3588,7 +3543,7 @@ function OrganizacaoPageInner({
               )}
 
               {isReservasOrg ? (
-                <div className="rounded-3xl border border-white/16 bg-[linear-gradient(180deg,rgba(255,255,255,0.09),rgba(20,20,20,0.92))] p-4 shadow-[0_22px_70px_rgba(0,0,0,0.58)]">
+                <div className="rounded-3xl border border-white/16 bg-[#0c1424]/90 p-4 shadow-[0_10px_28px_rgba(0,0,0,0.42)]">
                   <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Reservas</p>
                   <h3 className="text-lg font-semibold text-white">Agenda 7 dias</h3>
                   <div className="mt-3 grid gap-2 text-[12px] text-white/75">
@@ -3613,7 +3568,7 @@ function OrganizacaoPageInner({
                   </div>
                 </div>
               ) : (
-                <div className="rounded-3xl border border-white/16 bg-[linear-gradient(180deg,rgba(255,255,255,0.09),rgba(20,20,20,0.92))] p-4 shadow-[0_22px_70px_rgba(0,0,0,0.58)]">
+                <div className="rounded-3xl border border-white/16 bg-[#0c1424]/90 p-4 shadow-[0_10px_28px_rgba(0,0,0,0.42)]">
                   <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Finanças</p>
                   <h3 className="text-lg font-semibold text-white">Últimos 30 dias</h3>
                   <div className="mt-3 grid gap-2 text-[12px] text-white/75">
@@ -3638,13 +3593,13 @@ function OrganizacaoPageInner({
 
             <div
               id="ferramentas"
-              className="rounded-3xl border border-white/16 bg-[linear-gradient(180deg,rgba(255,255,255,0.09),rgba(20,20,20,0.92))] p-5 shadow-[0_22px_70px_rgba(0,0,0,0.58)]"
+              className="rounded-3xl border border-white/16 bg-[#0c1424]/90 p-5 shadow-[0_10px_28px_rgba(0,0,0,0.42)]"
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="space-y-1">
                   <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Ferramentas</p>
                   <h2 className="text-xl font-semibold text-white">Ferramentas da organização</h2>
-                  <p className="text-[12px] text-white/65">Cada ferramenta mantém domínio próprio e acesso direto.</p>
+                  <p className="text-[12px] text-white/65">Acesso direto por ferramenta.</p>
                 </div>
               </div>
               {toolVisibilityError && (
@@ -4167,7 +4122,7 @@ function OrganizacaoPageInner({
                               const capacity = ev.capacity ?? null;
                               const revenue = ((ev.revenueCents ?? 0) / 100).toFixed(2);
                               const normalizedTemplate = ev.templateType ?? "OTHER";
-                              const typeLabel = normalizedTemplate === "PADEL" ? "Padel" : "Evento padrão";
+                              const typeLabel = normalizedTemplate === "PADEL" ? "PADEL" : "Evento padrão";
                               const typeTone =
                                 normalizedTemplate === "PADEL"
                                   ? "border-sky-400/40 bg-sky-400/10 text-sky-100"
@@ -4291,7 +4246,7 @@ function OrganizacaoPageInner({
                           const revenue = ((ev.revenueCents ?? 0) / 100).toFixed(2);
                           const normalizedTemplate = ev.templateType ?? "OTHER";
                           const cardSalesLabel = normalizedTemplate === "PADEL" ? "Inscrições" : "Bilhetes";
-                          const typeLabel = normalizedTemplate === "PADEL" ? "Padel" : "Evento padrão";
+                          const typeLabel = normalizedTemplate === "PADEL" ? "PADEL" : "Evento padrão";
                           const typeTone =
                             normalizedTemplate === "PADEL"
                               ? "border-sky-400/40 bg-sky-400/10 text-sky-100"
@@ -5485,7 +5440,7 @@ function OrganizacaoPageInner({
                           <p className="text-sm font-semibold">{ev.title}</p>
                           <span className={`rounded-full border px-2 py-0.5 text-[11px] ${ev.tag.tone}`}>{ev.tag.label}</span>
                           <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-[11px] text-white/75">
-                            {ev.templateType === "PADEL" ? "Padel" : "Evento"}
+                            {ev.templateType === "PADEL" ? "PADEL" : "Evento"}
                           </span>
                           {typeof ev.diffDays === "number" && (
                             <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[11px] text-white/70">

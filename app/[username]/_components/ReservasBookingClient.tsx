@@ -1982,7 +1982,7 @@ export default function ReservasBookingClient({
                         }}
                         placeholder="Selecionar dia"
                         className="w-full"
-                        buttonClassName="h-11 w-full rounded-2xl"
+                        buttonClassName="h-11 w-full rounded-xl"
                       />
                     </div>
 

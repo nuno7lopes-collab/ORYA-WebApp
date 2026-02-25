@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import useSWR from "swr";
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
+import { OryaDateTimeField } from "@/components/ui/datetime";
 import { cn } from "@/lib/utils";
 import { CTA_DANGER, CTA_NEUTRAL, CTA_PRIMARY, DASHBOARD_CARD, DASHBOARD_LABEL, DASHBOARD_MUTED } from "@/app/org/_internal/core/dashboardUi";
 
@@ -250,16 +251,17 @@ export default function AvailabilityChangeSetConflictsPage() {
               </p>
 
               <div className="flex flex-wrap items-center gap-2">
-                <input
-                  type="datetime-local"
-                  className="h-10 rounded-xl border border-white/15 bg-white/5 px-3 text-sm text-white outline-none focus:border-white/35"
+                <OryaDateTimeField
                   value={rescheduleDrafts[conflict.id] ?? toDateTimeLocalValue(conflict.startsAt)}
-                  onChange={(event) =>
+                  onChange={(next) =>
                     setRescheduleDrafts((prev) => ({
                       ...prev,
-                      [conflict.id]: event.target.value,
+                      [conflict.id]: next,
                     }))
                   }
+                  className="w-full sm:w-auto"
+                  dateButtonClassName="h-10 w-full sm:min-w-[170px] rounded-xl justify-between"
+                  timeButtonClassName="h-10 w-full sm:min-w-[110px] rounded-xl justify-between"
                 />
                 <button
                   type="button"

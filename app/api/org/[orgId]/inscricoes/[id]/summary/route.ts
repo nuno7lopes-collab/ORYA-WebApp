@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
@@ -6,6 +6,8 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { OrganizationFormSubmissionStatus } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+
+const NO_STORE_HEADERS = { "Cache-Control": "no-store, max-age=0" };
 
 const SUBMISSION_STATUSES: OrganizationFormSubmissionStatus[] = [
   "SUBMITTED",
@@ -106,7 +108,7 @@ async function _GET(req: NextRequest, context: { params: Promise<{ id: string }>
             }
           : null,
       },
-      { status: 200 },
+      { status: 200, headers: NO_STORE_HEADERS },
     );
   } catch (err) {
     if (err instanceof AuthRequiredError) {

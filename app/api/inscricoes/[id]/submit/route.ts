@@ -7,6 +7,7 @@ import { isValidPhone, normalizePhone, resolvePhoneNormalizationOptions } from "
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
+import { isAuthUnavailableError, isEmailNotVerifiedError } from "@/lib/security";
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TIME_REGEX = /^([01]\d|2[0-3]):([0-5]\d)(:[0-5]\d)?$/;
 const COUNTED_STATUSES: OrganizationFormSubmissionStatus[] = [
@@ -327,6 +328,12 @@ async function _POST(req: NextRequest, context: { params: Promise<{ id: string }
       { status: 201 },
     );
   } catch (err) {
+    if (isEmailNotVerifiedError(err)) {
+      return jsonWrap({ ok: false, error: "Email por verificar." }, { status: 403 });
+    }
+    if (isAuthUnavailableError(err)) {
+      return jsonWrap({ ok: false, error: "AUTH_UNAVAILABLE" }, { status: 503 });
+    }
     console.error("[inscricoes][submit]", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }

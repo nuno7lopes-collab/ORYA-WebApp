@@ -96,14 +96,17 @@ export default function HomeFooter() {
           <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
             <div className="max-w-xl space-y-3">
               <div className="flex items-center gap-3">
-                <Image
-                  src="/brand/logo_icon.png"
-                  alt="Logo ORYA"
-                  width={52}
-                  height={52}
-                  sizes="52px"
-                  className="h-11 w-11 object-contain"
-                />
+                <span className="relative inline-flex h-11 w-11 items-center justify-center overflow-hidden rounded-full border border-white/12 bg-white/[0.04]">
+                  <Image
+                    src="/brand/logo_icon.png"
+                    alt="Logo ORYA"
+                    width={56}
+                    height={56}
+                    sizes="44px"
+                    className="h-full w-full object-contain"
+                    style={{ transform: "scale(1.34)" }}
+                  />
+                </span>
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.28em] text-white/60">ORYA</p>
                   <p className="text-[18px] font-semibold text-white">O centro da tua vida social.</p>

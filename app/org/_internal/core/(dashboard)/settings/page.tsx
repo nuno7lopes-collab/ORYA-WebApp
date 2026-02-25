@@ -9,6 +9,7 @@ import { isValidPhone, sanitizePhone } from "@/lib/phone";
 import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestructiveActionDialog";
 import ProfileHeaderLayout from "@/app/components/profile/ProfileHeaderLayout";
 import { ProfileCoverCropModal } from "@/app/components/forms/ProfileCoverCropModal";
+import { AvatarCropModal } from "@/app/components/forms/AvatarCropModal";
 import { CTA_DANGER, CTA_PRIMARY } from "@/app/org/_internal/core/dashboardUi";
 import { Avatar } from "@/components/ui/avatar";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
@@ -148,6 +149,8 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
   const coverActionsRef = useRef<HTMLDivElement | null>(null);
   const [avatarActionsOpen, setAvatarActionsOpen] = useState(false);
   const [coverActionsOpen, setCoverActionsOpen] = useState(false);
+  const [avatarCropFile, setAvatarCropFile] = useState<File | null>(null);
+  const [showAvatarCropModal, setShowAvatarCropModal] = useState(false);
   const [coverCropFile, setCoverCropFile] = useState<File | null>(null);
   const [showCoverCropModal, setShowCoverCropModal] = useState(false);
   const hydratedOrganizationIdRef = useRef<number | null>(null);
@@ -212,6 +215,8 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
       setAvatarActionsOpen(false);
       setCoverActionsOpen(false);
       setIsPublicIdentityEditing(false);
+      setAvatarCropFile(null);
+      setShowAvatarCropModal(false);
       setCoverCropFile(null);
       setShowCoverCropModal(false);
     }
@@ -523,6 +528,17 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleAvatarCropCancel() {
+    setShowAvatarCropModal(false);
+    setAvatarCropFile(null);
+  }
+
+  async function handleAvatarCropConfirm(file: File) {
+    setShowAvatarCropModal(false);
+    setAvatarCropFile(null);
+    await handleBrandingUpload("avatar", file);
   }
 
   function handleCoverCropCancel() {
@@ -1330,7 +1346,9 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
           onChange={(e) => {
             const file = e.target.files?.[0] ?? null;
             e.currentTarget.value = "";
-            void handleBrandingUpload("avatar", file);
+            if (!file) return;
+            setAvatarCropFile(file);
+            setShowAvatarCropModal(true);
           }}
         />
         <input
@@ -1429,6 +1447,13 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
         </p>
         {publicProfileMessage && <p className="text-[12px] text-white/70">{publicProfileMessage}</p>}
       </section>
+
+      <AvatarCropModal
+        open={showAvatarCropModal}
+        file={avatarCropFile}
+        onCancel={handleAvatarCropCancel}
+        onConfirm={handleAvatarCropConfirm}
+      />
 
       <ProfileCoverCropModal
         open={showCoverCropModal}

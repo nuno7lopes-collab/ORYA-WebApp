@@ -30,7 +30,7 @@ export const ACCESS_LABELS: Record<ModuleAccessLevel, string> = {
 export const MODULE_LABELS: Record<OrganizationModule, string> = {
   EVENTOS: "Eventos",
   RESERVAS: "Reservas",
-  TORNEIOS: "Padel e torneios",
+  TORNEIOS: "PADEL",
   STAFF: "Equipa",
   FINANCEIRO: "Financas",
   MENSAGENS: "Chat interno",

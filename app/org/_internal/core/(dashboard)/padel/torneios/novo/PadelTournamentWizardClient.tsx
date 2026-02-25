@@ -1316,7 +1316,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
                             prev.map((entry) => (entry.id === windowItem.id ? { ...entry, date: next } : entry)),
                           )
                         }
-                        buttonClassName="h-10 w-full rounded-lg justify-between"
+                        buttonClassName="h-10 w-full rounded-xl justify-between"
                         className="w-full"
                       />
                       {windowDurationMinutes ? (
@@ -1340,7 +1340,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
                           )
                         }
                         maxTime={windowItem.endTime || undefined}
-                        buttonClassName="h-10 w-full rounded-lg justify-between"
+                        buttonClassName="h-10 w-full rounded-xl justify-between"
                         className="w-full"
                       />
                     </label>
@@ -1354,7 +1354,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
                           )
                         }
                         minTime={windowItem.startTime || undefined}
-                        buttonClassName="h-10 w-full rounded-lg justify-between"
+                        buttonClassName="h-10 w-full rounded-xl justify-between"
                         className="w-full"
                       />
                     </label>

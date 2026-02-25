@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useUser } from "@/app/hooks/useUser";
+import { OryaDateField, OryaTimeField } from "@/components/ui/datetime";
 
 type FieldType =
   | "TEXT"
@@ -162,8 +163,10 @@ export function FormSubmissionClient({ form }: { form: FormPayload }) {
         return;
       }
       const status =
-        data?.status === "WAITLISTED" ? "Ficaste em lista de espera." : "Resposta enviada com sucesso.";
-      setSuccess(status);
+        data?.status === "WAITLISTED"
+          ? "Ficaste em lista de espera."
+          : "Resposta enviada com sucesso.";
+      setSuccess(`${status} Formulário: ${form.title} · ${form.organizationName}.`);
       setSubmitting(false);
     } catch (err) {
       console.error("[inscricoes][submit] erro", err);
@@ -320,6 +323,20 @@ export function FormSubmissionClient({ form }: { form: FormPayload }) {
                     />
                     {field.placeholder || "Confirmo"}
                   </label>
+                ) : field.fieldType === "DATE" ? (
+                  <OryaDateField
+                    value={typeof value === "string" ? value : ""}
+                    onChange={(next) => updateAnswer(field.id, next)}
+                    placeholder={field.placeholder ?? "Selecionar data"}
+                    buttonClassName="h-10 w-full rounded-xl justify-between border-white/15 bg-black/30"
+                  />
+                ) : field.fieldType === "TIME" ? (
+                  <OryaTimeField
+                    value={typeof value === "string" ? value : ""}
+                    onChange={(next) => updateAnswer(field.id, next)}
+                    placeholder={field.placeholder ?? "Selecionar hora"}
+                    buttonClassName="h-10 w-full rounded-xl justify-between border-white/15 bg-black/30"
+                  />
                 ) : (
                   <input
                     className={baseClass}
@@ -330,11 +347,7 @@ export function FormSubmissionClient({ form }: { form: FormPayload }) {
                           ? "tel"
                           : field.fieldType === "NUMBER"
                             ? "number"
-                            : field.fieldType === "DATE"
-                              ? "date"
-                              : field.fieldType === "TIME"
-                                ? "time"
-                              : "text"
+                            : "text"
                     }
                     placeholder={field.placeholder ?? ""}
                     value={typeof value === "string" || typeof value === "number" ? value : ""}

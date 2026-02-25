@@ -7,6 +7,8 @@ import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+
+const NO_STORE_HEADERS = { "Cache-Control": "no-store, max-age=0" };
 async function ensureInscricoesEnabled(organization: {
   id: number;
   username?: string | null;
@@ -92,7 +94,7 @@ async function _GET(req: NextRequest) {
           submissionsCount: form._count.submissions,
         })),
       },
-      { status: 200 },
+      { status: 200, headers: NO_STORE_HEADERS },
     );
   } catch (err) {
     if (err instanceof AuthRequiredError) {

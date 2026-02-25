@@ -904,8 +904,8 @@ export default function PromoCodesClient() {
                       value={form.validFrom}
                       onChange={(next) => setForm((p) => ({ ...p, validFrom: next }))}
                       className="w-full"
-                      dateButtonClassName="h-10 flex-1"
-                      timeButtonClassName="h-10"
+                      dateButtonClassName="h-10 flex-1 rounded-xl"
+                      timeButtonClassName="h-10 rounded-xl"
                     />
                   </label>
                   <label className={labelBase}>
@@ -915,8 +915,8 @@ export default function PromoCodesClient() {
                       onChange={(next) => setForm((p) => ({ ...p, validUntil: next }))}
                       minDateTime={form.validFrom || undefined}
                       className="w-full"
-                      dateButtonClassName="h-10 flex-1"
-                      timeButtonClassName="h-10"
+                      dateButtonClassName="h-10 flex-1 rounded-xl"
+                      timeButtonClassName="h-10 rounded-xl"
                     />
                   </label>
                 </div>

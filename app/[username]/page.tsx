@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import ProfileHeader from "@/app/components/profile/ProfileHeader";
 import OrganizationProfileHeader from "@/app/components/profile/OrganizationProfileHeader";
+import OrganizationAgendaTabs from "@/app/components/profile/OrganizationAgendaTabs";
 import MobileTopBar from "@/app/components/mobile/MobileTopBar";
 import MobileProfileOverview from "@/app/components/mobile/MobileProfileOverview";
 import { FilterChip } from "@/app/components/mobile/MobileFilters";
@@ -19,7 +20,7 @@ import {
 import { normalizeInterestSelection, resolveInterestLabel } from "@/lib/interests";
 import { getPaidSalesGate } from "@/lib/organizationPayments";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
-import { canOpenPublicStorefront } from "@/lib/publicOrganizationProfile";
+import { canOpenPublicStorefront, canShowPublicReservasSection } from "@/lib/publicOrganizationProfile";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { getUserIdentityIds } from "@/lib/ownership/identity";
 import { OrganizationFormStatus, type Prisma } from "@prisma/client";
@@ -87,12 +88,13 @@ export async function generateMetadata({
   const description =
     (isOrg ? organization?.publicDescription : profile?.bio)?.trim() ||
     `Perfil público de ${displayName} na ORYA.`;
-  const rawCover = isOrg ? organization?.brandingCoverUrl : profile?.coverUrl;
-  const coverUrl = rawCover
-    ? rawCover.startsWith("http")
-      ? rawCover
-      : `${baseUrl}${rawCover.startsWith("/") ? "" : "/"}${rawCover}`
+  const rawAvatar = isOrg ? organization?.brandingAvatarUrl : profile?.avatarUrl;
+  const avatarUrl = rawAvatar
+    ? rawAvatar.startsWith("http")
+      ? rawAvatar
+      : `${baseUrl}${rawAvatar.startsWith("/") ? "" : "/"}${rawAvatar}`
     : null;
+  const previewImageUrl = avatarUrl ?? `${baseUrl}/brand/logo_icon.png`;
 
   return {
     metadataBase: new URL(baseUrl),
@@ -104,13 +106,13 @@ export async function generateMetadata({
       description,
       url: canonicalUrl,
       type: "profile",
-      images: coverUrl ? [{ url: coverUrl }] : undefined,
+      images: [{ url: previewImageUrl }],
     },
     twitter: {
-      card: coverUrl ? "summary_large_image" : "summary",
+      card: "summary",
       title: `${displayName} | ORYA`,
       description,
-      images: coverUrl ? [coverUrl] : undefined,
+      images: [previewImageUrl],
     },
   };
 }
@@ -209,6 +211,7 @@ type AgendaItem = {
   isPast: boolean;
   isGratis: boolean;
   templateType?: string | null;
+  coverUrl: string;
 };
 
 type AgendaGroup = {
@@ -253,7 +256,7 @@ function formatEventDateRange(start: Date | null, end: Date | null, timezone?: s
   return `${dayStr} · ${startTimeStr}${endTimeStr ? ` – ${endTimeStr}` : ""}`;
 }
 
-function buildAgendaGroups(events: OrganizationEvent[], pastEventIds?: Set<number>) {
+function buildAgendaGroups(events: OrganizationEvent[], isPast: boolean) {
   const groups: AgendaGroup[] = [];
   const groupMap = new Map<string, AgendaGroup>();
 
@@ -279,9 +282,16 @@ function buildAgendaGroups(events: OrganizationEvent[], pastEventIds?: Set<numbe
       title: event.title,
       timeLabel: formatTimeLabel(event.startsAt as Date, timezone),
       locationLabel: locationLabel || "Local por anunciar",
-      isPast: pastEventIds?.has(event.id) ?? false,
+      isPast,
       isGratis: event.isGratis,
       templateType: event.templateType ?? null,
+      coverUrl: getEventCoverUrl(event.coverImageUrl, {
+        seed: event.slug ?? event.id ?? event.title,
+        width: 320,
+        quality: 70,
+        format: "webp",
+        square: false,
+      }),
     };
 
     if (!groupMap.has(key)) {
@@ -665,9 +675,9 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
         ? prisma.reservationResource.findMany({
             where: { organizationId: organizationProfile.id, isActive: true },
             orderBy: [{ capacity: "asc" }, { priority: "asc" }, { id: "asc" }],
-            select: { id: true, label: true, capacity: true },
+            select: { id: true, label: true, capacity: true, courtId: true },
           })
-        : Promise.resolve([] as Array<{ id: number; label: string; capacity: number }>),
+        : Promise.resolve([] as Array<{ id: number; label: string; capacity: number; courtId: number | null }>),
     ]);
 
     const orgEvents: OrganizationEvent[] = events.map((event) => {
@@ -728,8 +738,16 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
             username: true,
             publicName: true,
             businessName: true,
+            primaryModule: true,
             brandingAvatarUrl: true,
             publicHours: true,
+            reservationAssignmentMode: true,
+            orgType: true,
+            officialEmail: true,
+            officialEmailVerifiedAt: true,
+            stripeAccountId: true,
+            stripeChargesEnabled: true,
+            stripePayoutsEnabled: true,
             infoRules: true,
             infoRequirements: true,
             infoLocationNotes: true,
@@ -742,7 +760,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
         })
       : [];
     const siblingOrgIds = siblingOrganizations.map((org) => org.id);
-    const [siblingClubs, siblingServiceCounts, siblingForms] = siblingOrgIds.length
+    const [siblingClubs, siblingServices, siblingProfessionals, siblingResources, siblingForms] = siblingOrgIds.length
       ? await Promise.all([
           prisma.padelClub.findMany({
             where: {
@@ -760,10 +778,28 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
               },
             },
           }),
-          prisma.service.groupBy({
-            by: ["organizationId"],
+          prisma.service.findMany({
             where: { organizationId: { in: siblingOrgIds }, isActive: true },
-            _count: { _all: true },
+            select: {
+              organizationId: true,
+              kind: true,
+              assignmentMode: true,
+              partySizeRequired: true,
+              partySizeMin: true,
+              partySizeMax: true,
+              partySizeStep: true,
+              unitPriceCents: true,
+              professionalLinks: { select: { professionalId: true } },
+              resourceLinks: { select: { resourceId: true } },
+            },
+          }),
+          prisma.reservationProfessional.findMany({
+            where: { organizationId: { in: siblingOrgIds }, isActive: true },
+            select: { organizationId: true, id: true },
+          }),
+          prisma.reservationResource.findMany({
+            where: { organizationId: { in: siblingOrgIds }, isActive: true },
+            select: { organizationId: true, id: true, capacity: true, courtId: true },
           }),
           prisma.organizationForm.findMany({
             where: {
@@ -781,13 +817,41 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
             hours: string | null;
             courts: Array<{ indoor: boolean }>;
           }>,
-          [] as Array<{ organizationId: number; _count: { _all: number } }>,
+          [] as Array<{
+            organizationId: number;
+            kind: string | null;
+            assignmentMode: "PROFESSIONAL_ONLY" | "RESOURCE_ONLY" | "PROFESSIONAL_AND_RESOURCE" | null;
+            partySizeRequired: boolean;
+            partySizeMin: number;
+            partySizeMax: number;
+            partySizeStep: number;
+            unitPriceCents: number;
+            professionalLinks: Array<{ professionalId: number }>;
+            resourceLinks: Array<{ resourceId: number }>;
+          }>,
+          [] as Array<{ organizationId: number; id: number }>,
+          [] as Array<{ organizationId: number; id: number; capacity: number; courtId: number | null }>,
           [] as Array<{ id: number; organizationId: number }>,
         ];
     const siblingClubByOrg = new Map(siblingClubs.map((club) => [club.organizationId, club]));
-    const siblingServiceCountByOrg = new Map(
-      siblingServiceCounts.map((row) => [row.organizationId, row._count._all]),
-    );
+    const siblingServicesByOrg = new Map<number, typeof siblingServices>();
+    siblingServices.forEach((service) => {
+      const list = siblingServicesByOrg.get(service.organizationId) ?? [];
+      list.push(service);
+      siblingServicesByOrg.set(service.organizationId, list);
+    });
+    const siblingProfessionalsByOrg = new Map<number, typeof siblingProfessionals>();
+    siblingProfessionals.forEach((professional) => {
+      const list = siblingProfessionalsByOrg.get(professional.organizationId) ?? [];
+      list.push(professional);
+      siblingProfessionalsByOrg.set(professional.organizationId, list);
+    });
+    const siblingResourcesByOrg = new Map<number, typeof siblingResources>();
+    siblingResources.forEach((resource) => {
+      const list = siblingResourcesByOrg.get(resource.organizationId) ?? [];
+      list.push(resource);
+      siblingResourcesByOrg.set(resource.organizationId, list);
+    });
     const siblingFeaturedFormByOrg = new Map<number, number>();
     siblingForms.forEach((form) => {
       if (!siblingFeaturedFormByOrg.has(form.organizationId)) {
@@ -818,12 +882,33 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
           "region",
           "state",
         );
-        const serviceCount = siblingServiceCountByOrg.get(org.id) ?? 0;
+        const siblingPaidGate = getPaidSalesGate({
+          officialEmail: org.officialEmail ?? null,
+          officialEmailVerifiedAt: org.officialEmailVerifiedAt ?? null,
+          stripeAccountId: org.stripeAccountId ?? null,
+          stripeChargesEnabled: org.stripeChargesEnabled ?? false,
+          stripePayoutsEnabled: org.stripePayoutsEnabled ?? false,
+          requireStripe: org.orgType !== "PLATFORM",
+        });
+        const siblingAllowPaidServices = siblingPaidGate.ok;
+        const siblingServicesForOrg = (siblingServicesByOrg.get(org.id) ?? []).filter((service) =>
+          siblingAllowPaidServices ? true : (service.unitPriceCents ?? 0) === 0,
+        );
+        const siblingProfessionalsForOrg = siblingProfessionalsByOrg.get(org.id) ?? [];
+        const siblingResourcesForOrg = siblingResourcesByOrg.get(org.id) ?? [];
         const modules = parseOrganizationTools(
           (org.organizationModules ?? []).map((module) => String(module.moduleKey).toUpperCase()),
         ) ?? [];
+        const siblingPrimaryModule = resolvePrimaryModule(org.primaryModule ?? null, modules) as OperationModule;
         const moduleSet = new Set<string>([...modules, ...CORE_ORGANIZATION_MODULES]);
-        const hasReservas = moduleSet.has("RESERVAS") && serviceCount > 0;
+        moduleSet.add(siblingPrimaryModule);
+        const hasReservas = canShowPublicReservasSection({
+          moduleEnabled: moduleSet.has("RESERVAS"),
+          organizationAssignmentMode: org.reservationAssignmentMode ?? null,
+          services: siblingServicesForOrg,
+          professionals: siblingProfessionalsForOrg,
+          resources: siblingResourcesForOrg,
+        });
         const featuredFormId = siblingFeaturedFormByOrg.get(org.id) ?? null;
         const amenities = parseAmenityTags(org.infoRequirements, org.infoRules, org.infoLocationNotes);
         if (amenities.length === 0) {
@@ -853,6 +938,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
       .filter((event) => event.startsAt && event.startsAt < now)
       .sort((a, b) => (b.startsAt?.getTime() ?? 0) - (a.startsAt?.getTime() ?? 0));
     const spotlightEvent = upcomingEvents[0] ?? null;
+    const agendaLeadEvent = spotlightEvent ?? pastEvents[0] ?? null;
     const coverCandidate = organizationProfile.brandingCoverUrl?.trim() || null;
     const headerCoverUrl = coverCandidate
       ? getProfileCoverUrl(coverCandidate, {
@@ -864,23 +950,12 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
       : null;
     const initialIsFollowing = Boolean(followRow);
     const followersTotal = followersCount ?? 0;
-    const pastEventIds = new Set(pastEvents.map((event) => event.id));
-    const agendaEvents = [...upcomingEvents, ...pastEvents].sort(
-      (a, b) => (b.startsAt?.getTime() ?? 0) - (a.startsAt?.getTime() ?? 0),
-    );
-    const agendaGroups = buildAgendaGroups(agendaEvents, pastEventIds);
-    const agendaTotal = agendaEvents.length;
+    const agendaUpcomingGroups = buildAgendaGroups(upcomingEvents, false);
+    const agendaPastGroups = buildAgendaGroups(pastEvents, true);
+    const agendaTotal = upcomingEvents.length + pastEvents.length;
     const publicForms = forms.filter((form) => form.status !== "ARCHIVED");
     const featuredForm =
       publicForms.find((form) => /guarda[-\s]?redes/i.test(form.title)) ?? publicForms[0] ?? null;
-    const agendaPanelGroups = agendaGroups
-      .slice(0, 2)
-      .map((group) => ({ ...group, items: group.items.slice(0, 3) }));
-    const agendaPanelCount = agendaPanelGroups.reduce((acc, group) => acc + group.items.length, 0);
-    const remainingAgendaCount = Math.max(0, agendaTotal - agendaPanelCount);
-    const agendaDiscoverBase = hasTorneiosModule && !hasEventosModule ? "/descobrir/torneios" : "/descobrir/eventos";
-    const agendaDiscoverHref = `${agendaDiscoverBase}?query=${encodeURIComponent(orgDisplayName)}`;
-    const agendaLeadEvent = spotlightEvent ?? agendaEvents[0] ?? null;
     const agendaKindsLabel =
       hasEventosModule && hasTorneiosModule
         ? "Eventos e torneios"
@@ -888,8 +963,18 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
           ? "Torneios"
           : "Eventos";
     const agendaLeadNoun = agendaLeadEvent?.templateType === "PADEL" ? "torneio" : "evento";
+    const agendaLeadIsPast = Boolean(
+      agendaLeadEvent &&
+      agendaLeadEvent.startsAt &&
+      agendaLeadEvent.startsAt.getTime() < now.getTime(),
+    );
+    const agendaLeadLabel = agendaLeadEvent
+      ? agendaLeadIsPast
+        ? `Último ${agendaLeadNoun}`
+        : `Próximo ${agendaLeadNoun}`
+      : `Próximo ${agendaLeadNoun}`;
     const spotlightCtaLabel = agendaLeadEvent
-      ? pastEventIds.has(agendaLeadEvent.id)
+      ? agendaLeadIsPast
         ? "Ver resumo"
         : agendaLeadEvent.templateType === "PADEL"
           ? "Inscrever agora"
@@ -898,7 +983,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
             : "Comprar bilhete"
       : "Ver evento";
     const spotlightCtaHref = agendaLeadEvent
-      ? pastEventIds.has(agendaLeadEvent.id)
+      ? agendaLeadIsPast
         ? `/eventos/${agendaLeadEvent.slug}`
         : buildTicketHref(agendaLeadEvent.slug)
       : null;
@@ -909,7 +994,13 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
       ? `${featuredForm.capacity} vagas`
       : null;
     const showAgendaSection = showAgenda;
-    const showReservasSection = hasReservasModule;
+    const showReservasSection = canShowPublicReservasSection({
+      moduleEnabled: hasReservasModule,
+      organizationAssignmentMode: organizationProfile.reservationAssignmentMode ?? null,
+      services,
+      professionals,
+      resources,
+    });
     const showFormsSection = hasInscricoes && publicForms.length > 0;
     const showGroupCentersSection = canShowLinkedOrganizationsPublicly && groupCenters.length > 0;
     const showCommunitySection = true;
@@ -1003,64 +1094,20 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
                   </div>
                   <EventSpotlightCard
                     event={agendaLeadEvent}
-                    label={`Próximo ${agendaLeadNoun}`}
+                    label={agendaLeadLabel}
                     emptyLabel={`Sem ${agendaKindsLabel.toLowerCase()} anunciados`}
                     ctaLabel={spotlightCtaLabel}
                     ctaHref={spotlightCtaHref}
                     variant="embedded"
                   />
-                  <div className="space-y-3">
-                    {agendaPanelGroups.map((group) => (
-                      <div key={group.key} className="space-y-2">
-                        <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">{group.label}</p>
-                        <div className="space-y-2">
-                          {group.items.map((item) => {
-                            const href = item.isPast
-                              ? `/eventos/${item.slug}`
-                              : `/eventos/${item.slug}?checkout=1#bilhetes`;
-                            return (
-                              <Link
-                                key={item.id}
-                                href={href}
-                                className="group flex items-center justify-between gap-3 rounded-2xl border border-white/15 bg-black/20 px-4 py-3 text-sm text-white/80 transition hover:border-white/35 hover:bg-black/30"
-                              >
-                                <div>
-                                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">{item.timeLabel}</p>
-                                  <p className="text-sm font-semibold text-white">{item.title}</p>
-                                  <p className="text-[12px] text-white/60">{item.locationLabel}</p>
-                                </div>
-                                <span
-                                  className={`rounded-full border px-3 py-1 text-[11px] ${
-                                    item.isPast
-                                      ? "border-white/15 bg-white/5 text-white/60"
-                                      : "border-emerald-300/40 bg-emerald-400/10 text-emerald-100"
-                                  }`}
-                                >
-                                  {item.isPast
-                                    ? "Ver resumo"
-                                    : item.templateType === "PADEL"
-                                      ? "Inscrever agora"
-                                      : item.isGratis
-                                        ? "Garantir lugar"
-                                        : "Comprar bilhete"}
-                                </span>
-                              </Link>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  {remainingAgendaCount > 0 ? (
-                    <div className="flex justify-end">
-                      <Link
-                        href={agendaDiscoverHref}
-                        className="rounded-full border border-white/20 bg-black/25 px-3 py-1.5 text-[11px] text-white/75 transition hover:border-white/35 hover:text-white"
-                      >
-                        Ver mais {remainingAgendaCount}
-                      </Link>
-                    </div>
-                  ) : null}
+                  <OrganizationAgendaTabs
+                    upcomingGroups={agendaUpcomingGroups}
+                    pastGroups={agendaPastGroups}
+                    spotlightEventId={agendaLeadEvent?.id ?? null}
+                    initialVisibleUpcoming={5}
+                    initialVisiblePast={4}
+                    pageSize={5}
+                  />
                 </div>
               </section>
             ),

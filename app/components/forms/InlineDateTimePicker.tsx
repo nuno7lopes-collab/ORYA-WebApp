@@ -31,8 +31,8 @@ export function InlineDateTimePicker({ label, value, onChange, minDateTime, requ
         onChange={onChange}
         minDateTime={minLocal}
         className="w-full"
-        dateButtonClassName="h-10 flex-1 rounded-md"
-        timeButtonClassName="h-10 rounded-md"
+        dateButtonClassName="h-10 flex-1 rounded-xl"
+        timeButtonClassName="h-10 rounded-xl"
       />
       {required && !localValue ? <p className="text-xs text-red-400">Obrigatório</p> : null}
     </div>

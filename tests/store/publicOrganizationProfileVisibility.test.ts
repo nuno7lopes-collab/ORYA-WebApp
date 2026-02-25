@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canOpenPublicStorefront } from "@/lib/publicOrganizationProfile";
+import { canOpenPublicStorefront, canShowPublicReservasSection } from "@/lib/publicOrganizationProfile";
 
 describe("publicOrganizationProfile store visibility", () => {
   it("only opens storefront when all operational gates pass", () => {
@@ -59,5 +59,104 @@ describe("publicOrganizationProfile store visibility", () => {
         publicProductCount: 2,
       }),
     ).toBe(false);
+  });
+});
+
+describe("publicOrganizationProfile reservas visibility", () => {
+  it("hides reservas when module is disabled or there are no active services", () => {
+    expect(
+      canShowPublicReservasSection({
+        moduleEnabled: false,
+        services: [{ assignmentMode: "PROFESSIONAL_ONLY" }],
+        professionals: [{ id: 10 }],
+      }),
+    ).toBe(false);
+
+    expect(
+      canShowPublicReservasSection({
+        moduleEnabled: true,
+        services: [],
+        professionals: [{ id: 10 }],
+      }),
+    ).toBe(false);
+  });
+
+  it("requires availability compatible with assignment mode", () => {
+    expect(
+      canShowPublicReservasSection({
+        moduleEnabled: true,
+        organizationAssignmentMode: "PROFESSIONAL_ONLY",
+        services: [{ assignmentMode: "PROFESSIONAL_ONLY" }],
+        professionals: [],
+        resources: [{ id: 5, capacity: 2, courtId: null }],
+      }),
+    ).toBe(false);
+
+    expect(
+      canShowPublicReservasSection({
+        moduleEnabled: true,
+        organizationAssignmentMode: "RESOURCE_ONLY",
+        services: [{ assignmentMode: "RESOURCE_ONLY" }],
+        professionals: [{ id: 10 }],
+        resources: [],
+      }),
+    ).toBe(false);
+
+    expect(
+      canShowPublicReservasSection({
+        moduleEnabled: true,
+        organizationAssignmentMode: "PROFESSIONAL_AND_RESOURCE",
+        services: [{ assignmentMode: "PROFESSIONAL_AND_RESOURCE" }],
+        professionals: [{ id: 10 }],
+        resources: [],
+      }),
+    ).toBe(false);
+  });
+
+  it("respects explicit service links for professionals/resources", () => {
+    expect(
+      canShowPublicReservasSection({
+        moduleEnabled: true,
+        organizationAssignmentMode: "PROFESSIONAL_ONLY",
+        services: [{ assignmentMode: "PROFESSIONAL_ONLY", professionalLinks: [{ professionalId: 44 }] }],
+        professionals: [{ id: 10 }],
+      }),
+    ).toBe(false);
+
+    expect(
+      canShowPublicReservasSection({
+        moduleEnabled: true,
+        organizationAssignmentMode: "PROFESSIONAL_AND_RESOURCE",
+        services: [
+          {
+            assignmentMode: "PROFESSIONAL_AND_RESOURCE",
+            professionalLinks: [{ professionalId: 10 }],
+            resourceLinks: [{ resourceId: 20 }],
+          },
+        ],
+        professionals: [{ id: 10 }],
+        resources: [{ id: 20, capacity: 2, courtId: null }],
+      }),
+    ).toBe(true);
+  });
+
+  it("enforces court-only resources for court services", () => {
+    expect(
+      canShowPublicReservasSection({
+        moduleEnabled: true,
+        organizationAssignmentMode: "RESOURCE_ONLY",
+        services: [{ kind: "COURT", assignmentMode: "RESOURCE_ONLY" }],
+        resources: [{ id: 20, capacity: 4, courtId: null }],
+      }),
+    ).toBe(false);
+
+    expect(
+      canShowPublicReservasSection({
+        moduleEnabled: true,
+        organizationAssignmentMode: "RESOURCE_ONLY",
+        services: [{ kind: "COURT", assignmentMode: "RESOURCE_ONLY" }],
+        resources: [{ id: 20, capacity: 4, courtId: 7 }],
+      }),
+    ).toBe(true);
   });
 });

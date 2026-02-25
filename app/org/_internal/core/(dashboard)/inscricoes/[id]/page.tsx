@@ -9,7 +9,12 @@ import { useParams, usePathname, useRouter, useSearchParams } from "next/navigat
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
 import { OryaDateTimeField } from "@/components/ui/datetime";
-import { appendOrganizationIdToHref, parseOrganizationId, parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
+import {
+  buildOrgHref,
+  buildOrgHubHref,
+  parseOrganizationId,
+  parseOrganizationIdFromPathname,
+} from "@/lib/organizationIdUtils";
 
 type FieldType =
   | "TEXT"
@@ -83,7 +88,7 @@ type SummaryResponse = {
   error?: string;
 };
 
-const fetcher = (url: string) => fetch(url).then((res) => res.json());
+const fetcher = (url: string) => fetch(url, { cache: "no-store" }).then((res) => res.json());
 const normalizeIntegerInput = (value: string) => {
   const match = value.trim().match(/^\d+/);
   return match ? match[0] : "";
@@ -464,7 +469,13 @@ export default function InscricaoDetailPage() {
     );
   }
 
-  const formBasePath = `/org/forms/${form.id}`;
+  const formsListHref = organizationId
+    ? buildOrgHref(organizationId, "/forms")
+    : buildOrgHubHref("/organizations");
+  const fallbackFormPath = pathname?.split("?")[0] || `/org/forms/${form.id}`;
+  const formBasePath = organizationId
+    ? buildOrgHref(organizationId, `/forms/${form.id}`)
+    : fallbackFormPath;
   const buildHref = (patch: Record<string, string | null>) => {
     const params = new URLSearchParams(searchParams?.toString());
     Object.entries(patch).forEach(([key, value]) => {
@@ -600,7 +611,7 @@ export default function InscricaoDetailPage() {
         setDeleting(false);
         return;
       }
-      router.push(appendOrganizationIdToHref("/org/forms", organizationId));
+      router.push(formsListHref);
       router.refresh();
     } catch (err) {
       console.error("[inscricoes][delete] erro", err);
@@ -631,7 +642,7 @@ export default function InscricaoDetailPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2 text-[12px]">
           <Link
-            href={appendOrganizationIdToHref("/org/forms", organizationId)}
+            href={formsListHref}
             className="rounded-full border border-white/20 px-3 py-1 text-white/80 hover:bg-white/10"
           >
             Voltar

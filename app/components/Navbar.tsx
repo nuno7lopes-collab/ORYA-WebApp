@@ -106,15 +106,18 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
       className="group flex items-center gap-2.5 transition hover:opacity-90"
       aria-label="Voltar à homepage ORYA"
     >
-      <Image
-        src="/brand/logo_icon.png"
-        alt="Logo ORYA"
-        width={44}
-        height={44}
-        priority
-        sizes="44px"
-        className="h-10 w-10 shrink-0 object-contain"
-      />
+      <span className="relative inline-flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/12 bg-white/[0.04]">
+        <Image
+          src="/brand/logo_icon.png"
+          alt="Logo ORYA"
+          width={48}
+          height={48}
+          priority
+          sizes="40px"
+          className="h-full w-full object-contain"
+          style={{ transform: "scale(1.34)" }}
+        />
+      </span>
       <span className="text-[17px] font-semibold leading-none tracking-[0.26em] text-white/90 sm:text-[18px]">
         ORYA
       </span>

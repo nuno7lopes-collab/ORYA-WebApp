@@ -230,6 +230,20 @@ html:not([data-theme-mode="light"]) [data-org-dashboard-shell] {
   --orya-dashboard-surface-rgb: 8 16 30;
   --orya-dashboard-surface-rgb-soft: 11 22 40;
   --orya-dashboard-surface-rgb-accent: 16 34 58;
+  --orya-dashboard-shadow-lite: 0 10px 28px rgba(0, 0, 0, 0.38);
+}
+
+html:not([data-theme-mode="light"]) [data-org-dashboard-shell] [class*="backdrop-blur"] {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+html:not([data-theme-mode="light"]) [data-org-dashboard-shell] [class*="shadow-["] {
+  box-shadow: var(--orya-dashboard-shadow-lite) !important;
+}
+
+html:not([data-theme-mode="light"]) [data-org-dashboard-shell] [class*="blur-["] {
+  filter: none !important;
 }
 
 html:not([data-theme-mode="light"]) [data-org-dashboard-shell] .bg-black {
@@ -1204,15 +1218,8 @@ body {
 }
 
 .orya-bg-layer {
-  position: fixed;
-  background-attachment: fixed;
-}
-
-@media (max-width: 768px) {
-  .orya-bg-layer {
-    position: absolute;
-    background-attachment: scroll;
-  }
+  position: absolute;
+  background-attachment: scroll;
 }
 
 .orya-page-width {
@@ -1411,8 +1418,8 @@ body.orya-bg-landing {
   background-color: var(--orya-menu-bg-solid) !important;
   background-image: var(--orya-menu-bg) !important;
   box-shadow: var(--orya-menu-shadow) !important;
-  -webkit-backdrop-filter: blur(18px);
-  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
   color: var(--theme-text);
 }
 

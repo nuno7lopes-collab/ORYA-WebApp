@@ -3838,8 +3838,8 @@ export default function PadelTournamentTabs({
                   saveRegistrationWindow({ start: value, end: registrationEndsAt });
                 }}
                 className="w-full"
-                dateButtonClassName="h-9 flex-1 rounded-lg"
-                timeButtonClassName="h-9 rounded-lg"
+                dateButtonClassName="h-9 flex-1 rounded-xl"
+                timeButtonClassName="h-9 rounded-xl"
               />
             </label>
             <label className="flex flex-col gap-1">
@@ -3852,8 +3852,8 @@ export default function PadelTournamentTabs({
                   saveRegistrationWindow({ start: registrationStartsAt, end: value });
                 }}
                 className="w-full"
-                dateButtonClassName="h-9 flex-1 rounded-lg"
-                timeButtonClassName="h-9 rounded-lg"
+                dateButtonClassName="h-9 flex-1 rounded-xl"
+                timeButtonClassName="h-9 rounded-xl"
               />
             </label>
           </div>

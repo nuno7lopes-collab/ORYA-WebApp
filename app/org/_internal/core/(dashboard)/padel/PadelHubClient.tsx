@@ -6738,8 +6738,8 @@ export default function PadelHubClient({
                       onChange={setBulkBlockStartAt}
                       stepMinutes={5}
                       className="w-full"
-                      dateButtonClassName="w-full rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-white"
-                      timeButtonClassName="w-full rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-white"
+                      dateButtonClassName="w-full rounded-xl border border-white/15 bg-black/30 px-2 py-2 text-white"
+                      timeButtonClassName="w-full rounded-xl border border-white/15 bg-black/30 px-2 py-2 text-white"
                     />
                   </label>
                   <label className="space-y-1 text-[12px] text-white/65">
@@ -6749,8 +6749,8 @@ export default function PadelHubClient({
                       onChange={setBulkBlockEndAt}
                       stepMinutes={5}
                       className="w-full"
-                      dateButtonClassName="w-full rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-white"
-                      timeButtonClassName="w-full rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-white"
+                      dateButtonClassName="w-full rounded-xl border border-white/15 bg-black/30 px-2 py-2 text-white"
+                      timeButtonClassName="w-full rounded-xl border border-white/15 bg-black/30 px-2 py-2 text-white"
                     />
                   </label>
                 </div>

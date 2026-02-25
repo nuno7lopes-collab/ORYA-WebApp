@@ -7,6 +7,8 @@ import { sanitizeUsername, validateUsername } from "@/lib/username";
 import { useUser } from "@/app/hooks/useUser";
 import FollowClient from "@/app/[username]/FollowClient";
 import ProfileHeaderLayout, { ProfileStatPill } from "@/app/components/profile/ProfileHeaderLayout";
+import { AvatarCropModal } from "@/app/components/forms/AvatarCropModal";
+import { ProfileCoverCropModal } from "@/app/components/forms/ProfileCoverCropModal";
 import { Avatar } from "@/components/ui/avatar";
 import { getProfileCoverUrl, sanitizeProfileCoverUrl } from "@/lib/profileCover";
 import { buildOrgHref, buildOrgHubHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
@@ -102,6 +104,12 @@ export default function ProfileHeader({
   const [avatarMenu, setAvatarMenu] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const coverInputRef = useRef<HTMLInputElement | null>(null);
+  const [avatarCropFile, setAvatarCropFile] = useState<File | null>(null);
+  const [coverCropFile, setCoverCropFile] = useState<File | null>(null);
+  const [showAvatarCropModal, setShowAvatarCropModal] = useState(false);
+  const [showCoverCropModal, setShowCoverCropModal] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [uploadingCover, setUploadingCover] = useState(false);
   const [avatarVersion, setAvatarVersion] = useState<string | number | null>(
     avatarUpdatedAt ?? null,
   );
@@ -121,6 +129,10 @@ export default function ProfileHeader({
     if (!showEditControls) {
       setEditingField(null);
       setAvatarMenu(false);
+      setAvatarCropFile(null);
+      setCoverCropFile(null);
+      setShowAvatarCropModal(false);
+      setShowCoverCropModal(false);
     }
   }, [showEditControls]);
 
@@ -187,39 +199,82 @@ export default function ProfileHeader({
     return true;
   };
 
-  const handleAvatarUpload = async (file: File | null) => {
-    if (!file) return;
+  const uploadAvatarFile = async (file: File) => {
     setError(null);
     setSuccess(null);
+    setUploadingAvatar(true);
     const formData = new FormData();
     formData.append("file", file);
-    const res = await fetch("/api/upload?scope=avatar", { method: "POST", body: formData });
-    const json = await res.json().catch(() => null);
-    if (!res.ok || !json?.url) {
-      setError(json?.error || "Falha no upload da foto.");
-      return;
+    try {
+      const res = await fetch("/api/upload?scope=avatar", { method: "POST", body: formData });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.url) {
+        setError(json?.error || "Falha no upload da foto.");
+        return;
+      }
+      setAvatar(json.url);
+      await runSave({ avatarUrl: json.url });
+    } finally {
+      setUploadingAvatar(false);
     }
-    setAvatar(json.url);
-    await runSave({ avatarUrl: json.url });
   };
 
   const triggerFile = () => fileInputRef.current?.click();
   const triggerCoverFile = () => coverInputRef.current?.click();
 
-  const handleCoverUpload = async (file: File | null) => {
-    if (!file) return;
+  const uploadCoverFile = async (file: File) => {
     setError(null);
     setSuccess(null);
+    setUploadingCover(true);
     const formData = new FormData();
     formData.append("file", file);
-    const res = await fetch("/api/upload?scope=profile-cover", { method: "POST", body: formData });
-    const json = await res.json().catch(() => null);
-    if (!res.ok || !json?.url) {
-      setError(json?.error || "Falha no upload da capa.");
-      return;
+    try {
+      const res = await fetch("/api/upload?scope=profile-cover", { method: "POST", body: formData });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.url) {
+        setError(json?.error || "Falha no upload da capa.");
+        return;
+      }
+      setCover(json.url);
+      await runSave({ coverUrl: json.url });
+    } finally {
+      setUploadingCover(false);
     }
-    setCover(json.url);
-    await runSave({ coverUrl: json.url });
+  };
+
+  const handleAvatarUpload = (file: File | null) => {
+    if (!file) return;
+    setAvatarCropFile(file);
+    setShowAvatarCropModal(true);
+    setAvatarMenu(false);
+  };
+
+  const handleCoverUpload = (file: File | null) => {
+    if (!file) return;
+    setCoverCropFile(file);
+    setShowCoverCropModal(true);
+  };
+
+  const handleAvatarCropCancel = () => {
+    setShowAvatarCropModal(false);
+    setAvatarCropFile(null);
+  };
+
+  const handleCoverCropCancel = () => {
+    setShowCoverCropModal(false);
+    setCoverCropFile(null);
+  };
+
+  const handleAvatarCropConfirm = async (file: File) => {
+    setShowAvatarCropModal(false);
+    setAvatarCropFile(null);
+    await uploadAvatarFile(file);
+  };
+
+  const handleCoverCropConfirm = async (file: File) => {
+    setShowCoverCropModal(false);
+    setCoverCropFile(null);
+    await uploadCoverFile(file);
   };
 
   const handleCoverRemove = async () => {
@@ -484,16 +539,16 @@ export default function ProfileHeader({
       <button
         type="button"
         onClick={triggerCoverFile}
-        disabled={saving}
+        disabled={saving || uploadingCover}
         className="rounded-full border border-white/25 bg-white/10 px-3 py-1 text-[11px] font-semibold text-white/85 shadow-[0_10px_26px_rgba(0,0,0,0.35)] hover:bg-white/15 disabled:opacity-60"
       >
-        {cover ? "Trocar capa" : "Adicionar capa"}
+        {uploadingCover ? "A carregar..." : cover ? "Trocar capa" : "Adicionar capa"}
       </button>
       {cover && (
         <button
           type="button"
           onClick={handleCoverRemove}
-          disabled={saving}
+          disabled={saving || uploadingCover}
           className="rounded-full border border-white/15 bg-black/50 px-3 py-1 text-[11px] text-white/70 hover:bg-black/60 disabled:opacity-60"
         >
           Remover
@@ -514,7 +569,13 @@ export default function ProfileHeader({
           src={avatar ?? null}
           version={avatarVersion}
           name={displayName}
-          className="h-[clamp(5.6rem,10.5vw,8.6rem)] w-[clamp(5.6rem,10.5vw,8.6rem)]"
+          className="h-24 w-24 sm:h-28 sm:w-28 md:h-32 md:w-32"
+          style={{
+            width: "clamp(5.6rem, 10.5vw, 8.6rem)",
+            height: "clamp(5.6rem, 10.5vw, 8.6rem)",
+            minWidth: "5.6rem",
+            minHeight: "5.6rem",
+          }}
           textClassName="text-xs font-semibold uppercase tracking-[0.2em] text-white/80"
           onError={handleAvatarError}
         />
@@ -559,7 +620,7 @@ export default function ProfileHeader({
               triggerFile();
             }}
           >
-            Mudar foto
+            {uploadingAvatar ? "A carregar..." : "Mudar foto"}
           </button>
           <button
             className="orya-menu-item text-sm"
@@ -612,14 +673,34 @@ export default function ProfileHeader({
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={(e) => handleCoverUpload(e.target.files?.[0] ?? null)}
+        onChange={(e) => {
+          const file = e.target.files?.[0] ?? null;
+          e.currentTarget.value = "";
+          handleCoverUpload(file);
+        }}
       />
       <input
         ref={fileInputRef}
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={(e) => handleAvatarUpload(e.target.files?.[0] ?? null)}
+        onChange={(e) => {
+          const file = e.target.files?.[0] ?? null;
+          e.currentTarget.value = "";
+          handleAvatarUpload(file);
+        }}
+      />
+      <ProfileCoverCropModal
+        open={showCoverCropModal}
+        file={coverCropFile}
+        onCancel={handleCoverCropCancel}
+        onConfirm={handleCoverCropConfirm}
+      />
+      <AvatarCropModal
+        open={showAvatarCropModal}
+        file={avatarCropFile}
+        onCancel={handleAvatarCropCancel}
+        onConfirm={handleAvatarCropConfirm}
       />
       {isListModalOpen && (
         <div

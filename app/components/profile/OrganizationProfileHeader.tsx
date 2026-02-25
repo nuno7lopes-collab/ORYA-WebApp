@@ -158,7 +158,8 @@ export default function OrganizationProfileHeader({
   const linkedPopoverContainerRef = useRef<HTMLDivElement | null>(null);
   const mailtoHref = contactEmail ? `mailto:${contactEmail}` : null;
   const iconBaseClass =
-    "inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/8 text-white/85 transition hover:border-white/40 hover:bg-white/12";
+    "inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-[radial-gradient(circle_at_35%_25%,rgba(255,255,255,0.22),rgba(255,255,255,0.08)_52%,rgba(255,255,255,0.02))] text-white/90 shadow-[0_10px_24px_rgba(0,0,0,0.35)] transition duration-200 hover:-translate-y-[1px] hover:border-white/40 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050913]";
+  const iconGlyphClass = "h-[18px] w-[18px]";
   const editProfileHref = buildOrgHref(organizationId, "/settings");
 
   useEffect(() => {
@@ -266,17 +267,23 @@ export default function OrganizationProfileHeader({
           href={instagramHref}
           target="_blank"
           rel="noreferrer"
-          className="relative inline-flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#f9ce34] via-[#ee2a7b] to-[#6228d7] p-[1.5px] shadow-[0_10px_24px_rgba(238,42,123,0.25)]"
+          className={`${iconBaseClass} border-pink-200/55 bg-gradient-to-br from-[#f9ce34]/55 via-[#ee2a7b]/38 to-[#6228d7]/52 text-white`}
           aria-label="Instagram"
         >
-          <span className="inline-flex h-full w-full items-center justify-center rounded-full bg-[#0b0f1d] text-white">
-            <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
-              <path
-                fill="currentColor"
-                d="M7 3h10a4 4 0 0 1 4 4v10a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V7a4 4 0 0 1 4-4Zm0 2a2 2 0 0 0-2 2v10c0 1.1.9 2 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2H7Zm5 3.2a4.8 4.8 0 1 1 0 9.6a4.8 4.8 0 0 1 0-9.6Zm0 2a2.8 2.8 0 1 0 0 5.6a2.8 2.8 0 0 0 0-5.6Zm5.3-1.6a1.1 1.1 0 1 1-2.2 0a1.1 1.1 0 0 1 2.2 0Z"
-              />
-            </svg>
-          </span>
+          <svg
+            viewBox="0 0 24 24"
+            className={iconGlyphClass}
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.9"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <rect x="3.3" y="3.3" width="17.4" height="17.4" rx="5" />
+            <circle cx="12" cy="12" r="3.9" />
+            <circle cx="17.2" cy="6.8" r="1.05" fill="currentColor" stroke="none" />
+          </svg>
         </a>
       )}
       {youtubeHref && (
@@ -284,13 +291,24 @@ export default function OrganizationProfileHeader({
           href={youtubeHref}
           target="_blank"
           rel="noreferrer"
-          className={`${iconBaseClass} border-red-400/45 bg-red-500/15 text-red-100`}
+          className={`${iconBaseClass} border-red-300/45 bg-red-500/16 text-red-100`}
           aria-label="YouTube"
         >
-          <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+          <svg
+            viewBox="0 0 24 24"
+            className={iconGlyphClass}
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <rect x="3.5" y="6.5" width="17" height="11" rx="4.2" />
             <path
+              d="m10 9.5 5 2.5-5 2.5Z"
               fill="currentColor"
-              d="M21.6 7.2a2.7 2.7 0 0 0-1.9-1.9C18 4.8 12 4.8 12 4.8s-6 0-7.7.5a2.7 2.7 0 0 0-1.9 1.9A28.3 28.3 0 0 0 2 12a28.3 28.3 0 0 0 .4 4.8 2.7 2.7 0 0 0 1.9 1.9c1.7.5 7.7.5 7.7.5s6 0 7.7-.5a2.7 2.7 0 0 0 1.9-1.9A28.3 28.3 0 0 0 22 12a28.3 28.3 0 0 0-.4-4.8ZM10 15.5v-7l6 3.5-6 3.5Z"
+              stroke="none"
             />
           </svg>
         </a>
@@ -300,13 +318,13 @@ export default function OrganizationProfileHeader({
           href={tiktokHref}
           target="_blank"
           rel="noreferrer"
-          className={`${iconBaseClass} border-white/35 bg-white/14 text-white`}
+          className={`${iconBaseClass} border-white/35 bg-white/16 text-white`}
           aria-label="TikTok"
         >
-          <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+          <svg viewBox="0 0 24 24" className={iconGlyphClass} aria-hidden="true">
             <path
               fill="currentColor"
-              d="M14.8 4.5c.6 1.1 1.5 1.8 2.8 2V9a7 7 0 0 1-2.8-.8v6.2a4.7 4.7 0 1 1-4.6-4.7c.3 0 .6 0 .9.1v2.5a2.1 2.1 0 1 0 1.2 2V4.5h2.5Z"
+              d="M14.6 4.2c.63 1.4 1.62 2.26 3.05 2.55V9.2c-1.08-.03-2.14-.35-3.05-.95v5.37a4.9 4.9 0 1 1-4.87-4.93c.34 0 .67.03 1 .1v2.47a2.34 2.34 0 1 0 1.33 2.1V4.2h2.48Z"
             />
           </svg>
         </a>
@@ -319,10 +337,21 @@ export default function OrganizationProfileHeader({
           className={`${iconBaseClass} border-blue-300/45 bg-blue-500/14 text-blue-100`}
           aria-label="LinkedIn"
         >
-          <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+          <svg
+            viewBox="0 0 24 24"
+            className={iconGlyphClass}
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <rect x="4.1" y="4.1" width="15.8" height="15.8" rx="3.4" />
             <path
               fill="currentColor"
-              d="M6.3 8.1a1.5 1.5 0 1 1 0-3a1.5 1.5 0 0 1 0 3ZM4.9 9.4h2.8V19H4.9V9.4Zm4.5 0H12v1.3h.1c.4-.8 1.4-1.6 2.8-1.6c3 0 3.6 2 3.6 4.5V19h-2.9v-4.9c0-1.2 0-2.7-1.7-2.7s-1.9 1.3-1.9 2.6V19H9.4V9.4Z"
+              d="M8.2 9.8a1.15 1.15 0 1 0 0-2.3a1.15 1.15 0 0 0 0 2.3Zm1.1 8.7V11.2H7.1v7.3h2.2Zm1.7-7.3h2.1v1.05h.03c.28-.53.97-1.2 2.22-1.2c2.37 0 2.8 1.56 2.8 3.59v3.74h-2.2v-3.3c0-.78-.02-1.8-1.1-1.8s-1.27.86-1.27 1.74v3.36H11v-7.18Z"
+              stroke="none"
             />
           </svg>
         </a>
@@ -335,11 +364,19 @@ export default function OrganizationProfileHeader({
           className={`${iconBaseClass} border-sky-300/45 bg-sky-400/15 text-sky-100`}
           aria-label="Website"
         >
-          <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
-            <path
-              fill="currentColor"
-              d="M12 3a9 9 0 1 0 0 18a9 9 0 0 0 0-18Zm6.7 7h-3.1a15.2 15.2 0 0 0-1.2-4A7.2 7.2 0 0 1 18.7 10Zm-6.7-5c.7 1 1.4 2.6 1.8 5H10.2c.4-2.4 1.1-4 1.8-5Zm-2.4.3A15.2 15.2 0 0 0 8.4 10H5.3a7.2 7.2 0 0 1 4.3-4.7Zm-4.3 6.7h3.1a16.7 16.7 0 0 0 0 4H5.3a7.2 7.2 0 0 1 0-4Zm4.3 6.7A7.2 7.2 0 0 1 5.3 14h3.1c.3 1.6.7 3 1.2 4.7Zm2.4.3c-.7-1-1.4-2.6-1.8-5h3.6c-.4 2.4-1.1 4-1.8 5Zm2.4-.3c.5-1.6.9-3 1.2-4.7h3.1a7.2 7.2 0 0 1-4.3 4.7Zm1.4-6.7H10.2a15.4 15.4 0 0 1 0-4h3.6a15.4 15.4 0 0 1 0 4Z"
-            />
+          <svg
+            viewBox="0 0 24 24"
+            className={iconGlyphClass}
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="12" cy="12" r="8.6" />
+            <path d="M3.8 12h16.4" />
+            <path d="M12 3.4c2.3 2.05 3.6 5.08 3.6 8.6c0 3.52-1.3 6.55-3.6 8.6c-2.3-2.05-3.6-5.08-3.6-8.6c0-3.52 1.3-6.55 3.6-8.6Z" />
           </svg>
         </a>
       )}
@@ -352,41 +389,39 @@ export default function OrganizationProfileHeader({
           aria-label="Abrir morada no mapa"
           title={addressLabel}
         >
-          <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+          <svg
+            viewBox="0 0 24 24"
+            className={iconGlyphClass}
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <path
-              d="M4 10.5L12 4l8 6.5V20H4V10.5Z"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinejoin="round"
+              d="M12 20.9s-5.9-4.45-5.9-10a5.9 5.9 0 1 1 11.8 0c0 5.55-5.9 10-5.9 10Z"
             />
-            <path
-              d="M9.5 20v-5.3c0-.66.54-1.2 1.2-1.2h2.6c.66 0 1.2.54 1.2 1.2V20"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinejoin="round"
-            />
+            <circle cx="12" cy="10.9" r="2.15" />
           </svg>
         </a>
       )}
       {mailtoHref && (
-        <a href={mailtoHref} className={iconBaseClass} aria-label="Email">
-          <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
+        <a href={mailtoHref} className={`${iconBaseClass} border-white/25`} aria-label="Email">
+          <svg
+            viewBox="0 0 24 24"
+            className={iconGlyphClass}
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <path
-              d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-9Z"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinejoin="round"
+              d="M4.1 7.5a2.4 2.4 0 0 1 2.4-2.4h11a2.4 2.4 0 0 1 2.4 2.4v9a2.4 2.4 0 0 1-2.4 2.4h-11a2.4 2.4 0 0 1-2.4-2.4v-9Z"
             />
-            <path
-              d="m5.5 7.8l6.1 4.2c.24.16.56.16.8 0l6.1-4.2"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinejoin="round"
-            />
+            <path d="m5.5 7.9 6.02 4.18a.8.8 0 0 0 .96 0l6.02-4.18" />
           </svg>
         </a>
       )}
@@ -419,7 +454,13 @@ export default function OrganizationProfileHeader({
     <Avatar
       src={avatar}
       name={displayName}
-      className="h-[clamp(5.8rem,10.8vw,9rem)] w-[clamp(5.8rem,10.8vw,9rem)]"
+      className="h-24 w-24 sm:h-28 sm:w-28 md:h-32 md:w-32"
+      style={{
+        width: "clamp(5.8rem, 10.8vw, 9rem)",
+        height: "clamp(5.8rem, 10.8vw, 9rem)",
+        minWidth: "5.8rem",
+        minHeight: "5.8rem",
+      }}
       textClassName="text-xs font-semibold uppercase tracking-[0.2em] text-white/80"
       onError={handleAvatarError}
     />

@@ -2624,8 +2624,8 @@ export default function ReservasDashboardPage() {
                               setSplitState((prev) => (prev ? { ...prev, deadlineAt: next } : prev));
                             }}
                             className="w-full"
-                            dateButtonClassName="h-10 flex-1 rounded-lg"
-                            timeButtonClassName="h-10 rounded-lg"
+                            dateButtonClassName="h-10 flex-1 rounded-xl"
+                            timeButtonClassName="h-10 rounded-xl"
                             disabled={splitState.saving || splitLocked}
                           />
                                 </label>
@@ -2739,7 +2739,7 @@ export default function ReservasDashboardPage() {
                       value={rescheduleDate}
                       onChange={setRescheduleDate}
                       disabled={drawerBooking.changeRequest?.status === "PENDING"}
-                      buttonClassName="h-10 rounded-lg"
+                      buttonClassName="h-10 rounded-xl"
                     />
                   </label>
                   <label className="flex flex-col gap-1 text-white/60">
@@ -2749,7 +2749,7 @@ export default function ReservasDashboardPage() {
                       onChange={setRescheduleTime}
                       stepMinutes={bookingTimeStepMinutes}
                       disabled={drawerBooking.changeRequest?.status === "PENDING"}
-                      buttonClassName="h-10 rounded-lg"
+                      buttonClassName="h-10 rounded-xl"
                     />
                   </label>
                 </div>

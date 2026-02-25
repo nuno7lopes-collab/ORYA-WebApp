@@ -1778,8 +1778,8 @@ export default function MinhasReservasPage() {
                                         setSplitState((prev) => (prev ? { ...prev, deadlineAt: next } : prev))
                                       }
                                       className="w-full"
-                                      dateButtonClassName="h-10 flex-1 rounded-lg"
-                                      timeButtonClassName="h-10 rounded-lg"
+                                      dateButtonClassName="h-10 flex-1 rounded-xl"
+                                      timeButtonClassName="h-10 rounded-xl"
                                       disabled={splitState.saving || splitState.paidCents > 0 || splitState.status === "SETTLED"}
                                     />
                                   </label>

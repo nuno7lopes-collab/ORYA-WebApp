@@ -106,7 +106,7 @@ export function CalendarControls(props: {
           value={props.selectedDay}
           onChange={props.onSelectedDayChange}
           className="min-w-[150px]"
-          buttonClassName="h-8 rounded-full text-[12px]"
+          buttonClassName="h-8 rounded-xl text-[12px]"
         />
         <div className="inline-flex rounded-full border border-white/15 bg-white/5 p-1 text-[12px]">
           {[

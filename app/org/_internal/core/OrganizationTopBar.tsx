@@ -116,22 +116,22 @@ const TOOL_META: Record<OrgToolKey, { label: string }> = {
 
 const TOPBAR_CUSTOM_ICON_BY_TOOL: Record<OrgToolKey, string | null> = {
   dashboard: null,
-  events: "/icons/tools/eventos.png",
-  bookings: "/icons/tools/reservas.png",
-  calendar: "/icons/tools/calendario.png",
-  "check-in": "/icons/tools/checkin.png",
-  policies: "/icons/tools/politicas.png",
-  finance: "/icons/tools/financas.png",
-  analytics: "/icons/tools/analises.png",
-  crm: "/icons/tools/crm.png",
-  store: "/icons/tools/loja.png",
-  forms: "/icons/tools/formularios.png",
-  chat: "/icons/tools/mensagens.png",
-  team: "/icons/tools/equipa.png",
-  "padel-club": "/icons/tools/padel-club.png",
-  "padel-tournaments": "/icons/tools/padel-tournaments.png",
-  marketing: "/icons/tools/marketing.png",
-  settings: "/icons/tools/definicoes.png",
+  events: "/icons/tools/eventos.avif",
+  bookings: "/icons/tools/reservas.avif",
+  calendar: "/icons/tools/calendario.avif",
+  "check-in": "/icons/tools/checkin.avif",
+  policies: "/icons/tools/politicas.avif",
+  finance: "/icons/tools/financas.avif",
+  analytics: "/icons/tools/analises.avif",
+  crm: "/icons/tools/crm.avif",
+  store: "/icons/tools/loja.avif",
+  forms: "/icons/tools/formularios.avif",
+  chat: "/icons/tools/mensagens.avif",
+  team: "/icons/tools/equipa.avif",
+  "padel-club": "/icons/tools/padel-club.avif",
+  "padel-tournaments": "/icons/tools/padel-tournaments.avif",
+  marketing: "/icons/tools/marketing.avif",
+  settings: "/icons/tools/definicoes.avif",
 };
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
@@ -285,7 +285,7 @@ export default function OrganizationTopBar({
       }
     };
     tick();
-    const interval = setInterval(tick, 4000);
+    const interval = setInterval(tick, 15000);
     return () => {
       cancelled = true;
       clearInterval(interval);
@@ -485,8 +485,8 @@ export default function OrganizationTopBar({
         className={cn(
           "relative w-full border-b transition-all duration-300",
           isAtTop
-            ? "border-transparent bg-transparent shadow-none backdrop-blur-[6px]"
-            : "border-white/20 bg-[linear-gradient(120deg,rgba(20,20,20,0.88),rgba(20,20,20,0.96))] shadow-[0_16px_40px_rgba(0,0,0,0.52)] backdrop-blur-[18px]",
+            ? "border-transparent bg-transparent shadow-none"
+            : "border-white/20 bg-[linear-gradient(120deg,rgba(20,20,20,0.9),rgba(20,20,20,0.96))] shadow-[0_8px_24px_rgba(0,0,0,0.38)]",
         )}
       >
         <div
@@ -498,7 +498,7 @@ export default function OrganizationTopBar({
           <div className="flex min-w-0 items-center gap-2">
             <Link
               href={dashboardHref}
-              className="group flex h-10 min-w-0 shrink-0 items-center gap-2.5 rounded-full border border-white/22 bg-black/25 px-3.5 text-sm text-white shadow-[0_12px_38px_rgba(0,0,0,0.36)] transition hover:border-[#22D3EE]/45 hover:bg-[#22D3EE]/12"
+              className="group flex h-10 min-w-0 shrink-0 items-center gap-2.5 rounded-full border border-white/22 bg-black/25 px-3.5 text-sm text-white shadow-[0_8px_18px_rgba(0,0,0,0.3)] transition hover:border-[#22D3EE]/45 hover:bg-[#22D3EE]/12"
               aria-label={`Voltar ao painel (${currentApp.label})`}
             >
               {currentAppIcon ? (

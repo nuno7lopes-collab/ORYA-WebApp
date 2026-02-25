@@ -12,6 +12,7 @@ import {
   isValidLocalDate,
   startOfWeekLocalDate,
 } from "@/lib/datetime/localInput";
+import { ORYA_DATE_TRIGGER_SSOT_CLASS } from "./ssot";
 import { useAdaptiveOverlayPosition } from "./useAdaptiveOverlayPosition";
 
 export type OryaDayMeta = {
@@ -380,9 +381,7 @@ export function OryaDateField({
           }
         }}
         className={cn(
-          "inline-flex h-10 min-w-[132px] items-center justify-between gap-2 rounded-full border border-white/20",
-          "bg-black/30 px-3 text-sm text-white/85 transition hover:border-white/35 hover:text-white",
-          "focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/50",
+          ORYA_DATE_TRIGGER_SSOT_CLASS,
           disabled && "cursor-not-allowed opacity-60",
           open && "border-cyan-300/60 text-white",
           buttonClassName,

@@ -308,8 +308,8 @@ export default function CrmCampanhasPage() {
               value={scheduledAt}
               onChange={setScheduledAt}
               className="mt-1 w-full"
-              dateButtonClassName="h-10 flex-1"
-              timeButtonClassName="h-10"
+              dateButtonClassName="h-10 flex-1 rounded-xl"
+              timeButtonClassName="h-10 rounded-xl"
             />
             <span className="mt-1 block text-[10px] text-white/45">Se vazio, fica em rascunho.</span>
           </label>

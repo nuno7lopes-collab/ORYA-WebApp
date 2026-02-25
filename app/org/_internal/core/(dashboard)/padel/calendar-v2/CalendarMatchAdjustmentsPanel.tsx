@@ -114,8 +114,8 @@ export function CalendarMatchAdjustmentsPanel(props: {
                 value={props.form.start}
                 onChange={(next) => props.onFormChange({ start: next })}
                 className="w-full"
-                dateButtonClassName="h-10 flex-1 rounded-lg"
-                timeButtonClassName="h-10 rounded-lg"
+                dateButtonClassName="h-10 flex-1 rounded-xl"
+                timeButtonClassName="h-10 rounded-xl"
                 disabled={disabled}
               />
               <OryaDateTimeField
@@ -123,8 +123,8 @@ export function CalendarMatchAdjustmentsPanel(props: {
                 onChange={(next) => props.onFormChange({ end: next })}
                 minDateTime={props.form.start || undefined}
                 className="w-full"
-                dateButtonClassName="h-10 flex-1 rounded-lg"
-                timeButtonClassName="h-10 rounded-lg"
+                dateButtonClassName="h-10 flex-1 rounded-xl"
+                timeButtonClassName="h-10 rounded-xl"
                 disabled={disabled}
               />
             </div>

@@ -13,6 +13,7 @@ import {
 } from "@/lib/datetime/localInput";
 import { OryaDateField } from "./OryaDateField";
 import { OryaTimeField } from "./OryaTimeField";
+import { ORYA_DATETIME_DATE_BUTTON_SSOT_CLASS, ORYA_DATETIME_TIME_BUTTON_SSOT_CLASS } from "./ssot";
 
 type OryaDateTimeFieldProps = {
   value: string;
@@ -131,7 +132,7 @@ export function OryaDateTimeField({
         minDate={minDate}
         maxDate={maxDate}
         placeholder={datePlaceholder}
-        buttonClassName={dateButtonClassName}
+        buttonClassName={cn(ORYA_DATETIME_DATE_BUTTON_SSOT_CLASS, dateButtonClassName)}
         disabled={disabled}
         onOpenChange={onOpenChange}
       />
@@ -142,7 +143,7 @@ export function OryaDateTimeField({
         minTime={minTimeForDate}
         maxTime={maxTimeForDate}
         placeholder={timePlaceholder}
-        buttonClassName={timeButtonClassName}
+        buttonClassName={cn(ORYA_DATETIME_TIME_BUTTON_SSOT_CLASS, timeButtonClassName)}
         disabled={disabled || disabledTime}
         onOpenChange={onOpenChange}
       />

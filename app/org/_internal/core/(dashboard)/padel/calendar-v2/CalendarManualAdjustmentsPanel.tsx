@@ -84,8 +84,8 @@ export function CalendarManualAdjustmentsPanel(props: {
               value={props.blockForm.start}
               onChange={(next) => props.onBlockFormChange({ start: next })}
               className="w-full"
-              dateButtonClassName="h-10 flex-1 rounded-lg"
-              timeButtonClassName="h-10 rounded-lg"
+              dateButtonClassName="h-10 flex-1 rounded-xl"
+              timeButtonClassName="h-10 rounded-xl"
               disabled={!props.eventId || props.saving}
             />
             <OryaDateTimeField
@@ -93,8 +93,8 @@ export function CalendarManualAdjustmentsPanel(props: {
               onChange={(next) => props.onBlockFormChange({ end: next })}
               minDateTime={props.blockForm.start || undefined}
               className="w-full"
-              dateButtonClassName="h-10 flex-1 rounded-lg"
-              timeButtonClassName="h-10 rounded-lg"
+              dateButtonClassName="h-10 flex-1 rounded-xl"
+              timeButtonClassName="h-10 rounded-xl"
               disabled={!props.eventId || props.saving}
             />
           </div>
@@ -196,8 +196,8 @@ export function CalendarManualAdjustmentsPanel(props: {
               value={props.availabilityForm.start}
               onChange={(next) => props.onAvailabilityFormChange({ start: next })}
               className="w-full"
-              dateButtonClassName="h-10 flex-1 rounded-lg"
-              timeButtonClassName="h-10 rounded-lg"
+              dateButtonClassName="h-10 flex-1 rounded-xl"
+              timeButtonClassName="h-10 rounded-xl"
               disabled={!props.eventId || props.saving}
             />
             <OryaDateTimeField
@@ -205,8 +205,8 @@ export function CalendarManualAdjustmentsPanel(props: {
               onChange={(next) => props.onAvailabilityFormChange({ end: next })}
               minDateTime={props.availabilityForm.start || undefined}
               className="w-full"
-              dateButtonClassName="h-10 flex-1 rounded-lg"
-              timeButtonClassName="h-10 rounded-lg"
+              dateButtonClassName="h-10 flex-1 rounded-xl"
+              timeButtonClassName="h-10 rounded-xl"
               disabled={!props.eventId || props.saving}
             />
           </div>
