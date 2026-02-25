@@ -1,7 +1,7 @@
 import { createApiClient } from "@orya/shared";
 import Constants from "expo-constants";
 import { supabase } from "./supabase";
-import { getActiveSession } from "./session";
+import { getActiveSession, refreshSessionIfPossible } from "./session";
 import { getMobileEnv } from "./env";
 
 const isDev = typeof __DEV__ !== "undefined" && __DEV__;
@@ -295,8 +295,7 @@ export const api = {
       if (!isUnauthorizedError(err)) throw err;
       let refreshed = false;
       try {
-        const { data, error } = await supabase.auth.refreshSession();
-        refreshed = Boolean(data.session && !error);
+        refreshed = Boolean(await refreshSessionIfPossible());
       } catch {
         refreshed = false;
       }
@@ -391,8 +390,7 @@ export const api = {
       }
       let refreshed = false;
       try {
-        const { data, error } = await supabase.auth.refreshSession();
-        refreshed = Boolean(data.session && !error);
+        refreshed = Boolean(await refreshSessionIfPossible());
       } catch {
         refreshed = false;
       }

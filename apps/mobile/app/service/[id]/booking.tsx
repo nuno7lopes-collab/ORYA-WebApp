@@ -9,7 +9,14 @@ import {
   View,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import { tokens } from "@orya/shared";
+import {
+  addMonthsToIsoYearMonth,
+  formatIsoDateLabel,
+  formatIsoYearMonthLabel,
+  getIsoYearMonthInTimeZone,
+  monthKeyFromIsoYearMonth,
+  tokens,
+} from "@orya/shared";
 import { Ionicons } from "../../../components/icons/Ionicons";
 import { LiquidBackground } from "../../../components/liquid/LiquidBackground";
 import { GlassCard } from "../../../components/liquid/GlassCard";
@@ -79,26 +86,23 @@ const formatMoney = (cents: number, currency: string) => {
   }).format(cents / 100);
 };
 
-const formatDayLabel = (date: string) => {
-  const parsed = new Date(date);
-  if (Number.isNaN(parsed.getTime())) return date;
-  return parsed.toLocaleDateString("pt-PT", {
+const formatDayLabel = (date: string) =>
+  formatIsoDateLabel(date, {
+    locale: "pt-PT",
     weekday: "short",
     day: "2-digit",
     month: "short",
   });
-};
 
-const formatTime = (date: string) => {
+const formatTime = (date: string, timeZone: string) => {
   const parsed = new Date(date);
   if (Number.isNaN(parsed.getTime())) return "--:--";
   return parsed.toLocaleTimeString("pt-PT", {
     hour: "2-digit",
     minute: "2-digit",
+    timeZone,
   });
 };
-
-const monthKey = (year: number, month: number) => year * 12 + (month - 1);
 
 const resolveAssignmentMode = (
   service?: {
@@ -185,7 +189,7 @@ export default function ServiceBookingScreen() {
     null,
   );
   const [calendarMonth, setCalendarMonth] = useState(() =>
-    new Date().toISOString().slice(0, 7),
+    getIsoYearMonthInTimeZone(new Date(), "Europe/Lisbon"),
   );
   const [calendarDays, setCalendarDays] = useState<AvailabilityDay[]>([]);
   const [calendarLoading, setCalendarLoading] = useState(false);
@@ -206,6 +210,7 @@ export default function ServiceBookingScreen() {
     () => resolveAssignmentMode(service ?? null),
     [service],
   );
+  const serviceTimezone = service?.organization?.timezone?.trim() || "Europe/Lisbon";
   const isAuthenticated = Boolean(session?.user?.id);
 
   const availableProfessionals = useMemo(() => {
@@ -421,6 +426,13 @@ export default function ServiceBookingScreen() {
     if (!canFetchCalendar) return;
     loadCalendar();
   }, [canFetchCalendar, loadCalendar]);
+
+  useEffect(() => {
+    const zonedMonth = getIsoYearMonthInTimeZone(new Date(), serviceTimezone);
+    if (!zonedMonth) return;
+    if (selectedDay) return;
+    setCalendarMonth((current) => (current === zonedMonth ? current : zonedMonth));
+  }, [serviceTimezone, selectedDay]);
 
   useEffect(() => {
     if (!service) return;
@@ -1029,22 +1041,13 @@ export default function ServiceBookingScreen() {
                   <View className="flex-row items-center gap-2">
                     <Pressable
                       onPress={() => {
-                        const [year, month] = calendarMonth
-                          .split("-")
-                          .map(Number);
-                        const prev = new Date(year, month - 2, 1);
-                        const today = new Date();
-                        const minKey = monthKey(
-                          today.getFullYear(),
-                          today.getMonth() + 1,
-                        );
-                        const prevKey = monthKey(
-                          prev.getFullYear(),
-                          prev.getMonth() + 1,
-                        );
-                        if (prevKey >= minKey) {
-                          setCalendarMonth(prev.toISOString().slice(0, 7));
-                        }
+                        const prevMonth = addMonthsToIsoYearMonth(calendarMonth, -1);
+                        if (!prevMonth) return;
+                        const minMonth = getIsoYearMonthInTimeZone(new Date(), serviceTimezone);
+                        const minKey = monthKeyFromIsoYearMonth(minMonth);
+                        const prevKey = monthKeyFromIsoYearMonth(prevMonth);
+                        if (minKey == null || prevKey == null) return;
+                        if (prevKey >= minKey) setCalendarMonth(prevMonth);
                       }}
                       className="rounded-full border border-white/10 px-2 py-1"
                       accessibilityRole="button"
@@ -1057,26 +1060,19 @@ export default function ServiceBookingScreen() {
                       />
                     </Pressable>
                     <Text className="text-white/70 text-xs">
-                      {calendarMonth}
+                      {formatIsoYearMonthLabel(calendarMonth, { locale: "pt-PT" })}
                     </Text>
                     <Pressable
                       onPress={() => {
-                        const [year, month] = calendarMonth
-                          .split("-")
-                          .map(Number);
-                        const next = new Date(year, month, 1);
-                        const today = new Date();
-                        const minKey = monthKey(
-                          today.getFullYear(),
-                          today.getMonth() + 1,
-                        );
+                        const nextMonth = addMonthsToIsoYearMonth(calendarMonth, 1);
+                        if (!nextMonth) return;
+                        const minMonth = getIsoYearMonthInTimeZone(new Date(), serviceTimezone);
+                        const minKey = monthKeyFromIsoYearMonth(minMonth);
+                        const nextKey = monthKeyFromIsoYearMonth(nextMonth);
+                        if (nextKey == null || minKey == null) return;
                         const maxKey = minKey + 3;
-                        const nextKey = monthKey(
-                          next.getFullYear(),
-                          next.getMonth() + 1,
-                        );
                         if (nextKey <= maxKey) {
-                          setCalendarMonth(next.toISOString().slice(0, 7));
+                          setCalendarMonth(nextMonth);
                         }
                       }}
                       className="rounded-full border border-white/10 px-2 py-1"
@@ -1169,7 +1165,7 @@ export default function ServiceBookingScreen() {
                                 : "rounded-full border border-white/10 bg-white/5 px-3 py-2"
                             }
                             accessibilityRole="button"
-                            accessibilityLabel={`Selecionar horário ${formatTime(slot.startsAt)}`}
+                            accessibilityLabel={`Selecionar horário ${formatTime(slot.startsAt, serviceTimezone)}`}
                             accessibilityState={{ selected: active }}
                           >
                             <Text
@@ -1179,7 +1175,7 @@ export default function ServiceBookingScreen() {
                                   : "text-white/70 text-xs"
                               }
                             >
-                              {formatTime(slot.startsAt)}
+                              {formatTime(slot.startsAt, serviceTimezone)}
                             </Text>
                           </Pressable>
                         );

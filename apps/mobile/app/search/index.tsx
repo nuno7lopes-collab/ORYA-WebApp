@@ -27,7 +27,7 @@ import { useIsFocused, useNavigation } from "@react-navigation/native";
 import { safeBack, safePush } from "../../lib/navigation";
 import { TAB_PATHNAMES } from "../../lib/tabRoutes";
 import { useIpLocation } from "../../features/onboarding/hooks";
-import { DiscoverKind, DiscoverOfferCard } from "../../features/discover/types";
+import { DiscoverKind, DiscoverOfferCard, DiscoverServiceCard } from "../../features/discover/types";
 import { SearchOrganization, SearchUser } from "../../features/search/types";
 import { EventCardSquare } from "../../components/events/EventCardSquare";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -75,6 +75,17 @@ const QUICK_SEARCH_SUGGESTIONS = [
   "Serviços",
   "Parceiro de jogo",
 ] as const;
+
+const resolveServiceVertical = (service: DiscoverServiceCard): "COURT" | "CLASS" | "SERVICE" => {
+  const byVertical = String(service.bookingVertical ?? "").trim().toUpperCase();
+  if (byVertical === "COURT" || byVertical === "CLASS" || byVertical === "SERVICE") return byVertical;
+  const byDomain = String(service.category?.domain ?? "").trim().toUpperCase();
+  if (byDomain === "COURT" || byDomain === "CLASS" || byDomain === "SERVICE") return byDomain;
+  const byKind = String(service.kind ?? "").trim().toUpperCase();
+  if (byKind === "COURT") return "COURT";
+  if (byKind === "CLASS") return "CLASS";
+  return "SERVICE";
+};
 
 const buildSkeletons = (variant: SearchSectionKey, count: number): SearchSectionItem[] =>
   Array.from({ length: count }, (_, index) => ({
@@ -184,7 +195,7 @@ export default function SearchScreen() {
   const filteredOffers = useMemo(() => {
     return offers.filter((offer) => {
       if (activeTab === "padel") {
-        if (offer.type === "service") return offer.service.kind === "COURT";
+        if (offer.type === "service") return resolveServiceVertical(offer.service) === "COURT";
         const event = offer.event;
         return event.templateType === "PADEL" || Boolean(event.tournament) || (event.categories ?? []).includes("PADEL");
       }

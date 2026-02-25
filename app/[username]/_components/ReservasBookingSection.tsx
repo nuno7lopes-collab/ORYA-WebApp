@@ -21,11 +21,18 @@ type Service = {
   currency: string;
   isActive: boolean;
   kind?: string | null;
+  bookingVertical?: "COURT" | "CLASS" | "SERVICE" | null;
   assignmentMode?: ReservationAssignmentMode | null;
   partySizeRequired?: boolean;
   partySizeMin?: number;
   partySizeMax?: number;
   partySizeStep?: number;
+  category?: {
+    id: number;
+    slug: string;
+    label: string;
+    domain: "COURT" | "CLASS" | "SERVICE";
+  } | null;
   categoryTag?: string | null;
   coverImageUrl?: string | null;
   locationMode: "FIXED" | "CHOOSE_AT_BOOKING";
@@ -93,6 +100,7 @@ type ReservasBookingSectionProps = {
   featuredServiceIds?: number[];
   servicesLayout?: "grid" | "carousel";
   acceptNewBookings?: boolean;
+  hubMode?: "legacy" | "club";
 };
 
 const cardBaseClass =
@@ -120,11 +128,26 @@ export default function ReservasBookingSection({
   featuredServiceIds = [],
   servicesLayout = "grid",
   acceptNewBookings = true,
+  hubMode = "legacy",
 }: ReservasBookingSectionProps) {
+  const resolveServiceVertical = (service: Service): "COURT" | "CLASS" | "SERVICE" => {
+    const byVertical =
+      typeof service.bookingVertical === "string"
+        ? service.bookingVertical.trim().toUpperCase()
+        : "";
+    if (byVertical === "COURT") return "COURT";
+    if (byVertical === "CLASS") return "CLASS";
+    if (byVertical === "SERVICE") return "SERVICE";
+    const byKind = typeof service.kind === "string" ? service.kind.trim().toUpperCase() : "";
+    if (byKind === "COURT") return "COURT";
+    if (byKind === "CLASS") return "CLASS";
+    return "SERVICE";
+  };
   const activeServices = useMemo(
     () => services.filter((service) => service.isActive),
     [services],
   );
+  const [activeHubTab, setActiveHubTab] = useState<"courts" | "classes" | "services">("courts");
   const [selectedServiceId, setSelectedServiceId] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<"services" | "professionals">("services");
   const [modalOpen, setModalOpen] = useState(false);
@@ -210,6 +233,24 @@ export default function ReservasBookingSection({
     const remaining = activeServices.filter((service) => !featuredSet.has(service.id));
     return [...featured, ...remaining];
   }, [activeServices, featuredServiceIds]);
+  const courtServices = useMemo(
+    () => orderedServices.filter((service) => resolveServiceVertical(service) === "COURT"),
+    [orderedServices],
+  );
+  const classServices = useMemo(
+    () => orderedServices.filter((service) => resolveServiceVertical(service) === "CLASS"),
+    [orderedServices],
+  );
+  const generalServices = useMemo(
+    () => orderedServices.filter((service) => resolveServiceVertical(service) === "SERVICE"),
+    [orderedServices],
+  );
+  const servicesForCards = useMemo(() => {
+    if (hubMode !== "club") return orderedServices;
+    if (activeHubTab === "courts") return courtServices;
+    if (activeHubTab === "classes") return classServices;
+    return generalServices;
+  }, [activeHubTab, classServices, courtServices, generalServices, hubMode, orderedServices]);
   const servicesByProfessional = useMemo(() => {
     const map = new Map<number, Service[]>();
     activeProfessionals.forEach((professional) => {
@@ -222,6 +263,41 @@ export default function ReservasBookingSection({
     });
     return map;
   }, [activeProfessionals, activeServices]);
+  useEffect(() => {
+    if (hubMode !== "club") return;
+    if (activeHubTab === "courts" && courtServices.length > 0) return;
+    if (activeHubTab === "classes" && classServices.length > 0) return;
+    if (activeHubTab === "services" && generalServices.length > 0) return;
+    if (courtServices.length > 0) {
+      setActiveHubTab("courts");
+      return;
+    }
+    if (classServices.length > 0) {
+      setActiveHubTab("classes");
+      return;
+    }
+    setActiveHubTab("services");
+  }, [activeHubTab, classServices.length, courtServices.length, generalServices.length, hubMode]);
+  const sectionTitle =
+    hubMode === "club"
+      ? activeHubTab === "courts"
+        ? "Reservar Campo"
+        : activeHubTab === "classes"
+          ? "Aulas"
+          : "Outros serviços"
+      : viewMode === "services"
+        ? "Escolhe o serviço"
+        : "Escolhe o profissional";
+  const sectionLabel =
+    hubMode === "club"
+      ? activeHubTab === "courts"
+        ? "Campos"
+        : activeHubTab === "classes"
+          ? "Aulas"
+          : "Serviços"
+      : viewMode === "services"
+        ? "Serviços"
+        : "Profissionais";
 
   const updateScrollState = useCallback(() => {
     const node = carouselRef.current;
@@ -263,6 +339,9 @@ export default function ReservasBookingSection({
       service.unitPriceCents > 0
         ? formatMoney(service.unitPriceCents, service.currency)
         : "Gratuito";
+    const vertical = resolveServiceVertical(service);
+    const badgeLabel = vertical === "COURT" ? "Campo" : vertical === "CLASS" ? "Aula" : "Serviço";
+    const categoryLabel = service.category?.label ?? service.categoryTag ?? null;
     return (
       <button
         key={service.id}
@@ -290,16 +369,16 @@ export default function ReservasBookingSection({
               </p>
             </div>
             <span className="rounded-full border border-white/20 bg-white/10 px-2 py-1 text-[10px] text-white/70">
-              {acceptNewBookings ? "Reservar" : "Indisponível"}
+              {acceptNewBookings ? `Reservar ${badgeLabel.toLowerCase()}` : "Indisponível"}
             </span>
           </div>
           <div className="space-y-2">
             {service.description && (
               <p className="text-[12px] text-white/70 line-clamp-2">{service.description}</p>
             )}
-            {service.categoryTag && (
+            {categoryLabel && (
               <span className="inline-flex rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[10px] text-white/70">
-                {service.categoryTag}
+                {categoryLabel}
               </span>
             )}
           </div>
@@ -326,53 +405,94 @@ export default function ReservasBookingSection({
         ) : null}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">
-              {viewMode === "services" ? "Serviços" : "Profissionais"}
-            </p>
-            <h3 className="text-lg font-semibold text-white">
-              {viewMode === "services" ? "Escolhe o serviço" : "Escolhe o profissional"}
-            </h3>
+            <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">{sectionLabel}</p>
+            <h3 className="text-lg font-semibold text-white">{sectionTitle}</h3>
           </div>
           <div className="flex items-center gap-2">
-            <div className="inline-flex rounded-full border border-white/15 bg-white/5 p-1">
-              <button
-                type="button"
-                onClick={() => setViewMode("services")}
-                className={cn(
-                  toggleBaseClass,
-                  viewMode === "services"
-                    ? "border-white/35 bg-white/20 text-white"
-                    : "border-transparent text-white/70 hover:text-white",
-                )}
-              >
-                Serviços
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode("professionals")}
-                className={cn(
-                  toggleBaseClass,
-                  viewMode === "professionals"
-                    ? "border-white/35 bg-white/20 text-white"
-                    : "border-transparent text-white/70 hover:text-white",
-                )}
-              >
-                Profissionais
-              </button>
-            </div>
+            {hubMode === "club" ? (
+              <div className="inline-flex rounded-full border border-white/15 bg-white/5 p-1">
+                <button
+                  type="button"
+                  onClick={() => setActiveHubTab("courts")}
+                  className={cn(
+                    toggleBaseClass,
+                    activeHubTab === "courts"
+                      ? "border-white/35 bg-white/20 text-white"
+                      : "border-transparent text-white/70 hover:text-white",
+                  )}
+                >
+                  Reservar Campo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveHubTab("classes")}
+                  className={cn(
+                    toggleBaseClass,
+                    activeHubTab === "classes"
+                      ? "border-white/35 bg-white/20 text-white"
+                      : "border-transparent text-white/70 hover:text-white",
+                  )}
+                >
+                  Aulas
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveHubTab("services")}
+                  className={cn(
+                    toggleBaseClass,
+                    activeHubTab === "services"
+                      ? "border-white/35 bg-white/20 text-white"
+                      : "border-transparent text-white/70 hover:text-white",
+                  )}
+                >
+                  Outros serviços
+                </button>
+              </div>
+            ) : (
+              <div className="inline-flex rounded-full border border-white/15 bg-white/5 p-1">
+                <button
+                  type="button"
+                  onClick={() => setViewMode("services")}
+                  className={cn(
+                    toggleBaseClass,
+                    viewMode === "services"
+                      ? "border-white/35 bg-white/20 text-white"
+                      : "border-transparent text-white/70 hover:text-white",
+                  )}
+                >
+                  Serviços
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("professionals")}
+                  className={cn(
+                    toggleBaseClass,
+                    viewMode === "professionals"
+                      ? "border-white/35 bg-white/20 text-white"
+                      : "border-transparent text-white/70 hover:text-white",
+                  )}
+                >
+                  Profissionais
+                </button>
+              </div>
+            )}
             <span className="text-[12px] text-white/60">
-              {viewMode === "services" ? activeServices.length : activeProfessionals.length} opções
+              {hubMode === "club"
+                ? servicesForCards.length
+                : viewMode === "services"
+                  ? activeServices.length
+                  : activeProfessionals.length} opções
             </span>
           </div>
         </div>
-        {viewMode === "services" ? (
+        {hubMode === "club" || viewMode === "services" ? (
           servicesLayout === "carousel" ? (
             <div className="relative">
               <div
                 ref={carouselRef}
                 className="flex gap-4 overflow-x-auto pb-2 scroll-smooth snap-x snap-mandatory"
               >
-                {orderedServices.map((service) => (
+                {servicesForCards.map((service) => (
                   <div
                     key={service.id}
                     className="min-w-[240px] snap-start sm:min-w-[280px] lg:min-w-[320px]"
@@ -410,7 +530,18 @@ export default function ReservasBookingSection({
             </div>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {orderedServices.map((service) => renderServiceCard(service))}
+              {servicesForCards.length === 0 ? (
+                <div className="rounded-3xl border border-white/12 bg-white/5 p-4 text-[12px] text-white/70 shadow-[0_20px_60px_rgba(0,0,0,0.45)] sm:p-5">
+                  {hubMode === "club"
+                    ? activeHubTab === "courts"
+                      ? "Sem campos disponíveis neste momento."
+                      : activeHubTab === "classes"
+                        ? "Sem aulas disponíveis neste momento."
+                        : "Sem outros serviços disponíveis neste momento."
+                    : "Sem serviços disponíveis neste momento."}
+                </div>
+              ) : null}
+              {servicesForCards.map((service) => renderServiceCard(service))}
             </div>
           )
         ) : (

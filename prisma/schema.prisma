@@ -281,6 +281,8 @@ model Organization {
   organizationPolicies                                                     OrganizationPolicy[]
   userEventSignals                                                         UserEventSignal[]
   services                                                                 Service[]
+  reservationCategories                                                    ReservationCategory[]
+  courtBookingConfigs                                                      CourtBookingConfig[]
   bookings                                                                 Booking[]
   bookingChangeRequests                                                    BookingChangeRequest[]
   bookingInvites                                                           BookingInvite[]
@@ -352,18 +354,18 @@ model OrganizationSettings {
 }
 
 model OrganizationGroup {
-  env                String                           @default("prod")
-  id                 Int                              @id @default(autoincrement())
-  name               String?                          @map("name")
-  ownerUserId        String                           @map("owner_user_id") @db.Uuid
-  showLinkedOrganizationsPublicly Boolean             @default(true) @map("show_linked_organizations_publicly")
-  createdAt          DateTime                         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime                         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  organizations      Organization[]
-  members            OrganizationGroupMember[]
-  owner              Profile                          @relation("OrganizationGroupOwner", fields: [ownerUserId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  membershipRequests GroupMembershipRequest[]
-  ownerTransfers     OrganizationGroupOwnerTransfer[]
+  env                             String                           @default("prod")
+  id                              Int                              @id @default(autoincrement())
+  name                            String?                          @map("name")
+  ownerUserId                     String                           @map("owner_user_id") @db.Uuid
+  showLinkedOrganizationsPublicly Boolean                          @default(true) @map("show_linked_organizations_publicly")
+  createdAt                       DateTime                         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                       DateTime                         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  organizations                   Organization[]
+  members                         OrganizationGroupMember[]
+  owner                           Profile                          @relation("OrganizationGroupOwner", fields: [ownerUserId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  membershipRequests              GroupMembershipRequest[]
+  ownerTransfers                  OrganizationGroupOwnerTransfer[]
 
   @@index([ownerUserId], map: "organization_groups_owner_idx")
   @@map("organization_groups")
@@ -727,38 +729,38 @@ model StoreCartItem {
 }
 
 model StoreOrder {
-  env              String               @default("prod")
-  id               Int                  @id @default(autoincrement())
-  storeId          Int                  @map("store_id")
-  userId           String?              @map("user_id") @db.Uuid
-  orderNumber      String?              @map("order_number")
-  status           StoreOrderStatus     @default(PENDING)
-  paymentIntentId  String?              @map("payment_intent_id")
-  purchaseId       String?              @map("purchase_id") @db.Text
-  subtotalCents    Int                  @map("subtotal_cents")
-  discountCents    Int                  @default(0) @map("discount_cents")
-  shippingCents    Int                  @default(0) @map("shipping_cents")
-  shippingZoneId   Int?                 @map("shipping_zone_id")
-  shippingMethodId Int?                 @map("shipping_method_id")
-  totalCents       Int                  @map("total_cents")
-  currency         String               @default("EUR")
-  customerEmail    String?              @map("customer_email") @db.Citext
-  customerName     String?              @map("customer_name")
-  customerPhone    String?              @map("customer_phone")
-  notes            String?
-  storePolicySnapshotJson Json?         @map("store_policy_snapshot_json")
-  storePolicyVersion      String?       @map("store_policy_version")
-  storePolicyCapturedAt   DateTime?     @map("store_policy_captured_at") @db.Timestamptz(6)
-  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  store            Store                @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  user             Profile?             @relation(fields: [userId], references: [id], onDelete: SetNull)
-  shippingZone     StoreShippingZone?   @relation("StoreOrderShippingZone", fields: [shippingZoneId], references: [id], onDelete: SetNull)
-  shippingMethod   StoreShippingMethod? @relation("StoreOrderShippingMethod", fields: [shippingMethodId], references: [id], onDelete: SetNull)
-  lines            StoreOrderLine[]
-  bundles          StoreOrderBundle[]
-  addresses        StoreOrderAddress[]
-  shipments        StoreShipment[]
+  env                     String               @default("prod")
+  id                      Int                  @id @default(autoincrement())
+  storeId                 Int                  @map("store_id")
+  userId                  String?              @map("user_id") @db.Uuid
+  orderNumber             String?              @map("order_number")
+  status                  StoreOrderStatus     @default(PENDING)
+  paymentIntentId         String?              @map("payment_intent_id")
+  purchaseId              String?              @map("purchase_id") @db.Text
+  subtotalCents           Int                  @map("subtotal_cents")
+  discountCents           Int                  @default(0) @map("discount_cents")
+  shippingCents           Int                  @default(0) @map("shipping_cents")
+  shippingZoneId          Int?                 @map("shipping_zone_id")
+  shippingMethodId        Int?                 @map("shipping_method_id")
+  totalCents              Int                  @map("total_cents")
+  currency                String               @default("EUR")
+  customerEmail           String?              @map("customer_email") @db.Citext
+  customerName            String?              @map("customer_name")
+  customerPhone           String?              @map("customer_phone")
+  notes                   String?
+  storePolicySnapshotJson Json?                @map("store_policy_snapshot_json")
+  storePolicyVersion      String?              @map("store_policy_version")
+  storePolicyCapturedAt   DateTime?            @map("store_policy_captured_at") @db.Timestamptz(6)
+  createdAt               DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  store                   Store                @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  user                    Profile?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  shippingZone            StoreShippingZone?   @relation("StoreOrderShippingZone", fields: [shippingZoneId], references: [id], onDelete: SetNull)
+  shippingMethod          StoreShippingMethod? @relation("StoreOrderShippingMethod", fields: [shippingMethodId], references: [id], onDelete: SetNull)
+  lines                   StoreOrderLine[]
+  bundles                 StoreOrderBundle[]
+  addresses               StoreOrderAddress[]
+  shipments               StoreShipment[]
 
   @@unique([orderNumber], map: "store_orders_order_number_unique")
   @@index([storeId], map: "store_orders_store_idx")
@@ -1240,22 +1242,22 @@ model ChatConversation {
 }
 
 model ChatCommunity {
-  env             String                 @default("prod")
-  conversationId  String                 @id @map("conversation_id") @db.Uuid
-  organizationId  Int                    @map("organization_id")
+  env             String                  @default("prod")
+  conversationId  String                  @id @map("conversation_id") @db.Uuid
+  organizationId  Int                     @map("organization_id")
   title           String
   description     String?
-  coverImageUrl   String?                @map("cover_image_url")
+  coverImageUrl   String?                 @map("cover_image_url")
   talkPolicy      ChatCommunityTalkPolicy @default(EVERYONE) @map("talk_policy")
   accessMode      ChatCommunityAccessMode @default(PUBLIC) @map("access_mode")
-  createdByUserId String?                @map("created_by_user_id") @db.Uuid
-  createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdByUserId String?                 @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   conversation ChatConversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   organization Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdBy    Profile?                  @relation("ChatCommunityCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  inviteLinks   ChatCommunityInviteLink[]
+  inviteLinks  ChatCommunityInviteLink[]
 
   @@index([organizationId], map: "chat_communities_org_idx")
   @@index([organizationId, accessMode], map: "chat_communities_org_access_mode_idx")
@@ -1264,14 +1266,14 @@ model ChatCommunity {
 }
 
 model ChatCommunityInviteLink {
-  env             String   @default("prod")
-  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  conversationId  String   @map("conversation_id") @db.Uuid
-  tokenHash       String   @map("token_hash") @db.Text
-  createdByUserId String?  @map("created_by_user_id") @db.Uuid
+  env             String    @default("prod")
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversationId  String    @map("conversation_id") @db.Uuid
+  tokenHash       String    @map("token_hash") @db.Text
+  createdByUserId String?   @map("created_by_user_id") @db.Uuid
   expiresAt       DateTime? @map("expires_at") @db.Timestamptz(6)
   revokedAt       DateTime? @map("revoked_at") @db.Timestamptz(6)
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   conversation ChatCommunity @relation(fields: [conversationId], references: [conversationId], onDelete: Cascade)
   createdBy    Profile?      @relation("ChatCommunityInviteLinkCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
@@ -1304,10 +1306,10 @@ model ChatConversationMember {
   writeMutedByUserId String?                           @map("write_muted_by_user_id") @db.Uuid
   followGraceEndsAt  DateTime?                         @map("follow_grace_ends_at") @db.Timestamptz(6)
 
-  conversation  ChatConversation         @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  user          Profile                  @relation("ChatConversationMemberUser", fields: [userId], references: [id], onDelete: Cascade)
+  conversation    ChatConversation         @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user            Profile                  @relation("ChatConversationMemberUser", fields: [userId], references: [id], onDelete: Cascade)
   lastReadMessage ChatConversationMessage? @relation("ChatConversationMemberLastRead", fields: [lastReadMessageId], references: [id], onDelete: SetNull)
-  writeMutedBy  Profile?                 @relation("ChatConversationMemberWriteMutedBy", fields: [writeMutedByUserId], references: [id], onDelete: SetNull)
+  writeMutedBy    Profile?                 @relation("ChatConversationMemberWriteMutedBy", fields: [writeMutedByUserId], references: [id], onDelete: SetNull)
 
   @@id([conversationId, userId])
   @@index([userId], map: "chat_conversation_members_user_idx")
@@ -2737,8 +2739,8 @@ model PadelPlayerProfile {
   historyProjections        PadelPlayerHistoryProjection[]
   partnerHistoryProjections PadelPlayerHistoryProjection[] @relation("PadelPlayerHistoryProjectionPartner")
 
-  @@index([organizationId, crmContactId], map: "padel_player_profiles_org_crm_contact_idx")
   @@unique([organizationId, userId], map: "padel_player_profiles_org_user_uq")
+  @@index([organizationId, crmContactId], map: "padel_player_profiles_org_crm_contact_idx")
   @@map("padel_player_profiles")
   @@schema("app_v3")
 }
@@ -2796,6 +2798,7 @@ model PadelClubCourt {
   calendarBlocks                CalendarBlock[]
   eventMatchSlots               EventMatchSlot[]       @relation("EventMatchSlotCourt")
   reservationResource           ReservationResource?
+  bookingConfig                 CourtBookingConfig?
   bookings                      Booking[]
   bookingChangeRequestsProposed BookingChangeRequest[]
   classSeries                   ClassSeries[]
@@ -2966,42 +2969,42 @@ model PadelRuleSetVersion {
 
 /// Configuração específica do torneio Padel (por evento)
 model PadelTournamentConfig {
-  env                String                         @default("prod")
-  id                 Int                            @id @default(autoincrement())
-  eventId            Int                            @unique(map: "padel_tournament_configs_event_unique") @map("event_id")
-  organizationId     Int                            @map("organization_id")
-  format             padel_format
-  numberOfCourts     Int                            @default(1) @map("number_of_courts")
-  ruleSetId          Int?                           @map("rule_set_id")
-  ruleSetVersionId   Int?                           @map("rule_set_version_id")
-  defaultCategoryId  Int?                           @map("default_category_id")
-  enabledFormats     String[]                       @default([]) @map("enabled_formats")
-  isInterclub        Boolean                        @default(false) @map("is_interclub")
-  teamSize           Int?                           @map("team_size")
-  createdAt          DateTime                       @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime                       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  padelV2Enabled     Boolean                        @default(false) @map("padel_v2_enabled")
-  splitDeadlineHours Int?                           @map("split_deadline_hours")
-  padelClubId        Int?                           @map("padel_club_id")
-  partnerClubIds     Int[]                          @default([]) @map("partner_club_ids")
-  advancedSettings   Json?                          @map("advanced_settings")
-  resultValidationMode PadelResultValidationMode    @default(IMMEDIATE_OFFICIAL) @map("result_validation_mode")
-  pendingConfirmationWindowMinutes Int              @default(15) @map("pending_confirmation_window_minutes")
-  playerResultSubmissionEnabled Boolean             @default(false) @map("player_result_submission_enabled")
-  lifecycleStatus    PadelTournamentLifecycleStatus @default(DRAFT) @map("lifecycle_status")
-  publishedAt        DateTime?                      @map("published_at") @db.Timestamptz(6)
-  lockedAt           DateTime?                      @map("locked_at") @db.Timestamptz(6)
-  completedAt        DateTime?                      @map("completed_at") @db.Timestamptz(6)
-  cancelledAt        DateTime?                      @map("cancelled_at") @db.Timestamptz(6)
-  lifecycleUpdatedAt DateTime?                      @map("lifecycle_updated_at") @db.Timestamptz(6)
-  eligibilityType    PadelEligibilityType           @default(OPEN) @map("eligibility_type")
-  category           PadelCategory?                 @relation(fields: [defaultCategoryId], references: [id], onUpdate: NoAction)
-  event              Event                          @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  organization       Organization                   @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  club               PadelClub?                     @relation(fields: [padelClubId], references: [id], onUpdate: NoAction)
-  ruleSet            PadelRuleSet?                  @relation(fields: [ruleSetId], references: [id], onUpdate: NoAction)
-  ruleSetVersion     PadelRuleSetVersion?           @relation("PadelTournamentRuleSetVersionCurrent", fields: [ruleSetVersionId], references: [id], onUpdate: NoAction)
-  ruleSetVersions    PadelRuleSetVersion[]          @relation("PadelTournamentRuleSetVersions")
+  env                              String                         @default("prod")
+  id                               Int                            @id @default(autoincrement())
+  eventId                          Int                            @unique(map: "padel_tournament_configs_event_unique") @map("event_id")
+  organizationId                   Int                            @map("organization_id")
+  format                           padel_format
+  numberOfCourts                   Int                            @default(1) @map("number_of_courts")
+  ruleSetId                        Int?                           @map("rule_set_id")
+  ruleSetVersionId                 Int?                           @map("rule_set_version_id")
+  defaultCategoryId                Int?                           @map("default_category_id")
+  enabledFormats                   String[]                       @default([]) @map("enabled_formats")
+  isInterclub                      Boolean                        @default(false) @map("is_interclub")
+  teamSize                         Int?                           @map("team_size")
+  createdAt                        DateTime                       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                        DateTime                       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  padelV2Enabled                   Boolean                        @default(false) @map("padel_v2_enabled")
+  splitDeadlineHours               Int?                           @map("split_deadline_hours")
+  padelClubId                      Int?                           @map("padel_club_id")
+  partnerClubIds                   Int[]                          @default([]) @map("partner_club_ids")
+  advancedSettings                 Json?                          @map("advanced_settings")
+  resultValidationMode             PadelResultValidationMode      @default(IMMEDIATE_OFFICIAL) @map("result_validation_mode")
+  pendingConfirmationWindowMinutes Int                            @default(15) @map("pending_confirmation_window_minutes")
+  playerResultSubmissionEnabled    Boolean                        @default(false) @map("player_result_submission_enabled")
+  lifecycleStatus                  PadelTournamentLifecycleStatus @default(DRAFT) @map("lifecycle_status")
+  publishedAt                      DateTime?                      @map("published_at") @db.Timestamptz(6)
+  lockedAt                         DateTime?                      @map("locked_at") @db.Timestamptz(6)
+  completedAt                      DateTime?                      @map("completed_at") @db.Timestamptz(6)
+  cancelledAt                      DateTime?                      @map("cancelled_at") @db.Timestamptz(6)
+  lifecycleUpdatedAt               DateTime?                      @map("lifecycle_updated_at") @db.Timestamptz(6)
+  eligibilityType                  PadelEligibilityType           @default(OPEN) @map("eligibility_type")
+  category                         PadelCategory?                 @relation(fields: [defaultCategoryId], references: [id], onUpdate: NoAction)
+  event                            Event                          @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organization                     Organization                   @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  club                             PadelClub?                     @relation(fields: [padelClubId], references: [id], onUpdate: NoAction)
+  ruleSet                          PadelRuleSet?                  @relation(fields: [ruleSetId], references: [id], onUpdate: NoAction)
+  ruleSetVersion                   PadelRuleSetVersion?           @relation("PadelTournamentRuleSetVersionCurrent", fields: [ruleSetVersionId], references: [id], onUpdate: NoAction)
+  ruleSetVersions                  PadelRuleSetVersion[]          @relation("PadelTournamentRuleSetVersions")
 
   @@index([padelClubId], map: "padel_tournament_configs_padel_club_idx")
   @@index([ruleSetVersionId], map: "padel_tournament_configs_rule_set_version_idx")
@@ -3492,23 +3495,23 @@ model EventMatchSlot {
 }
 
 model PadelMatchResultCard {
-  env             String                     @default("prod")
-  id              String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  matchId         Int                        @map("match_id")
-  organizationId  Int                        @map("organization_id")
-  eventId         Int                        @map("event_id")
-  submittedByUserId String?                  @map("submitted_by_user_id") @db.Uuid
-  payload         Json
-  payloadHash     String                     @map("payload_hash")
-  status          PadelMatchResultCardStatus @default(PENDING_SIGNATURES)
-  confirmedAt     DateTime?                  @map("confirmed_at") @db.Timestamptz(6)
-  conflictAt      DateTime?                  @map("conflict_at") @db.Timestamptz(6)
-  cancelledAt     DateTime?                  @map("cancelled_at") @db.Timestamptz(6)
-  appliedAt       DateTime?                  @map("applied_at") @db.Timestamptz(6)
-  createdAt       DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  match           EventMatchSlot             @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "padel_match_result_cards_match_fk")
-  signatures      PadelMatchResultSignature[]
+  env               String                      @default("prod")
+  id                String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId           Int                         @map("match_id")
+  organizationId    Int                         @map("organization_id")
+  eventId           Int                         @map("event_id")
+  submittedByUserId String?                     @map("submitted_by_user_id") @db.Uuid
+  payload           Json
+  payloadHash       String                      @map("payload_hash")
+  status            PadelMatchResultCardStatus  @default(PENDING_SIGNATURES)
+  confirmedAt       DateTime?                   @map("confirmed_at") @db.Timestamptz(6)
+  conflictAt        DateTime?                   @map("conflict_at") @db.Timestamptz(6)
+  cancelledAt       DateTime?                   @map("cancelled_at") @db.Timestamptz(6)
+  appliedAt         DateTime?                   @map("applied_at") @db.Timestamptz(6)
+  createdAt         DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime                    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  match             EventMatchSlot              @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "padel_match_result_cards_match_fk")
+  signatures        PadelMatchResultSignature[]
 
   @@index([matchId], map: "padel_match_result_cards_match_idx")
   @@index([eventId], map: "padel_match_result_cards_event_idx")
@@ -3860,25 +3863,25 @@ model PadelPartnershipCompensationCase {
 
 /// Pedido de aprovação pré-criação de torneio em clube parceiro
 model PadelPartnershipTournamentRequest {
-  env                   String                                 @default("prod")
-  id                    Int                                    @id @default(autoincrement())
-  agreementId           Int                                    @map("agreement_id")
-  ownerOrganizationId   Int                                    @map("owner_organization_id")
-  partnerOrganizationId Int                                    @map("partner_organization_id")
-  ownerClubId           Int                                    @map("owner_club_id")
-  partnerClubId         Int                                    @map("partner_club_id")
+  env                   String                                  @default("prod")
+  id                    Int                                     @id @default(autoincrement())
+  agreementId           Int                                     @map("agreement_id")
+  ownerOrganizationId   Int                                     @map("owner_organization_id")
+  partnerOrganizationId Int                                     @map("partner_organization_id")
+  ownerClubId           Int                                     @map("owner_club_id")
+  partnerClubId         Int                                     @map("partner_club_id")
   title                 String
-  startsAt              DateTime                               @map("starts_at") @db.Timestamptz(6)
-  endsAt                DateTime                               @map("ends_at") @db.Timestamptz(6)
-  requestedPayload      Json?                                  @default("{}") @map("requested_payload")
-  requestedByUserId     String?                                @map("requested_by_user_id") @db.Uuid
-  reviewedByUserId      String?                                @map("reviewed_by_user_id") @db.Uuid
-  reviewedAt            DateTime?                              @map("reviewed_at") @db.Timestamptz(6)
+  startsAt              DateTime                                @map("starts_at") @db.Timestamptz(6)
+  endsAt                DateTime                                @map("ends_at") @db.Timestamptz(6)
+  requestedPayload      Json?                                   @default("{}") @map("requested_payload")
+  requestedByUserId     String?                                 @map("requested_by_user_id") @db.Uuid
+  reviewedByUserId      String?                                 @map("reviewed_by_user_id") @db.Uuid
+  reviewedAt            DateTime?                               @map("reviewed_at") @db.Timestamptz(6)
   status                PadelPartnershipTournamentRequestStatus @default(PENDING)
-  eventId               Int?                                   @map("event_id")
-  expiresAt             DateTime?                              @map("expires_at") @db.Timestamptz(6)
-  createdAt             DateTime                               @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt             DateTime                               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  eventId               Int?                                    @map("event_id")
+  expiresAt             DateTime?                               @map("expires_at") @db.Timestamptz(6)
+  createdAt             DateTime                                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime                                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@index([agreementId], map: "padel_partnership_tournament_requests_agreement_idx")
   @@index([ownerOrganizationId], map: "padel_partnership_tournament_requests_owner_org_idx")
@@ -4508,10 +4511,10 @@ model ReservationProfessional {
   classSessions                 ClassSession[]
   trainerProfiles               TrainerProfile[]
 
+  @@unique([organizationId, userId], map: "reservation_professionals_org_user_unique")
   @@index([organizationId])
   @@index([organizationId, isActive])
   @@index([userId])
-  @@unique([organizationId, userId], map: "reservation_professionals_org_user_unique")
   @@map("reservation_professionals")
   @@schema("app_v3")
 }
@@ -4540,10 +4543,57 @@ model ReservationResource {
   @@schema("app_v3")
 }
 
+model ReservationCategory {
+  env               String                    @default("prod")
+  id                Int                       @id @default(autoincrement())
+  organizationId    Int                       @map("organization_id")
+  domain            ReservationCategoryDomain
+  slug              String
+  label             String
+  isActive          Boolean                   @default(true) @map("is_active")
+  sortOrder         Int                       @default(0) @map("sort_order")
+  createdAt         DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  organization      Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  services          Service[]
+  courtBookingLinks CourtBookingConfig[]
+
+  @@unique([organizationId, domain, slug], map: "reservation_categories_org_domain_slug_unique")
+  @@index([organizationId, domain, isActive], map: "reservation_categories_org_domain_active_idx")
+  @@map("reservation_categories")
+  @@schema("app_v3")
+}
+
+model CourtBookingConfig {
+  env                String               @default("prod")
+  id                 Int                  @id @default(autoincrement())
+  organizationId     Int                  @map("organization_id")
+  courtId            Int                  @unique(map: "court_booking_configs_court_unique") @map("court_id")
+  backingServiceId   Int                  @map("backing_service_id")
+  categoryId         Int?                 @map("category_id")
+  displayName        String               @map("display_name")
+  displayDescription String?              @map("display_description")
+  coverImageUrl      String?              @map("cover_image_url")
+  isActive           Boolean              @default(true) @map("is_active")
+  createdAt          DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  organization       Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  court              PadelClubCourt       @relation(fields: [courtId], references: [id], onDelete: Cascade)
+  backingService     Service              @relation("CourtBookingConfigBackingService", fields: [backingServiceId], references: [id], onDelete: Cascade)
+  category           ReservationCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, isActive], map: "court_booking_configs_org_active_idx")
+  @@index([organizationId, backingServiceId], map: "court_booking_configs_org_service_idx")
+  @@index([categoryId], map: "court_booking_configs_category_idx")
+  @@map("court_booking_configs")
+  @@schema("app_v3")
+}
+
 model Service {
   env               String                    @default("prod")
   id                Int                       @id @default(autoincrement())
   organizationId    Int                       @map("organization_id")
+  categoryId        Int?                      @map("category_id")
   policyId          Int?                      @map("policy_id")
   kind              ServiceKind               @default(GENERAL)
   instructorId      String?                   @map("instructor_id") @db.Uuid
@@ -4565,6 +4615,7 @@ model Service {
   createdAt         DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt         DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   organization      Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  category          ReservationCategory?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   addressRef        Address?                  @relation(fields: [addressId], references: [id], onDelete: SetNull)
   policy            OrganizationPolicy?       @relation(fields: [policyId], references: [id], onDelete: SetNull)
   instructor        Profile?                  @relation("ServiceInstructor", fields: [instructorId], references: [id], onDelete: SetNull)
@@ -4580,8 +4631,10 @@ model Service {
   creditBalances    ServiceCreditBalance[]
   creditLedger      ServiceCreditLedger[]
   reviews           ServiceReview[]
+  courtBookingLinks CourtBookingConfig[]      @relation("CourtBookingConfigBackingService")
 
   @@index([organizationId])
+  @@index([categoryId], map: "services_category_idx")
   @@index([policyId])
   @@index([isActive])
   @@index([instructorId])
@@ -4721,16 +4774,16 @@ model ServiceCreditLedger {
 }
 
 model AvailabilitySchedule {
-  env            String                @default("prod")
-  id             Int                   @id @default(autoincrement())
-  organizationId Int                   @map("organization_id")
-  scopeType      AvailabilityScopeType @default(ORGANIZATION) @map("scope_type")
-  scopeId        Int                   @default(0) @map("scope_id")
-  startDate      DateTime              @map("start_date") @db.Date
-  endDate        DateTime?             @map("end_date") @db.Date
-  createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  organization   Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  env            String                       @default("prod")
+  id             Int                          @id @default(autoincrement())
+  organizationId Int                          @map("organization_id")
+  scopeType      AvailabilityScopeType        @default(ORGANIZATION) @map("scope_type")
+  scopeId        Int                          @default(0) @map("scope_id")
+  startDate      DateTime                     @map("start_date") @db.Date
+  endDate        DateTime?                    @map("end_date") @db.Date
+  createdAt      DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime                     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  organization   Organization                 @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   templates      WeeklyAvailabilityTemplate[]
 
   @@index([organizationId])
@@ -4769,27 +4822,27 @@ model AvailabilityOverride {
   updatedAt      DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   organization   Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  @@index([organizationId, date])
   @@unique([organizationId, scopeType, scopeId, date], map: "availability_override_scope_date_unique")
+  @@index([organizationId, date])
   @@map("availability_overrides")
   @@schema("app_v3")
 }
 
 model AvailabilityChangeSet {
-  env               String                      @default("prod")
-  id                Int                         @id @default(autoincrement())
-  organizationId    Int                         @map("organization_id")
-  scopeType         AvailabilityScopeType       @default(ORGANIZATION) @map("scope_type")
-  scopeId           Int                         @default(0) @map("scope_id")
-  scheduleId        Int?                        @map("schedule_id")
-  status            AvailabilityChangeSetStatus @default(PENDING)
-  requestedByUserId String?                     @map("requested_by_user_id") @db.Uuid
-  draftPayload      Json                        @map("draft_payload")
-  preflightSummary  Json?                       @map("preflight_summary")
-  appliedAt         DateTime?                   @map("applied_at") @db.Timestamptz(6)
-  cancelledAt       DateTime?                   @map("cancelled_at") @db.Timestamptz(6)
-  createdAt         DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt         DateTime                    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  env               String                       @default("prod")
+  id                Int                          @id @default(autoincrement())
+  organizationId    Int                          @map("organization_id")
+  scopeType         AvailabilityScopeType        @default(ORGANIZATION) @map("scope_type")
+  scopeId           Int                          @default(0) @map("scope_id")
+  scheduleId        Int?                         @map("schedule_id")
+  status            AvailabilityChangeSetStatus  @default(PENDING)
+  requestedByUserId String?                      @map("requested_by_user_id") @db.Uuid
+  draftPayload      Json                         @map("draft_payload")
+  preflightSummary  Json?                        @map("preflight_summary")
+  appliedAt         DateTime?                    @map("applied_at") @db.Timestamptz(6)
+  cancelledAt       DateTime?                    @map("cancelled_at") @db.Timestamptz(6)
+  createdAt         DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime                     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   conflicts         AvailabilityChangeConflict[]
 
   @@index([organizationId, status], map: "availability_change_sets_org_status_idx")
@@ -4857,28 +4910,28 @@ model ServiceResourceLink {
 }
 
 model TrainerProfile {
-  env               String                     @default("prod")
-  id                Int                        @id @default(autoincrement())
-  organizationId    Int                        @map("organization_id")
-  userId            String                     @map("user_id") @db.Uuid
-  reservationProfessionalId Int?               @map("reservation_professional_id")
-  title             String?
-  bio               String?
-  specialties       String[]                   @default([])
-  certifications    String?
-  experienceYears   Int?                       @map("experience_years")
-  coverImageUrl     String?                    @map("cover_image_url")
-  isPublished       Boolean                    @default(false) @map("is_published")
-  reviewStatus      TrainerProfileReviewStatus @default(DRAFT) @map("review_status")
-  reviewNote        String?                    @map("review_note")
-  reviewRequestedAt DateTime?                  @map("review_requested_at") @db.Timestamptz(6)
-  reviewedAt        DateTime?                  @map("reviewed_at") @db.Timestamptz(6)
-  reviewedByUserId  String?                    @map("reviewed_by_user_id") @db.Uuid
-  createdAt         DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt         DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  organization      Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  user              Profile                    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  reservationProfessional ReservationProfessional? @relation(fields: [reservationProfessionalId], references: [id], onDelete: SetNull)
+  env                       String                     @default("prod")
+  id                        Int                        @id @default(autoincrement())
+  organizationId            Int                        @map("organization_id")
+  userId                    String                     @map("user_id") @db.Uuid
+  reservationProfessionalId Int?                       @map("reservation_professional_id")
+  title                     String?
+  bio                       String?
+  specialties               String[]                   @default([])
+  certifications            String?
+  experienceYears           Int?                       @map("experience_years")
+  coverImageUrl             String?                    @map("cover_image_url")
+  isPublished               Boolean                    @default(false) @map("is_published")
+  reviewStatus              TrainerProfileReviewStatus @default(DRAFT) @map("review_status")
+  reviewNote                String?                    @map("review_note")
+  reviewRequestedAt         DateTime?                  @map("review_requested_at") @db.Timestamptz(6)
+  reviewedAt                DateTime?                  @map("reviewed_at") @db.Timestamptz(6)
+  reviewedByUserId          String?                    @map("reviewed_by_user_id") @db.Uuid
+  createdAt                 DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  organization              Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user                      Profile                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reservationProfessional   ReservationProfessional?   @relation(fields: [reservationProfessionalId], references: [id], onDelete: SetNull)
 
   @@unique([organizationId, userId], map: "trainer_profiles_org_user_unique")
   @@unique([organizationId, reservationProfessionalId], map: "trainer_profiles_org_prof_unique")
@@ -5241,19 +5294,19 @@ model BookingSplitParticipant {
 }
 
 model BookingSplitShareAttempt {
-  env           String                             @default("prod")
-  id            Int                                @id @default(autoincrement())
-  participantId Int                                @map("participant_id")
-  attemptNo     Int                                @map("attempt_no")
-  status        BookingSplitShareAttemptStatus
-  failureClass  BookingSplitShareAttemptFailureClass? @map("failure_class")
-  paymentId     String?                            @map("payment_id")
-  paymentIntentId String?                          @map("payment_intent_id")
-  actionExpireAt DateTime?                         @map("action_expire_at") @db.Timestamptz(6)
-  createdAt     DateTime                           @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime                           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  participant   BookingSplitParticipant            @relation("BookingSplitParticipantAttempts", fields: [participantId], references: [id], onDelete: Cascade)
-  activeForParticipants BookingSplitParticipant[]  @relation("BookingSplitParticipantActiveAttempt")
+  env                   String                                @default("prod")
+  id                    Int                                   @id @default(autoincrement())
+  participantId         Int                                   @map("participant_id")
+  attemptNo             Int                                   @map("attempt_no")
+  status                BookingSplitShareAttemptStatus
+  failureClass          BookingSplitShareAttemptFailureClass? @map("failure_class")
+  paymentId             String?                               @map("payment_id")
+  paymentIntentId       String?                               @map("payment_intent_id")
+  actionExpireAt        DateTime?                             @map("action_expire_at") @db.Timestamptz(6)
+  createdAt             DateTime                              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime                              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  participant           BookingSplitParticipant               @relation("BookingSplitParticipantAttempts", fields: [participantId], references: [id], onDelete: Cascade)
+  activeForParticipants BookingSplitParticipant[]             @relation("BookingSplitParticipantActiveAttempt")
 
   @@unique([participantId, attemptNo], map: "booking_split_share_attempts_participant_attempt_no_unique")
   @@index([participantId], map: "booking_split_share_attempts_participant_idx")
@@ -5263,17 +5316,17 @@ model BookingSplitShareAttempt {
 }
 
 model BookingSplitHoldAttempt {
-  env                 String                       @default("prod")
-  id                  Int                          @id @default(autoincrement())
-  splitId             Int                          @map("split_id")
-  attemptNo           Int                          @map("attempt_no")
-  status              BookingSplitHoldAttemptStatus
-  previousCaptureBeforeAt DateTime?               @map("previous_capture_before_at") @db.Timestamptz(6)
-  nextCaptureBeforeAt DateTime?                   @map("next_capture_before_at") @db.Timestamptz(6)
-  errorCode           String?                      @map("error_code")
-  metadata            Json?                        @default("{}")
-  createdAt           DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
-  split               BookingSplit                 @relation(fields: [splitId], references: [id], onDelete: Cascade)
+  env                     String                        @default("prod")
+  id                      Int                           @id @default(autoincrement())
+  splitId                 Int                           @map("split_id")
+  attemptNo               Int                           @map("attempt_no")
+  status                  BookingSplitHoldAttemptStatus
+  previousCaptureBeforeAt DateTime?                     @map("previous_capture_before_at") @db.Timestamptz(6)
+  nextCaptureBeforeAt     DateTime?                     @map("next_capture_before_at") @db.Timestamptz(6)
+  errorCode               String?                       @map("error_code")
+  metadata                Json?                         @default("{}")
+  createdAt               DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  split                   BookingSplit                  @relation(fields: [splitId], references: [id], onDelete: Cascade)
 
   @@unique([splitId, attemptNo], map: "booking_split_hold_attempts_split_attempt_no_unique")
   @@index([splitId], map: "booking_split_hold_attempts_split_idx")
@@ -5368,37 +5421,37 @@ model ScheduleDelay {
 }
 
 model PadelScheduleRun {
-  env                 String       @default("prod")
-  id                  String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  eventId             Int          @map("event_id")
-  organizationId      Int          @map("organization_id")
-  status              String       @default("QUEUED")
-  strategy            String       @default("BALANCED_BY_CATEGORY")
-  partialMode         String       @default("ALLOW_PARTIAL") @map("partial_mode")
-  executionMode       String       @default("SYNC") @map("execution_mode")
-  dryRun              Boolean      @default(false) @map("dry_run")
-  scheduledCount      Int          @default(0) @map("scheduled_count")
-  skippedCount        Int          @default(0) @map("skipped_count")
-  unscheduledByReason Json?        @map("unscheduled_by_reason")
-  byCategory          Json?        @map("by_category")
+  env                 String    @default("prod")
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId             Int       @map("event_id")
+  organizationId      Int       @map("organization_id")
+  status              String    @default("QUEUED")
+  strategy            String    @default("BALANCED_BY_CATEGORY")
+  partialMode         String    @default("ALLOW_PARTIAL") @map("partial_mode")
+  executionMode       String    @default("SYNC") @map("execution_mode")
+  dryRun              Boolean   @default(false) @map("dry_run")
+  scheduledCount      Int       @default(0) @map("scheduled_count")
+  skippedCount        Int       @default(0) @map("skipped_count")
+  unscheduledByReason Json?     @map("unscheduled_by_reason")
+  byCategory          Json?     @map("by_category")
   warnings            Json?
-  errorCode           String?      @map("error_code")
-  requestedByUserId   String?      @map("requested_by_user_id") @db.Uuid
-  requestedAt         DateTime     @default(now()) @map("requested_at") @db.Timestamptz(6)
-  startedAt           DateTime?    @map("started_at") @db.Timestamptz(6)
-  finishedAt          DateTime?    @map("finished_at") @db.Timestamptz(6)
-  applied             Boolean      @default(false)
-  queued              Boolean      @default(false)
-  outboxEventId       String?      @unique(map: "padel_schedule_runs_outbox_event_id_key") @map("outbox_event_id")
-  categoryIds         Json?        @map("category_ids")
-  matchIds            Json?        @map("match_ids")
-  requestMeta         Json?        @map("request_meta")
-  createdAt           DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  errorCode           String?   @map("error_code")
+  requestedByUserId   String?   @map("requested_by_user_id") @db.Uuid
+  requestedAt         DateTime  @default(now()) @map("requested_at") @db.Timestamptz(6)
+  startedAt           DateTime? @map("started_at") @db.Timestamptz(6)
+  finishedAt          DateTime? @map("finished_at") @db.Timestamptz(6)
+  applied             Boolean   @default(false)
+  queued              Boolean   @default(false)
+  outboxEventId       String?   @unique(map: "padel_schedule_runs_outbox_event_id_key") @map("outbox_event_id")
+  categoryIds         Json?     @map("category_ids")
+  matchIds            Json?     @map("match_ids")
+  requestMeta         Json?     @map("request_meta")
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  event         Event                   @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  organization  Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  decisions     PadelScheduleRunDecision[]
+  event        Event                      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  organization Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  decisions    PadelScheduleRunDecision[]
 
   @@index([eventId], map: "padel_schedule_runs_event_idx")
   @@index([organizationId], map: "padel_schedule_runs_org_idx")
@@ -5409,20 +5462,20 @@ model PadelScheduleRun {
 }
 
 model PadelScheduleRunDecision {
-  env            String            @default("prod")
-  id             Int               @id @default(autoincrement())
-  runId          String            @map("run_id") @db.Uuid
-  eventId        Int               @map("event_id")
-  organizationId Int               @map("organization_id")
-  matchId        Int?              @map("match_id")
-  categoryId     Int?              @map("category_id")
-  decisionType   String            @map("decision_type")
+  env            String    @default("prod")
+  id             Int       @id @default(autoincrement())
+  runId          String    @map("run_id") @db.Uuid
+  eventId        Int       @map("event_id")
+  organizationId Int       @map("organization_id")
+  matchId        Int?      @map("match_id")
+  categoryId     Int?      @map("category_id")
+  decisionType   String    @map("decision_type")
   reason         String?
-  courtId        Int?              @map("court_id")
-  startsAt       DateTime?         @map("starts_at") @db.Timestamptz(6)
-  endsAt         DateTime?         @map("ends_at") @db.Timestamptz(6)
+  courtId        Int?      @map("court_id")
+  startsAt       DateTime? @map("starts_at") @db.Timestamptz(6)
+  endsAt         DateTime? @map("ends_at") @db.Timestamptz(6)
   details        Json?
-  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   run          PadelScheduleRun @relation(fields: [runId], references: [id], onDelete: Cascade)
   event        Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
@@ -5547,9 +5600,9 @@ model CrmContact {
   createdAt           DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization        Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  user                Profile?               @relation(fields: [userId], references: [id], onDelete: SetNull)
-  emailIdentity       EmailIdentity?         @relation(fields: [emailIdentityId], references: [id], onDelete: SetNull)
+  organization        Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user                Profile?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  emailIdentity       EmailIdentity?        @relation(fields: [emailIdentityId], references: [id], onDelete: SetNull)
   interactions        CrmInteraction[]
   consents            CrmContactConsent[]
   notes               CrmContactNote[]
@@ -5763,8 +5816,8 @@ model CrmJourney {
   createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  creator      Profile?               @relation("CrmJourneyCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  creator      Profile?         @relation("CrmJourneyCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
   steps        CrmJourneyStep[]
 
   @@index([organizationId, status], map: "crm_journeys_org_status_idx")
@@ -5784,8 +5837,8 @@ model CrmJourneyStep {
   createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  journey      CrmJourney      @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  journey      CrmJourney   @relation(fields: [journeyId], references: [id], onDelete: Cascade)
 
   @@unique([journeyId, stepKey], map: "crm_journey_steps_journey_step_key_uq")
   @@unique([journeyId, position], map: "crm_journey_steps_journey_position_uq")
@@ -7621,6 +7674,14 @@ enum ServiceKind {
   GENERAL
   COURT
   CLASS
+
+  @@schema("app_v3")
+}
+
+enum ReservationCategoryDomain {
+  COURT
+  CLASS
+  SERVICE
 
   @@schema("app_v3")
 }

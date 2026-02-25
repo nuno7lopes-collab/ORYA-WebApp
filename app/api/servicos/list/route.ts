@@ -8,6 +8,7 @@ import { groupByScope, type AvailabilityScopeType, type ScopedOverride, type Sco
 import { resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
 import { resolveServicePartySizeRules } from "@/lib/reservas/servicePartySize";
 import { resolveBookingGridPolicy } from "@/lib/reservas/gridPolicy";
+import { resolveBookingVerticalFromServiceKind } from "@/lib/reservas/bookingVertical";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { buildCacheKey, getCache, setCache } from "@/lib/geo/cache";
 import { PORTUGAL_CITIES } from "@/config/cities";
@@ -84,6 +85,8 @@ async function _GET(req: NextRequest) {
     const dayParam = searchParams.get("day");
     const kindParam = searchParams.get("kind");
     const tagParam = searchParams.get("tag");
+    const categorySlugParam = searchParams.get("categorySlug");
+    const categoryDomainParam = searchParams.get("categoryDomain");
     const cityParam = normalizeCityFilter(searchParams.get("city"));
 
     const take = clampTake(limitParam ? parseInt(limitParam, 10) : DEFAULT_PAGE_SIZE);
@@ -105,6 +108,8 @@ async function _GET(req: NextRequest) {
       dayParam ?? "",
       kindParam ?? "",
       tagParam ?? "",
+      categorySlugParam ?? "",
+      categoryDomainParam ?? "",
       cityParam ?? "",
     ]);
     const cached = getCache<Record<string, unknown>>(cacheKey);
@@ -145,8 +150,30 @@ async function _GET(req: NextRequest) {
       };
     }
 
+    const normalizedCategorySlug = categorySlugParam?.trim().toLowerCase() ?? "";
+    const normalizedCategoryDomain = categoryDomainParam?.trim().toUpperCase() ?? "";
+    const hasCategoryDomain = ["COURT", "CLASS", "SERVICE"].includes(normalizedCategoryDomain);
+    if (normalizedCategorySlug || hasCategoryDomain) {
+      where.category = {
+        ...(normalizedCategorySlug ? { slug: normalizedCategorySlug } : {}),
+        ...(hasCategoryDomain ? { domain: normalizedCategoryDomain as "COURT" | "CLASS" | "SERVICE" } : {}),
+      };
+    }
+
     if (tagParam && tagParam.trim()) {
-      where.categoryTag = { contains: tagParam.trim(), mode: "insensitive" };
+      const legacyTag = tagParam.trim();
+      const tagFilter: Prisma.ServiceWhereInput = {
+        OR: [
+          { categoryTag: { contains: legacyTag, mode: "insensitive" } },
+          { category: { label: { contains: legacyTag, mode: "insensitive" } } },
+          { category: { slug: { contains: legacyTag.toLowerCase(), mode: "insensitive" } } },
+        ],
+      };
+      if (Array.isArray(where.AND)) {
+        where.AND.push(tagFilter);
+      } else {
+        where.AND = [tagFilter];
+      }
     }
 
     if (cityParam) {
@@ -223,7 +250,16 @@ async function _GET(req: NextRequest) {
         partySizeMin: true,
         partySizeMax: true,
         partySizeStep: true,
+        categoryId: true,
         categoryTag: true,
+        category: {
+          select: {
+            id: true,
+            slug: true,
+            label: true,
+            domain: true,
+          },
+        },
         addressId: true,
         addressRef: { select: { formattedAddress: true, canonical: true } },
         professionalLinks: { select: { professionalId: true, professional: { select: { isActive: true } } } },
@@ -250,6 +286,31 @@ async function _GET(req: NextRequest) {
     const hasMore = services.length > take;
     const trimmed = hasMore ? services.slice(0, take) : services;
     const organizationIds = Array.from(new Set(trimmed.map((service) => service.organization.id)));
+    type BookingSettingsRow = {
+      organizationId: number;
+      bookingGridMinutes: number | null;
+      bookingAllowedDurations: number[];
+      bookingAllowCustomDuration: boolean | null;
+    };
+    const organizationSettingsClient = (
+      prisma as unknown as {
+        organizationSettings?: {
+          findMany?: (args: unknown) => Promise<BookingSettingsRow[]>;
+        };
+      }
+    ).organizationSettings;
+    const bookingSettingsPromise: Promise<BookingSettingsRow[]> =
+      typeof organizationSettingsClient?.findMany === "function"
+        ? prisma.organizationSettings.findMany({
+            where: { organizationId: { in: organizationIds } },
+            select: {
+              organizationId: true,
+              bookingGridMinutes: true,
+              bookingAllowedDurations: true,
+              bookingAllowCustomDuration: true,
+            },
+          })
+        : Promise.resolve([]);
 
     const [schedules, overrides, bookings, professionals, resources, bookingSettings] = await Promise.all([
       prisma.availabilitySchedule.findMany({
@@ -295,18 +356,7 @@ async function _GET(req: NextRequest) {
         select: { id: true, organizationId: true, capacity: true, priority: true, courtId: true },
         orderBy: [{ capacity: "asc" }, { priority: "asc" }, { id: "asc" }],
       }),
-      (prisma as unknown as { organizationSettings?: { findMany?: (args: unknown) => Promise<any[]> } }).organizationSettings
-        ?.findMany
-        ? prisma.organizationSettings.findMany({
-            where: { organizationId: { in: organizationIds } },
-            select: {
-              organizationId: true,
-              bookingGridMinutes: true,
-              bookingAllowedDurations: true,
-              bookingAllowCustomDuration: true,
-            },
-          })
-        : Promise.resolve([]),
+      bookingSettingsPromise,
     ]);
 
     const scheduleIds = schedules.map((schedule) => schedule.id);
@@ -543,6 +593,16 @@ async function _GET(req: NextRequest) {
       const nextSlot = findNextSlot(availableSlots);
       return {
         ...service,
+        bookingVertical: resolveBookingVerticalFromServiceKind(service.kind),
+        category: service.category
+          ? {
+              id: service.category.id,
+              slug: service.category.slug,
+              label: service.category.label,
+              domain: service.category.domain,
+            }
+          : null,
+        categoryTag: service.category?.label ?? service.categoryTag ?? null,
         nextAvailability: nextSlot?.startsAt.toISOString() ?? null,
       };
     });

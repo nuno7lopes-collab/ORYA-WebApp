@@ -28,6 +28,7 @@ export type WaveTicket = {
 type WavesSectionClientProps = {
   slug: string;
   tickets: WaveTicket[];
+  layout?: "rail" | "panel";
   // para sabermos se devemos ir para checkout ou fazer “join” direto
   isGratisEvent?: boolean;
   checkoutUiVariant?: "DEFAULT" | "PADEL";
@@ -44,6 +45,7 @@ type WavesSectionClientProps = {
 export default function WavesSectionClient({
   slug,
   tickets: initialTickets,
+  layout = "panel",
   isGratisEvent,
   checkoutUiVariant = "DEFAULT",
   locale,
@@ -60,85 +62,191 @@ export default function WavesSectionClient({
       : {};
 
   const visibleTickets = tickets.filter((t) => t.isVisible);
+  const onSaleLabel = ticketCopy.isPadel
+    ? t("availabilityRegistrationsOpen", locale)
+    : t("availabilityTicketsOnSale", locale);
+  const upcomingLabel = ticketCopy.isPadel
+    ? t("availabilityRegistrationsSoon", locale)
+    : t("availabilitySalesSoon", locale);
+  const closedLabel = ticketCopy.isPadel
+    ? t("availabilityRegistrationsClosed", locale)
+    : t("availabilitySalesClosed", locale);
   const purchasableTickets = visibleTickets.filter(
     (t) => t.status === "on_sale" || t.status === "upcoming",
   );
+  const primaryTicket =
+    purchasableTickets.find((ticket) => ticket.status === "on_sale") ?? purchasableTickets[0] ?? null;
 
-  // 🔥 Calcular preço mínimo (defensivo para o caso de não haver bilhetes visíveis)
   const minPrice =
     purchasableTickets.length > 0
       ? Math.min(...purchasableTickets.map((t) => t.price))
       : null;
   const isGratisLabel = Boolean(isGratisEvent);
   const noTicketsLabel = t("noTicketsAvailable", locale).replace("{items}", ticketCopy.plural);
+  const allClosed = visibleTickets.length > 0 && visibleTickets.every((ticket) => ticket.status === "closed");
+  const allSoldOut = visibleTickets.length > 0 && visibleTickets.every((ticket) => ticket.status === "sold_out");
+  const hasUpcoming = visibleTickets.some((ticket) => ticket.status === "upcoming");
+  const disabledCtaLabel = allSoldOut
+    ? t("availabilitySoldOut", locale)
+    : allClosed
+      ? closedLabel
+      : hasUpcoming
+        ? upcomingLabel
+        : noTicketsLabel;
+
+  const formatPrice = (price: number, currency: string) => {
+    const safeCurrency = currency?.trim() || "EUR";
+    try {
+      return new Intl.NumberFormat(locale || "pt-PT", {
+        style: "currency",
+        currency: safeCurrency,
+        minimumFractionDigits: 2,
+      }).format(price);
+    } catch {
+      return `${price.toFixed(2)}€`;
+    }
+  };
+
+  const openTicketCheckout = (ticket: WaveTicket) => {
+    atualizarDados({
+      slug,
+      waves: visibleTickets,
+      additional: {
+        checkoutUiVariant,
+        padelMeta,
+        ...inviteAdditional,
+      },
+    });
+
+    abrirCheckout({
+      slug,
+      ticketId: ticket.id,
+      price: ticket.price,
+      ticketName: ticket.name,
+      eventId: padelMeta?.eventId ? String(padelMeta.eventId) : undefined,
+      additional: {
+        checkoutUiVariant,
+        padelMeta,
+        ...inviteAdditional,
+      },
+      waves: visibleTickets,
+    });
+
+    setTimeout(() => {
+      try {
+        const evt = new Event("orya-force-step1");
+        window.dispatchEvent(evt);
+      } catch {}
+    }, 10);
+  };
+
+  const statusLabelForTicket = (ticket: WaveTicket) => {
+    if (ticket.status === "sold_out") return t("availabilitySoldOut", locale);
+    if (ticket.status === "closed") return closedLabel;
+    if (ticket.status === "upcoming") return upcomingLabel;
+    return onSaleLabel;
+  };
+
+  if (layout === "rail") {
+    return (
+      <div className="w-full" data-testid="event-purchase-rail">
+        <div className="relative flex items-center gap-3 rounded-2xl border border-white/14 bg-black/50 px-4 py-3 backdrop-blur-xl md:px-5 md:py-3.5">
+          <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-[#7CFFEA]/70 to-transparent" />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[11px] uppercase tracking-[0.16em] text-white/58">
+              {ticketCopy.pluralCap}
+            </p>
+            <p className="mt-1 truncate text-lg font-semibold leading-tight text-white/92 md:text-[1.35rem]">
+              {isGratisLabel ? (
+                <span className="text-white">{ticketCopy.freeLabel}</span>
+              ) : minPrice !== null && primaryTicket ? (
+                <>
+                  {t("fromLabel", locale)}{" "}
+                  <span className="text-white">
+                    {formatPrice(minPrice, primaryTicket.currency)}
+                  </span>
+                </>
+              ) : (
+                <span className="text-white/62">{noTicketsLabel}</span>
+              )}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            disabled={!primaryTicket}
+            onClick={() => {
+              if (!primaryTicket) return;
+              openTicketCheckout(primaryTicket);
+            }}
+            className={`${CTA_PRIMARY} min-h-11 min-w-[152px] max-w-[62%] shrink-0 justify-center px-4 py-2 text-[0.9rem] shadow-[0_12px_30px_rgba(124,255,234,0.2)] active:scale-95 disabled:cursor-not-allowed disabled:opacity-50`}
+          >
+            {!primaryTicket
+              ? disabledCtaLabel
+              : isGratisLabel
+                ? freeCtaLabel
+                : ticketCopy.buyLabel}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="mt-6 w-full">
-      <div className="relative flex items-center gap-3 rounded-2xl border border-white/12 bg-black/55 px-5 py-3.5 shadow-[0_18px_40px_rgba(0,0,0,0.55)] backdrop-blur-xl">
-        <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-[#7CFFEA]/70 to-transparent" />
-        <p className="min-w-0 flex-1 truncate text-xl text-white/90 leading-tight font-semibold">
-          {isGratisLabel ? (
-            <span className="text-white">{ticketCopy.freeLabel}</span>
-          ) : minPrice !== null ? (
-            <>
-              {t("fromLabel", locale)}{" "}
-              <span className="text-white">
-                {minPrice.toFixed(2)}€
-              </span>
-            </>
-          ) : (
-            <span className="text-white/60">{noTicketsLabel}</span>
-          )}
-        </p>
+    <div className="mt-5 w-full border-y border-white/14" data-testid="event-purchase-panel">
+      {visibleTickets.length > 0 ? (
+        visibleTickets.map((ticket) => {
+          const canCheckout = ticket.status === "on_sale" || ticket.status === "upcoming";
+          return (
+            <div
+              key={ticket.id}
+              className="flex flex-wrap items-center justify-between gap-3 border-t border-white/12 px-0 py-3 first:border-t-0"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-white">{ticket.name}</p>
+                <p className="mt-1 text-xs text-white/65">
+                  {statusLabelForTicket(ticket)}
+                  {ticket.remaining !== null && ticket.remaining >= 0 ? ` · ${ticket.remaining} restantes` : ""}
+                </p>
+              </div>
 
-        <button
-          type="button"
-          disabled={purchasableTickets.length === 0}
-          onClick={() => {
-            if (purchasableTickets.length === 0) return;
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-white/92">
+                  {isGratisLabel ? ticketCopy.freeLabel : formatPrice(ticket.price, ticket.currency)}
+                </span>
+                <button
+                  type="button"
+                  disabled={!canCheckout}
+                  onClick={() => {
+                    if (!canCheckout) return;
+                    openTicketCheckout(ticket);
+                  }}
+                  className={`${CTA_PRIMARY} min-h-10 min-w-[120px] justify-center px-4 py-2 text-xs active:scale-95 disabled:cursor-not-allowed disabled:opacity-55`}
+                >
+                  {canCheckout
+                    ? isGratisLabel
+                      ? freeCtaLabel
+                      : ticketCopy.buyLabel
+                    : statusLabelForTicket(ticket)}
+                </button>
+              </div>
+            </div>
+          );
+        })
+      ) : (
+        <div className="py-3 text-sm text-white/72">
+          {noTicketsLabel}
+        </div>
+      )}
 
-            atualizarDados({
-              slug,
-              waves: visibleTickets,
-              additional: {
-                checkoutUiVariant,
-                padelMeta,
-                ...inviteAdditional,
-              },
-            });
-
-            const defaultTicket = purchasableTickets[0];
-
-            abrirCheckout({
-              slug,
-              ticketId: defaultTicket.id,
-              price: defaultTicket.price,
-              ticketName: defaultTicket.name,
-              eventId: padelMeta?.eventId ? String(padelMeta.eventId) : undefined,
-              additional: {
-                checkoutUiVariant,
-                padelMeta,
-                ...inviteAdditional,
-              },
-              waves: visibleTickets,
-            });
-
-            setTimeout(() => {
-              try {
-                const evt = new Event("orya-force-step1");
-                window.dispatchEvent(evt);
-              } catch {}
-            }, 10);
-          }}
-          className={`${CTA_PRIMARY} min-h-12 min-w-[166px] max-w-[62%] shrink-0 justify-center px-5 py-2.5 text-[0.98rem] shadow-[0_12px_30px_rgba(124,255,234,0.18)] active:scale-95 disabled:cursor-not-allowed disabled:opacity-50`}
-        >
-          {purchasableTickets.length === 0
-            ? t("availabilitySoldOut", locale)
-            : isGratisLabel
-              ? freeCtaLabel
-              : ticketCopy.buyLabel}
-        </button>
-      </div>
+      {primaryTicket ? (
+        <div className="border-t border-white/12 py-2.5 text-xs text-white/68">
+          {t("fromLabel", locale)}{" "}
+          <span className="font-semibold text-white/92">
+            {isGratisLabel ? ticketCopy.freeLabel : formatPrice(minPrice ?? primaryTicket.price, primaryTicket.currency)}
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }

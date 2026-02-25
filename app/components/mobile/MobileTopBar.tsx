@@ -38,7 +38,7 @@ export default function MobileTopBar({
 
   return (
     <div className="sticky top-0 z-40 md:hidden">
-      <div className="orya-mobile-topbar px-4 pt-4 pb-3">
+      <div className="orya-mobile-topbar orya-user-nav-shell px-4 pt-4 pb-3">
         {variant === "search-only" ? (
           <button
             type="button"

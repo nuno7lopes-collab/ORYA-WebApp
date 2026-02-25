@@ -64,7 +64,7 @@ function buildReturnPolicyText(mode: StoreReturnPolicyMode, returnWindowDays: nu
 
 function buildLegalUrl(username: string | null): string | null {
   if (!username) return null;
-  return `/${username}/legal`;
+  return `/${username}?sec=legal`;
 }
 
 function buildPrivacyPolicyText(legalUrl: string | null): string {

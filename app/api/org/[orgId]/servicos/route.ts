@@ -15,12 +15,13 @@ import {
   requiresPartySizeForAssignmentMode,
 } from "@/lib/reservas/serviceAssignment";
 import { resolveServicePartySizeRules } from "@/lib/reservas/servicePartySize";
+import { resolveBookingVerticalFromServiceKind, resolveCategoryDomainFromServiceKind } from "@/lib/reservas/bookingVertical";
 import {
   buildDefaultCourtDurationPrices,
   normalizeCourtDurationPricePayload,
 } from "@/lib/reservas/serviceDurationPrices";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
-import { AddressSourceProvider, OrganizationMemberRole, ServiceKind } from "@prisma/client";
+import { AddressSourceProvider, OrganizationMemberRole, ReservationCategoryDomain, ServiceKind } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
@@ -53,6 +54,24 @@ function normalizeIdList(value: unknown, label: string) {
     parsed.push(Math.trunc(id));
   }
   return { ids: Array.from(new Set(parsed)), error: null as string | null };
+}
+
+function slugifyCategory(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 60);
+}
+
+function getDefaultCategoryByDomain(domain: ReservationCategoryDomain) {
+  if (domain === "COURT") return { slug: "campo-padel", label: "Reserva de Campo", sortOrder: 10 };
+  if (domain === "CLASS") return { slug: "aulas", label: "Aulas", sortOrder: 20 };
+  return { slug: "servicos", label: "Serviços", sortOrder: 30 };
 }
 
 function errorCodeForStatus(status: number) {
@@ -126,6 +145,14 @@ async function _GET(req: NextRequest) {
         instructor: {
           select: { id: true, fullName: true, username: true, avatarUrl: true },
         },
+        category: {
+          select: {
+            id: true,
+            slug: true,
+            label: true,
+            domain: true,
+          },
+        },
         durationPrices: {
           orderBy: [{ durationMinutes: "asc" }],
           select: {
@@ -143,7 +170,13 @@ async function _GET(req: NextRequest) {
       },
     });
 
-    return respondOk(ctx, { items });
+    const normalizedItems = items.map((item) => ({
+      ...item,
+      bookingVertical: resolveBookingVerticalFromServiceKind(item.kind),
+      categoryTag: item.category?.label ?? item.categoryTag ?? null,
+    }));
+
+    return respondOk(ctx, { items: normalizedItems });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "Não autenticado.");
@@ -202,6 +235,8 @@ async function _POST(req: NextRequest) {
     const currency = String(payload?.currency ?? "EUR").trim().toUpperCase();
     const policyIdRaw = Number(payload?.policyId);
     const categoryTag = typeof payload?.categoryTag === "string" ? payload.categoryTag.trim() : "";
+    const categoryIdRaw = Number(payload?.categoryId);
+    const hasCategoryIdInput = Object.prototype.hasOwnProperty.call(payload ?? {}, "categoryId");
     const kindRaw = typeof payload?.kind === "string" ? payload.kind.trim().toUpperCase() : "GENERAL";
     const instructorIdRaw = typeof payload?.instructorId === "string" ? payload.instructorId.trim() : "";
     const locationModeRaw = typeof payload?.locationMode === "string" ? payload.locationMode.trim().toUpperCase() : "FIXED";
@@ -281,6 +316,29 @@ async function _POST(req: NextRequest) {
     }
     if (kindRaw === "CLASS" && assignmentMode === "RESOURCE_ONLY") {
       return fail(400, "CLASS_REQUIRES_PROFESSIONAL_MODE");
+    }
+    const categoryDomain = resolveCategoryDomainFromServiceKind(kindRaw);
+    let selectedCategory:
+      | { id: number; slug: string; label: string; domain: ReservationCategoryDomain }
+      | null = null;
+    if (hasCategoryIdInput && payload?.categoryId !== null) {
+      if (!Number.isFinite(categoryIdRaw) || categoryIdRaw <= 0) {
+        return fail(400, "INVALID_CATEGORY");
+      }
+      const category = await prisma.reservationCategory.findFirst({
+        where: {
+          id: Math.trunc(categoryIdRaw),
+          organizationId: organization.id,
+        },
+        select: { id: true, slug: true, label: true, domain: true },
+      });
+      if (!category) {
+        return fail(404, "CATEGORY_NOT_FOUND");
+      }
+      if (category.domain !== categoryDomain) {
+        return fail(409, "CATEGORY_DOMAIN_MISMATCH");
+      }
+      selectedCategory = category;
     }
 
     let courtDurationPrices = durationPricesInput;
@@ -413,10 +471,41 @@ async function _POST(req: NextRequest) {
     }
 
     const service = await prisma.$transaction(async (tx) => {
+      let resolvedCategory = selectedCategory;
+      if (!resolvedCategory) {
+        const domainDefault = getDefaultCategoryByDomain(categoryDomain);
+        const customSlug = categoryTag ? slugifyCategory(categoryTag) : "";
+        const slug = customSlug || domainDefault.slug;
+        const label = categoryTag || domainDefault.label;
+        resolvedCategory = await tx.reservationCategory.upsert({
+          where: {
+            organizationId_domain_slug: {
+              organizationId: organization.id,
+              domain: categoryDomain,
+              slug,
+            },
+          },
+          update: {
+            label,
+            isActive: true,
+          },
+          create: {
+            organizationId: organization.id,
+            domain: categoryDomain,
+            slug,
+            label,
+            sortOrder: domainDefault.sortOrder,
+            isActive: true,
+          },
+          select: { id: true, slug: true, label: true, domain: true },
+        });
+      }
+
       const created = await tx.service.create({
         data: {
           organizationId: organization.id,
           policyId,
+          categoryId: resolvedCategory.id,
           kind: kindRaw as ServiceKind,
           instructorId,
           title,
@@ -462,7 +551,7 @@ async function _POST(req: NextRequest) {
           skipDuplicates: true,
         });
       }
-      return created;
+      return { created, category: resolvedCategory };
     });
 
     const { ip, userAgent } = getRequestMeta(req);
@@ -471,13 +560,15 @@ async function _POST(req: NextRequest) {
       actorUserId: profile.id,
       action: "SERVICE_CREATED",
       metadata: {
-        serviceId: service.id,
+        serviceId: service.created.id,
         title,
         durationMinutes,
         unitPriceCents: Math.round(unitPriceCents),
         currency: currency || "EUR",
         assignmentMode,
         partySizeRules,
+        categoryId: service.category.id,
+        category: service.category,
         categoryTag: categoryTag || null,
         coverImageUrl: coverImageUrl || null,
         locationMode: locationModeRaw,
@@ -489,7 +580,18 @@ async function _POST(req: NextRequest) {
       userAgent,
     });
 
-    return respondOk(ctx, { service }, { status: 201 });
+    return respondOk(
+      ctx,
+      {
+        service: {
+          ...service.created,
+          bookingVertical: resolveBookingVerticalFromServiceKind(service.created.kind),
+          category: service.category,
+          categoryTag: (service.category?.label ?? categoryTag) || null,
+        },
+      },
+      { status: 201 },
+    );
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "Não autenticado.");

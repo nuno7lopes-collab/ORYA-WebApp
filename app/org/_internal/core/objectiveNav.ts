@@ -134,11 +134,23 @@ export function getObjectiveSections(
 
     if (operationOverride === "RESERVAS") {
       const baseHref = "/org/bookings";
-      sections.push({
-        id: "servicos",
-        label: "Serviços",
-        href: manageBase ?? baseHref,
-      });
+      sections.push(
+        {
+          id: "campos",
+          label: "Campos",
+          href: `${baseHref}/courts`,
+        },
+        {
+          id: "aulas",
+          label: "Aulas",
+          href: `${baseHref}/classes`,
+        },
+        {
+          id: "servicos",
+          label: "Serviços",
+          href: `${baseHref}/services`,
+        },
+      );
       sections.push(
         {
           id: "operacoes",

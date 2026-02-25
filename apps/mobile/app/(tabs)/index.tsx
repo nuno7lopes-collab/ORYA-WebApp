@@ -28,6 +28,7 @@ import {
   DiscoverKind,
   DiscoverOfferCard,
   DiscoverPriceFilter,
+  DiscoverServiceCard,
 } from "../../features/discover/types";
 import { FiltersBottomSheet } from "../../components/discover/FiltersBottomSheet";
 import {
@@ -82,6 +83,17 @@ const GRID_GAP = 10;
 const GRID_PADDING = 20;
 const GRID_SKELETON_ROWS = 4;
 const SERVICE_ROW_MIN_HEIGHT = 136;
+
+const resolveServiceVertical = (service: DiscoverServiceCard): "COURT" | "CLASS" | "SERVICE" => {
+  const byVertical = String(service.bookingVertical ?? "").trim().toUpperCase();
+  if (byVertical === "COURT" || byVertical === "CLASS" || byVertical === "SERVICE") return byVertical;
+  const byDomain = String(service.category?.domain ?? "").trim().toUpperCase();
+  if (byDomain === "COURT" || byDomain === "CLASS" || byDomain === "SERVICE") return byDomain;
+  const byKind = String(service.kind ?? "").trim().toUpperCase();
+  if (byKind === "COURT") return "COURT";
+  if (byKind === "CLASS") return "CLASS";
+  return "SERVICE";
+};
 
 export default function DiscoverScreen() {
   const router = useRouter();
@@ -282,7 +294,7 @@ export default function DiscoverScreen() {
           if (!matchesPadel && !matchesEvents) return false;
         }
         if (item.type === "service") {
-          const isPadelService = item.service.kind === "COURT";
+          const isPadelService = resolveServiceVertical(item.service) === "COURT";
           const matchesPadel = worlds.includes("padel") && isPadelService;
           const matchesServices =
             worlds.includes("services") && !isPadelService;

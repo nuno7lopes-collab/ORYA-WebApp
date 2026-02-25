@@ -30,7 +30,7 @@ export default function ExplorarSkeleton({
     <main className="min-h-screen text-white">
       {showTopBar ? (
         <div className="sticky top-0 z-40 md:hidden">
-          <div className="orya-mobile-topbar px-4 pt-4 pb-3">
+          <div className="orya-mobile-topbar orya-user-nav-shell px-4 pt-4 pb-3">
             <div className="h-12 w-full rounded-full border border-white/22 bg-[#2a2a2a] px-4">
               <div className="flex h-full items-center gap-3">
                 <div className="h-6 w-6 rounded-full bg-white/10 animate-pulse" />

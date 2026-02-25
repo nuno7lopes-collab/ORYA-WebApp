@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Image from "next/image";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
@@ -76,6 +76,7 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
 
   const [isVisible, setIsVisible] = useState(true);
   const [isAtTop, setIsAtTop] = useState(true);
+  const [scrollProgress, setScrollProgress] = useState(0);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [eventResults, setEventResults] = useState<SearchEvent[]>([]);
@@ -89,6 +90,7 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
   const searchPanelRef = useRef<HTMLDivElement | null>(null);
   const lastScrollYRef = useRef(0);
+  const scrollTrendRef = useRef({ down: 0, up: 0 });
   const pathname = hydratedPathname ?? "";
   const shouldHide = shouldHideUserNavbar(rawPathname);
   const isMobileHubRoute =
@@ -160,19 +162,27 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
 
     const handleScroll = () => {
       const currentY = window.scrollY || 0;
-      const atTop = currentY < 24;
+      const atTop = currentY < 16;
       setIsAtTop((prev) => (prev === atTop ? prev : atTop));
-
       const prevY = lastScrollYRef.current;
+      const delta = currentY - prevY;
+      const nextProgress = Math.min(Math.max(currentY / 168, 0), 1);
+      setScrollProgress((prev) => (Math.abs(prev - nextProgress) < 0.01 ? prev : nextProgress));
 
       if (atTop) {
-        // No topo: navbar sempre visível
         setIsVisible(true);
-      } else {
-        // A descer esconde, a subir mostra
-        if (currentY > prevY + 24) {
+        scrollTrendRef.current.down = 0;
+        scrollTrendRef.current.up = 0;
+      } else if (delta > 0) {
+        scrollTrendRef.current.down += delta;
+        scrollTrendRef.current.up = 0;
+        if (currentY > 88 && scrollTrendRef.current.down > 20) {
           setIsVisible(false);
-        } else if (currentY < prevY - 24) {
+        }
+      } else if (delta < 0) {
+        scrollTrendRef.current.up += Math.abs(delta);
+        scrollTrendRef.current.down = 0;
+        if (scrollTrendRef.current.up > 16) {
           setIsVisible(true);
         }
       }
@@ -254,6 +264,16 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
 
   const inAuthPage =
     pathname === "/login" || pathname === "/signup" || pathname === "/auth/callback";
+  const navPhase: "top" | "scrolled-visible" | "hidden" = !isVisible
+    ? "hidden"
+    : isAtTop
+      ? "top"
+      : "scrolled-visible";
+  const navVisualStyle = useMemo(() => {
+    return {
+      "--orya-user-nav-progress": scrollProgress.toFixed(3),
+    } as CSSProperties;
+  }, [scrollProgress]);
 
   const handleSubmitSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -547,16 +567,15 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
   return (
     <>
       <header
+        data-nav-phase={navPhase}
+        data-testid="user-navbar-shell"
+        style={navVisualStyle}
         className={`fixed inset-x-0 top-0 z-50 transition-transform duration-300 ease-out ${
           isVisible ? "translate-y-0" : "-translate-y-full"
         } ${shouldHide ? "hidden" : ""} ${isMobileHubRoute ? "hidden md:block" : ""}`}
       >
         <div
-          className={`relative flex w-full items-center gap-4 rounded-b-[24px] border-b-[0.5px] px-4 py-5 transition-all duration-300 md:px-6 md:py-6 lg:px-8 ${
-            isAtTop
-              ? "border-white/[0.06] [background:var(--orya-topbar-bg)] backdrop-blur-md"
-              : "border-white/[0.09] [background:var(--orya-topbar-bg)] shadow-[0_12px_30px_rgba(0,0,0,0.4)] backdrop-blur-xl"
-          }`}
+          className="orya-user-nav-shell relative flex w-full items-center gap-4 px-4 py-5 transition-all duration-300 md:px-6 md:py-6 lg:px-8"
         >
           {/* Logo + pesquisa à esquerda */}
           <div className="flex flex-1 items-center gap-3">
@@ -726,7 +745,7 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
       {isSearchOpen && (
         <div
           className={`fixed inset-0 z-40 ${
-            isAtTop
+            scrollProgress < 0.26
               ? "bg-transparent backdrop-blur-[6px]"
               : "bg-white/5 backdrop-blur-[18px]"
           }`}
@@ -1226,19 +1245,13 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
 
 export function Navbar({ adminHostHint = false }: { adminHostHint?: boolean }) {
   const rawPathname = usePathname();
-  const [mounted, setMounted] = useState(false);
   const [isAdminHost, setIsAdminHost] = useState(Boolean(adminHostHint));
 
   useEffect(() => {
-    setMounted(true);
     if (typeof window === "undefined") return;
     const host = window.location.host.toLowerCase();
     setIsAdminHost(host.startsWith("admin."));
   }, []);
-
-  if (!mounted) {
-    return null;
-  }
 
   if (isAdminHost || rawPathname?.startsWith("/admin")) {
     return null;

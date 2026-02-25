@@ -20,6 +20,7 @@ import {
 import { normalizeInterestSelection, resolveInterestLabel } from "@/lib/interests";
 import { getPaidSalesGate } from "@/lib/organizationPayments";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
+import { resolveStorePolicy } from "@/lib/store/policySettings";
 import {
   canAcceptPublicReservasBookings,
   canOpenPublicStorefront,
@@ -30,7 +31,13 @@ import { getUserIdentityIds } from "@/lib/ownership/identity";
 import { OrganizationFormStatus, type Prisma } from "@prisma/client";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
+import { resolveBookingVerticalFromServiceKind } from "@/lib/reservas/bookingVertical";
 import ReservasBookingSection from "@/app/[username]/_components/ReservasBookingSection";
+import ProfileStoreCatalogSection from "@/app/[username]/_components/ProfileStoreCatalogSection";
+import ProfileLegalInlineSection from "@/app/[username]/_components/ProfileLegalInlineSection";
+import ProfileCommunitySection, {
+  type ProfileCommunityItem,
+} from "@/app/[username]/_components/ProfileCommunitySection";
 import { formatEventLocationLabel, pickCanonicalField } from "@/lib/location/eventLocation";
 import { getUserFollowCounts, isUserFollowing } from "@/domain/social/follows";
 import type { Metadata } from "next";
@@ -533,52 +540,61 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
               partySizeStep: true,
               durationMinutes: true,
               unitPriceCents: true,
-            currency: true,
-            isActive: true,
-            categoryTag: true,
-            coverImageUrl: true,
-            locationMode: true,
-            addressId: true,
-            addressRef: { select: { formattedAddress: true, canonical: true } },
-            addons: {
-              where: { isActive: true },
-              orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
-              select: {
-                id: true,
-                label: true,
-                description: true,
-                deltaMinutes: true,
-                deltaPriceCents: true,
-                maxQty: true,
-                category: true,
-                sortOrder: true,
+              currency: true,
+              isActive: true,
+              categoryId: true,
+              categoryTag: true,
+              category: {
+                select: {
+                  id: true,
+                  slug: true,
+                  label: true,
+                  domain: true,
+                },
               },
-            },
-            packages: {
-              where: { isActive: true },
-              orderBy: [{ recommended: "desc" }, { sortOrder: "asc" }, { id: "asc" }],
-              select: {
-                id: true,
-                label: true,
-                description: true,
-                durationMinutes: true,
-                priceCents: true,
-                recommended: true,
-                sortOrder: true,
+              coverImageUrl: true,
+              locationMode: true,
+              addressId: true,
+              addressRef: { select: { formattedAddress: true, canonical: true } },
+              addons: {
+                where: { isActive: true },
+                orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+                select: {
+                  id: true,
+                  label: true,
+                  description: true,
+                  deltaMinutes: true,
+                  deltaPriceCents: true,
+                  maxQty: true,
+                  category: true,
+                  sortOrder: true,
+                },
               },
-            },
-            durationPrices: {
-              where: { isActive: true },
-              orderBy: [{ durationMinutes: "asc" }],
-              select: {
-                durationMinutes: true,
-                priceCents: true,
-                isActive: true,
+              packages: {
+                where: { isActive: true },
+                orderBy: [{ recommended: "desc" }, { sortOrder: "asc" }, { id: "asc" }],
+                select: {
+                  id: true,
+                  label: true,
+                  description: true,
+                  durationMinutes: true,
+                  priceCents: true,
+                  recommended: true,
+                  sortOrder: true,
+                },
               },
-            },
-            professionalLinks: { select: { professionalId: true } },
-            resourceLinks: { select: { resourceId: true } },
-            packs: {
+              durationPrices: {
+                where: { isActive: true },
+                orderBy: [{ durationMinutes: "asc" }],
+                select: {
+                  durationMinutes: true,
+                  priceCents: true,
+                  isActive: true,
+                },
+              },
+              professionalLinks: { select: { professionalId: true } },
+              resourceLinks: { select: { resourceId: true } },
+              packs: {
                 where: allowPaidServices ? { isActive: true } : { id: -1 },
                 orderBy: [{ recommended: "desc" }, { quantity: "asc" }],
                 select: {
@@ -605,7 +621,14 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
             unitPriceCents: number;
             currency: string;
             isActive: boolean;
+            categoryId: number | null;
             categoryTag: string | null;
+            category: {
+              id: number;
+              slug: string;
+              label: string;
+              domain: "COURT" | "CLASS" | "SERVICE";
+            } | null;
             coverImageUrl: string | null;
             locationMode: string | null;
             addressId: string | null;
@@ -804,25 +827,28 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
       resources,
     });
     const showFormsSection = hasInscricoes && publicForms.length > 0;
-    const showCommunitySection = true;
-    const reservasServiceHighlights = services
-      .slice(0, 4)
-      .map((service) => service.title.trim())
-      .filter((name) => name.length > 0);
+    const activeCommunityCount = await prisma.chatCommunity.count({
+      where: { organizationId: organizationProfile.id },
+    });
+    const showCommunitySection = activeCommunityCount > 0;
+    const reservasHubClubMode = services.some((service) =>
+      ["COURT", "CLASS"].includes(String(service.kind ?? "").toUpperCase()),
+    );
     const reservasServicesForPublic = services.map((service) => ({
       ...service,
+      bookingVertical: resolveBookingVerticalFromServiceKind(service.kind),
+      category: service.category
+        ? {
+            id: service.category.id,
+            slug: service.category.slug,
+            label: service.category.label,
+            domain: service.category.domain,
+          }
+        : null,
+      categoryTag: service.category?.label ?? service.categoryTag ?? null,
       coverImageUrl: service.coverImageUrl ?? null,
       locationMode: (service.locationMode ?? "FIXED") as "FIXED" | "CHOOSE_AT_BOOKING",
     }));
-    const reservasAvailabilityDays = Array.from({ length: 7 }).map((_, index) => {
-      const date = new Date(now);
-      date.setDate(now.getDate() + index);
-      return {
-        key: date.toISOString(),
-        dayLabel: new Intl.DateTimeFormat("pt-PT", { weekday: "short" }).format(date),
-        dateLabel: new Intl.DateTimeFormat("pt-PT", { day: "2-digit", month: "2-digit" }).format(date),
-      };
-    });
     const linkedOrganizations = siblingOrganizations
       .filter((organization): organization is typeof organization & { username: string } => Boolean(organization.username))
       .map((organization) => ({
@@ -837,8 +863,6 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
       ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(organizationLocationLabel)}`
       : null;
 
-    const storeBaseHref = `/${organizationProfile.username ?? usernameParam}/loja`;
-    const legalBaseHref = `/${organizationProfile.username ?? usernameParam}/legal`;
     const showStoreSection =
       storeEnabled &&
       canOpenPublicStorefront({
@@ -862,6 +886,137 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     const activeSectionId = organizationSectionNav.some((item) => item.id === requestedSectionId)
       ? requestedSectionId!
       : defaultSectionId;
+    const shouldLoadStoreCatalog = showStoreSection && activeSectionId === "loja";
+    const shouldLoadLegalSnapshot = activeSectionId === "legal";
+    const shouldLoadCommunityItems = showCommunitySection && activeSectionId === "comunidade";
+
+    const [storeCatalogCategories, storeCatalogProducts, legalSnapshot, communityItems] = await Promise.all([
+      shouldLoadStoreCatalog && store?.id
+        ? prisma.storeCategory.findMany({
+            where: { storeId: store.id, isActive: true },
+            orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+            select: { id: true, name: true, slug: true },
+          })
+        : Promise.resolve([] as Array<{ id: number; name: string; slug: string }>),
+      shouldLoadStoreCatalog && store?.id
+        ? prisma.storeProduct.findMany({
+            where: { storeId: store.id, visibility: "PUBLIC" },
+            orderBy: [{ createdAt: "desc" }],
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              priceCents: true,
+              compareAtPriceCents: true,
+              currency: true,
+              category: { select: { id: true, name: true, slug: true } },
+              images: {
+                select: { url: true, altText: true, isPrimary: true, sortOrder: true },
+                orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }],
+              },
+            },
+          })
+        : Promise.resolve([] as Array<{
+            id: number;
+            name: string;
+            slug: string;
+            priceCents: number;
+            compareAtPriceCents: number | null;
+            currency: string;
+            category: { id: number; name: string; slug: string } | null;
+            images: Array<{ url: string; altText: string | null; isPrimary: boolean; sortOrder: number }>;
+          }>),
+      shouldLoadLegalSnapshot
+        ? Promise.all([
+            prisma.organizationSettings.findUnique({
+              where: { organizationId: organizationProfile.id },
+              select: {
+                supportEmail: true,
+                supportPhone: true,
+                storeReturnPolicyMode: true,
+                storeReturnWindowDays: true,
+              },
+            }),
+            prisma.organizationPolicy.findMany({
+              where: { organizationId: organizationProfile.id },
+              orderBy: [{ createdAt: "asc" }],
+              select: {
+                policyType: true,
+                allowCancellation: true,
+                cancellationWindowMinutes: true,
+                allowReschedule: true,
+                rescheduleWindowMinutes: true,
+              },
+            }),
+          ]).then(([settings, policies]) => {
+            const storePolicy = resolveStorePolicy({
+              settings,
+              fallbackSupportEmail: organizationProfile.officialEmail ?? null,
+              organizationUsername: organizationProfile.username ?? null,
+            });
+            const bookingPolicy = policies.find((policy) => policy.policyType === "MODERATE") ?? policies[0] ?? null;
+            return {
+              storePolicy,
+              bookingPolicy: bookingPolicy
+                ? {
+                    allowCancellation: bookingPolicy.allowCancellation,
+                    cancellationWindowMinutes: bookingPolicy.cancellationWindowMinutes,
+                    allowReschedule: bookingPolicy.allowReschedule,
+                    rescheduleWindowMinutes: bookingPolicy.rescheduleWindowMinutes,
+                  }
+                : null,
+            };
+          })
+        : Promise.resolve(
+            null as {
+              storePolicy: ReturnType<typeof resolveStorePolicy>;
+              bookingPolicy: {
+                allowCancellation: boolean;
+                cancellationWindowMinutes: number | null;
+                allowReschedule: boolean;
+                rescheduleWindowMinutes: number | null;
+              } | null;
+            } | null,
+          ),
+      shouldLoadCommunityItems
+        ? prisma.chatCommunity
+            .findMany({
+              where: { organizationId: organizationProfile.id },
+              orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+              select: {
+                conversationId: true,
+                title: true,
+                description: true,
+                accessMode: true,
+              },
+            })
+            .then(async (rows): Promise<ProfileCommunityItem[]> => {
+              if (rows.length === 0) return [];
+              const conversationIds = rows.map((row) => row.conversationId);
+              const participantCounts = await prisma.chatConversationMember.groupBy({
+                by: ["conversationId"],
+                where: {
+                  conversationId: { in: conversationIds },
+                  leftAt: null,
+                  accessRevokedAt: null,
+                  bannedAt: null,
+                },
+                _count: { _all: true },
+              });
+              const countsMap = new Map(
+                participantCounts.map((item) => [item.conversationId, item._count._all] as const),
+              );
+              return rows.map((row) => ({
+                conversationId: row.conversationId,
+                title: row.title,
+                description: row.description ?? null,
+                accessMode: String(row.accessMode),
+                participantsCount: countsMap.get(row.conversationId) ?? 0,
+              }));
+            })
+        : Promise.resolve([] as ProfileCommunityItem[]),
+    ]);
+
     const buildSectionHref = (sectionId: string) => {
       const params = new URLSearchParams();
       if (sectionId !== defaultSectionId) {
@@ -919,12 +1074,14 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
                     <p className="text-[11px] uppercase tracking-[0.22em] text-white/82">Reservas</p>
                     <h2 className="text-xl font-semibold text-white sm:text-2xl">{orgDisplayName}</h2>
                     <p className="mt-2 text-[12px] text-white/85">
-                      Gestão pública de serviços e disponibilidade da organização.
+                      {reservasHubClubMode
+                        ? "Escolhe entre Reservar Campo, Aulas e Outros serviços para marcar em poucos passos."
+                        : "Escolhe serviço e profissional para avançar diretamente para a marcação."}
                     </p>
                   </div>
                   {reservasAcceptingNewBookings ? (
                     <a
-                      href={buildSectionHref("reservas")}
+                      href={`${buildSectionHref("reservas")}#reservar`}
                       className="w-full rounded-full bg-white px-5 py-2 text-center text-[12px] font-semibold text-black shadow-[0_10px_30px_rgba(255,255,255,0.25)] sm:w-auto"
                     >
                       Reservar agora
@@ -935,64 +1092,10 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
                     </span>
                   )}
                 </div>
-                <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
-                  <article className="rounded-2xl border border-white/18 bg-white/[0.04] p-4">
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/80">O que podes reservar</p>
-                    {reservasServiceHighlights.length > 0 ? (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {reservasServiceHighlights.map((serviceName) => (
-                          <span
-                            key={`reservas-service-${serviceName}`}
-                            className="rounded-full border border-white/25 bg-white/12 px-2.5 py-1 text-[11px] text-white/92"
-                          >
-                            {serviceName}
-                          </span>
-                        ))}
-                        {services.length > reservasServiceHighlights.length ? (
-                          <span className="rounded-full border border-white/25 bg-white/10 px-2.5 py-1 text-[11px] text-white/88">
-                            +{services.length - reservasServiceHighlights.length}
-                          </span>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <p className="mt-3 text-[12px] text-white/85">
-                        Sem serviços públicos anunciados para reservas.
-                      </p>
-                    )}
-                    <div className="mt-4 grid gap-2 sm:grid-cols-3">
-                      <div className="rounded-xl border border-white/15 bg-white/[0.04] px-3 py-2">
-                        <p className="text-[10px] uppercase tracking-[0.18em] text-white/78">Serviços</p>
-                        <p className="mt-1 text-sm font-semibold text-white">{services.length}</p>
-                      </div>
-                      <div className="rounded-xl border border-white/15 bg-white/[0.04] px-3 py-2">
-                        <p className="text-[10px] uppercase tracking-[0.18em] text-white/78">Profissionais</p>
-                        <p className="mt-1 text-sm font-semibold text-white">{professionalsList.length}</p>
-                      </div>
-                      <div className="rounded-xl border border-white/15 bg-white/[0.04] px-3 py-2">
-                        <p className="text-[10px] uppercase tracking-[0.18em] text-white/78">Recursos</p>
-                        <p className="mt-1 text-sm font-semibold text-white">{resourcesList.length}</p>
-                      </div>
-                    </div>
-                  </article>
-                  <article className="rounded-2xl border border-white/18 bg-white/[0.04] p-4">
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/80">Disponibilidade</p>
-                    <p className="mt-2 text-[12px] text-white/85">
-                      Pré-visualização rápida da semana. A seleção final de horário acontece no calendário de reservas.
-                    </p>
-                    <div className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-7">
-                      {reservasAvailabilityDays.map((day) => (
-                        <div key={day.key} className="rounded-xl border border-white/15 bg-white/[0.04] px-2 py-2 text-center">
-                          <p className="text-[10px] uppercase tracking-[0.12em] text-white/78">{day.dayLabel}</p>
-                          <p className="mt-1 text-[11px] font-semibold text-white">{day.dateLabel}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </article>
-                </div>
                 {!reservasAcceptingNewBookings ? (
                   <div className="rounded-2xl border border-amber-300/35 bg-amber-400/10 p-4 text-[13px] text-amber-100">
-                    Reservas temporariamente indisponíveis. Podes consultar serviços, profissionais e recursos, mas não é
-                    possível iniciar novas marcações neste momento.
+                    Reservas temporariamente indisponíveis. Podes consultar a disponibilidade e os serviços, mas não
+                    é possível iniciar novas marcações neste momento.
                   </div>
                 ) : null}
                 <div id="reservar">
@@ -1016,6 +1119,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
                       featuredServiceIds={[]}
                       servicesLayout="grid"
                       acceptNewBookings={reservasAcceptingNewBookings}
+                      hubMode={reservasHubClubMode ? "club" : "legacy"}
                     />
                   ) : (
                     <div className="rounded-2xl border border-white/18 bg-white/[0.04] p-4 text-[13px] text-white/88">
@@ -1102,24 +1206,12 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
         ? {
             id: "loja",
             content: (
-              <section id="loja" className="mx-auto w-full space-y-4 pb-8 text-center">
-                <div className="border-b border-white/10 pb-3">
-                  <p className="text-[11px] uppercase tracking-[0.24em] text-white/82">Loja</p>
-                </div>
-                <h2 className="mt-2 text-xl font-semibold text-white sm:text-2xl">Produtos oficiais da organização</h2>
-                <p className="mt-2 text-sm text-white/85">
-                  {storeProductsCount > 0
-                    ? `${storeProductsCount} ${storeProductsCount === 1 ? "produto público disponível" : "produtos públicos disponíveis"}`
-                    : "Loja pública pronta para receber produtos."}
-                </p>
-                <div className="mt-5 flex items-center justify-center">
-                  <Link
-                    href={storeBaseHref}
-                    className="inline-flex rounded-full bg-white px-6 py-2 text-[12px] font-semibold text-black shadow-[0_10px_30px_rgba(255,255,255,0.25)]"
-                  >
-                    Abrir loja
-                  </Link>
-                </div>
+              <section id="loja" className="space-y-4 pb-8">
+                <ProfileStoreCatalogSection
+                  username={organizationProfile.username ?? usernameParam}
+                  categories={storeCatalogCategories}
+                  products={storeCatalogProducts}
+                />
               </section>
             ),
           }
@@ -1129,51 +1221,31 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
             id: "comunidade",
             content: (
               <section id="comunidade" className="space-y-4 pb-8">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[11px] uppercase tracking-[0.22em] text-white/82">Comunidade</p>
-                    <h3 className="text-lg font-semibold text-white">Grupos da organização</h3>
-                  </div>
-                  <span className="rounded-full border border-cyan-200/45 bg-cyan-500/10 px-3 py-1 text-[10px] uppercase tracking-[0.16em] text-cyan-100">
-                    Brevemente
-                  </span>
-                </div>
-                <div className="border-b border-white/10" />
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  {[
-                    { id: "m2", title: "Grupo M2", subtitle: "Avisos, chamadas e mensagens rápidas." },
-                    { id: "m5", title: "Grupo M5", subtitle: "Comunicação operacional dos jogadores." },
-                    { id: "ferias-pascoa", title: "Férias da Páscoa", subtitle: "Coordenação de turmas e recados." },
-                  ].map((group) => (
-                    <article key={group.id} className="rounded-2xl border border-white/18 bg-white/[0.04] p-3">
-                      <p className="text-sm font-semibold text-white">{group.title}</p>
-                      <p className="mt-1 text-[12px] text-white/84">{group.subtitle}</p>
-                    </article>
-                  ))}
-                </div>
+                <ProfileCommunitySection
+                  username={organizationProfile.username ?? usernameParam}
+                  communities={communityItems}
+                  isAuthenticated={Boolean(viewerId)}
+                />
               </section>
             ),
           }
         : null,
       {
         id: "legal",
-        content: (
-          <section className="space-y-4 pb-8">
-            <div className="border-b border-white/10 pb-3">
-              <p className="text-[11px] uppercase tracking-[0.22em] text-white/82">Legal</p>
-            </div>
-            <h3 className="text-lg font-semibold text-white">Políticas e termos</h3>
-            <p className="mt-2 text-sm text-white/85">
-              Consulta os termos, privacidade, reservas e políticas de loja desta organização numa página única.
-            </p>
-            <div className="mt-4">
-              <Link
-                href={legalBaseHref}
-                className="inline-flex rounded-full border border-white/25 bg-white/12 px-4 py-2 text-[12px] font-semibold text-white hover:border-white/45 hover:bg-white/18"
-              >
-                Abrir página legal
-              </Link>
-            </div>
+        content: legalSnapshot ? (
+          <ProfileLegalInlineSection
+            displayName={orgDisplayName}
+            bookingPolicy={legalSnapshot.bookingPolicy}
+            storePolicy={{
+              supportEmail: legalSnapshot.storePolicy.supportEmail,
+              supportPhone: legalSnapshot.storePolicy.supportPhone,
+              returnPolicy: legalSnapshot.storePolicy.returnPolicy,
+              privacyPolicy: legalSnapshot.storePolicy.privacyPolicy,
+            }}
+          />
+        ) : (
+          <section className="rounded-2xl border border-white/18 bg-white/[0.04] p-4 text-[13px] text-white/84">
+            Informação legal indisponível.
           </section>
         ),
       },

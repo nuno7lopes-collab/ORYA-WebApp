@@ -95,7 +95,13 @@ const toServiceQueryString = (params: DiscoverParams): string => {
   if (params.city) query.set("city", params.city);
   if (params.type === "free") query.set("priceMax", "0");
   if (params.type === "paid") query.set("priceMin", "0.01");
-  if (params.kind === "padel") query.set("kind", "COURT");
+  if (params.kind === "padel") {
+    query.set("kind", "COURT");
+    query.set("categoryDomain", "COURT");
+  }
+  if (params.kind === "services") {
+    query.set("categoryDomain", "SERVICE");
+  }
   if (params.date && params.date !== "all") query.set("date", params.date);
   if (params.cursor) query.set("cursor", params.cursor);
   query.set("limit", String(params.limit ?? DEFAULT_LIMIT));
@@ -203,6 +209,17 @@ const normalizeServiceCursor = (value: number | string | null | undefined): stri
   return toStringOrNull(value);
 };
 
+const resolveServiceVertical = (service: DiscoverServiceCard): "COURT" | "CLASS" | "SERVICE" => {
+  const byVertical = String(service.bookingVertical ?? "").trim().toUpperCase();
+  if (byVertical === "COURT" || byVertical === "CLASS" || byVertical === "SERVICE") return byVertical;
+  const byDomain = String(service.category?.domain ?? "").trim().toUpperCase();
+  if (byDomain === "COURT" || byDomain === "CLASS" || byDomain === "SERVICE") return byDomain;
+  const byKind = String(service.kind ?? "").trim().toUpperCase();
+  if (byKind === "COURT") return "COURT";
+  if (byKind === "CLASS") return "CLASS";
+  return "SERVICE";
+};
+
 const fetchServices = async (params: DiscoverParams): Promise<SourcePage> => {
   const response = await api.request<unknown>(`/api/servicos/list?${toServiceQueryString(params)}`, {
     signal: params.signal,
@@ -212,7 +229,7 @@ const fetchServices = async (params: DiscoverParams): Promise<SourcePage> => {
 
   const filteredItems = (() => {
     if (params.kind !== "services") return parsed.items ?? [];
-    return (parsed.items ?? []).filter((service) => service.kind !== "COURT");
+    return (parsed.items ?? []).filter((service) => resolveServiceVertical(service) !== "COURT");
   })();
 
   const nextCursor = normalizeServiceCursor(parsed.pagination?.nextCursor);

@@ -15,11 +15,16 @@ import { getActiveSession } from "../lib/session";
 type SessionLike = {
   access_token: string;
   expires_at?: number | null;
+  refresh_token?: string | null;
 };
 
-const buildSession = (expiresAtSeconds: number): SessionLike => ({
+const buildSession = (
+  expiresAtSeconds: number,
+  refreshToken: string | null = "refresh-token",
+): SessionLike => ({
   access_token: "token",
   expires_at: expiresAtSeconds,
+  refresh_token: refreshToken,
 });
 
 describe("getActiveSession", () => {
@@ -41,15 +46,13 @@ describe("getActiveSession", () => {
     expect(mockRefreshSession).not.toHaveBeenCalled();
   });
 
-  it("tenta refresh quando não há sessão e refresh está ativo", async () => {
-    const refreshed = buildSession(Math.floor((fixedNow + 120_000) / 1000));
+  it("não tenta refresh quando não há sessão, mesmo com refresh ativo", async () => {
     mockGetSession.mockResolvedValue({ data: { session: null } });
-    mockRefreshSession.mockResolvedValue({ data: { session: refreshed } });
 
     const result = await getActiveSession();
 
-    expect(mockRefreshSession).toHaveBeenCalledTimes(1);
-    expect(result).toEqual(refreshed);
+    expect(mockRefreshSession).not.toHaveBeenCalled();
+    expect(result).toBeNull();
   });
 
   it("devolve sessão atual sem refresh quando TTL ainda é suficiente", async () => {
@@ -82,6 +85,26 @@ describe("getActiveSession", () => {
     const result = await getActiveSession({ minTtlMs: 60_000, refreshIfNearExpiry: true });
 
     expect(result).toEqual(current);
+  });
+
+  it("não tenta refresh quando falta refresh_token e sessão ainda é válida", async () => {
+    const current = buildSession(Math.floor((fixedNow + 10_000) / 1000), null);
+    mockGetSession.mockResolvedValue({ data: { session: current } });
+
+    const result = await getActiveSession({ minTtlMs: 60_000, refreshIfNearExpiry: true });
+
+    expect(mockRefreshSession).not.toHaveBeenCalled();
+    expect(result).toEqual(current);
+  });
+
+  it("devolve null quando sessão expira e não existe refresh_token", async () => {
+    const expired = buildSession(Math.floor((fixedNow - 10_000) / 1000), null);
+    mockGetSession.mockResolvedValue({ data: { session: expired } });
+
+    const result = await getActiveSession({ minTtlMs: 60_000, refreshIfNearExpiry: true });
+
+    expect(mockRefreshSession).not.toHaveBeenCalled();
+    expect(result).toBeNull();
   });
 
   it("devolve null quando refresh falha e sessão já expirou", async () => {

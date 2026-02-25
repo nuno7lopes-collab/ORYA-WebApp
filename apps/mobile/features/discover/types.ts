@@ -13,7 +13,14 @@ export type DiscoverServiceCard = {
   unitPriceCents: number;
   currency: string;
   kind: "GENERAL" | "COURT" | "CLASS";
+  bookingVertical?: "COURT" | "CLASS" | "SERVICE" | null;
   assignmentMode?: "PROFESSIONAL_ONLY" | "RESOURCE_ONLY" | "PROFESSIONAL_AND_RESOURCE" | null;
+  category?: {
+    id: number;
+    slug: string;
+    label: string;
+    domain: "COURT" | "CLASS" | "SERVICE";
+  } | null;
   categoryTag?: string | null;
   nextAvailability?: string | null;
   addressId?: string | null;

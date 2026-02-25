@@ -7,11 +7,15 @@ function readLocal(pathname: string) {
 }
 
 describe("event detail layout contract", () => {
-  it("usa layout split, cta de bilhetes e descrição expandível", () => {
+  it("usa layout split, rail principal e descrição expandível", () => {
     const source = readLocal("app/eventos/[slug]/page.tsx");
 
     expect(source).toContain('data-testid="event-detail-dice-split"');
+    expect(source).toContain('data-testid="event-hero-purchase-rail"');
     expect(source).toContain('id="bilhetes"');
+    expect(source).toContain('layout="rail"');
+    expect(source).toContain("EventShareButton");
+    expect(source).not.toContain("backToExplore");
     expect(source).toContain("ticketCopy.viewLabel");
     expect(source).toContain("href={googleMapsUrl}");
     expect(source).toContain("EventDescriptionReadMore");

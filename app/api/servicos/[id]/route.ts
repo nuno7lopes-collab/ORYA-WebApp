@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getPaidSalesGate } from "@/lib/organizationPayments";
 import { resolveServicePartySizeRules } from "@/lib/reservas/servicePartySize";
 import { resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
+import { resolveBookingVerticalFromServiceKind } from "@/lib/reservas/bookingVertical";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 async function _GET(
@@ -40,7 +41,16 @@ async function _GET(
         durationMinutes: true,
         unitPriceCents: true,
         currency: true,
+        categoryId: true,
         categoryTag: true,
+        category: {
+          select: {
+            id: true,
+            slug: true,
+            label: true,
+            domain: true,
+          },
+        },
         locationMode: true,
         addressId: true,
         addressRef: { select: { formattedAddress: true, canonical: true } },
@@ -214,6 +224,16 @@ async function _GET(
       ok: true,
       service: {
         ...service,
+        bookingVertical: resolveBookingVerticalFromServiceKind(service.kind),
+        category: service.category
+          ? {
+              id: service.category.id,
+              slug: service.category.slug,
+              label: service.category.label,
+              domain: service.category.domain,
+            }
+          : null,
+        categoryTag: service.category?.label ?? service.categoryTag ?? null,
         organization: publicOrganization,
         professionals: professionals.map((professional) => ({
           id: professional.id,

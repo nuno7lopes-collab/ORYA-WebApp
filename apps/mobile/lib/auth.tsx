@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { AppState } from "react-native";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
-import { getActiveSession } from "./session";
+import { getActiveSession, refreshSessionIfPossible } from "./session";
 import { resetOnboardingDone } from "./onboardingState";
 import { clearOnboardingDraft } from "./onboardingDraft";
 import { perfMark, perfMeasure } from "./perf";
@@ -23,7 +23,7 @@ const refreshSessionIfNeeded = (candidate: Session | null) => {
   const expiresAtMs = candidate?.expires_at ? candidate.expires_at * 1000 : 0;
   if (!expiresAtMs) return;
   if (expiresAtMs - Date.now() >= 60_000) return;
-  supabase.auth.refreshSession().catch(() => undefined);
+  refreshSessionIfPossible(candidate).catch(() => undefined);
 };
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {

@@ -386,7 +386,7 @@ export default function ServiceDetailScreen() {
                   />
                   <View className="flex-row items-center justify-between px-4 pt-4">
                     <View className="flex-row items-center gap-2">
-                      <GlassPill label={data.categoryTag || kindLabel(data.kind, t)} />
+                      <GlassPill label={data.category?.label || data.categoryTag || kindLabel(data.kind, t)} />
                       <GlassPill label={formatDuration(data.durationMinutes, t)} variant="muted" />
                     </View>
                     <GlassPill
@@ -408,7 +408,7 @@ export default function ServiceDetailScreen() {
               <View className="gap-3">
                 <View className="flex-row items-center justify-between">
                   <View className="flex-row items-center gap-2">
-                    <GlassPill label={data.categoryTag || kindLabel(data.kind, t)} />
+                    <GlassPill label={data.category?.label || data.categoryTag || kindLabel(data.kind, t)} />
                     <GlassPill label={formatDuration(data.durationMinutes, t)} variant="muted" />
                   </View>
                   <GlassPill

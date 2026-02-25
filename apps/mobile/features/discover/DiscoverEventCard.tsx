@@ -246,7 +246,7 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
 
   const category = useMemo(() => {
     if (service) {
-      return service.categoryTag?.trim() || resolveServiceKind(service.kind, t);
+      return service.category?.label?.trim() || service.categoryTag?.trim() || resolveServiceKind(service.kind, t);
     }
     if (event?.tournament) return t("events:labels.tournament");
     if ((event?.categories ?? []).includes("PADEL")) return t("events:labels.padel");

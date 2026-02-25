@@ -22,6 +22,7 @@ import {
 } from "@stripe/react-stripe-js";
 import { loadStripe, type StripeElementsOptions } from "@stripe/stripe-js";
 import { getStripePublishableKey } from "@/lib/stripePublic";
+import { formatIsoDateLabel, parseIsoDateStrict } from "@orya/shared";
 
 type ReservationAssignmentMode =
   | "PROFESSIONAL_ONLY"
@@ -37,11 +38,18 @@ type Service = {
   currency: string;
   isActive: boolean;
   kind?: string | null;
+  bookingVertical?: "COURT" | "CLASS" | "SERVICE" | null;
   assignmentMode?: ReservationAssignmentMode | null;
   partySizeRequired?: boolean;
   partySizeMin?: number;
   partySizeMax?: number;
   partySizeStep?: number;
+  category?: {
+    id: number;
+    slug: string;
+    label: string;
+    domain: "COURT" | "CLASS" | "SERVICE";
+  } | null;
   categoryTag?: string | null;
   coverImageUrl?: string | null;
   locationMode: "FIXED" | "CHOOSE_AT_BOOKING";
@@ -235,13 +243,12 @@ function addMonths(base: Date, months: number) {
   return startOfMonth(next);
 }
 
-function formatDayLabel(iso: string, timezone: string) {
-  const date = new Date(`${iso}T00:00:00`);
-  return date.toLocaleDateString("pt-PT", {
+function formatDayLabel(iso: string, _timezone: string) {
+  return formatIsoDateLabel(iso, {
+    locale: "pt-PT",
     day: "2-digit",
     month: "short",
     weekday: "short",
-    timeZone: timezone,
   });
 }
 
@@ -1698,9 +1705,9 @@ export default function ReservasBookingClient({
                                 </p>
                               )}
                               <div className="flex flex-wrap gap-2">
-                                {service.categoryTag && (
+                                {(service.category?.label ?? service.categoryTag) && (
                                   <span className="inline-flex rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[10px] text-white/75">
-                                    {service.categoryTag}
+                                    {service.category?.label ?? service.categoryTag}
                                   </span>
                                 )}
                               </div>
@@ -1919,11 +1926,17 @@ export default function ReservasBookingClient({
                       <OryaDateField
                         value={selectedDay ?? ""}
                         onChange={(next) => {
-                          const parsed = new Date(`${next}T00:00:00`);
-                          if (!Number.isNaN(parsed.getTime())) {
-                            setCalendarMonth(startOfMonth(parsed));
+                          const parsed = parseIsoDateStrict(next);
+                          if (!parsed) {
+                            loadDaySlots(next);
+                            return;
                           }
-                          loadDaySlots(next);
+                          const monthDate = new Date(parsed.year, parsed.month - 1, parsed.day);
+                          if (!Number.isNaN(monthDate.getTime())) {
+                            setCalendarMonth(startOfMonth(monthDate));
+                          }
+                          const iso = `${parsed.year}-${String(parsed.month).padStart(2, "0")}-${String(parsed.day).padStart(2, "0")}`;
+                          loadDaySlots(iso);
                         }}
                         minDate={todayIso}
                         maxDate={maxSelectableIso}

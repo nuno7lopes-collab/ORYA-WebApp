@@ -14,7 +14,14 @@ export type DiscoverServiceCard = {
   unitPriceCents: number;
   currency: string;
   kind: "GENERAL" | "COURT" | "CLASS";
+  bookingVertical?: "COURT" | "CLASS" | "SERVICE";
   categoryTag?: string | null;
+  category?: {
+    id: number;
+    slug: string;
+    label: string;
+    domain: "COURT" | "CLASS" | "SERVICE";
+  } | null;
   nextAvailability?: string | null;
   addressId?: string | null;
   addressRef?: { formattedAddress?: string | null; canonical?: Prisma.JsonValue | null } | null;
@@ -136,10 +143,26 @@ const toServiceQueryString = (params: DiscoverFeedParams): string => {
   const includesServices = worlds.includes("services");
   if (includesPadel && !includesServices) {
     query.set("kind", "COURT");
+    query.set("categoryDomain", "COURT");
   }
 
   query.set("limit", String(params.serviceLimit ?? DEFAULT_SERVICE_LIMIT));
   return query.toString();
+};
+
+const resolveServiceVertical = (service: DiscoverServiceCard): "COURT" | "CLASS" | "SERVICE" => {
+  const bookingVertical = String(service.bookingVertical ?? "").trim().toUpperCase();
+  if (bookingVertical === "COURT" || bookingVertical === "CLASS" || bookingVertical === "SERVICE") {
+    return bookingVertical;
+  }
+  const categoryDomain = String(service.category?.domain ?? "").trim().toUpperCase();
+  if (categoryDomain === "COURT" || categoryDomain === "CLASS" || categoryDomain === "SERVICE") {
+    return categoryDomain;
+  }
+  const kind = String(service.kind ?? "").trim().toUpperCase();
+  if (kind === "COURT") return "COURT";
+  if (kind === "CLASS") return "CLASS";
+  return "SERVICE";
 };
 
 const filterEventsByWorlds = (events: PublicEventCard[], worlds: DiscoverWorld[]) => {
@@ -158,10 +181,10 @@ const filterServicesByWorlds = (services: DiscoverServiceCard[], worlds: Discove
   const includesPadel = worlds.includes("padel");
   const includesServices = worlds.includes("services");
   if (includesPadel && !includesServices) {
-    return services.filter((service) => service.kind === "COURT");
+    return services.filter((service) => resolveServiceVertical(service) === "COURT");
   }
   if (includesServices && !includesPadel) {
-    return services.filter((service) => service.kind !== "COURT");
+    return services.filter((service) => resolveServiceVertical(service) !== "COURT");
   }
   return services;
 };

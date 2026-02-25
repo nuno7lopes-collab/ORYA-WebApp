@@ -50,6 +50,20 @@
   --orya-card-bg-soft: linear-gradient(160deg, rgba(255, 255, 255, 0.06), rgba(4, 8, 16, 0.88));
   --orya-topbar-bg: linear-gradient(180deg, rgba(8, 12, 20, 0.9) 0%, rgba(8, 12, 20, 0.76) 100%);
   --orya-topbar-separator: rgba(255, 255, 255, 0.08);
+  --orya-user-nav-bg-rgb: 9 12 20;
+  --orya-user-nav-border-rgb: 255 255 255;
+  --orya-user-nav-top-alpha: 0.56;
+  --orya-user-nav-scrolled-alpha: 0.92;
+  --orya-user-nav-border-top-alpha: 0.08;
+  --orya-user-nav-border-scrolled-alpha: 0.2;
+  --orya-user-nav-blur-top: 12px;
+  --orya-user-nav-blur-scrolled: 26px;
+  --orya-user-nav-shadow-top-alpha: 0.16;
+  --orya-user-nav-shadow-scrolled-alpha: 0.44;
+  --orya-user-nav-mobile-alpha: 0.84;
+  --orya-user-nav-mobile-border-alpha: 0.14;
+  --orya-user-nav-mobile-blur: 18px;
+  --orya-user-nav-mobile-shadow-alpha: 0.36;
   --org-topbar-height: 64px;
 
   --glass-bg: rgba(255, 255, 255, 0.06);
@@ -97,6 +111,20 @@ html[data-theme-mode="light"] {
   --orya-card-bg-soft: linear-gradient(160deg, rgba(255, 255, 255, 0.92), rgba(238, 243, 252, 0.86));
   --orya-topbar-bg: linear-gradient(120deg, rgba(255, 255, 255, 0.82), rgba(232, 238, 248, 0.95));
   --orya-topbar-separator: rgba(255, 255, 255, 0.26);
+  --orya-user-nav-bg-rgb: 239 244 252;
+  --orya-user-nav-border-rgb: 15 23 42;
+  --orya-user-nav-top-alpha: 0.76;
+  --orya-user-nav-scrolled-alpha: 0.95;
+  --orya-user-nav-border-top-alpha: 0.1;
+  --orya-user-nav-border-scrolled-alpha: 0.24;
+  --orya-user-nav-blur-top: 12px;
+  --orya-user-nav-blur-scrolled: 24px;
+  --orya-user-nav-shadow-top-alpha: 0.1;
+  --orya-user-nav-shadow-scrolled-alpha: 0.2;
+  --orya-user-nav-mobile-alpha: 0.9;
+  --orya-user-nav-mobile-border-alpha: 0.16;
+  --orya-user-nav-mobile-blur: 18px;
+  --orya-user-nav-mobile-shadow-alpha: 0.2;
   --orya-menu-bg: linear-gradient(160deg, rgba(255, 255, 255, 0.98), rgba(228, 236, 248, 0.96));
   --orya-menu-bg-solid: rgba(255, 255, 255, 0.98);
   --orya-menu-border: rgba(10, 15, 26, 0.22);
@@ -1215,11 +1243,44 @@ body {
   margin-right: auto;
 }
 
+.orya-user-nav-shell {
+  --orya-user-nav-progress: 0;
+  --orya-user-nav-current-alpha: calc(
+    var(--orya-user-nav-top-alpha) +
+    (var(--orya-user-nav-scrolled-alpha) - var(--orya-user-nav-top-alpha)) * var(--orya-user-nav-progress)
+  );
+  --orya-user-nav-current-border-alpha: calc(
+    var(--orya-user-nav-border-top-alpha) +
+    (var(--orya-user-nav-border-scrolled-alpha) - var(--orya-user-nav-border-top-alpha)) * var(--orya-user-nav-progress)
+  );
+  --orya-user-nav-current-blur: calc(
+    var(--orya-user-nav-blur-top) +
+    (var(--orya-user-nav-blur-scrolled) - var(--orya-user-nav-blur-top)) * var(--orya-user-nav-progress)
+  );
+  --orya-user-nav-current-shadow-alpha: calc(
+    var(--orya-user-nav-shadow-top-alpha) +
+    (var(--orya-user-nav-shadow-scrolled-alpha) - var(--orya-user-nav-shadow-top-alpha)) * var(--orya-user-nav-progress)
+  );
+  border-bottom-width: 0.5px;
+  border-bottom-style: solid;
+  border-bottom-color: rgb(var(--orya-user-nav-border-rgb) / var(--orya-user-nav-current-border-alpha));
+  background-image: linear-gradient(
+    180deg,
+    rgb(var(--orya-user-nav-bg-rgb) / calc(var(--orya-user-nav-current-alpha) + 0.06)) 0%,
+    rgb(var(--orya-user-nav-bg-rgb) / var(--orya-user-nav-current-alpha)) 100%
+  );
+  box-shadow:
+    0 18px 44px rgb(0 0 0 / var(--orya-user-nav-current-shadow-alpha)),
+    inset 0 1px 0 rgb(255 255 255 / 0.05);
+  backdrop-filter: blur(var(--orya-user-nav-current-blur));
+  -webkit-backdrop-filter: blur(var(--orya-user-nav-current-blur));
+}
+
 .orya-mobile-topbar {
-  border-bottom: 0.5px solid var(--orya-topbar-separator);
-  background: var(--orya-topbar-bg);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(18px);
+  --orya-user-nav-current-alpha: var(--orya-user-nav-mobile-alpha);
+  --orya-user-nav-current-border-alpha: var(--orya-user-nav-mobile-border-alpha);
+  --orya-user-nav-current-blur: var(--orya-user-nav-mobile-blur);
+  --orya-user-nav-current-shadow-alpha: var(--orya-user-nav-mobile-shadow-alpha);
 }
 
 .orya-mobile-surface {
@@ -1704,7 +1765,7 @@ body.orya-bg-landing {
 }
 
 html[data-theme-mode="light"] .orya-mobile-topbar {
-  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.16);
+  --orya-user-nav-current-shadow-alpha: 0.2;
 }
 
 html[data-theme-mode="light"] .orya-mobile-surface {

@@ -20,6 +20,8 @@ const fetcher = (url: string) => fetch(url).then((res) => res.json());
 type ServiceItem = {
   id: number;
   title: string;
+  kind?: "GENERAL" | "COURT" | "CLASS" | string | null;
+  bookingVertical?: "COURT" | "CLASS" | "SERVICE" | string | null;
   durationMinutes: number;
   unitPriceCents: number;
   currency: string;
@@ -39,6 +41,15 @@ export default function ReservasServicosPage() {
     fetcher,
   );
   const services = data?.items ?? [];
+  const resolveVertical = (service: ServiceItem) => {
+    const byVertical = String(service.bookingVertical ?? "").trim().toUpperCase();
+    if (byVertical === "COURT" || byVertical === "CLASS" || byVertical === "SERVICE") return byVertical;
+    const byKind = String(service.kind ?? "").trim().toUpperCase();
+    if (byKind === "COURT") return "COURT";
+    if (byKind === "CLASS") return "CLASS";
+    return "SERVICE";
+  };
+  const generalServices = services.filter((service) => resolveVertical(service) === "SERVICE");
 
   return (
     <div className="space-y-5">
@@ -46,9 +57,15 @@ export default function ReservasServicosPage() {
         <div className="space-y-2">
           <p className={DASHBOARD_LABEL}>Reservas</p>
           <h1 className="text-xl font-semibold text-white">Serviços</h1>
-          <p className={DASHBOARD_MUTED}>Cria, ajusta e gere apenas o catálogo de serviços.</p>
+          <p className={DASHBOARD_MUTED}>Catálogo geral (apenas vertical SERVICE).</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Link href={appendOrganizationIdToHref("/org/bookings/courts", canonicalOrganizationId)} className={CTA_SECONDARY}>
+            Campos
+          </Link>
+          <Link href={appendOrganizationIdToHref("/org/bookings/classes", canonicalOrganizationId)} className={CTA_SECONDARY}>
+            Aulas
+          </Link>
           <Link href={appendOrganizationIdToHref("/org/bookings/operations", canonicalOrganizationId)} className={CTA_SECONDARY}>
             Operações
           </Link>
@@ -60,11 +77,11 @@ export default function ReservasServicosPage() {
 
       <section className={cn(DASHBOARD_CARD, "p-4 space-y-3")}>
         {isLoading && <p className="text-[12px] text-white/60">A carregar...</p>}
-        {!isLoading && services.length === 0 && (
-          <p className="text-[12px] text-white/50">Ainda não tens serviços. Cria o primeiro.</p>
+        {!isLoading && generalServices.length === 0 && (
+          <p className="text-[12px] text-white/50">Ainda não tens serviços gerais. Cria o primeiro.</p>
         )}
         <div className="grid gap-2">
-          {services.map((service) => (
+          {generalServices.map((service) => (
             <Link
               key={service.id}
               href={appendOrganizationIdToHref(`/org/bookings/${service.id}`, canonicalOrganizationId)}

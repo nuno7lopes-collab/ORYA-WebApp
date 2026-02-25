@@ -41,7 +41,6 @@ type ClubCard = {
 };
 
 type PadelSectionKey = "tournaments" | "courts" | "lessons" | "open-games";
-type ServiceAssignmentMode = "PROFESSIONAL_ONLY" | "RESOURCE_ONLY" | "PROFESSIONAL_AND_RESOURCE";
 type PadelCardVariant = "tournament" | "court" | "lesson" | "club" | "soon";
 
 const SECTION_OPTIONS: Array<{
@@ -55,18 +54,6 @@ const SECTION_OPTIONS: Array<{
   { key: "open-games", label: "Jogos abertos", icon: "tennisball-outline" },
 ];
 
-const LESSON_KEYWORDS = [
-  "aula",
-  "treino",
-  "coach",
-  "coaching",
-  "lesson",
-  "class",
-  "clinic",
-  "personal",
-  "academia",
-];
-const COURT_KEYWORDS = ["campo", "court", "reserva", "aluguer", "alquiler", "booking"];
 const TOURNAMENT_KEYWORDS = ["torneio", "tournament", "liga", "open", "cup", "masters"];
 const PADEL_KEYWORDS = ["padel"];
 
@@ -159,52 +146,24 @@ const isPadelTournamentEvent = (event: Extract<DiscoverOfferCard, { type: "event
   return isTournamentEvent(event);
 };
 
-const getServiceAssignmentMode = (service: DiscoverServiceCard): ServiceAssignmentMode | null => {
-  const rawMode = normalize((service as DiscoverServiceCard & { assignmentMode?: string | null }).assignmentMode);
-  if (rawMode === "professional_only") return "PROFESSIONAL_ONLY";
-  if (rawMode === "resource_only") return "RESOURCE_ONLY";
-  if (rawMode === "professional_and_resource") return "PROFESSIONAL_AND_RESOURCE";
-  return null;
-};
-
-const buildServiceText = (service: DiscoverServiceCard) =>
-  `${normalize(service.title)} ${normalize(service.description)} ${normalize(service.categoryTag)}`;
-
-const resolveServiceSignals = (service: DiscoverServiceCard) => {
-  const text = buildServiceText(service);
+const resolveServiceVertical = (service: DiscoverServiceCard): "COURT" | "CLASS" | "SERVICE" => {
+  const bookingVertical = normalize(service.bookingVertical);
+  if (bookingVertical === "court") return "COURT";
+  if (bookingVertical === "class") return "CLASS";
+  if (bookingVertical === "service") return "SERVICE";
+  const categoryDomain = normalize(service.category?.domain);
+  if (categoryDomain === "court") return "COURT";
+  if (categoryDomain === "class") return "CLASS";
+  if (categoryDomain === "service") return "SERVICE";
   const kind = normalize(service.kind);
-  const assignmentMode = getServiceAssignmentMode(service);
-  const hasLessonKeywords = includesAny(text, LESSON_KEYWORDS);
-  const hasCourtKeywords = includesAny(text, COURT_KEYWORDS);
-  const isClassKind = kind === "class";
-  const isCourtKind = kind === "court";
-  const usesProfessional =
-    assignmentMode === "PROFESSIONAL_ONLY" || assignmentMode === "PROFESSIONAL_AND_RESOURCE";
-  const usesResource = assignmentMode === "RESOURCE_ONLY" || assignmentMode === "PROFESSIONAL_AND_RESOURCE";
-
-  return {
-    text,
-    isClassKind,
-    isCourtKind,
-    hasLessonKeywords,
-    hasCourtKeywords,
-    usesProfessional,
-    usesResource,
-  };
+  if (kind === "court") return "COURT";
+  if (kind === "class") return "CLASS";
+  return "SERVICE";
 };
 
-const isLessonLikeService = (service: DiscoverServiceCard) => {
-  const signals = resolveServiceSignals(service);
-  return signals.isClassKind || signals.hasLessonKeywords || signals.usesProfessional;
-};
+const isLessonLikeService = (service: DiscoverServiceCard) => resolveServiceVertical(service) === "CLASS";
 
-const isCourtLikeService = (service: DiscoverServiceCard) => {
-  const signals = resolveServiceSignals(service);
-  const hasCourtSignal = signals.isCourtKind || signals.hasCourtKeywords || signals.usesResource;
-  if (!hasCourtSignal) return false;
-  if (signals.isClassKind || signals.usesProfessional || signals.hasLessonKeywords) return false;
-  return true;
-};
+const isCourtLikeService = (service: DiscoverServiceCard) => resolveServiceVertical(service) === "COURT";
 
 const formatPriceLabel = (cents?: number | null, currency = "EUR") => {
   if (typeof cents !== "number" || !Number.isFinite(cents)) return "Preço sob consulta";

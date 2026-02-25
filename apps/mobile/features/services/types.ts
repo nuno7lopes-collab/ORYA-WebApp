@@ -88,7 +88,14 @@ export type ServiceDetail = {
   unitPriceCents: number;
   currency: string;
   kind: "GENERAL" | "COURT" | "CLASS";
+  bookingVertical?: "COURT" | "CLASS" | "SERVICE" | null;
   assignmentMode?: string | null;
+  category?: {
+    id: number;
+    slug: string;
+    label: string;
+    domain: "COURT" | "CLASS" | "SERVICE";
+  } | null;
   categoryTag: string | null;
   locationMode: "FIXED" | "CHOOSE_AT_BOOKING" | string | null;
   addressId: string | null;

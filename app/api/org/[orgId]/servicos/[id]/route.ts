@@ -15,13 +15,14 @@ import {
   requiresPartySizeForAssignmentMode,
 } from "@/lib/reservas/serviceAssignment";
 import { resolveServicePartySizeRules } from "@/lib/reservas/servicePartySize";
+import { resolveBookingVerticalFromServiceKind, resolveCategoryDomainFromServiceKind } from "@/lib/reservas/bookingVertical";
 import {
   buildDefaultCourtDurationPrices,
   normalizeCourtDurationPricePayload,
   replaceCourtDurationPrices,
 } from "@/lib/reservas/serviceDurationPrices";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
-import { AddressSourceProvider, OrganizationMemberRole, ServiceKind } from "@prisma/client";
+import { AddressSourceProvider, OrganizationMemberRole, ReservationCategoryDomain, ServiceKind } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
@@ -59,6 +60,24 @@ function normalizeIdList(value: unknown, label: string) {
     parsed.push(Math.trunc(id));
   }
   return { ids: Array.from(new Set(parsed)), error: null as string | null };
+}
+
+function slugifyCategory(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 60);
+}
+
+function getDefaultCategoryByDomain(domain: ReservationCategoryDomain) {
+  if (domain === "COURT") return { slug: "campo-padel", label: "Reserva de Campo", sortOrder: 10 };
+  if (domain === "CLASS") return { slug: "aulas", label: "Aulas", sortOrder: 20 };
+  return { slug: "servicos", label: "Serviços", sortOrder: 30 };
 }
 
 function errorCodeForStatus(status: number) {
@@ -140,7 +159,16 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
         unitPriceCents: true,
         currency: true,
         isActive: true,
+        categoryId: true,
         categoryTag: true,
+        category: {
+          select: {
+            id: true,
+            slug: true,
+            label: true,
+            domain: true,
+          },
+        },
         coverImageUrl: true,
         locationMode: true,
         addressId: true,
@@ -173,7 +201,13 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
     if (!service) {
       return fail(404, "Serviço não encontrado.");
     }
-    return respondOk(ctx, {service });
+    return respondOk(ctx, {
+      service: {
+        ...service,
+        bookingVertical: resolveBookingVerticalFromServiceKind(service.kind),
+        categoryTag: service.category?.label ?? service.categoryTag ?? null,
+      },
+    });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "Não autenticado.");
@@ -240,6 +274,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
         durationMinutes: true,
         unitPriceCents: true,
         isActive: true,
+        categoryId: true,
         instructorId: true,
         kind: true,
         assignmentMode: true,
@@ -248,6 +283,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
         partySizeMax: true,
         partySizeStep: true,
         professionalLinks: { select: { professionalId: true } },
+        category: { select: { id: true, domain: true, slug: true, label: true } },
         durationPrices: {
           select: {
             id: true,
@@ -312,6 +348,101 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     if (resolvedKind === ServiceKind.CLASS && resolvedAssignmentMode === "RESOURCE_ONLY") {
       return fail(400, "CLASS_REQUIRES_PROFESSIONAL_MODE");
     }
+    const categoryDomain = resolveCategoryDomainFromServiceKind(resolvedKind);
+    let resolvedCategory:
+      | { id: number; slug: string; label: string; domain: ReservationCategoryDomain }
+      | null = existing.category
+      ? {
+          id: existing.category.id,
+          slug: existing.category.slug,
+          label: existing.category.label,
+          domain: existing.category.domain,
+        }
+      : null;
+
+    if (Object.prototype.hasOwnProperty.call(payload ?? {}, "categoryId")) {
+      if (payload?.categoryId === null) {
+        resolvedCategory = null;
+      } else {
+        const categoryId = Number(payload?.categoryId);
+        if (!Number.isFinite(categoryId) || categoryId <= 0) {
+          return fail(400, "INVALID_CATEGORY");
+        }
+        const category = await prisma.reservationCategory.findFirst({
+          where: {
+            id: Math.trunc(categoryId),
+            organizationId: organization.id,
+          },
+          select: { id: true, slug: true, label: true, domain: true },
+        });
+        if (!category) {
+          return fail(404, "CATEGORY_NOT_FOUND");
+        }
+        if (category.domain !== categoryDomain) {
+          return fail(409, "CATEGORY_DOMAIN_MISMATCH");
+        }
+        resolvedCategory = category;
+      }
+    }
+
+    if (typeof payload?.categoryTag === "string") {
+      const tag = payload.categoryTag.trim();
+      updates.categoryTag = tag ? tag.slice(0, 40) : null;
+      if (tag) {
+        const defaultCategory = getDefaultCategoryByDomain(categoryDomain);
+        const slug = slugifyCategory(tag) || defaultCategory.slug;
+        resolvedCategory = await prisma.reservationCategory.upsert({
+          where: {
+            organizationId_domain_slug: {
+              organizationId: organization.id,
+              domain: categoryDomain,
+              slug,
+            },
+          },
+          update: {
+            label: tag.slice(0, 80),
+            isActive: true,
+          },
+          create: {
+            organizationId: organization.id,
+            domain: categoryDomain,
+            slug,
+            label: tag.slice(0, 80),
+            sortOrder: defaultCategory.sortOrder,
+            isActive: true,
+          },
+          select: { id: true, slug: true, label: true, domain: true },
+        });
+      }
+    }
+
+    if (!resolvedCategory || resolvedCategory.domain !== categoryDomain) {
+      const defaultCategory = getDefaultCategoryByDomain(categoryDomain);
+      resolvedCategory = await prisma.reservationCategory.upsert({
+        where: {
+          organizationId_domain_slug: {
+            organizationId: organization.id,
+            domain: categoryDomain,
+            slug: defaultCategory.slug,
+          },
+        },
+        update: {
+          label: defaultCategory.label,
+          isActive: true,
+        },
+        create: {
+          organizationId: organization.id,
+          domain: categoryDomain,
+          slug: defaultCategory.slug,
+          label: defaultCategory.label,
+          sortOrder: defaultCategory.sortOrder,
+          isActive: true,
+        },
+        select: { id: true, slug: true, label: true, domain: true },
+      });
+    }
+    updates.categoryId = resolvedCategory.id;
+
     const resolvedDurationMinutes = Number.isFinite(Number(updates.durationMinutes))
       ? Number(updates.durationMinutes)
       : existing.durationMinutes;
@@ -435,10 +566,6 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
       }
     }
     if (typeof payload?.isActive === "boolean") updates.isActive = payload.isActive;
-    if (typeof payload?.categoryTag === "string") {
-      const tag = payload.categoryTag.trim();
-      updates.categoryTag = tag ? tag.slice(0, 40) : null;
-    }
     if (payload?.coverImageUrl === null) {
       updates.coverImageUrl = null;
     } else if (typeof payload?.coverImageUrl === "string") {
@@ -616,7 +743,16 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
           unitPriceCents: true,
           currency: true,
           isActive: true,
+          categoryId: true,
           categoryTag: true,
+          category: {
+            select: {
+              id: true,
+              slug: true,
+              label: true,
+              domain: true,
+            },
+          },
           coverImageUrl: true,
           locationMode: true,
           addressId: true,
@@ -667,7 +803,13 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
       userAgent,
     });
 
-    return respondOk(ctx, {service });
+    return respondOk(ctx, {
+      service: {
+        ...service,
+        bookingVertical: resolveBookingVerticalFromServiceKind(service.kind),
+        categoryTag: service.category?.label ?? service.categoryTag ?? null,
+      },
+    });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "Não autenticado.");

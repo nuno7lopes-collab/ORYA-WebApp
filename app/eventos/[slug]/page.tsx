@@ -33,6 +33,7 @@ import { resolveInviteTokenGrant } from "@/lib/invites/inviteTokens";
 import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
 import { resolveLocale, t } from "@/lib/i18n";
 import CrmEngagementTracker from "@/app/components/crm/CrmEngagementTracker";
+import EventShareButton from "./EventShareButton";
 
 type EventPageParams = { slug: string };
 type EventPageParamsInput = EventPageParams | Promise<EventPageParams>;
@@ -375,9 +376,6 @@ export default async function EventPage({
   const ticketCopy = getTicketCopy(isPadel ? "PADEL" : "DEFAULT", locale);
   const ticketSectionLabel = ticketCopy.pluralCap;
   const freeBadgeLabel = ticketCopy.freeLabel;
-  const ticketSelectLabel = ticketCopy.isPadel
-    ? t("selectRegistrationLabel", locale)
-    : t("selectTicketLabel", locale);
   const freeInfoDescription = ticketCopy.isPadel
     ? t("freeRegistrationInfo", locale)
     : t("freeTicketInfo", locale);
@@ -538,6 +536,7 @@ export default async function EventPage({
   const nowDate = new Date();
   const eventEnded = endDateObj < nowDate;
   const eventIsActive = !eventEnded;
+  const shareUrl = `${getAppBaseUrl()}/eventos/${event.slug}`;
   const canSeeTickets = !isInviteRestricted || isInvited || isAdmin;
 
   const orderedTickets = visibleTicketTypes
@@ -622,10 +621,12 @@ export default async function EventPage({
       : null;
 
   const displayPriceFrom = minTicketPrice;
+  const showPriceFrom = !isGratis && minTicketPrice !== null;
   const anyOnSale = marketTickets.some((t) => t.status === "on_sale");
   const anyUpcoming = marketTickets.some((t) => t.status === "upcoming");
   const allClosed = marketTickets.length > 0 && marketTickets.every((t) => t.status === "closed");
   const allSoldOut = marketTickets.length > 0 && marketTickets.every((t) => t.status === "sold_out");
+  const salesNotOpen = !anyOnSale && anyUpcoming;
   const availabilityLabel = eventEnded
     ? t("availabilityEventEnded", locale)
     : allSoldOut
@@ -650,6 +651,132 @@ export default async function EventPage({
       : anyOnSale
         ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-100"
         : "border-yellow-400/40 bg-yellow-500/15 text-yellow-100";
+  const heroPrimaryChip = (() => {
+    if (eventEnded) {
+      return {
+        label: t("availabilityEventEnded", locale),
+        tone: "border-white/25 bg-white/10 text-white/75",
+      };
+    }
+    if (allSoldOut) {
+      return {
+        label: t("availabilitySoldOut", locale),
+        tone: "border-orange-400/45 bg-orange-500/15 text-orange-100",
+      };
+    }
+    if (salesNotOpen) {
+      return {
+        label: ticketCopy.isPadel ? t("availabilityRegistrationsSoon", locale) : t("availabilitySalesSoon", locale),
+        tone: "border-yellow-400/45 bg-yellow-500/18 text-yellow-100",
+      };
+    }
+    if (allClosed) {
+      return {
+        label: ticketCopy.isPadel ? t("availabilityRegistrationsClosed", locale) : t("availabilitySalesClosed", locale),
+        tone: "border-white/25 bg-white/10 text-white/72",
+      };
+    }
+    if (isGratis) {
+      return {
+        label: freeBadgeLabel,
+        tone: "border-emerald-400/45 bg-emerald-500/18 text-emerald-100",
+      };
+    }
+    if (showPriceFrom) {
+      return {
+        label: `${t("fromLabel", locale)} ${(displayPriceFrom ?? 0).toFixed(2)} €`,
+        tone: "border-[#7CFFEA]/45 bg-[#092033]/55 text-[#C9FFF7]",
+      };
+    }
+    return {
+      label: availabilityLabel,
+      tone: "border-white/20 bg-white/10 text-white/82",
+    };
+  })();
+  const railState = (() => {
+    if (showInviteGate) return "invite" as const;
+    if (eventEnded) return "ended" as const;
+    if (!allowCheckoutBase && freeUsernameGateMessage) return "free_gate" as const;
+    if (padelRegistrationMessage) return "padel_window_closed" as const;
+    if (marketTickets.length === 0) return "empty" as const;
+    if (allSoldOut) return "sold_out" as const;
+    if (salesNotOpen) return "not_open" as const;
+    if (allClosed) return "closed" as const;
+    return "active" as const;
+  })();
+  const railMessage = railState === "active"
+    ? null
+    : railState === "invite"
+      ? {
+          title: t("inviteAccessLabel", locale),
+          description: t("inviteGateHelper", locale),
+          ctaLabel: t("inviteGateValidate", locale),
+          ctaHref: "#bilhetes",
+          tone: "border-white/40 text-white/88",
+        }
+      : railState === "ended"
+        ? {
+            title: t("availabilityEventEnded", locale),
+            description: eventEndedCopy,
+            ctaLabel: null,
+            ctaHref: null,
+            tone: "border-white/35 text-white/78",
+          }
+        : railState === "free_gate"
+          ? {
+              title: freeGateTitle,
+              description: freeUsernameGateMessage,
+              ctaLabel: ticketCopy.viewLabel,
+              ctaHref: "#bilhetes",
+              tone: "border-emerald-400/65 text-emerald-100",
+            }
+          : railState === "padel_window_closed"
+            ? {
+                title: t("registrationsUnavailableTitle", locale),
+                description: padelRegistrationMessage,
+                ctaLabel: ticketCopy.viewLabel,
+                ctaHref: "#bilhetes",
+                tone: "border-amber-400/65 text-amber-100",
+              }
+            : railState === "sold_out"
+              ? {
+                  title: t("eventSoldOutTitle", locale),
+                  description: soldOutDescription,
+                  ctaLabel: t("availabilitySoldOut", locale),
+                  ctaHref: null,
+                  tone: "border-orange-400/65 text-orange-100",
+                }
+              : railState === "not_open"
+                ? {
+                    title: salesNotOpenTitle,
+                    description: salesNotOpenDescription,
+                    ctaLabel: t("availabilitySalesSoon", locale),
+                    ctaHref: null,
+                    tone: "border-yellow-400/65 text-yellow-100",
+                  }
+                : railState === "closed"
+                  ? {
+                      title: salesClosedTitle,
+                      description: salesClosedDescription,
+                      ctaLabel: t("availabilitySalesClosed", locale),
+                      ctaHref: null,
+                      tone: "border-white/35 text-white/78",
+                    }
+                  : hiddenPrivateTickets.length > 0
+                    ? {
+                        title: t("inviteAccessLabel", locale),
+                        description: `Existem ${ticketCopy.plural} privados para convidados.`,
+                        ctaLabel: t("inviteGateValidate", locale),
+                        ctaHref: "#bilhetes",
+                        tone: "border-amber-400/65 text-amber-100",
+                      }
+                    : {
+                        title: t("noTicketWaves", locale),
+                        description: t("noTicketsAvailable", locale).replace("{items}", ticketCopy.plural),
+                        ctaLabel: ticketCopy.viewLabel,
+                        ctaHref: "#bilhetes",
+                        tone: "border-white/35 text-white/78",
+                      };
 
   const protocol = headersList.get("x-forwarded-proto") ?? "http";
   const host = headersList.get("host");
@@ -684,8 +811,6 @@ export default async function EventPage({
     console.error("Erro ao carregar revendas para o evento", slug, err);
   }
 
-  const showPriceFrom = !isGratis && minTicketPrice !== null;
-
   const padelV2Enabled = Boolean(event.padelTournamentConfig?.padelV2Enabled);
   const padelCategoryLinks = Array.isArray(event.padelCategoryLinks) ? event.padelCategoryLinks : [];
   const padelDefaultCategoryId =
@@ -716,19 +841,19 @@ export default async function EventPage({
   })();
 
   const backgroundDefaults = {
-    blur: 44,
-    scale: 1.22,
-    saturate: 1.14,
-    brightness: 0.9,
-    maskStops: [0, 20, 42, 66, 86, 100] as [number, number, number, number, number, number],
-    maskAlphas: [1, 0.98, 0.88, 0.62, 0.28, 0] as [number, number, number, number, number, number],
-    overlayTop: 0.56,
-    overlayMid: 0.36,
-    overlayBottom: 0.14,
-    fadeStart: 74,
-    fadeMid: 88,
+    blur: 46,
+    scale: 1.24,
+    saturate: 1.08,
+    brightness: 0.82,
+    maskStops: [0, 18, 38, 62, 84, 100] as [number, number, number, number, number, number],
+    maskAlphas: [1, 0.98, 0.9, 0.68, 0.36, 0] as [number, number, number, number, number, number],
+    overlayTop: 0.64,
+    overlayMid: 0.46,
+    overlayBottom: 0.24,
+    fadeStart: 68,
+    fadeMid: 84,
     fadeEnd: 98,
-    fadeDark: 0.9,
+    fadeDark: 0.94,
   };
 
   const backgroundVars = {
@@ -804,95 +929,89 @@ export default async function EventPage({
                 background: EVENT_BG_FADE,
               }}
             />
+            <div className="absolute inset-0 bg-[radial-gradient(120%_78%_at_50%_-4%,rgba(26,76,160,0.26)_0%,rgba(7,14,30,0.72)_54%,rgba(2,5,12,0.96)_78%,rgba(2,4,10,1)_100%)]" />
           </div>
         )}
 
         {/* ========== HERO ============ */}
-        <section className="relative z-10 w-full pb-16 pt-20 md:pb-20 md:pt-28">
-          <div className="orya-page-width px-4 md:px-8">
-            <Link
-              href="/descobrir/eventos"
-              className="inline-flex items-center gap-2 text-xs font-medium text-white/75 transition hover:text-white"
-            >
-              <span className="text-lg leading-none">←</span>
-              <span>{t("backToExplore", locale)}</span>
-            </Link>
-          </div>
-
+        <section className="relative z-10 w-full pb-10 pt-12 md:pb-12 md:pt-16">
           <div
             data-testid="event-detail-dice-split"
-            className="orya-page-width mt-6 grid grid-cols-1 gap-6 px-4 md:mt-8 md:grid-cols-[minmax(268px,0.9fr)_minmax(0,1.1fr)] md:items-start md:gap-7 md:px-8 lg:grid-cols-[minmax(320px,0.92fr)_minmax(420px,1.08fr)]"
+            className="orya-page-width grid grid-cols-1 gap-6 px-4 md:grid-cols-[minmax(300px,0.76fr)_minmax(0,1.24fr)] md:items-start md:gap-8 md:px-8 lg:grid-cols-[minmax(340px,0.72fr)_minmax(0,1.28fr)]"
           >
-            <div data-testid="event-cover-square" className="relative order-1 md:self-start">
-              <div className="relative aspect-square w-full overflow-hidden rounded-3xl border border-white/12 bg-black/40 shadow-[0_24px_60px_rgba(0,0,0,0.75)] md:aspect-[4/5] lg:aspect-square">
+            <div
+              data-testid="event-cover-square"
+              className="relative order-1 mx-auto w-full max-w-[430px] md:mx-0 md:max-w-none md:self-start"
+            >
+              <div className="relative aspect-square w-full overflow-hidden rounded-[30px] border border-white/16 bg-black/35 shadow-[0_26px_64px_rgba(0,0,0,0.72)] md:aspect-[4/5] lg:aspect-square">
                 <Image
                   src={cover}
                   alt={`${t("eventCoverAlt", locale)} ${event.title}`}
                   fill
                   priority
                   fetchPriority="high"
-                  sizes="(max-width: 768px) 90vw, (max-width: 1200px) 42vw, 520px"
+                  sizes="(max-width: 768px) 88vw, (max-width: 1200px) 36vw, 480px"
                   className="object-cover object-center"
                   placeholder="blur"
                   blurDataURL={defaultBlurDataURL}
                 />
-                <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent" />
+                <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/72 via-black/22 to-transparent" />
               </div>
             </div>
 
-            <div className="relative order-2">
-              <div className="relative rounded-3xl border border-white/12 bg-black/55 p-6 shadow-[0_24px_60px_rgba(0,0,0,0.6)] backdrop-blur-2xl md:p-7 lg:p-8 animate-fade-slide">
-                <h1 className="text-3xl font-semibold leading-[1.04] text-white sm:text-4xl md:text-[2.55rem] lg:text-[3.15rem]">
-                  {event.title}
-                </h1>
+            <div className="relative order-2 max-w-4xl md:pt-1">
+              <div className="animate-fade-slide">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <h1 className="max-w-3xl text-[clamp(2.2rem,4.4vw,4rem)] font-semibold leading-[0.98] tracking-[-0.015em] text-white">
+                    {event.title}
+                  </h1>
+                  <EventShareButton
+                    url={shareUrl}
+                    title={event.title}
+                  />
+                </div>
+
+                <p className="mt-3 text-lg font-medium text-white/88 md:text-2xl">{safeLocationName}</p>
+                <p className="mt-1 text-base font-semibold text-[#F2E97E] md:text-xl">
+                  {formattedDate} · {time}
+                </p>
 
                 <div className="mt-4 flex flex-wrap items-center gap-2.5">
                   <span
-                    className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.18em] ${availabilityTone}`}
+                    className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.15em] ${heroPrimaryChip.tone}`}
                   >
-                    {availabilityLabel}
+                    {heroPrimaryChip.label}
                   </span>
-                  {showPriceFrom ? (
-                    <span className="rounded-full border border-white/20 bg-black/45 px-3 py-1 text-[11px] font-medium text-white/85">
-                      {t("fromLabel", locale)} {(displayPriceFrom ?? 0).toFixed(2)} €
-                    </span>
-                  ) : isGratis ? (
-                    <span className="rounded-full border border-emerald-400/40 bg-emerald-500/15 px-3 py-1 text-[11px] font-medium text-emerald-100">
-                      {freeBadgeLabel}
-                    </span>
-                  ) : null}
                 </div>
 
-                <div className="mt-5">
-                  <p className="text-[10px] uppercase tracking-[0.2em] text-white/60">
+                <div className="mt-5 flex flex-wrap items-center gap-3">
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-white/62">
                     {t("organizedByLabel", locale)}
                   </p>
                   {organizationUsername ? (
                     <Link
                       href={`/${organizationUsername}`}
-                      className="mt-2 inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-black/40 px-3 py-2 transition hover:border-white/20 hover:bg-white/10"
+                      className="inline-flex items-center gap-2 rounded-full border border-white/18 px-3 py-1.5 transition hover:border-white/32 hover:bg-white/6"
                     >
                       <Avatar
                         src={organizationAvatarUrl}
                         name={safeOrganization}
-                        className="h-10 w-10 border border-white/20"
-                        textClassName="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/80"
+                        className="h-7 w-7 border border-white/20"
+                        textClassName="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80"
                         fallbackText="OR"
                       />
-                      <div className="flex flex-col">
-                        <span className="text-sm font-semibold text-white">{safeOrganization}</span>
-                        {organizationHandle && (
-                          <span className="text-xs text-white/60">{organizationHandle}</span>
-                        )}
-                      </div>
+                      <span className="text-sm font-semibold text-white">{safeOrganization}</span>
+                      {organizationHandle ? (
+                        <span className="text-xs text-white/58">{organizationHandle}</span>
+                      ) : null}
                     </Link>
                   ) : (
-                    <div className="mt-2 inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-black/40 px-3 py-2">
+                    <div className="inline-flex items-center gap-2 rounded-full border border-white/18 px-3 py-1.5">
                       <Avatar
                         src={organizationAvatarUrl}
                         name={safeOrganization}
-                        className="h-10 w-10 border border-white/20"
-                        textClassName="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/80"
+                        className="h-7 w-7 border border-white/20"
+                        textClassName="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80"
                         fallbackText="OR"
                       />
                       <span className="text-sm font-semibold text-white">{safeOrganization}</span>
@@ -900,58 +1019,79 @@ export default async function EventPage({
                   )}
                 </div>
 
-                <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-2xl border border-white/12 bg-black/35 px-3.5 py-3">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/60">
-                      {t("dateLabel", locale)}
-                    </p>
-                    <p className="mt-1 text-sm font-medium text-white/90 md:text-base">
-                      {formattedDate} · {time}
-                    </p>
-                  </div>
-                  <div className="rounded-2xl border border-white/12 bg-black/35 px-3.5 py-3">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/60">
-                      {t("locationLabel", locale)}
-                    </p>
-                    {googleMapsUrl ? (
-                      <a
-                        href={googleMapsUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="mt-1 inline-flex flex-col items-start text-white/90 hover:text-white"
-                      >
-                        <span className="text-sm font-medium underline decoration-white/35 underline-offset-4 md:text-base">
-                          {safeLocationName}
-                        </span>
-                        <span className="text-xs text-white/62">{safeLocationAddress}</span>
-                      </a>
-                    ) : (
-                      <div className="mt-1">
-                        <p className="text-base font-medium text-white/90">{safeLocationName}</p>
-                        <p className="text-xs text-white/62">{safeLocationAddress}</p>
+                <div className="mt-6" data-testid="event-hero-purchase-rail">
+                  {railState === "active" ? (
+                    <WavesSectionClient
+                      slug={event.slug}
+                      tickets={marketTickets}
+                      layout="rail"
+                      isGratisEvent={isGratis}
+                      checkoutUiVariant={checkoutVariant}
+                      locale={locale}
+                      padelMeta={
+                        checkoutVariant === "PADEL"
+                          ? {
+                              eventId: event.id,
+                              organizationId: event.organizationId ?? null,
+                              categoryId: padelDefaultCategoryId ?? null,
+                              categoryLinkId: padelDefaultCategoryLinkId ?? null,
+                            }
+                          : undefined
+                      }
+                    />
+                  ) : (
+                    <div
+                      data-testid="event-purchase-rail"
+                      className={`flex flex-col gap-3 border-l-2 pl-4 text-sm ${railMessage?.tone ?? "border-white/35 text-white/82"}`}
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold leading-tight">{railMessage?.title}</p>
+                        {railMessage?.description ? (
+                          <p className="mt-1 text-xs opacity-85">{railMessage.description}</p>
+                        ) : null}
                       </div>
-                    )}
-                  </div>
+                      {railMessage?.ctaLabel ? (
+                        railMessage.ctaHref ? (
+                          <a
+                            href={railMessage.ctaHref}
+                            className="inline-flex h-9 w-fit items-center justify-center rounded-full border border-white/25 px-4 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/90 transition hover:bg-white/10"
+                          >
+                            {railMessage.ctaLabel}
+                          </a>
+                        ) : (
+                          <span
+                            aria-disabled
+                            className="inline-flex h-9 w-fit cursor-not-allowed items-center justify-center rounded-full border border-white/20 px-4 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/62"
+                          >
+                            {railMessage.ctaLabel}
+                          </span>
+                        )
+                      ) : null}
+                    </div>
+                  )}
                 </div>
 
-                <p className="mt-5 text-sm leading-relaxed text-white/74 md:text-base">
+                <p className="mt-6 max-w-3xl text-[15px] leading-relaxed text-white/76 md:text-base">
                   {heroDescription}
                 </p>
 
-                <div className="mt-7 flex flex-wrap items-center gap-3">
+                <div className="mt-6 flex flex-wrap items-center gap-3">
                   <a
                     href="#bilhetes"
-                    className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-semibold text-black shadow-[0_0_30px_rgba(255,255,255,0.3)] transition-transform hover:scale-105 active:scale-95 md:text-sm"
+                    className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-semibold text-black shadow-[0_0_22px_rgba(255,255,255,0.28)] transition hover:brightness-110 active:scale-95 md:text-sm"
                   >
                     {ticketCopy.viewLabel}
-                    <span className="text-xs">↓</span>
                   </a>
-                  <a
-                    href="#sobre"
-                    className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/5 px-4 py-2 text-xs font-semibold text-white/90 transition hover:border-white/30 hover:bg-white/10 md:text-sm"
-                  >
-                    {t("aboutEventTitle", locale)}
-                  </a>
+                  {googleMapsUrl ? (
+                    <a
+                      href={googleMapsUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-2 rounded-full border border-white/24 px-4 py-2 text-xs font-semibold text-white/90 transition hover:border-white/38 hover:bg-white/8 md:text-sm"
+                    >
+                      Abrir mapa
+                    </a>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -962,259 +1102,93 @@ export default async function EventPage({
           className="pointer-events-none relative z-10 orya-page-width px-6 md:px-10"
           aria-hidden="true"
         >
-          <div className="relative my-8 md:my-10">
-            <div className="h-px w-full bg-gradient-to-r from-transparent via-white/18 to-transparent" />
+          <div className="relative my-7 md:my-9">
+            <div className="h-px w-full bg-gradient-to-r from-transparent via-white/22 to-transparent" />
             <div className="absolute inset-0 blur-2xl">
-              <div className="h-px w-full bg-gradient-to-r from-transparent via-[#6BFFFF]/25 to-transparent" />
+              <div className="h-px w-full bg-gradient-to-r from-transparent via-[#6BFFFF]/28 to-transparent" />
             </div>
           </div>
         </div>
 
         {/* ========== CONTENT AREA ============ */}
-        <section className="relative z-10 orya-page-width grid grid-cols-1 gap-12 px-6 pb-28 pt-10 md:grid-cols-3 md:px-10">
-          {/* LEFT SIDE — Info + Descrição */}
-          <div className="space-y-12 md:col-span-2">
+        <section className="relative z-10 orya-page-width grid grid-cols-1 gap-12 px-6 pb-24 pt-4 md:grid-cols-[minmax(0,1fr)_minmax(290px,0.44fr)] md:gap-12 md:px-10">
+          <div className="space-y-12">
             <section
               id="sobre"
-              className="rounded-3xl border border-white/10 bg-black/45 p-6 shadow-[0_20px_50px_rgba(0,0,0,0.55)] backdrop-blur-2xl md:p-8 animate-fade-slide"
+              className="animate-fade-slide border-t border-white/16 pt-7"
             >
-              <h2 className="text-2xl font-semibold">{t("aboutEventTitle", locale)}</h2>
-              <EventDescriptionReadMore
-                text={descriptionText}
-                locale={locale}
-                collapsedLines={6}
-              />
+              <h2 className="text-3xl font-semibold tracking-[-0.01em] text-white">{t("aboutEventTitle", locale)}</h2>
+              <div className="mt-4 max-w-3xl">
+                <EventDescriptionReadMore
+                  text={descriptionText}
+                  locale={locale}
+                  collapsedLines={6}
+                />
+              </div>
+            </section>
+
+            <section
+              id="local"
+              className="border-t border-white/16 pt-7"
+            >
+              <p className="text-[11px] uppercase tracking-[0.22em] text-white/56">{t("locationLabel", locale)}</p>
+              <h3 className="mt-2 text-3xl font-semibold tracking-[-0.01em] text-white md:text-[2.15rem]">{safeLocationName}</h3>
+              <p className="mt-2 max-w-2xl text-sm text-white/74 md:text-base">{safeLocationAddress}</p>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                {googleMapsUrl ? (
+                  <a
+                    href={googleMapsUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-2 rounded-full border border-white/24 px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-white/90 transition hover:border-white/40 hover:bg-white/8"
+                  >
+                    Abrir em mapas
+                  </a>
+                ) : null}
+                <span className="text-xs text-white/56">Portas abrem às {time}</span>
+              </div>
+            </section>
+
+            <section
+              id="promotor"
+              className="border-t border-white/16 pt-7"
+            >
+              <p className="text-[11px] uppercase tracking-[0.22em] text-white/56">Promotor</p>
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <Avatar
+                    src={organizationAvatarUrl}
+                    name={safeOrganization}
+                    className="h-11 w-11 border border-white/20"
+                    textClassName="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/80"
+                    fallbackText="OR"
+                  />
+                  <div>
+                    <p className="text-lg font-semibold text-white">{safeOrganization}</p>
+                    {organizationHandle ? (
+                      <p className="text-sm text-white/58">{organizationHandle}</p>
+                    ) : null}
+                  </div>
+                </div>
+                {organizationUsername ? (
+                  <Link
+                    href={`/${organizationUsername}`}
+                    className="inline-flex items-center gap-2 rounded-full border border-white/24 px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-white/90 transition hover:border-white/38 hover:bg-white/8"
+                  >
+                    Ver promotor
+                  </Link>
+                ) : null}
+              </div>
             </section>
 
             {checkoutVariant === "PADEL" && (
-              <PadelMatchesByCategoryClient slug={event.slug} />
+              <section className="border-t border-white/16 pt-7">
+                <PadelMatchesByCategoryClient slug={event.slug} />
+              </section>
             )}
 
-          </div>
-
-          {/* RIGHT SIDE — CARD DE INFORMAÇÕES / TICKETS */}
-          <aside className="space-y-8 md:sticky md:top-28 md:self-start">
-            <div className="relative">
-              <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-[#7CFFEA]/60 to-transparent" />
-              <div className="relative rounded-3xl border border-white/12 bg-black/55 p-7 shadow-[0_24px_60px_rgba(0,0,0,0.65)] backdrop-blur-2xl">
-                <div className="relative">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h3 className="text-xl font-semibold">{ticketSectionLabel}</h3>
-                      <p className="text-xs text-white/60">
-                        {t("secureCheckoutHint", locale)}
-                      </p>
-                    </div>
-                    <span
-                      className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.18em] ${availabilityTone}`}
-                    >
-                      {availabilityLabel}
-                    </span>
-                  </div>
-
-                  <div id="bilhetes" className="mt-5 scroll-mt-28 border-t border-white/12 pt-5">
-                    {!eventEnded ? (
-                      <div className="space-y-5">
-                        <div className="flex items-center justify-between gap-2">
-                          <h3 className="text-base font-semibold">
-                            {ticketSelectLabel}
-                          </h3>
-                          {!isGratis && showPriceFrom && (
-                            <span className="text-xs text-white/75">
-                              {t("fromLabel", locale)}{" "}
-                              <span className="font-semibold text-white">
-                                {(displayPriceFrom ?? 0).toFixed(2)} €
-                              </span>
-                            </span>
-                          )}
-                        </div>
-
-                        {showInviteGate ? (
-                          <InviteGateClient
-                            slug={event.slug}
-                            isGratis={isGratis}
-                            isAuthenticated={Boolean(user)}
-                            hasUsername={hasUsername}
-                            userEmailNormalized={userEmailNormalized}
-                            usernameNormalized={usernameNormalized}
-                            uiTickets={uiTickets}
-                            checkoutUiVariant={checkoutVariant}
-                            locale={locale}
-                            padelMeta={
-                              checkoutVariant === "PADEL"
-                                ? {
-                                    eventId: event.id,
-                                    organizationId: event.organizationId ?? null,
-                                    categoryId: padelDefaultCategoryId ?? null,
-                                    categoryLinkId: padelDefaultCategoryLinkId ?? null,
-                                  }
-                                : undefined
-                            }
-                          />
-                        ) : (
-                          <>
-                            {isGratis && (
-                              <>
-                                <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-3.5 py-2.5 text-sm text-emerald-100">
-                                  <div>
-                                    <p className="font-semibold">{freeBadgeLabel}</p>
-                                    <p className="text-[11px] text-emerald-100/85">
-                                      {freeInfoDescription}
-                                    </p>
-                                  </div>
-                                </div>
-                                {freeUsernameGateMessage && (
-                                  <div className="rounded-xl border border-white/12 bg-black/50 px-3.5 py-2.5 text-sm text-white/85">
-                                    <p className="font-semibold">{freeGateTitle}</p>
-                                    <p className="text-[11px] text-white/70">{freeUsernameGateMessage}</p>
-                                  </div>
-                                )}
-                              </>
-                            )}
-
-                            {allowCheckoutBase ? (
-                              padelRegistrationMessage ? (
-                                <div className="rounded-xl border border-amber-400/40 bg-amber-500/15 px-3.5 py-2.5 text-sm text-amber-100">
-                                  <div>
-                                    <p className="font-semibold">{t("registrationsUnavailableTitle", locale)}</p>
-                                    <p className="text-[11px] text-amber-100/85">{padelRegistrationMessage}</p>
-                                  </div>
-                                </div>
-                              ) : marketTickets.length === 0 ? (
-                                hiddenPrivateTickets.length > 0 ? (
-                                  <div className="rounded-xl border border-amber-400/40 bg-amber-500/15 px-3.5 py-2.5 text-sm text-amber-100">
-                                    <div>
-                                      <p className="font-semibold">{t("inviteAccessLabel", locale)}</p>
-                                      <p className="text-[11px] text-amber-100/85">
-                                        Existem {ticketCopy.plural} privados para convidados.
-                                      </p>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div className="rounded-xl border border-white/12 bg-black/45 px-3.5 py-2.5 text-sm text-white/80">
-                                    {t("noTicketWaves", locale)}
-                                  </div>
-                                )
-                              ) : allSoldOut ? (
-                                <div className="rounded-xl border border-orange-400/40 bg-orange-500/15 px-3.5 py-2.5 text-sm text-orange-100">
-                                  <div>
-                                    <p className="font-semibold">{t("eventSoldOutTitle", locale)}</p>
-                                    <p className="text-[11px] text-orange-100/85">
-                                      {soldOutDescription}
-                                    </p>
-                                  </div>
-                                </div>
-                              ) : !anyOnSale && anyUpcoming ? (
-                                <div className="rounded-xl border border-yellow-400/40 bg-yellow-500/15 px-3.5 py-2.5 text-sm text-yellow-100">
-                                  <div>
-                                    <p className="font-semibold">{salesNotOpenTitle}</p>
-                                    <p className="text-[11px] text-yellow-100/85">
-                                      {salesNotOpenDescription}
-                                    </p>
-                                  </div>
-                                </div>
-                              ) : allClosed ? (
-                                <div className="rounded-xl border border-white/12 bg-black/45 px-3.5 py-2.5 text-sm text-white/80">
-                                  <div>
-                                    <p className="font-semibold">{salesClosedTitle}</p>
-                                    <p className="text-[11px] text-white/70">
-                                      {salesClosedDescription}
-                                    </p>
-                                  </div>
-                                </div>
-                              ) : (
-                                <WavesSectionClient
-                                  slug={event.slug}
-                                  tickets={marketTickets}
-                                  isGratisEvent={isGratis}
-                                  checkoutUiVariant={checkoutVariant}
-                                  locale={locale}
-                                  padelMeta={
-                                    checkoutVariant === "PADEL"
-                                      ? {
-                                          eventId: event.id,
-                                          organizationId: event.organizationId ?? null,
-                                          categoryId: padelDefaultCategoryId ?? null,
-                                          categoryLinkId: padelDefaultCategoryLinkId ?? null,
-                                        }
-                                      : undefined
-                                  }
-                                />
-                              )
-                            ) : null}
-                          </>
-                        )}
-
-                        {resales.length > 0 && (
-                            <div className="mt-7 space-y-4 border-t border-white/12 pt-5">
-                              <div className="flex items-center justify-between gap-2">
-                                <h3 className="text-base font-semibold">
-                                  {resalesTitle}
-                                </h3>
-                                <span className="text-xs text-white/70">
-                                  {resales.length}{" "}
-                                  {resales.length === 1
-                                    ? t("resaleOfferLabel", locale)
-                                    : t("resaleOffersLabel", locale)}
-                                </span>
-                              </div>
-
-                              <p className="text-xs text-white/65">
-                                {resalesDescription} {t("resalesPaymentHint", locale)}
-                              </p>
-
-                            <div className="space-y-4">
-                              {resales.map((r) => (
-                                <div
-                                  key={r.id}
-                                  className="flex items-center justify-between rounded-xl border border-white/12 bg-black/50 px-3.5 py-2.5 text-sm"
-                                >
-                                  <div className="flex flex-col gap-0.5">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <span className="font-medium">
-                                        {r.ticketTypeName ?? resalesFallbackLabel}
-                                      </span>
-                                      {r.seller && (
-                                        <span className="text-xs text-white/60">
-                                          {t("byLabel", locale)}{" "}
-                                          {r.seller.username
-                                            ? `@${r.seller.username}`
-                                            : r.seller.fullName ?? t("oryaUserLabel", locale)}
-                                        </span>
-                                      )}
-                                    </div>
-                                    <span className="text-xs text-white/65">
-                                      {t("resalePriceLabel", locale)}{" "}
-                                      <span className="font-semibold text-white">
-                                        {(r.price / 100).toFixed(2)} €
-                                      </span>
-                                    </span>
-                                  </div>
-
-                                  <Link
-                                    href={`/resale/${r.id}`}
-                                    className={`${CTA_PRIMARY} px-3 py-1.5 text-xs active:scale-95`}
-                                  >
-                                    {resalesCtaLabel}
-                                  </Link>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="rounded-xl border border-white/15 bg-black/60 px-4 py-3 text-sm text-white/85">
-                        {eventEndedCopy}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-
             {padelSnapshot && (
-              <div className="rounded-3xl border border-white/10 bg-black/45 p-6 shadow-[0_20px_45px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+              <section className="border-t border-white/16 pt-7">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">
@@ -1226,7 +1200,7 @@ export default async function EventPage({
                       {padelSnapshot.clubCity || t("padelCitySoon", locale)}
                     </p>
                   </div>
-                  <span className="rounded-full border border-white/20 bg-white/10 px-2 py-1 text-[11px] text-white/75">
+                  <span className="rounded-full border border-white/20 px-2 py-1 text-[11px] text-white/75">
                     {t("statusLabel", locale)}: {padelCompetitionLabel ?? padelSnapshot.status}
                   </span>
                 </div>
@@ -1235,12 +1209,12 @@ export default async function EventPage({
                     {padelSnapshot.timeline.map((step) => (
                       <div
                         key={step.key}
-                        className={`rounded-lg border px-3 py-2 text-sm ${
+                        className={`border-l-2 px-3 py-1 text-sm ${
                           step.state === "done"
-                            ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-50"
+                            ? "border-emerald-400/65 text-emerald-50"
                             : step.state === "active"
-                              ? "border-[#6BFFFF]/60 bg-[#0b1224] text-white"
-                              : "border-white/15 bg-white/5 text-white/70"
+                              ? "border-[#6BFFFF]/70 text-white"
+                              : "border-white/22 text-white/70"
                         }`}
                       >
                         <p className="font-semibold">{step.label}</p>
@@ -1255,49 +1229,197 @@ export default async function EventPage({
                     ))}
                   </div>
                 )}
-                <div className="mt-4 grid gap-3 text-[13px] md:grid-cols-2">
-                  <div className="rounded-lg border border-white/10 bg-white/5 p-3">
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-white/60">
-                      {t("clubsLabel", locale)}
-                    </p>
-                    <p className="text-white/80">
-                      {t("primaryClubLabel", locale)}{" "}
-                      <span className="font-semibold text-white">
-                        {padelSnapshot.clubName || t("tbdLabel", locale)}
-                      </span>
-                    </p>
-                    <p className="text-white/70">
-                      {t("partnerClubsLabel", locale)}{" "}
-                      {padelSnapshot.partnerClubs && padelSnapshot.partnerClubs.length > 0
-                        ? padelSnapshot.partnerClubs
-                            .map((c) => c.name || `Clube ${c.id}`)
-                            .join(" · ")
-                        : "—"}
-                    </p>
-                  </div>
-                  <div className="rounded-lg border border-white/10 bg-white/5 p-3">
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-white/60">
-                      {t("courtsLabel", locale)}
-                    </p>
-                    {padelSnapshot.courts && padelSnapshot.courts.length > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {padelSnapshot.courts.map((c, idx) => (
-                          <span
-                            key={`${c.name}-${idx}`}
-                            className="rounded-full border border-white/15 bg-black/30 px-2 py-1 text-[12px]"
+              </section>
+            )}
+
+            <section
+              id="download-app"
+              className="border-t border-white/16 pt-7"
+            >
+              <h3 className="text-2xl font-semibold tracking-[-0.01em] text-white md:text-3xl">
+                Leva a ORYA no telemóvel
+              </h3>
+              <p className="mt-3 max-w-2xl text-sm text-white/74 md:text-base">
+                Descobre eventos, guarda bilhetes e entra mais rápido nos teus próximos planos.
+              </p>
+              <div className="mt-5 flex flex-wrap items-center gap-3">
+                <Link
+                  href="/landing"
+                  className={`${CTA_PRIMARY} px-5 py-2.5 text-sm`}
+                >
+                  Instalar app ORYA
+                </Link>
+                <span className="text-xs text-white/58">Disponível para iOS e Android</span>
+              </div>
+            </section>
+          </div>
+
+          <aside className="space-y-10 md:sticky md:top-28 md:self-start">
+            <section id="bilhetes" className="scroll-mt-28 border-t border-white/18 pt-7">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-2xl font-semibold text-white">{ticketSectionLabel}</h3>
+                  <p className="text-xs text-white/62">{t("secureCheckoutHint", locale)}</p>
+                </div>
+                <span
+                  className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.16em] ${availabilityTone}`}
+                >
+                  {availabilityLabel}
+                </span>
+              </div>
+
+              {!eventEnded ? (
+                <div className="mt-5 space-y-5">
+                  {showInviteGate ? (
+                    <InviteGateClient
+                      slug={event.slug}
+                      isGratis={isGratis}
+                      isAuthenticated={Boolean(user)}
+                      hasUsername={hasUsername}
+                      userEmailNormalized={userEmailNormalized}
+                      usernameNormalized={usernameNormalized}
+                      uiTickets={uiTickets}
+                      checkoutUiVariant={checkoutVariant}
+                      locale={locale}
+                      padelMeta={
+                        checkoutVariant === "PADEL"
+                          ? {
+                              eventId: event.id,
+                              organizationId: event.organizationId ?? null,
+                              categoryId: padelDefaultCategoryId ?? null,
+                              categoryLinkId: padelDefaultCategoryLinkId ?? null,
+                            }
+                          : undefined
+                      }
+                    />
+                  ) : (
+                    <>
+                      {isGratis && (
+                        <div className="border-l-2 border-emerald-400/70 pl-3 text-sm text-emerald-100/95">
+                          <p className="font-semibold">{freeBadgeLabel}</p>
+                          <p className="text-[11px] text-emerald-100/85">{freeInfoDescription}</p>
+                          {freeUsernameGateMessage ? (
+                            <p className="mt-2 text-[11px] text-white/80">{freeUsernameGateMessage}</p>
+                          ) : null}
+                        </div>
+                      )}
+
+                      {allowCheckoutBase ? (
+                        padelRegistrationMessage ? (
+                          <div className="border-l-2 border-amber-400/70 pl-3 text-sm text-amber-100/95">
+                            <p className="font-semibold">{t("registrationsUnavailableTitle", locale)}</p>
+                            <p className="text-[11px] text-amber-100/85">{padelRegistrationMessage}</p>
+                          </div>
+                        ) : marketTickets.length === 0 ? (
+                          hiddenPrivateTickets.length > 0 ? (
+                            <div className="border-l-2 border-amber-400/70 pl-3 text-sm text-amber-100/95">
+                              <p className="font-semibold">{t("inviteAccessLabel", locale)}</p>
+                              <p className="text-[11px] text-amber-100/85">
+                                Existem {ticketCopy.plural} privados para convidados.
+                              </p>
+                            </div>
+                          ) : (
+                            <p className="text-sm text-white/74">{t("noTicketWaves", locale)}</p>
+                          )
+                        ) : allSoldOut ? (
+                          <div className="border-l-2 border-orange-400/70 pl-3 text-sm text-orange-100/95">
+                            <p className="font-semibold">{t("eventSoldOutTitle", locale)}</p>
+                            <p className="text-[11px] text-orange-100/85">{soldOutDescription}</p>
+                          </div>
+                        ) : !anyOnSale && anyUpcoming ? (
+                          <div className="border-l-2 border-yellow-400/70 pl-3 text-sm text-yellow-100/95">
+                            <p className="font-semibold">{salesNotOpenTitle}</p>
+                            <p className="text-[11px] text-yellow-100/85">{salesNotOpenDescription}</p>
+                          </div>
+                        ) : allClosed ? (
+                          <div className="border-l-2 border-white/40 pl-3 text-sm text-white/80">
+                            <p className="font-semibold">{salesClosedTitle}</p>
+                            <p className="text-[11px] text-white/70">{salesClosedDescription}</p>
+                          </div>
+                        ) : (
+                          <WavesSectionClient
+                            slug={event.slug}
+                            tickets={marketTickets}
+                            layout="panel"
+                            isGratisEvent={isGratis}
+                            checkoutUiVariant={checkoutVariant}
+                            locale={locale}
+                            padelMeta={
+                              checkoutVariant === "PADEL"
+                                ? {
+                                    eventId: event.id,
+                                    organizationId: event.organizationId ?? null,
+                                    categoryId: padelDefaultCategoryId ?? null,
+                                    categoryLinkId: padelDefaultCategoryLinkId ?? null,
+                                  }
+                                : undefined
+                            }
+                          />
+                        )
+                      ) : null}
+                    </>
+                  )}
+
+                  {resales.length > 0 && (
+                    <div className="space-y-4 border-t border-white/12 pt-5">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className="text-base font-semibold">{resalesTitle}</h3>
+                        <span className="text-xs text-white/70">
+                          {resales.length}{" "}
+                          {resales.length === 1
+                            ? t("resaleOfferLabel", locale)
+                            : t("resaleOffersLabel", locale)}
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-white/65">
+                        {resalesDescription} {t("resalesPaymentHint", locale)}
+                      </p>
+
+                      <div className="space-y-4">
+                        {resales.map((r) => (
+                          <div
+                            key={r.id}
+                            className="flex items-center justify-between gap-3 border-l-2 border-white/25 pl-3 text-sm"
                           >
-                            {c.name} {c.clubName ? `· ${c.clubName}` : ""}{" "}
-                            {c.indoor ? `· ${t("indoorLabel", locale)}` : ""}
-                          </span>
+                            <div className="flex flex-col gap-0.5">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-medium">
+                                  {r.ticketTypeName ?? resalesFallbackLabel}
+                                </span>
+                                {r.seller && (
+                                  <span className="text-xs text-white/60">
+                                    {t("byLabel", locale)}{" "}
+                                    {r.seller.username
+                                      ? `@${r.seller.username}`
+                                      : r.seller.fullName ?? t("oryaUserLabel", locale)}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-xs text-white/65">
+                                {t("resalePriceLabel", locale)}{" "}
+                                <span className="font-semibold text-white">
+                                  {(r.price / 100).toFixed(2)} €
+                                </span>
+                              </span>
+                            </div>
+
+                            <Link
+                              href={`/resale/${r.id}`}
+                              className={`${CTA_PRIMARY} px-3 py-1.5 text-xs active:scale-95`}
+                            >
+                              {resalesCtaLabel}
+                            </Link>
+                          </div>
                         ))}
                       </div>
-                    ) : (
-                      <p className="text-[12px] text-white/70">{t("courtsTbd", locale)}</p>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
-              </div>
-            )}
+              ) : (
+                <p className="mt-4 text-sm text-white/76">{eventEndedCopy}</p>
+              )}
+            </section>
           </aside>
         </section>
 

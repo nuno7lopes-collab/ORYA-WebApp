@@ -84,6 +84,8 @@
     "app/org/[orgId]/bookings/[id]/page.tsx",
     "app/org/[orgId]/bookings/availability/conflicts/[changeSetId]/page.tsx",
     "app/org/[orgId]/bookings/availability/page.tsx",
+    "app/org/[orgId]/bookings/classes/page.tsx",
+    "app/org/[orgId]/bookings/courts/page.tsx",
     "app/org/[orgId]/bookings/customers/page.tsx",
     "app/org/[orgId]/bookings/integrations/page.tsx",
     "app/org/[orgId]/bookings/new/page.tsx",
@@ -95,6 +97,7 @@
     "app/org/[orgId]/bookings/professionals/page.tsx",
     "app/org/[orgId]/bookings/resources/[id]/page.tsx",
     "app/org/[orgId]/bookings/resources/page.tsx",
+    "app/org/[orgId]/bookings/services/page.tsx",
     "app/org/[orgId]/calendar/availability/conflicts/[changeSetId]/page.tsx",
     "app/org/[orgId]/calendar/availability/page.tsx",
     "app/org/[orgId]/calendar/day/page.tsx",
@@ -169,6 +172,8 @@
     "app/org/_internal/core/(dashboard)/inscricoes/[id]/page.tsx",
     "app/org/_internal/core/(dashboard)/inscricoes/page.tsx",
     "app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx",
+    "app/org/_internal/core/(dashboard)/reservas/aulas/page.tsx",
+    "app/org/_internal/core/(dashboard)/reservas/campos/page.tsx",
     "app/org/_internal/core/(dashboard)/reservas/clientes/page.tsx",
     "app/org/_internal/core/(dashboard)/reservas/novo/page.tsx",
     "app/org/_internal/core/(dashboard)/reservas/page.tsx",
@@ -249,6 +254,8 @@
       "app/org/[orgId]/bookings/[id]/page.tsx",
       "app/org/[orgId]/bookings/availability/conflicts/[changeSetId]/page.tsx",
       "app/org/[orgId]/bookings/availability/page.tsx",
+      "app/org/[orgId]/bookings/classes/page.tsx",
+      "app/org/[orgId]/bookings/courts/page.tsx",
       "app/org/[orgId]/bookings/customers/page.tsx",
       "app/org/[orgId]/bookings/integrations/page.tsx",
       "app/org/[orgId]/bookings/new/page.tsx",
@@ -260,6 +267,7 @@
       "app/org/[orgId]/bookings/professionals/page.tsx",
       "app/org/[orgId]/bookings/resources/[id]/page.tsx",
       "app/org/[orgId]/bookings/resources/page.tsx",
+      "app/org/[orgId]/bookings/services/page.tsx",
       "app/org/[orgId]/calendar/availability/conflicts/[changeSetId]/page.tsx",
       "app/org/[orgId]/calendar/availability/page.tsx",
       "app/org/[orgId]/calendar/day/page.tsx",
@@ -432,6 +440,8 @@
       "app/org/_internal/core/(dashboard)/inscricoes/[id]/page.tsx",
       "app/org/_internal/core/(dashboard)/inscricoes/page.tsx",
       "app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx",
+      "app/org/_internal/core/(dashboard)/reservas/aulas/page.tsx",
+      "app/org/_internal/core/(dashboard)/reservas/campos/page.tsx",
       "app/org/_internal/core/(dashboard)/reservas/clientes/page.tsx",
       "app/org/_internal/core/(dashboard)/reservas/novo/page.tsx",
       "app/org/_internal/core/(dashboard)/reservas/page.tsx",
@@ -448,12 +458,12 @@
     ]
   },
   "counts": {
-    "webTotal": 193,
+    "webTotal": 198,
     "mobileTotal": 45,
-    "org": 73,
+    "org": 76,
     "admin": 17,
     "user": 20,
     "public": 53,
-    "legacyCompat": 30
+    "legacyCompat": 32
   }
 }
