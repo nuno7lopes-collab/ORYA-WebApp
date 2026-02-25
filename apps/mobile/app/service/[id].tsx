@@ -200,6 +200,7 @@ export default function ServiceDetailScreen() {
   const showPreview = isLoading && !data && (previewTitle || previewPrice || previewOrg);
   const displayCover =
     previewCover ??
+    data?.coverImageUrl ??
     data?.organization?.brandingAvatarUrl ??
     data?.instructor?.avatarUrl ??
     null;
@@ -518,7 +519,19 @@ export default function ServiceDetailScreen() {
               <Pressable
                 onPress={() => {
                   if (!data?.id) return;
-                  safePush(router, { pathname: "/service/[id]/booking", params: { id: String(data.id) } });
+                  const bookingParams: Record<string, string> = {
+                    id: String(data.id),
+                  };
+                  if (data.organization?.username) {
+                    bookingParams.orgUsername = data.organization.username;
+                  }
+                  if (data.bookingVertical) {
+                    bookingParams.bookingVertical = data.bookingVertical;
+                  }
+                  if (typeof data.courtId === "number" && Number.isFinite(data.courtId)) {
+                    bookingParams.courtId = String(data.courtId);
+                  }
+                  safePush(router, { pathname: "/service/[id]/booking", params: bookingParams });
                 }}
                 className="rounded-2xl bg-white/15 px-4 py-4"
                 style={{ minHeight: tokens.layout.touchTarget }}

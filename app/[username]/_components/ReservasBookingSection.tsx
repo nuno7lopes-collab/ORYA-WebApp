@@ -14,6 +14,8 @@ type ReservationAssignmentMode =
 
 type Service = {
   id: number;
+  courtId?: number | null;
+  backingServiceId?: number | null;
   title: string;
   description: string | null;
   durationMinutes: number;

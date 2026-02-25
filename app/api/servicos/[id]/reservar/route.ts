@@ -468,6 +468,14 @@ async function _POST(
       : null;
     const professionalIdRaw = parsePositiveInt(payload?.professionalId);
     const partySizeRaw = parsePositiveInt(payload?.partySize);
+    const courtIdRaw = parsePositiveInt(payload?.courtId);
+    if (payload?.courtId != null && !courtIdRaw) {
+      return jsonWrap({ ok: false, error: "INVALID_COURT" }, { status: 400 });
+    }
+    if (courtIdRaw && !assignmentConfig.isCourtService) {
+      return jsonWrap({ ok: false, error: "INVALID_COURT" }, { status: 400 });
+    }
+    const requestedCourtId = courtIdRaw;
     const partySizeValidation = validateRequestedPartySize({
       requested: partySizeRaw,
       rules: partySizeRules,
@@ -509,6 +517,7 @@ async function _POST(
           isActive: true,
           ...(partySize != null ? { capacity: { gte: partySize } } : {}),
           ...(assignmentConfig.isCourtService ? { courtId: { not: null } } : {}),
+          ...(requestedCourtId ? { courtId: requestedCourtId } : {}),
           ...(allowedResourceIds ? { id: { in: allowedResourceIds } } : {}),
         },
         orderBy: [{ capacity: "asc" }, { priority: "asc" }, { id: "asc" }],
@@ -592,6 +601,7 @@ async function _POST(
           isActive: true,
           ...(partySize != null ? { capacity: { gte: partySize } } : {}),
           ...(assignmentConfig.isCourtService ? { courtId: { not: null } } : {}),
+          ...(requestedCourtId ? { courtId: requestedCourtId } : {}),
           ...(allowedResourceIds ? { id: { in: allowedResourceIds } } : {}),
         },
         orderBy: [{ capacity: "asc" }, { priority: "asc" }, { id: "asc" }],
@@ -911,6 +921,12 @@ async function _POST(
     if (availabilityMode === "HYBRID" && assignmentConfig.isCourtService && !courtId) {
       return jsonWrap(
         { ok: false, error: "SERVICE_CONFIG_INVALID", message: "Par híbrido sem ligação a campo.", selectionRules },
+        { status: 409 },
+      );
+    }
+    if (requestedCourtId && courtId && courtId !== requestedCourtId) {
+      return jsonWrap(
+        { ok: false, error: "INVALID_COURT", message: "Campo selecionado inválido para este horário.", selectionRules },
         { status: 409 },
       );
     }

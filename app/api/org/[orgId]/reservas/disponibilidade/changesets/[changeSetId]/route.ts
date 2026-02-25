@@ -136,7 +136,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ changeSetI
     }
 
     const mapped = mapChangesetError(error);
-    return fail(ctx, mapped.status, mapped.errorCode, mapped.message);
+    return fail(ctx, mapped.status, mapped.errorCode, mapped.message, mapped.details);
   }
 }
 

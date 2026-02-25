@@ -38,8 +38,11 @@ describe("reservas route access guardrails", () => {
     const resolveConflict = readLocal(
       "app/api/org/[orgId]/reservas/disponibilidade/changesets/[changeSetId]/conflicts/[conflictId]/resolve/route.ts",
     );
+    const bulkCancel = readLocal(
+      "app/api/org/[orgId]/reservas/disponibilidade/changesets/[changeSetId]/conflicts/bulk-cancel/route.ts",
+    );
 
-    for (const content of [details, apply, cancel, resolveConflict]) {
+    for (const content of [details, apply, cancel, resolveConflict, bulkCancel]) {
       expect(content).toContain("ensureChangesetScopeAccess");
       expect(content).toContain("FORBIDDEN");
     }

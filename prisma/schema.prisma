@@ -4875,6 +4875,7 @@ model AvailabilityChangeConflict {
   @@index([changeSetId, status], map: "availability_change_conflicts_set_status_idx")
   @@index([organizationId, status], map: "availability_change_conflicts_org_status_idx")
   @@index([entityType, entityId], map: "availability_change_conflicts_entity_idx")
+  @@unique([changeSetId, entityType, entityId], map: "availability_change_conflicts_set_entity_unique")
   @@map("availability_change_conflicts")
   @@schema("app_v3")
 }
@@ -7431,6 +7432,9 @@ enum AvailabilityConflictStatus {
 enum AvailabilityConflictEntityType {
   BOOKING
   CLASS_SESSION
+  MATCH
+  SOFT_BLOCK
+  HARD_BLOCK
 
   @@schema("app_v3")
 }
@@ -7438,6 +7442,7 @@ enum AvailabilityConflictEntityType {
 enum AvailabilityConflictResolutionAction {
   RESCHEDULED
   CANCELLED
+  EXTERNAL_RESOLUTION
 
   @@schema("app_v3")
 }

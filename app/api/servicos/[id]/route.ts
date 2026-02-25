@@ -41,6 +41,7 @@ async function _GET(
         durationMinutes: true,
         unitPriceCents: true,
         currency: true,
+        coverImageUrl: true,
         categoryId: true,
         categoryTag: true,
         category: {
@@ -181,7 +182,7 @@ async function _GET(
       serviceKind: service.kind ?? null,
     });
 
-    const [professionals, resources] = await Promise.all([
+    const [professionals, resources, courtConfig] = await Promise.all([
       prisma.reservationProfessional.findMany({
         where: { organizationId: service.organization.id, isActive: true },
         orderBy: [{ priority: "asc" }, { id: "asc" }],
@@ -209,6 +210,29 @@ async function _GET(
           courtId: true,
         },
       }),
+      assignmentConfig.isCourtService
+        ? prisma.courtBookingConfig.findFirst({
+            where: {
+              organizationId: service.organization.id,
+              backingServiceId: service.id,
+              isActive: true,
+            },
+            select: {
+              courtId: true,
+              displayName: true,
+              displayDescription: true,
+              coverImageUrl: true,
+              category: {
+                select: {
+                  id: true,
+                  slug: true,
+                  label: true,
+                  domain: true,
+                },
+              },
+            },
+          })
+        : Promise.resolve(null),
     ]);
 
     const selectionRules = resolveServicePartySizeRules({
@@ -219,21 +243,27 @@ async function _GET(
       partySizeMax: service.partySizeMax,
       partySizeStep: service.partySizeStep,
     });
+    const resolvedCategory = courtConfig?.category ?? service.category;
 
     return jsonWrap({
       ok: true,
       service: {
         ...service,
+        title: courtConfig?.displayName?.trim() || service.title,
+        description: courtConfig?.displayDescription?.trim() || service.description,
         bookingVertical: resolveBookingVerticalFromServiceKind(service.kind),
-        category: service.category
+        category: resolvedCategory
           ? {
-              id: service.category.id,
-              slug: service.category.slug,
-              label: service.category.label,
-              domain: service.category.domain,
+              id: resolvedCategory.id,
+              slug: resolvedCategory.slug,
+              label: resolvedCategory.label,
+              domain: resolvedCategory.domain,
             }
           : null,
-        categoryTag: service.category?.label ?? service.categoryTag ?? null,
+        categoryTag: resolvedCategory?.label ?? service.categoryTag ?? null,
+        coverImageUrl: courtConfig?.coverImageUrl ?? service.coverImageUrl ?? null,
+        courtId: courtConfig?.courtId ?? null,
+        backingServiceId: assignmentConfig.isCourtService ? service.id : null,
         organization: publicOrganization,
         professionals: professionals.map((professional) => ({
           id: professional.id,

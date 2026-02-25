@@ -624,6 +624,8 @@ export default async function EventPage({
   const showPriceFrom = !isGratis && minTicketPrice !== null;
   const anyOnSale = marketTickets.some((t) => t.status === "on_sale");
   const anyUpcoming = marketTickets.some((t) => t.status === "upcoming");
+  const onSaleCount = marketTickets.filter((t) => t.status === "on_sale").length;
+  const upcomingCount = marketTickets.filter((t) => t.status === "upcoming").length;
   const allClosed = marketTickets.length > 0 && marketTickets.every((t) => t.status === "closed");
   const allSoldOut = marketTickets.length > 0 && marketTickets.every((t) => t.status === "sold_out");
   const salesNotOpen = !anyOnSale && anyUpcoming;
@@ -631,26 +633,49 @@ export default async function EventPage({
     ? t("availabilityEventEnded", locale)
     : allSoldOut
       ? t("availabilitySoldOut", locale)
-      : anyOnSale
+      : allClosed
         ? isPadel
-          ? t("availabilityRegistrationsOpen", locale)
-          : t("availabilityTicketsOnSale", locale)
-        : anyUpcoming
+          ? t("availabilityRegistrationsClosed", locale)
+          : t("availabilitySalesClosed", locale)
+        : salesNotOpen
           ? isPadel
             ? t("availabilityRegistrationsSoon", locale)
             : t("availabilitySalesSoon", locale)
-          : allClosed
-            ? isPadel
-              ? t("availabilityRegistrationsClosed", locale)
-              : t("availabilitySalesClosed", locale)
-            : ticketCopy.pluralCap;
+          : isGratis
+            ? freeBadgeLabel
+            : anyOnSale
+              ? isPadel
+                ? t("availabilityRegistrationsOpen", locale)
+                : t("availabilityTicketsOnSale", locale)
+              : anyUpcoming
+                ? isPadel
+                  ? t("availabilityRegistrationsSoon", locale)
+                  : t("availabilitySalesSoon", locale)
+                : ticketCopy.pluralCap;
   const availabilityTone = eventEnded || allClosed
     ? "border-white/25 bg-white/10 text-white/70"
     : allSoldOut
       ? "border-orange-400/40 bg-orange-500/15 text-orange-100"
+      : salesNotOpen
+        ? "border-yellow-400/40 bg-yellow-500/15 text-yellow-100"
+        : isGratis
+          ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-100"
       : anyOnSale
         ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-100"
         : "border-yellow-400/40 bg-yellow-500/15 text-yellow-100";
+  const ticketSectionSummary = eventEnded
+    ? eventEndedCopy
+    : allSoldOut
+      ? soldOutDescription
+      : salesNotOpen
+        ? salesNotOpenDescription
+        : allClosed
+          ? salesClosedDescription
+          : isGratis
+            ? freeInfoDescription
+            : showPriceFrom && displayPriceFrom !== null
+              ? `${t("fromLabel", locale)} ${displayPriceFrom.toFixed(2)} €`
+              : t("secureCheckoutHint", locale);
   const heroPrimaryChip = (() => {
     if (eventEnded) {
       return {
@@ -1149,38 +1174,6 @@ export default async function EventPage({
               </div>
             </section>
 
-            <section
-              id="promotor"
-              className="border-t border-white/16 pt-7"
-            >
-              <p className="text-[11px] uppercase tracking-[0.22em] text-white/56">Promotor</p>
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <Avatar
-                    src={organizationAvatarUrl}
-                    name={safeOrganization}
-                    className="h-11 w-11 border border-white/20"
-                    textClassName="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/80"
-                    fallbackText="OR"
-                  />
-                  <div>
-                    <p className="text-lg font-semibold text-white">{safeOrganization}</p>
-                    {organizationHandle ? (
-                      <p className="text-sm text-white/58">{organizationHandle}</p>
-                    ) : null}
-                  </div>
-                </div>
-                {organizationUsername ? (
-                  <Link
-                    href={`/${organizationUsername}`}
-                    className="inline-flex items-center gap-2 rounded-full border border-white/24 px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-white/90 transition hover:border-white/38 hover:bg-white/8"
-                  >
-                    Ver promotor
-                  </Link>
-                ) : null}
-              </div>
-            </section>
-
             {checkoutVariant === "PADEL" && (
               <section className="border-t border-white/16 pt-7">
                 <PadelMatchesByCategoryClient slug={event.slug} />
@@ -1256,20 +1249,44 @@ export default async function EventPage({
 
           <aside className="space-y-10 md:sticky md:top-28 md:self-start">
             <section id="bilhetes" className="scroll-mt-28 border-t border-white/18 pt-7">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-2xl font-semibold text-white">{ticketSectionLabel}</h3>
-                  <p className="text-xs text-white/62">{t("secureCheckoutHint", locale)}</p>
+              <div className="space-y-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-[2rem] font-semibold leading-[1] tracking-[-0.01em] text-white">
+                      {ticketSectionLabel}
+                    </h3>
+                    <p className="mt-2 max-w-md text-sm text-white/72">{ticketSectionSummary}</p>
+                  </div>
+                  <span
+                    className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.16em] ${availabilityTone}`}
+                  >
+                    {availabilityLabel}
+                  </span>
                 </div>
-                <span
-                  className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.16em] ${availabilityTone}`}
-                >
-                  {availabilityLabel}
-                </span>
+                <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.14em] text-white/58">
+                  <span className="rounded-full border border-white/18 px-2.5 py-1">
+                    {marketTickets.length} {ticketSectionLabel.toLowerCase()}
+                  </span>
+                  {onSaleCount > 0 ? (
+                    <span className="rounded-full border border-emerald-400/35 px-2.5 py-1 text-emerald-100/92">
+                      {onSaleCount} ativos
+                    </span>
+                  ) : null}
+                  {upcomingCount > 0 ? (
+                    <span className="rounded-full border border-yellow-400/35 px-2.5 py-1 text-yellow-100/92">
+                      {upcomingCount} em breve
+                    </span>
+                  ) : null}
+                  {hiddenPrivateTickets.length > 0 ? (
+                    <span className="rounded-full border border-amber-400/35 px-2.5 py-1 text-amber-100/92">
+                      {hiddenPrivateTickets.length} privados
+                    </span>
+                  ) : null}
+                </div>
               </div>
 
               {!eventEnded ? (
-                <div className="mt-5 space-y-5">
+                <div className="mt-6 space-y-5">
                   {showInviteGate ? (
                     <InviteGateClient
                       slug={event.slug}

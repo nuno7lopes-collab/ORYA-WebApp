@@ -31,6 +31,8 @@ type ReservationAssignmentMode =
 
 type Service = {
   id: number;
+  courtId?: number | null;
+  backingServiceId?: number | null;
   title: string;
   description: string | null;
   durationMinutes: number;
@@ -285,6 +287,28 @@ function groupSlotsByPeriod(slots: AvailabilitySlot[], timeZone: string) {
   return groups.filter((group) => group.slots.length > 0);
 }
 
+function resolveServiceVertical(service: Service | null | undefined): "COURT" | "CLASS" | "SERVICE" {
+  if (!service) return "SERVICE";
+  const byVertical = String(service.bookingVertical ?? "")
+    .trim()
+    .toUpperCase();
+  if (byVertical === "COURT" || byVertical === "CLASS" || byVertical === "SERVICE") {
+    return byVertical;
+  }
+  const byDomain = String(service.category?.domain ?? "")
+    .trim()
+    .toUpperCase();
+  if (byDomain === "COURT" || byDomain === "CLASS" || byDomain === "SERVICE") {
+    return byDomain;
+  }
+  const byKind = String(service.kind ?? "")
+    .trim()
+    .toUpperCase();
+  if (byKind === "COURT") return "COURT";
+  if (byKind === "CLASS") return "CLASS";
+  return "SERVICE";
+}
+
 function BookingPaymentForm({
   amountCents,
   currency,
@@ -419,6 +443,30 @@ export default function ReservasBookingClient({
   const [selectedSlot, setSelectedSlot] = useState<AvailabilitySlot | null>(null);
 
   const selectedService = activeServices.find((service) => service.id === selectedServiceId) ?? null;
+  const selectedServiceVertical = resolveServiceVertical(selectedService);
+  const selectedServiceApiId = selectedService?.backingServiceId ?? selectedServiceId;
+  const normalizedOrganizationUsername = organization.username?.trim() ?? "";
+  const publicCalendarsConfig = useMemo(() => {
+    if (!normalizedOrganizationUsername) return null;
+    const basePath = `/api/public/org/${encodeURIComponent(normalizedOrganizationUsername)}/reservas`;
+    if (selectedServiceVertical === "COURT" && selectedService?.courtId) {
+      return {
+        calendarPath: `${basePath}/campos/calendario`,
+        reservePath: `${basePath}/campos/reservar`,
+        queryParams: { courtId: String(selectedService.courtId) },
+        reservePayload: { courtId: selectedService.courtId },
+      } as const;
+    }
+    if (selectedServiceVertical === "CLASS" && selectedServiceApiId) {
+      return {
+        calendarPath: `${basePath}/aulas/calendario`,
+        reservePath: `${basePath}/aulas/reservar`,
+        queryParams: { serviceId: String(selectedServiceApiId) },
+        reservePayload: { serviceId: selectedServiceApiId },
+      } as const;
+    }
+    return null;
+  }, [normalizedOrganizationUsername, selectedService?.courtId, selectedServiceApiId, selectedServiceVertical]);
   const resolvedAddressId = selectedService?.addressId ?? organization.addressId ?? null;
   const resolvedAddressLabel =
     selectedService?.addressRef?.formattedAddress ??
@@ -514,7 +562,7 @@ export default function ReservasBookingClient({
       })
     : null;
   const baseServiceCents = selectedService?.unitPriceCents ?? 0;
-  const isCourtService = selectedService?.kind === "COURT";
+  const isCourtService = selectedServiceVertical === "COURT";
   const packageOptions = useMemo(
     () =>
       (isCourtService ? [] : selectedService?.packages ?? [])
@@ -706,6 +754,35 @@ export default function ReservasBookingClient({
     setBookingPolicy(nextPolicy);
   };
 
+  const buildCalendarUrl = (params: URLSearchParams) => {
+    if (publicCalendarsConfig) {
+      const query = new URLSearchParams(params);
+      Object.entries(publicCalendarsConfig.queryParams).forEach(([key, value]) => {
+        query.set(key, value);
+      });
+      return `${publicCalendarsConfig.calendarPath}?${query.toString()}`;
+    }
+    return `/api/servicos/${selectedServiceApiId}/calendario?${params.toString()}`;
+  };
+
+  const buildReserveRequest = (
+    payload: Record<string, unknown>,
+  ): { url: string; body: Record<string, unknown> } => {
+    if (publicCalendarsConfig) {
+      return {
+        url: publicCalendarsConfig.reservePath,
+        body: {
+          ...payload,
+          ...publicCalendarsConfig.reservePayload,
+        },
+      };
+    }
+    return {
+      url: `/api/servicos/${selectedServiceApiId}/reservar`,
+      body: payload,
+    };
+  };
+
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -848,7 +925,7 @@ export default function ReservasBookingClient({
   }, [activeStep, canAccessStep4]);
 
   useEffect(() => {
-    if (!selectedServiceId) return;
+    if (!selectedServiceApiId) return;
     if (requiresResource && !selectedPartySize) {
       setAvailabilityDays([]);
       return;
@@ -879,7 +956,7 @@ export default function ReservasBookingClient({
       params.set("durationMinutes", String(durationOverrideMinutes));
     }
 
-    fetch(`/api/servicos/${selectedServiceId}/calendario?${params.toString()}`, {
+    fetch(buildCalendarUrl(params), {
       cache: "no-store",
       signal: controller.signal,
     })
@@ -905,7 +982,7 @@ export default function ReservasBookingClient({
 
     return () => controller.abort();
   }, [
-    selectedServiceId,
+    selectedServiceApiId,
     requiresProfessional,
     requiresResource,
     selectedProfessionalId,
@@ -916,6 +993,7 @@ export default function ReservasBookingClient({
     durationOverrideMinutes,
     isCourtService,
     effectiveDurationMinutes,
+    publicCalendarsConfig,
   ]);
 
   useEffect(
@@ -943,7 +1021,7 @@ export default function ReservasBookingClient({
   const selectedDayAvailability = selectedDay ? availabilityMap.get(selectedDay) ?? null : null;
 
   const loadDaySlots = (iso: string, options?: { force?: boolean }) => {
-    if (!selectedServiceId) return;
+    if (!selectedServiceApiId) return;
     if (requiresResource && !selectedPartySize) return;
     const availability = availabilityMap.get(iso);
     if (!options?.force && availability && !availability.hasAvailability) return;
@@ -980,7 +1058,7 @@ export default function ReservasBookingClient({
       params.set("durationMinutes", String(durationOverrideMinutes));
     }
 
-    fetch(`/api/servicos/${selectedServiceId}/calendario?${params.toString()}`, {
+    fetch(buildCalendarUrl(params), {
       cache: "no-store",
       signal: controller.signal,
     })
@@ -1028,7 +1106,7 @@ export default function ReservasBookingClient({
   };
 
   const startBookingCheckout = async (bookingId: number, method?: PaymentMethod) => {
-    if (!selectedServiceId) return;
+    if (!selectedServiceApiId) return;
     if (!ensureAuth(redirectPath)) return;
 
     const resolvedMethod = method ?? paymentMethod;
@@ -1038,7 +1116,7 @@ export default function ReservasBookingClient({
     setPaymentMessage(null);
 
     try {
-      const res = await fetch(`/api/servicos/${selectedServiceId}/checkout`, {
+      const res = await fetch(`/api/servicos/${selectedServiceApiId}/checkout`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ bookingId, paymentMethod: resolvedMethod }),
@@ -1154,7 +1232,7 @@ export default function ReservasBookingClient({
   };
 
   const reserveSlot = async (slot: AvailabilitySlot) => {
-    if (!selectedServiceId || !selectedService) return;
+    if (!selectedServiceApiId || !selectedService) return;
     if (!ensureAuth(redirectPath)) return;
 
     if (bookingPending) {
@@ -1179,18 +1257,20 @@ export default function ReservasBookingClient({
         setBookingError("Seleciona uma morada antes de reservar.");
         return;
       }
-      const res = await fetch(`/api/servicos/${selectedServiceId}/reservar`, {
+      const reservePayload = {
+        startsAt: slot.startsAt,
+        professionalId: requiresProfessional ? selectedProfessionalId : null,
+        partySize: requiresResource ? selectedPartySize : null,
+        addressId: resolvedAddressId,
+        selectedAddons: selectedAddonsPayload,
+        packageId: isCourtService ? null : selectedPackageId,
+        durationMinutes: isCourtService ? effectiveDurationMinutes : durationOverrideMinutes,
+      } satisfies Record<string, unknown>;
+      const reserveRequest = buildReserveRequest(reservePayload);
+      const res = await fetch(reserveRequest.url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          startsAt: slot.startsAt,
-          professionalId: requiresProfessional ? selectedProfessionalId : null,
-          partySize: requiresResource ? selectedPartySize : null,
-          addressId: resolvedAddressId,
-          selectedAddons: selectedAddonsPayload,
-          packageId: isCourtService ? null : selectedPackageId,
-          durationMinutes: isCourtService ? effectiveDurationMinutes : durationOverrideMinutes,
-        }),
+        body: JSON.stringify(reserveRequest.body),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {

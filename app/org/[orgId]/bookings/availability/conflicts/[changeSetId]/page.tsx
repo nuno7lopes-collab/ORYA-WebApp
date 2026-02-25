@@ -32,7 +32,7 @@ export default function LegacyBookingsAvailabilityConflictsPage({
     }
   });
 
-  const destination = buildOrgHref(organizationId, `/calendar/availability/conflicts/${changeSetId}`);
+  const destination = buildOrgHref(organizationId, `/calendar/conflicts/${changeSetId}`);
   const serialized = query.toString();
   redirect(serialized ? `${destination}?${serialized}` : destination);
 }

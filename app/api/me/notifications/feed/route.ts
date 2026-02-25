@@ -26,6 +26,8 @@ import {
 
 const CHAT_TYPES = NOTIFICATION_TYPES_BY_CATEGORY.chat;
 const NETWORK_TYPES = NOTIFICATION_TYPES_BY_CATEGORY.network;
+const EVENT_ID_KEYS = ["eventId", "event_id", "tournamentId", "tournament_id"];
+const loggedMissingFieldWarnings = new Set<string>();
 
 const parseCursor = (raw?: string | null) => {
   if (!raw) return null;
@@ -59,6 +61,23 @@ const resolveNumericFromPayload = (payload: Record<string, unknown>, keys: strin
   return null;
 };
 
+const resolveEventSlugFromCtaUrl = (ctaUrl: string | null | undefined) => {
+  if (!ctaUrl || typeof ctaUrl !== "string") return null;
+  const trimmed = ctaUrl.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = trimmed.startsWith("http://") || trimmed.startsWith("https://")
+      ? new URL(trimmed)
+      : new URL(trimmed, "https://orya.local");
+    const match = parsed.pathname.match(/^\/eventos\/([^/?#]+)/i);
+    if (!match?.[1]) return null;
+    const slug = decodeURIComponent(match[1]).trim();
+    return slug || null;
+  } catch {
+    return null;
+  }
+};
+
 // resolvePayloadKind / resolveRoleLabel / resolveCampaignId vivem no registry
 
 const shouldFallbackOnError = (err: unknown) => {
@@ -84,7 +103,6 @@ async function _GET(req: NextRequest) {
   let tab: "all" | "network" = "all";
   let limit = 30;
   let cursorRaw: string | null = null;
-  const loggedMissingFieldWarnings = new Set<string>();
   try {
     const user = await requireUser();
     userId = user.id;
@@ -331,6 +349,41 @@ async function _GET(req: NextRequest) {
     }
 
     const followRequestMap = new Map(followRequestRows.map((r) => [r.requester_id, r.id] as const));
+    const ctaEventSlugs = Array.from(
+      new Set(
+        notifications
+          .filter((notification) => !notification.eventId && !notification.event)
+          .map((notification) => resolveEventSlugFromCtaUrl(notification.ctaUrl))
+          .filter((slug): slug is string => Boolean(slug)),
+      ),
+    );
+    const ctaEventsBySlug = new Map<
+      string,
+      { id: number; title: string | null; slug: string | null; coverImageUrl: string | null; organizationId: number | null }
+    >();
+    if (ctaEventSlugs.length) {
+      try {
+        const events = await prisma.event.findMany({
+          where: { slug: { in: ctaEventSlugs } },
+          select: { id: true, title: true, slug: true, coverImageUrl: true, organizationId: true },
+        });
+        for (const event of events) {
+          if (event.slug) {
+            ctaEventsBySlug.set(event.slug, event);
+          }
+        }
+      } catch (err) {
+        logError("me.notifications.feed.events_by_slug", err, {
+          requestId: ctx.requestId,
+          correlationId: ctx.correlationId,
+          orgId: ctx.orgId,
+          userId,
+          scope,
+          organizationId: organizationId ?? undefined,
+          tab,
+        });
+      }
+    }
 
     type Group = {
       key: string;
@@ -424,11 +477,34 @@ async function _GET(req: NextRequest) {
       const payload = resolvePayload(primary.payload);
       const payloadKind = resolvePayloadKind(payload);
       const roleLabel = resolveRoleLabel(payload);
-      const payloadEventId = resolveNumericFromPayload(payload, ["eventId", "event_id"]);
+      const payloadEventId = resolveNumericFromPayload(payload, EVENT_ID_KEYS);
       const payloadOrganizationId = resolveNumericFromPayload(payload, ["organizationId", "organization_id"]);
-      const resolvedEventId = primary.event?.id ?? primary.eventId ?? payloadEventId ?? null;
+      const ctaEventSlug = resolveEventSlugFromCtaUrl(primary.ctaUrl);
+      const ctaEvent = ctaEventSlug ? ctaEventsBySlug.get(ctaEventSlug) ?? null : null;
+      const resolvedEvent = primary.event
+        ? {
+            id: primary.event.id,
+            title: primary.event.title,
+            slug: primary.event.slug,
+            coverImageUrl: primary.event.coverImageUrl ?? null,
+            organizationId: primary.event.organizationId ?? null,
+          }
+        : ctaEvent
+          ? {
+              id: ctaEvent.id,
+              title: ctaEvent.title,
+              slug: ctaEvent.slug,
+              coverImageUrl: ctaEvent.coverImageUrl ?? null,
+              organizationId: ctaEvent.organizationId ?? null,
+            }
+          : undefined;
+      const resolvedEventId = resolvedEvent?.id ?? primary.eventId ?? payloadEventId ?? null;
       const resolvedOrganizationId =
-        primary.organization?.id ?? primary.organizationId ?? primary.event?.organizationId ?? payloadOrganizationId ?? null;
+        primary.organization?.id ??
+        primary.organizationId ??
+        resolvedEvent?.organizationId ??
+        payloadOrganizationId ??
+        null;
 
       const singleActor = actorCount === 1 ? actors[0] : null;
       const registryInput = {
@@ -450,15 +526,7 @@ async function _GET(req: NextRequest) {
         actors,
         actorCount,
         followRequestId: singleActor ? followRequestMap.get(singleActor.id) ?? null : null,
-        event: primary.event
-          ? {
-              id: primary.event.id,
-              title: primary.event.title,
-              slug: primary.event.slug,
-              coverImageUrl: primary.event.coverImageUrl ?? null,
-              organizationId: primary.event.organizationId ?? null,
-            }
-          : undefined,
+        event: resolvedEvent,
         organization: primary.organization
           ? {
               id: primary.organization.id,
@@ -480,7 +548,7 @@ async function _GET(req: NextRequest) {
         }
       }
 
-      const thumbnailUrl = primary.event?.coverImageUrl ?? primary.organization?.brandingCoverUrl ?? null;
+      const thumbnailUrl = resolvedEvent?.coverImageUrl ?? primary.organization?.brandingCoverUrl ?? null;
 
       return {
         id: primary.id,

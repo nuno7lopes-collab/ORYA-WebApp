@@ -82,6 +82,7 @@ describe("shouldPinOrganizationTopbar", () => {
   it("fixa a topbar em todas as ferramentas", () => {
     expect(shouldPinOrganizationTopbar("/org/50/events")).toBe(true);
     expect(shouldPinOrganizationTopbar("/org/50/calendar/availability")).toBe(true);
+    expect(shouldPinOrganizationTopbar("/org/50/calendar/conflicts")).toBe(true);
     expect(shouldPinOrganizationTopbar("/org/50/calendar/availability/conflicts/11")).toBe(true);
     expect(shouldPinOrganizationTopbar("/org/50/check-in/scanner")).toBe(true);
     expect(shouldPinOrganizationTopbar("/org/50/chat/preview")).toBe(true);

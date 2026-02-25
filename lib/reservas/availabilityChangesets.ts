@@ -8,8 +8,14 @@ import {
   ClassSessionStatus,
   Prisma,
   PrismaClient,
+  SourceType,
 } from "@prisma/client";
 import { getDateParts, normalizeIntervals, resolveIntervalsForDate, resolveScheduleForDate } from "@/lib/reservas/availability";
+import {
+  cancelBookingByOrganizationInTx,
+  runOrganizationBookingCancellationPostActions,
+  type OrgBookingCancellationTxResult,
+} from "@/lib/reservas/orgBookingCancellation";
 
 type Tx = Prisma.TransactionClient;
 
@@ -102,25 +108,6 @@ type ConflictCandidate = {
   reasonCode: string;
 };
 
-type BookingConflictRow = {
-  id: number;
-  status: BookingStatus;
-  startsAt: Date;
-  durationMinutes: number;
-  professionalId: number | null;
-  resourceId: number | null;
-  courtId: number | null;
-};
-
-type SessionConflictRow = {
-  id: number;
-  status: ClassSessionStatus;
-  startsAt: Date;
-  endsAt: Date;
-  professionalId: number | null;
-  courtId: number | null;
-};
-
 type LoadedAvailabilityState = {
   schedulesByScope: Map<string, ScheduleRow[]>;
   templatesBySchedule: Map<number, Map<number, Interval[]>>;
@@ -128,18 +115,24 @@ type LoadedAvailabilityState = {
   resourceByCourtId: Map<number, number>;
 };
 
+type ChangesetEngineError = Error & {
+  details?: Record<string, unknown>;
+};
+
+export type ChangesetConflictPostAction =
+  | {
+      type: "BOOKING_CANCEL_POST_ACTIONS";
+      payload: OrgBookingCancellationTxResult;
+    };
+
 const ACTIVE_BOOKING_STATUSES: BookingStatus[] = [
+  BookingStatus.PENDING_CONFIRMATION,
   BookingStatus.PENDING,
   BookingStatus.CONFIRMED,
   BookingStatus.DISPUTED,
   BookingStatus.NO_SHOW,
 ];
-
-const CANCELLED_BOOKING_STATUSES: BookingStatus[] = [
-  BookingStatus.CANCELLED,
-  BookingStatus.CANCELLED_BY_CLIENT,
-  BookingStatus.CANCELLED_BY_ORG,
-];
+const DEFAULT_CONFLICT_REASON = "OUTSIDE_AVAILABILITY";
 
 const WEEKDAY_MAP: Record<string, number> = {
   sun: 0,
@@ -150,6 +143,51 @@ const WEEKDAY_MAP: Record<string, number> = {
   fri: 5,
   sat: 6,
 };
+
+function createChangesetEngineError(message: string, details?: Record<string, unknown>): ChangesetEngineError {
+  const error = new Error(message) as ChangesetEngineError;
+  if (details && Object.keys(details).length > 0) {
+    error.details = details;
+  }
+  return error;
+}
+
+function conflictKey(entityType: AvailabilityConflictEntityType, entityId: number) {
+  return `${entityType}:${entityId}`;
+}
+
+function getEntityLabel(entityType: AvailabilityConflictEntityType) {
+  switch (entityType) {
+    case AvailabilityConflictEntityType.BOOKING:
+      return "BOOKING";
+    case AvailabilityConflictEntityType.CLASS_SESSION:
+      return "CLASS_SESSION";
+    case AvailabilityConflictEntityType.MATCH:
+      return "MATCH";
+    case AvailabilityConflictEntityType.SOFT_BLOCK:
+      return "SOFT_BLOCK";
+    case AvailabilityConflictEntityType.HARD_BLOCK:
+      return "HARD_BLOCK";
+    default:
+      return "UNKNOWN";
+  }
+}
+
+function isCancelableConflictEntity(entityType: AvailabilityConflictEntityType) {
+  return (
+    entityType === AvailabilityConflictEntityType.BOOKING ||
+    entityType === AvailabilityConflictEntityType.CLASS_SESSION
+  );
+}
+
+function buildConflictDetails(entity: EntityForConflict): Prisma.JsonObject {
+  return {
+    entityType: getEntityLabel(entity.entityType),
+    professionalId: entity.professionalId,
+    resourceId: entity.resourceId,
+    courtId: entity.courtId,
+  };
+}
 
 function buildScopeKey(scopeType: AvailabilityScopeType, scopeId: number) {
   return `${scopeType}:${scopeId}`;
@@ -621,28 +659,43 @@ async function fetchEntitiesForConflict(
     startsAt: { gte: now },
   };
 
+  let agendaWhere: Prisma.AgendaItemWhereInput = {
+    organizationId: scope.organizationId,
+    sourceType: { in: [SourceType.MATCH, SourceType.SOFT_BLOCK, SourceType.HARD_BLOCK] },
+    endsAt: { gt: now },
+  };
+
+  let resourceCourtId: number | null = null;
+
   if (scope.scopeType === "PROFESSIONAL") {
     bookingWhere = { ...bookingWhere, professionalId: scope.scopeId };
     sessionWhere = { ...sessionWhere, professionalId: scope.scopeId };
+    agendaWhere = { ...agendaWhere, professionalId: scope.scopeId };
   } else if (scope.scopeType === "RESOURCE") {
     const resource = await tx.reservationResource.findFirst({
       where: { id: scope.scopeId, organizationId: scope.organizationId },
       select: { courtId: true },
     });
+    resourceCourtId = resource?.courtId ?? null;
 
     bookingWhere = {
       ...bookingWhere,
-      OR: [{ resourceId: scope.scopeId }, ...(resource?.courtId ? [{ courtId: resource.courtId }] : [])],
+      OR: [{ resourceId: scope.scopeId }, ...(resourceCourtId ? [{ courtId: resourceCourtId }] : [])],
     };
 
-    if (resource?.courtId) {
-      sessionWhere = { ...sessionWhere, courtId: resource.courtId };
+    if (resourceCourtId) {
+      sessionWhere = { ...sessionWhere, courtId: resourceCourtId };
     } else {
       sessionWhere = { ...sessionWhere, id: -1 };
     }
+
+    agendaWhere = {
+      ...agendaWhere,
+      OR: [{ resourceId: scope.scopeId }, ...(resourceCourtId ? [{ courtId: resourceCourtId }] : [])],
+    };
   }
 
-  const [bookings, sessions] = await Promise.all([
+  const [bookings, sessions, agendaItems] = await Promise.all([
     tx.booking.findMany({
       where: bookingWhere,
       select: {
@@ -661,6 +714,18 @@ async function fetchEntitiesForConflict(
         startsAt: true,
         endsAt: true,
         professionalId: true,
+        courtId: true,
+      },
+    }),
+    tx.agendaItem.findMany({
+      where: agendaWhere,
+      select: {
+        sourceType: true,
+        sourceId: true,
+        startsAt: true,
+        endsAt: true,
+        professionalId: true,
+        resourceId: true,
         courtId: true,
       },
     }),
@@ -686,7 +751,55 @@ async function fetchEntitiesForConflict(
     courtId: session.courtId,
   }));
 
-  return [...bookingEntities, ...sessionEntities];
+  const agendaEntities: EntityForConflict[] = [];
+  for (const agendaItem of agendaItems) {
+    const entityId = Number(agendaItem.sourceId);
+    if (!Number.isFinite(entityId) || entityId <= 0) continue;
+
+    const resourceId =
+      agendaItem.resourceId ??
+      (agendaItem.courtId != null ? state.resourceByCourtId.get(agendaItem.courtId) ?? null : null);
+
+    if (agendaItem.sourceType === SourceType.MATCH) {
+      agendaEntities.push({
+        entityType: AvailabilityConflictEntityType.MATCH,
+        entityId,
+        startsAt: agendaItem.startsAt,
+        endsAt: agendaItem.endsAt,
+        professionalId: agendaItem.professionalId,
+        resourceId,
+        courtId: agendaItem.courtId,
+      });
+      continue;
+    }
+
+    if (agendaItem.sourceType === SourceType.HARD_BLOCK) {
+      agendaEntities.push({
+        entityType: AvailabilityConflictEntityType.HARD_BLOCK,
+        entityId,
+        startsAt: agendaItem.startsAt,
+        endsAt: agendaItem.endsAt,
+        professionalId: agendaItem.professionalId,
+        resourceId,
+        courtId: agendaItem.courtId,
+      });
+      continue;
+    }
+
+    if (agendaItem.sourceType === SourceType.SOFT_BLOCK) {
+      agendaEntities.push({
+        entityType: AvailabilityConflictEntityType.SOFT_BLOCK,
+        entityId,
+        startsAt: agendaItem.startsAt,
+        endsAt: agendaItem.endsAt,
+        professionalId: agendaItem.professionalId,
+        resourceId,
+        courtId: agendaItem.courtId,
+      });
+    }
+  }
+
+  return [...bookingEntities, ...sessionEntities, ...agendaEntities];
 }
 
 export async function buildAvailabilityConflicts(
@@ -716,12 +829,8 @@ export async function buildAvailabilityConflicts(
         entityId: entity.entityId,
         startsAt: entity.startsAt,
         endsAt: entity.endsAt,
-        reasonCode: "OUTSIDE_AVAILABILITY",
-        details: {
-          professionalId: entity.professionalId,
-          resourceId: entity.resourceId,
-          courtId: entity.courtId,
-        },
+        reasonCode: DEFAULT_CONFLICT_REASON,
+        details: buildConflictDetails(entity),
       });
     }
   }
@@ -770,7 +879,9 @@ export async function createAvailabilityChangeset(params: {
   });
 
   if (existingPending) {
-    throw new Error("AVAILABILITY_CHANGESET_PENDING");
+    throw createChangesetEngineError("AVAILABILITY_CHANGESET_PENDING", {
+      existingChangeSetId: existingPending.id,
+    });
   }
 
   const conflicts = await buildAvailabilityConflicts(params.tx, {
@@ -780,52 +891,96 @@ export async function createAvailabilityChangeset(params: {
 
   const status = conflicts.length > 0 ? "PENDING" : "READY_TO_APPLY";
 
-  const changeSet = await params.tx.availabilityChangeSet.create({
-    data: {
-      organizationId: params.scope.organizationId,
-      scopeType: params.scope.scopeType,
-      scopeId: params.scope.scopeId,
-      scheduleId: scopedScheduleId,
-      status,
-      requestedByUserId: params.requestedByUserId,
-      draftPayload: draft.payload as Prisma.InputJsonValue,
-      preflightSummary: {
-        conflictsTotal: conflicts.length,
-      } as Prisma.InputJsonValue,
-      conflicts: conflicts.length
-        ? {
-            createMany: {
-              data: conflicts.map((conflict) => ({
-                organizationId: params.scope.organizationId,
-                status: AvailabilityConflictStatus.OPEN,
-                entityType: conflict.entityType,
-                entityId: conflict.entityId,
-                scopeType: params.scope.scopeType,
-                scopeId: params.scope.scopeId,
-                startsAt: conflict.startsAt,
-                endsAt: conflict.endsAt,
-                reasonCode: conflict.reasonCode,
-                details: conflict.details,
-              })),
-            },
-          }
-        : undefined,
-    },
-    select: {
-      id: true,
-      status: true,
-      scheduleId: true,
-      createdAt: true,
-      updatedAt: true,
-      _count: { select: { conflicts: { where: { status: AvailabilityConflictStatus.OPEN } } } },
-    },
-  });
+  let changeSet: {
+    id: number;
+    status: string;
+    scheduleId: number | null;
+    createdAt: Date;
+    updatedAt: Date;
+    _count: { conflicts: number };
+  };
+  try {
+    changeSet = await params.tx.availabilityChangeSet.create({
+      data: {
+        organizationId: params.scope.organizationId,
+        scopeType: params.scope.scopeType,
+        scopeId: params.scope.scopeId,
+        scheduleId: scopedScheduleId,
+        status,
+        requestedByUserId: params.requestedByUserId,
+        draftPayload: draft.payload as Prisma.InputJsonValue,
+        preflightSummary: {
+          conflictsTotal: conflicts.length,
+        } as Prisma.InputJsonValue,
+        conflicts: conflicts.length
+          ? {
+              createMany: {
+                data: conflicts.map((conflict) => ({
+                  organizationId: params.scope.organizationId,
+                  status: AvailabilityConflictStatus.OPEN,
+                  entityType: conflict.entityType,
+                  entityId: conflict.entityId,
+                  scopeType: params.scope.scopeType,
+                  scopeId: params.scope.scopeId,
+                  startsAt: conflict.startsAt,
+                  endsAt: conflict.endsAt,
+                  reasonCode: conflict.reasonCode,
+                  details: conflict.details,
+                })),
+              },
+            }
+          : undefined,
+      },
+      select: {
+        id: true,
+        status: true,
+        scheduleId: true,
+        createdAt: true,
+        updatedAt: true,
+        _count: { select: { conflicts: { where: { status: AvailabilityConflictStatus.OPEN } } } },
+      },
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      throw createChangesetEngineError("AVAILABILITY_CHANGESET_PENDING");
+    }
+    throw error;
+  }
 
   return {
     changeSetId: changeSet.id,
     status: changeSet.status,
     conflictsOpen: changeSet._count.conflicts,
   };
+}
+
+function isJsonEquivalent(a: unknown, b: unknown) {
+  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+}
+
+async function syncChangesetLifecycle(tx: Tx, params: { changeSetId: number; status: string; preflightSummary: unknown }) {
+  const openCount = await tx.availabilityChangeConflict.count({
+    where: { changeSetId: params.changeSetId, status: AvailabilityConflictStatus.OPEN },
+  });
+  if (params.status === "APPLIED" || params.status === "CANCELLED") {
+    return openCount;
+  }
+
+  await tx.availabilityChangeSet.update({
+    where: { id: params.changeSetId },
+    data: {
+      status: openCount > 0 ? "PENDING" : "READY_TO_APPLY",
+      preflightSummary: {
+        ...(params.preflightSummary && typeof params.preflightSummary === "object"
+          ? (params.preflightSummary as Record<string, unknown>)
+          : {}),
+        conflictsTotal: openCount,
+        refreshedAt: new Date().toISOString(),
+      } as Prisma.InputJsonValue,
+    },
+  });
+
+  return openCount;
 }
 
 export async function refreshChangesetConflicts(
@@ -840,15 +995,19 @@ export async function refreshChangesetConflicts(
       scopeType: true,
       scopeId: true,
       draftPayload: true,
+      preflightSummary: true,
       status: true,
       conflicts: {
-        where: { status: AvailabilityConflictStatus.OPEN },
         select: {
           id: true,
+          status: true,
           entityType: true,
           entityId: true,
+          scopeType: true,
+          scopeId: true,
           startsAt: true,
           endsAt: true,
+          reasonCode: true,
           details: true,
         },
       },
@@ -856,6 +1015,7 @@ export async function refreshChangesetConflicts(
   });
 
   if (!changeSet) return;
+  if (changeSet.status === "APPLIED" || changeSet.status === "CANCELLED") return;
 
   const draft = parseChangesetDraftPayload(changeSet.draftPayload);
   const scope: ScopeInfo = {
@@ -865,156 +1025,119 @@ export async function refreshChangesetConflicts(
     timezone: params.timezone,
   };
 
-  const state = await loadAvailabilityState(tx, params.organizationId);
-  const schedulesByScope = buildResultingSchedules(state, draft, scope);
+  const candidates = await buildAvailabilityConflicts(tx, {
+    scope,
+    draft,
+  });
 
-  const bookingConflictIds = changeSet.conflicts
-    .filter((conflict) => conflict.entityType === AvailabilityConflictEntityType.BOOKING)
-    .map((conflict) => conflict.entityId);
-  const sessionConflictIds = changeSet.conflicts
-    .filter((conflict) => conflict.entityType === AvailabilityConflictEntityType.CLASS_SESSION)
-    .map((conflict) => conflict.entityId);
-
-  const bookingsPromise: Promise<BookingConflictRow[]> = bookingConflictIds.length
-    ? tx.booking.findMany({
-        where: { id: { in: bookingConflictIds }, organizationId: params.organizationId },
-        select: {
-          id: true,
-          status: true,
-          startsAt: true,
-          durationMinutes: true,
-          professionalId: true,
-          resourceId: true,
-          courtId: true,
-        },
-      })
-    : Promise.resolve<BookingConflictRow[]>([]);
-  const sessionsPromise: Promise<SessionConflictRow[]> = sessionConflictIds.length
-    ? tx.classSession.findMany({
-        where: { id: { in: sessionConflictIds }, organizationId: params.organizationId },
-        select: {
-          id: true,
-          status: true,
-          startsAt: true,
-          endsAt: true,
-          professionalId: true,
-          courtId: true,
-        },
-      })
-    : Promise.resolve<SessionConflictRow[]>([]);
-
-  const [bookings, sessions] = await Promise.all([
-    bookingsPromise,
-    sessionsPromise,
-  ]);
-
-  const bookingById = new Map(bookings.map((booking) => [booking.id, booking]));
-  const sessionById = new Map(sessions.map((session) => [session.id, session]));
+  const candidatesByKey = new Map(candidates.map((candidate) => [conflictKey(candidate.entityType, candidate.entityId), candidate]));
+  const now = new Date();
+  let reopenedCount = 0;
+  let createdCount = 0;
+  let resolvedCount = 0;
+  let updatedCount = 0;
 
   for (const conflict of changeSet.conflicts) {
-    if (conflict.entityType === AvailabilityConflictEntityType.BOOKING) {
-      const booking = bookingById.get(conflict.entityId);
-      if (!booking || CANCELLED_BOOKING_STATUSES.includes(booking.status) || booking.status === BookingStatus.COMPLETED) {
-        await tx.availabilityChangeConflict.update({
-          where: { id: conflict.id },
-          data: {
-            status: AvailabilityConflictStatus.RESOLVED,
-            resolutionAction: AvailabilityConflictResolutionAction.CANCELLED,
-            resolvedAt: new Date(),
-          },
-        });
-        continue;
-      }
+    const key = conflictKey(conflict.entityType, conflict.entityId);
+    const candidate = candidatesByKey.get(key);
+    if (!candidate) continue;
+    candidatesByKey.delete(key);
 
-      const entity: EntityForConflict = {
-        entityType: AvailabilityConflictEntityType.BOOKING,
-        entityId: booking.id,
-        startsAt: booking.startsAt,
-        endsAt: new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000),
-        professionalId: booking.professionalId,
-        resourceId: booking.resourceId,
-        courtId: booking.courtId,
-      };
-
-      const covered = isEntityCoveredByResultingAvailability({
-        entity,
-        scope,
-        draft,
-        state,
-        schedulesByScope,
-      });
-
-      if (covered) {
-        await tx.availabilityChangeConflict.update({
-          where: { id: conflict.id },
-          data: {
-            status: AvailabilityConflictStatus.RESOLVED,
-            resolutionAction: AvailabilityConflictResolutionAction.RESCHEDULED,
-            resolvedAt: new Date(),
-          },
-        });
-      }
-      continue;
-    }
-
-    const session = sessionById.get(conflict.entityId);
-    if (!session || session.status !== ClassSessionStatus.SCHEDULED) {
+    if (conflict.status !== AvailabilityConflictStatus.OPEN) {
       await tx.availabilityChangeConflict.update({
         where: { id: conflict.id },
         data: {
-          status: AvailabilityConflictStatus.RESOLVED,
-          resolutionAction: AvailabilityConflictResolutionAction.CANCELLED,
-          resolvedAt: new Date(),
+          status: AvailabilityConflictStatus.OPEN,
+          scopeType: changeSet.scopeType,
+          scopeId: changeSet.scopeId,
+          startsAt: candidate.startsAt,
+          endsAt: candidate.endsAt,
+          reasonCode: candidate.reasonCode,
+          details: candidate.details,
+          resolutionAction: null,
+          resolvedAt: null,
         },
       });
+      reopenedCount += 1;
       continue;
     }
 
-    const entity: EntityForConflict = {
-      entityType: AvailabilityConflictEntityType.CLASS_SESSION,
-      entityId: session.id,
-      startsAt: session.startsAt,
-      endsAt: session.endsAt,
-      professionalId: session.professionalId,
-      resourceId: session.courtId != null ? state.resourceByCourtId.get(session.courtId) ?? null : null,
-      courtId: session.courtId,
-    };
+    const needsUpdate =
+      conflict.scopeType !== changeSet.scopeType ||
+      conflict.scopeId !== changeSet.scopeId ||
+      conflict.startsAt.getTime() !== candidate.startsAt.getTime() ||
+      conflict.endsAt.getTime() !== candidate.endsAt.getTime() ||
+      conflict.reasonCode !== candidate.reasonCode ||
+      !isJsonEquivalent(conflict.details, candidate.details);
 
-    const covered = isEntityCoveredByResultingAvailability({
-      entity,
-      scope,
-      draft,
-      state,
-      schedulesByScope,
-    });
+    if (!needsUpdate) continue;
 
-    if (covered) {
-      await tx.availabilityChangeConflict.update({
-        where: { id: conflict.id },
-        data: {
-          status: AvailabilityConflictStatus.RESOLVED,
-          resolutionAction: AvailabilityConflictResolutionAction.RESCHEDULED,
-          resolvedAt: new Date(),
-        },
-      });
-    }
-  }
-
-  const openCount = await tx.availabilityChangeConflict.count({
-    where: { changeSetId: changeSet.id, status: AvailabilityConflictStatus.OPEN },
-  });
-  if (changeSet.status !== "APPLIED" && changeSet.status !== "CANCELLED") {
-    await tx.availabilityChangeSet.update({
-      where: { id: changeSet.id },
+    await tx.availabilityChangeConflict.update({
+      where: { id: conflict.id },
       data: {
-        status: openCount > 0 ? "PENDING" : "READY_TO_APPLY",
-        preflightSummary: {
-          conflictsTotal: openCount,
-          refreshedAt: new Date().toISOString(),
-        } as Prisma.InputJsonValue,
+        scopeType: changeSet.scopeType,
+        scopeId: changeSet.scopeId,
+        startsAt: candidate.startsAt,
+        endsAt: candidate.endsAt,
+        reasonCode: candidate.reasonCode,
+        details: candidate.details,
       },
     });
+    updatedCount += 1;
   }
+
+  for (const conflict of changeSet.conflicts) {
+    if (conflict.status !== AvailabilityConflictStatus.OPEN) continue;
+    const key = conflictKey(conflict.entityType, conflict.entityId);
+    if (candidatesByKey.has(key)) continue;
+
+    await tx.availabilityChangeConflict.update({
+      where: { id: conflict.id },
+      data: {
+        status: AvailabilityConflictStatus.RESOLVED,
+        resolutionAction: AvailabilityConflictResolutionAction.EXTERNAL_RESOLUTION,
+        resolvedAt: now,
+      },
+    });
+    resolvedCount += 1;
+  }
+
+  if (candidatesByKey.size > 0) {
+    await tx.availabilityChangeConflict.createMany({
+      data: Array.from(candidatesByKey.values()).map((candidate) => ({
+        organizationId: changeSet.organizationId,
+        changeSetId: changeSet.id,
+        status: AvailabilityConflictStatus.OPEN,
+        entityType: candidate.entityType,
+        entityId: candidate.entityId,
+        scopeType: changeSet.scopeType,
+        scopeId: changeSet.scopeId,
+        startsAt: candidate.startsAt,
+        endsAt: candidate.endsAt,
+        reasonCode: candidate.reasonCode,
+        details: candidate.details,
+      })),
+    });
+    createdCount = candidatesByKey.size;
+  }
+
+  const openCount = await syncChangesetLifecycle(tx, {
+    changeSetId: changeSet.id,
+    status: changeSet.status,
+    preflightSummary: changeSet.preflightSummary,
+  });
+
+  console.info("[availability][changeset_refresh]", {
+    organizationId: changeSet.organizationId,
+    changeSetId: changeSet.id,
+    scopeType: changeSet.scopeType,
+    scopeId: changeSet.scopeId,
+    openCount,
+    reopenedCount,
+    createdCount,
+    resolvedCount,
+    updatedCount,
+  });
 }
 
 export async function applyAvailabilityChangeset(params: {
@@ -1057,7 +1180,14 @@ export async function applyAvailabilityChangeset(params: {
   });
 
   if (remainingOpen > 0) {
-    throw new Error("AVAILABILITY_CHANGESET_NOT_READY");
+    console.info("[availability][changeset_apply_blocked]", {
+      organizationId: changeSet.organizationId,
+      changeSetId: changeSet.id,
+      conflictsOpen: remainingOpen,
+    });
+    throw createChangesetEngineError("AVAILABILITY_CHANGESET_NOT_READY", {
+      conflictsOpen: remainingOpen,
+    });
   }
 
   const draft = parseChangesetDraftPayload(changeSet.draftPayload);
@@ -1209,9 +1339,14 @@ export async function resolveChangesetConflict(params: {
   organizationId: number;
   changeSetId: number;
   conflictId: number;
-  action: "CANCEL" | "RESCHEDULE";
-  startsAt?: Date | null;
+  action: "CANCEL";
+  actorUserId: string;
+  actorRole: string;
+  reason?: string | null;
+  ip?: string | null;
+  userAgent?: string | null;
 }) {
+  const postActions: ChangesetConflictPostAction[] = [];
   const changeSet = await params.tx.availabilityChangeSet.findFirst({
     where: {
       id: params.changeSetId,
@@ -1223,7 +1358,7 @@ export async function resolveChangesetConflict(params: {
       scopeType: true,
       scopeId: true,
       status: true,
-      draftPayload: true,
+      preflightSummary: true,
     },
   });
 
@@ -1236,10 +1371,10 @@ export async function resolveChangesetConflict(params: {
       id: params.conflictId,
       changeSetId: changeSet.id,
       organizationId: params.organizationId,
-      status: AvailabilityConflictStatus.OPEN,
     },
     select: {
       id: true,
+      status: true,
       entityType: true,
       entityId: true,
     },
@@ -1247,178 +1382,136 @@ export async function resolveChangesetConflict(params: {
 
   if (!conflict) throw new Error("CONFLICT_NOT_FOUND");
 
-  const draft = parseChangesetDraftPayload(changeSet.draftPayload);
-  const scope: ScopeInfo = {
-    organizationId: changeSet.organizationId,
-    scopeType: changeSet.scopeType,
-    scopeId: changeSet.scopeId,
-    timezone: (
-      await params.tx.organization.findUnique({
-        where: { id: changeSet.organizationId },
-        select: { timezone: true },
-      })
-    )?.timezone || "Europe/Lisbon",
-  };
-  const state = await loadAvailabilityState(params.tx, params.organizationId);
-  const schedulesByScope = buildResultingSchedules(state, draft, scope);
+  if (params.action !== "CANCEL") {
+    throw new Error("INVALID_ACTION");
+  }
 
-  if (conflict.entityType === AvailabilityConflictEntityType.BOOKING) {
-    const booking = await params.tx.booking.findFirst({
-      where: { id: conflict.entityId, organizationId: params.organizationId },
-      select: {
-        id: true,
-        status: true,
-        startsAt: true,
-        durationMinutes: true,
-        professionalId: true,
-        resourceId: true,
-        courtId: true,
-      },
+  if (conflict.status !== AvailabilityConflictStatus.OPEN) {
+    const openCount = await syncChangesetLifecycle(params.tx, {
+      changeSetId: changeSet.id,
+      status: changeSet.status,
+      preflightSummary: changeSet.preflightSummary,
     });
-    if (!booking) throw new Error("BOOKING_NOT_FOUND");
-
-    if (params.action === "CANCEL") {
-      await params.tx.booking.update({
-        where: { id: booking.id },
-        data: { status: BookingStatus.CANCELLED_BY_ORG },
-      });
-      await params.tx.availabilityChangeConflict.update({
-        where: { id: conflict.id },
-        data: {
-          status: AvailabilityConflictStatus.RESOLVED,
-          resolutionAction: AvailabilityConflictResolutionAction.CANCELLED,
-          resolvedAt: new Date(),
-        },
-      });
-      return;
-    }
-
-    if (!params.startsAt || Number.isNaN(params.startsAt.getTime())) {
-      throw new Error("INVALID_RESCHEDULE_AT");
-    }
-
-    const endsAt = new Date(params.startsAt.getTime() + booking.durationMinutes * 60 * 1000);
-    const entity: EntityForConflict = {
-      entityType: AvailabilityConflictEntityType.BOOKING,
-      entityId: booking.id,
-      startsAt: params.startsAt,
-      endsAt,
-      professionalId: booking.professionalId,
-      resourceId: booking.resourceId,
-      courtId: booking.courtId,
+    return {
+      alreadyResolved: true,
+      postActions,
+      openCount,
     };
+  }
 
-    const covered = isEntityCoveredByResultingAvailability({
-      entity,
-      scope,
-      draft,
-      state,
-      schedulesByScope,
+  if (!isCancelableConflictEntity(conflict.entityType)) {
+    throw new Error("CONFLICT_EXTERNAL_RESOLUTION_REQUIRED");
+  }
+
+  let resolutionAction: AvailabilityConflictResolutionAction = AvailabilityConflictResolutionAction.CANCELLED;
+  if (conflict.entityType === AvailabilityConflictEntityType.BOOKING) {
+    const cancellationResult = await cancelBookingByOrganizationInTx({
+      tx: params.tx,
+      organizationId: params.organizationId,
+      bookingId: conflict.entityId,
+      actorUserId: params.actorUserId,
+      actorRole: params.actorRole,
+      reason: params.reason ?? `Conflito de disponibilidade no pedido #${changeSet.id}`,
+      ip: params.ip ?? null,
+      userAgent: params.userAgent ?? null,
+      auditSource: "AVAILABILITY_CHANGESET",
     });
-
-    if (!covered) {
-      throw new Error("AVAILABILITY_CHANGESET_NOT_READY");
+    postActions.push({
+      type: "BOOKING_CANCEL_POST_ACTIONS",
+      payload: cancellationResult,
+    });
+    if (cancellationResult.already) {
+      resolutionAction = AvailabilityConflictResolutionAction.EXTERNAL_RESOLUTION;
     }
-
-    await params.tx.booking.update({
-      where: { id: booking.id },
-      data: { startsAt: params.startsAt },
+  } else if (conflict.entityType === AvailabilityConflictEntityType.CLASS_SESSION) {
+    const session = await params.tx.classSession.findFirst({
+      where: { id: conflict.entityId, organizationId: params.organizationId },
+      select: { id: true, status: true },
     });
-    await params.tx.availabilityChangeConflict.update({
-      where: { id: conflict.id },
-      data: {
-        status: AvailabilityConflictStatus.RESOLVED,
-        resolutionAction: AvailabilityConflictResolutionAction.RESCHEDULED,
-        resolvedAt: new Date(),
-      },
-    });
-    return;
+
+    if (!session) {
+      resolutionAction = AvailabilityConflictResolutionAction.EXTERNAL_RESOLUTION;
+    } else if (session.status === ClassSessionStatus.SCHEDULED) {
+      await params.tx.classSession.update({
+        where: { id: session.id },
+        data: { status: ClassSessionStatus.CANCELLED },
+      });
+    } else {
+      resolutionAction = AvailabilityConflictResolutionAction.EXTERNAL_RESOLUTION;
+    }
+  } else {
+    throw new Error("CONFLICT_EXTERNAL_RESOLUTION_REQUIRED");
   }
-
-  const session = await params.tx.classSession.findFirst({
-    where: { id: conflict.entityId, organizationId: params.organizationId },
-    select: {
-      id: true,
-      status: true,
-      startsAt: true,
-      endsAt: true,
-      professionalId: true,
-      courtId: true,
-    },
-  });
-
-  if (!session) throw new Error("CLASS_SESSION_NOT_FOUND");
-
-  if (params.action === "CANCEL") {
-    await params.tx.classSession.update({
-      where: { id: session.id },
-      data: { status: ClassSessionStatus.CANCELLED },
-    });
-    await params.tx.availabilityChangeConflict.update({
-      where: { id: conflict.id },
-      data: {
-        status: AvailabilityConflictStatus.RESOLVED,
-        resolutionAction: AvailabilityConflictResolutionAction.CANCELLED,
-        resolvedAt: new Date(),
-      },
-    });
-    return;
-  }
-
-  if (!params.startsAt || Number.isNaN(params.startsAt.getTime())) {
-    throw new Error("INVALID_RESCHEDULE_AT");
-  }
-
-  const durationMinutes = Math.max(5, Math.round((session.endsAt.getTime() - session.startsAt.getTime()) / 60000));
-  const endsAt = new Date(params.startsAt.getTime() + durationMinutes * 60 * 1000);
-
-  const entity: EntityForConflict = {
-    entityType: AvailabilityConflictEntityType.CLASS_SESSION,
-    entityId: session.id,
-    startsAt: params.startsAt,
-    endsAt,
-    professionalId: session.professionalId,
-    resourceId: session.courtId != null ? state.resourceByCourtId.get(session.courtId) ?? null : null,
-    courtId: session.courtId,
-  };
-
-  const covered = isEntityCoveredByResultingAvailability({
-    entity,
-    scope,
-    draft,
-    state,
-    schedulesByScope,
-  });
-
-  if (!covered) {
-    throw new Error("AVAILABILITY_CHANGESET_NOT_READY");
-  }
-
-  await params.tx.classSession.update({
-    where: { id: session.id },
-    data: {
-      startsAt: params.startsAt,
-      endsAt,
-    },
-  });
 
   await params.tx.availabilityChangeConflict.update({
     where: { id: conflict.id },
     data: {
       status: AvailabilityConflictStatus.RESOLVED,
-      resolutionAction: AvailabilityConflictResolutionAction.RESCHEDULED,
+      resolutionAction,
       resolvedAt: new Date(),
     },
   });
+
+  const openCount = await syncChangesetLifecycle(params.tx, {
+    changeSetId: changeSet.id,
+    status: changeSet.status,
+    preflightSummary: changeSet.preflightSummary,
+  });
+
+  return {
+    alreadyResolved: false,
+    postActions,
+    openCount,
+  };
 }
 
-export function mapChangesetError(error: unknown) {
+export async function runChangesetPostActions(params: {
+  prisma: PrismaClient;
+  postActions: ChangesetConflictPostAction[];
+}) {
+  for (const action of params.postActions) {
+    if (action.type === "BOOKING_CANCEL_POST_ACTIONS") {
+      await runOrganizationBookingCancellationPostActions({
+        prisma: params.prisma,
+        result: action.payload,
+      });
+    }
+  }
+}
+
+type MappedChangesetError = {
+  status: number;
+  errorCode: string;
+  message: string;
+  details?: Record<string, unknown>;
+};
+
+export function mapChangesetError(error: unknown): MappedChangesetError {
   const message = error instanceof Error ? error.message : "INTERNAL_ERROR";
+  const details =
+    error &&
+    typeof error === "object" &&
+    "details" in error &&
+    (error as { details?: unknown }).details &&
+    typeof (error as { details?: unknown }).details === "object"
+      ? ((error as { details?: Record<string, unknown> }).details ?? undefined)
+      : undefined;
+
   switch (message) {
     case "AVAILABILITY_CHANGESET_PENDING":
-      return { status: 409, errorCode: "AVAILABILITY_CHANGESET_PENDING", message: "Já existe um pedido pendente para este escopo." };
+      return {
+        status: 409,
+        errorCode: "AVAILABILITY_CHANGESET_PENDING",
+        message: "Já existe um pedido pendente para este escopo.",
+        ...(details ? { details } : {}),
+      };
     case "AVAILABILITY_CHANGESET_NOT_READY":
-      return { status: 409, errorCode: "AVAILABILITY_CHANGESET_NOT_READY", message: "Ainda existem conflitos por resolver." };
+      return {
+        status: 409,
+        errorCode: "AVAILABILITY_CHANGESET_NOT_READY",
+        message: "Ainda existem conflitos por resolver.",
+        ...(details ? { details } : {}),
+      };
     case "AVAILABILITY_CHANGESET_CANCELLED":
       return { status: 409, errorCode: "AVAILABILITY_CHANGESET_CANCELLED", message: "Este pedido foi cancelado." };
     case "AVAILABILITY_SCHEDULE_OVERLAP":
@@ -1426,6 +1519,30 @@ export function mapChangesetError(error: unknown) {
       return { status: 409, errorCode: "AVAILABILITY_SCHEDULE_OVERLAP", message: "Existem sobreposições de horários para este escopo." };
     case "AVAILABILITY_SCHEDULE_INVALID_SCOPE":
       return { status: 409, errorCode: "AVAILABILITY_SCHEDULE_INVALID_SCOPE", message: "Schedule inválido para este escopo." };
+    case "CONFLICT_EXTERNAL_RESOLUTION_REQUIRED":
+      return {
+        status: 409,
+        errorCode: "CONFLICT_EXTERNAL_RESOLUTION_REQUIRED",
+        message: "Este conflito tem de ser resolvido externamente na agenda de origem.",
+      };
+    case "BOOKING_CANCELLATION_NOT_ALLOWED":
+      return {
+        status: 409,
+        errorCode: "BOOKING_CANCELLATION_NOT_ALLOWED",
+        message: "Já não é possível cancelar esta reserva.",
+      };
+    case "BOOKING_CONFIRMATION_SNAPSHOT_REQUIRED":
+      return {
+        status: 409,
+        errorCode: "BOOKING_CONFIRMATION_SNAPSHOT_REQUIRED",
+        message: "Reserva confirmada sem snapshot. Corre o backfill antes de cancelar.",
+      };
+    case "BOOKING_REFUND_FAILED":
+      return {
+        status: 502,
+        errorCode: "BOOKING_REFUND_FAILED",
+        message: "Reserva cancelada, mas o reembolso falhou.",
+      };
     case "INVALID_START_DATE":
     case "INVALID_END_DATE":
     case "END_BEFORE_START":
@@ -1433,7 +1550,7 @@ export function mapChangesetError(error: unknown) {
     case "INVALID_OVERRIDE_DATE":
     case "INVALID_OVERRIDE_KIND":
     case "INVALID_DRAFT_PAYLOAD":
-    case "INVALID_RESCHEDULE_AT":
+    case "INVALID_ACTION":
       return { status: 400, errorCode: message, message: "Pedido inválido." };
     case "NOT_FOUND":
       return { status: 404, errorCode: "NOT_FOUND", message: "Pedido não encontrado." };

@@ -1087,6 +1087,9 @@ const mapNumberArray = (value: unknown): number[] => {
     .filter((entry): entry is number => typeof entry === "number");
 };
 
+const areNumberArraysEqual = (left: number[], right: number[]) =>
+  left.length === right.length && left.every((value, index) => value === right[index]);
+
 const resolveCategoryTeamsForPlanning = (
   link: PadelEventCategoryLink | null | undefined,
   strategy: "runtime-first" | "capacity-first" = "runtime-first",
@@ -3373,15 +3376,15 @@ export default function PadelHubClient({
     }));
   }, [autoScheduleCourtOptions, calendarCourtsRaw]);
   useEffect(() => {
-    if (!calendarCourts.length) {
-      setBulkBlockCourtIds([]);
-      return;
-    }
-    const validIds = new Set(calendarCourts.map((court) => court.id));
     setBulkBlockCourtIds((prev) => {
+      if (!calendarCourts.length) {
+        return prev.length === 0 ? prev : [];
+      }
+      const validIds = new Set(calendarCourts.map((court) => court.id));
       const next = prev.filter((id) => validIds.has(id));
-      if (next.length > 0) return next;
-      return calendarCourts.map((court) => court.id);
+      const fallback = calendarCourts.map((court) => court.id);
+      const resolved = next.length > 0 ? next : fallback;
+      return areNumberArraysEqual(prev, resolved) ? prev : resolved;
     });
   }, [calendarCourts]);
   useEffect(() => {

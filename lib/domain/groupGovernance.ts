@@ -645,6 +645,9 @@ export async function createOrganizationAtomic(input: {
     await enforceGroupGovernanceInvariants(tx, targetGroupId);
 
     return organization;
+  }, {
+    maxWait: 10_000,
+    timeout: 20_000,
   });
 }
 

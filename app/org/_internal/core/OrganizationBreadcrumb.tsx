@@ -89,7 +89,10 @@ function resolveLabel(
     return "Eventos";
   }
   if (/^\/org\/(?:\d+\/)?calendar\/day(?:\/|$)/.test(pathname)) return "Calendário · Dia";
-  if (/^\/org\/(?:\d+\/)?calendar\/availability\/conflicts(?:\/|$)/.test(pathname)) {
+  if (
+    /^\/org\/(?:\d+\/)?calendar\/conflicts(?:\/|$)/.test(pathname) ||
+    /^\/org\/(?:\d+\/)?calendar\/availability\/conflicts(?:\/|$)/.test(pathname)
+  ) {
     return "Calendário · Conflitos de disponibilidade";
   }
   if (/^\/org\/(?:\d+\/)?calendar\/availability(?:\/|$)/.test(pathname)) {

@@ -46,13 +46,12 @@ function fail(
 
 async function _POST(
   req: NextRequest,
-  { params }: { params: Promise<{ changeSetId: string; conflictId: string }> },
+  { params }: { params: Promise<{ changeSetId: string }> },
 ) {
   const ctx = getRequestContext(req);
   const resolved = await params;
   const changeSetId = parseId(resolved.changeSetId);
-  const conflictId = parseId(resolved.conflictId);
-  if (!changeSetId || !conflictId) {
+  if (!changeSetId) {
     return fail(ctx, 400, "INVALID_ID", "ID inválido.");
   }
 
@@ -92,42 +91,92 @@ async function _POST(
       return fail(ctx, scopeAccess.status, scopeAccess.errorCode, scopeAccess.message);
     }
 
-    const payload = await req.json().catch(() => ({}));
-    const actionRaw = String(payload?.action ?? "").trim().toUpperCase();
-    if (actionRaw !== "CANCEL") {
-      return fail(ctx, 400, "INVALID_ACTION", "Ação inválida. Usa CANCEL.");
-    }
-
-    const reason = typeof payload?.reason === "string" ? payload.reason.trim().slice(0, 200) : null;
-    const { ip, userAgent } = getRequestMeta(req);
-
-    const result = await prisma.$transaction(async (tx) =>
-      resolveChangesetConflict({
-        tx,
-        organizationId: organization.id,
-        changeSetId,
-        conflictId,
-        action: "CANCEL",
-        actorUserId: profile.id,
-        actorRole: membership.role,
-        reason,
-        ip,
-        userAgent,
-      }),
+    const payload = (await req.json().catch(() => ({}))) as {
+      conflictIds?: unknown[];
+      reason?: unknown;
+    };
+    const idsRaw: unknown[] = Array.isArray(payload.conflictIds) ? payload.conflictIds : [];
+    const conflictIds: number[] = Array.from(
+      new Set(
+        idsRaw
+          .map((item) => Number(item))
+          .filter((value) => Number.isFinite(value) && value > 0)
+          .map((value) => Math.floor(value)),
+      ),
     );
 
-    await runChangesetPostActions({
-      prisma,
-      postActions: result.postActions,
+    if (!conflictIds.length) {
+      return fail(ctx, 400, "INVALID_CONFLICT_IDS", "Indica pelo menos um conflito válido em conflictIds[].");
+    }
+
+    const reason = typeof payload.reason === "string" ? payload.reason.trim().slice(0, 200) : null;
+    const { ip, userAgent } = getRequestMeta(req);
+
+    const succeeded: Array<{
+      conflictId: number;
+      alreadyResolved: boolean;
+      conflictsOpen: number;
+    }> = [];
+    const failed: Array<{
+      conflictId: number;
+      errorCode: string;
+      message: string;
+      details?: Record<string, unknown>;
+    }> = [];
+
+    for (const conflictId of conflictIds) {
+      try {
+        const result = await prisma.$transaction(async (tx) =>
+          resolveChangesetConflict({
+            tx,
+            organizationId: organization.id,
+            changeSetId,
+            conflictId,
+            action: "CANCEL",
+            actorUserId: profile.id,
+            actorRole: membership.role,
+            reason,
+            ip,
+            userAgent,
+          }),
+        );
+
+        await runChangesetPostActions({
+          prisma,
+          postActions: result.postActions,
+        });
+
+        succeeded.push({
+          conflictId,
+          alreadyResolved: result.alreadyResolved,
+          conflictsOpen: result.openCount,
+        });
+      } catch (error) {
+        const mapped = mapChangesetError(error);
+        failed.push({
+          conflictId,
+          errorCode: mapped.errorCode,
+          message: mapped.message,
+          ...(mapped.details ? { details: mapped.details } : {}),
+        });
+      }
+    }
+
+    console.info("[availability][conflict_bulk_cancel]", {
+      organizationId: organization.id,
+      changeSetId,
+      processed: conflictIds.length,
+      succeeded: succeeded.length,
+      failed: failed.length,
     });
 
     return respondOk(ctx, {
       changeSetId,
-      conflictId,
-      status: "RESOLVED",
-      action: "CANCEL",
-      alreadyResolved: result.alreadyResolved,
-      conflictsOpen: result.openCount,
+      processed: conflictIds.length,
+      succeeded,
+      failed,
+      successCount: succeeded.length,
+      failureCount: failed.length,
     });
   } catch (error) {
     if (isUnauthenticatedError(error)) {

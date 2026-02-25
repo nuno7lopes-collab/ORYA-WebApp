@@ -2,11 +2,14 @@ import { PublicEventCard } from "@orya/shared";
 
 export type DiscoverPriceFilter = "all" | "free" | "paid";
 export type DiscoverDateFilter = "all" | "today" | "weekend" | "upcoming";
-export type DiscoverKind = "all" | "padel" | "events" | "services";
+export type DiscoverKind = "all" | "padel" | "events" | "services" | "classes";
 export type DiscoverWorld = "padel" | "events" | "services";
 
 export type DiscoverServiceCard = {
   id: number;
+  coverImageUrl?: string | null;
+  courtId?: number | null;
+  backingServiceId?: number | null;
   title: string;
   description?: string | null;
   durationMinutes: number;

@@ -40,7 +40,7 @@ type ClubCard = {
   subtitle: string | null;
 };
 
-type PadelSectionKey = "tournaments" | "courts" | "lessons" | "open-games";
+type PadelSectionKey = "tournaments" | "courts" | "lessons" | "open-games" | "services";
 type PadelCardVariant = "tournament" | "court" | "lesson" | "club" | "soon";
 
 const SECTION_OPTIONS: Array<{
@@ -48,10 +48,9 @@ const SECTION_OPTIONS: Array<{
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
 }> = [
-  { key: "tournaments", label: "Torneios", icon: "trophy-outline" },
   { key: "courts", label: "Reservar campo", icon: "grid-outline" },
-  { key: "lessons", label: "Descobrir aulas", icon: "school-outline" },
-  { key: "open-games", label: "Jogos abertos", icon: "tennisball-outline" },
+  { key: "lessons", label: "Aulas", icon: "school-outline" },
+  { key: "services", label: "Serviços", icon: "construct-outline" },
 ];
 
 const TOURNAMENT_KEYWORDS = ["torneio", "tournament", "liga", "open", "cup", "masters"];
@@ -272,7 +271,7 @@ export default function PadelTabScreen() {
   const insets = useSafeAreaInsets();
   const { session } = useAuth();
   const [dataReady, setDataReady] = useState(false);
-  const [activeSection, setActiveSection] = useState<PadelSectionKey>("tournaments");
+  const [activeSection, setActiveSection] = useState<PadelSectionKey>("courts");
   const topPadding = useTopHeaderPadding(12);
   const contentBottomPadding = Math.max(insets.bottom, 12) + 22;
   const topBar = useTopBarScroll({ hideOnScroll: false });
@@ -298,6 +297,16 @@ export default function PadelTabScreen() {
   const lessonsFeed = useDiscoverFeed(
     {
       q: "padel treino aula",
+      type: "all",
+      kind: "classes",
+      date: "upcoming",
+      city: "",
+    },
+    dataReady,
+  );
+  const servicesFeed = useDiscoverFeed(
+    {
+      q: "",
       type: "all",
       kind: "services",
       date: "upcoming",
@@ -344,6 +353,10 @@ export default function PadelTabScreen() {
     () => lessonsFeed.data?.pages.flatMap((page) => page.items) ?? [],
     [lessonsFeed.data?.pages],
   );
+  const servicesOffers = useMemo(
+    () => servicesFeed.data?.pages.flatMap((page) => page.items) ?? [],
+    [servicesFeed.data?.pages],
+  );
   const tournamentsOffers = useMemo(
     () => tournamentsFeed.data?.pages.flatMap((page) => page.items) ?? [],
     [tournamentsFeed.data?.pages],
@@ -387,6 +400,10 @@ export default function PadelTabScreen() {
     () => lessonsOffers.filter(isServiceOffer).map((offer) => offer.service),
     [lessonsOffers],
   );
+  const rawServicesFromServicesFeed = useMemo(
+    () => servicesOffers.filter(isServiceOffer).map((offer) => offer.service),
+    [servicesOffers],
+  );
 
   const courtServices = useMemo(
     () => dedupeServices(rawServicesFromPadelFeed.filter((service) => isCourtLikeService(service))),
@@ -396,11 +413,15 @@ export default function PadelTabScreen() {
   const lessonServices = useMemo(
     () =>
       dedupeServices(
-        [...rawServicesFromLessonsFeed, ...rawServicesFromPadelFeed]
+        [...rawServicesFromLessonsFeed]
           .filter((service) => isLessonLikeService(service))
           .filter((service) => Boolean(service.organization?.id)),
       ),
-    [rawServicesFromLessonsFeed, rawServicesFromPadelFeed],
+    [rawServicesFromLessonsFeed],
+  );
+  const generalServices = useMemo(
+    () => dedupeServices(rawServicesFromServicesFeed.filter((service) => resolveServiceVertical(service) === "SERVICE")),
+    [rawServicesFromServicesFeed],
   );
 
   const clubs = useMemo<ClubCard[]>(() => {
@@ -486,9 +507,15 @@ export default function PadelTabScreen() {
         };
       case "lessons":
         return {
-          title: "Descobrir aulas",
-          subtitle: "Aulas sempre ligadas ao clube da organização",
+          title: "Aulas",
+          subtitle: "Treinos e aulas com reserva direta",
           emptyLabel: "Sem aulas de padel disponíveis neste momento.",
+        };
+      case "services":
+        return {
+          title: "Serviços",
+          subtitle: "Outros serviços do clube",
+          emptyLabel: "Sem serviços adicionais disponíveis neste momento.",
         };
       case "open-games":
         return {
@@ -510,55 +537,63 @@ export default function PadelTabScreen() {
     (padelFeed.isLoading || tournamentsFeed.isLoading || agoraFeed.isLoading);
   const courtsLoading = courtServices.length === 0 && padelFeed.isLoading;
   const lessonsLoading = lessonServices.length === 0 && (padelFeed.isLoading || lessonsFeed.isLoading);
+  const servicesLoading = generalServices.length === 0 && servicesFeed.isLoading;
 
   const activeLoading =
     activeSection === "tournaments"
       ? tournamentsLoading
       : activeSection === "courts"
         ? courtsLoading
-        : activeSection === "lessons"
+      : activeSection === "lessons"
           ? lessonsLoading
-          : false;
+          : activeSection === "services"
+            ? servicesLoading
+            : false;
 
   const tournamentsHasNextPage = Boolean(padelFeed.hasNextPage || tournamentsFeed.hasNextPage);
   const tournamentsFetchingNextPage = Boolean(
     padelFeed.isFetchingNextPage || tournamentsFeed.isFetchingNextPage,
   );
-  const lessonsHasNextPage = Boolean(lessonsFeed.hasNextPage || padelFeed.hasNextPage);
-  const lessonsFetchingNextPage = Boolean(
-    lessonsFeed.isFetchingNextPage || padelFeed.isFetchingNextPage,
-  );
+  const lessonsHasNextPage = Boolean(lessonsFeed.hasNextPage);
+  const lessonsFetchingNextPage = Boolean(lessonsFeed.isFetchingNextPage);
+  const servicesHasNextPage = Boolean(servicesFeed.hasNextPage);
+  const servicesFetchingNextPage = Boolean(servicesFeed.isFetchingNextPage);
 
   const activeHasNextPage =
     activeSection === "lessons"
       ? lessonsHasNextPage
-      : activeSection === "tournaments"
+    : activeSection === "tournaments"
         ? tournamentsHasNextPage
-        : activeSection === "courts"
+      : activeSection === "courts"
           ? Boolean(padelFeed.hasNextPage)
-          : false;
+          : activeSection === "services"
+            ? servicesHasNextPage
+            : false;
 
   const activeFetchingNextPage =
     activeSection === "lessons"
       ? lessonsFetchingNextPage
-      : activeSection === "tournaments"
+    : activeSection === "tournaments"
         ? tournamentsFetchingNextPage
-        : activeSection === "courts"
+      : activeSection === "courts"
           ? Boolean(padelFeed.isFetchingNextPage)
-          : false;
+          : activeSection === "services"
+            ? servicesFetchingNextPage
+            : false;
 
   const activeCount =
     activeSection === "tournaments"
       ? tournamentEvents.length
-      : activeSection === "courts"
+    : activeSection === "courts"
         ? courtServices.length
-        : activeSection === "lessons"
+      : activeSection === "lessons"
           ? lessonServices.length
-          : 0;
+          : activeSection === "services"
+            ? generalServices.length
+            : 0;
 
   const showLoadMore = Boolean(
-    activeSection !== "open-games" &&
-      activeHasNextPage &&
+    activeHasNextPage &&
       activeCount > 0,
   );
 
@@ -574,11 +609,14 @@ export default function PadelTabScreen() {
     }
     if (activeSection === "lessons") {
       if (lessonsFeed.hasNextPage && !lessonsFeed.isFetchingNextPage) lessonsFeed.fetchNextPage();
-      if (padelFeed.hasNextPage && !padelFeed.isFetchingNextPage) padelFeed.fetchNextPage();
       return;
     }
     if (activeSection === "courts" && padelFeed.hasNextPage && !padelFeed.isFetchingNextPage) {
       padelFeed.fetchNextPage();
+      return;
+    }
+    if (activeSection === "services" && servicesFeed.hasNextPage && !servicesFeed.isFetchingNextPage) {
+      servicesFeed.fetchNextPage();
     }
   };
 
@@ -643,9 +681,19 @@ export default function PadelTabScreen() {
             service.addressRef?.formattedAddress ?? "Morada por definir"
           }`}
           onPress={() =>
-            guardedAction(() =>
-              safePush(router, { pathname: "/service/[id]", params: { id: String(service.id) } }),
-            )
+            guardedAction(() => {
+              const params: Record<string, string> = { id: String(service.id) };
+              if (service.organization?.username) {
+                params.orgUsername = service.organization.username;
+              }
+              params.bookingVertical = "COURT";
+              if (typeof service.courtId === "number" && Number.isFinite(service.courtId)) {
+                params.courtId = String(service.courtId);
+                safePush(router, { pathname: "/service/[id]/booking", params });
+                return;
+              }
+              safePush(router, { pathname: "/service/[id]", params: { id: String(service.id) } });
+            })
           }
         />
       ));
@@ -665,6 +713,38 @@ export default function PadelTabScreen() {
           title={service.title}
           badge="AULA"
           variant="lesson"
+          subtitle={service.organization.publicName ?? service.organization.businessName ?? "Clube"}
+          meta={`${formatPriceLabel(service.unitPriceCents, service.currency)} · ${service.durationMinutes} min`}
+          onPress={() =>
+            guardedAction(() => {
+              const params: Record<string, string> = {
+                id: String(service.id),
+                bookingVertical: "CLASS",
+              };
+              if (service.organization?.username) {
+                params.orgUsername = service.organization.username;
+              }
+              safePush(router, { pathname: "/service/[id]/booking", params });
+            })
+          }
+        />
+      ));
+    }
+
+    if (activeSection === "services") {
+      if (generalServices.length === 0) {
+        return (
+          <GlassCard intensity={48} className="mb-3">
+            <Text className="text-white/70 text-sm">{sectionMeta.emptyLabel}</Text>
+          </GlassCard>
+        );
+      }
+      return generalServices.map((service) => (
+        <PadelCard
+          key={`service-${service.id}`}
+          title={service.title}
+          badge="SERVIÇO"
+          variant="club"
           subtitle={service.organization.publicName ?? service.organization.businessName ?? "Clube"}
           meta={`${formatPriceLabel(service.unitPriceCents, service.currency)} · ${service.durationMinutes} min`}
           onPress={() =>

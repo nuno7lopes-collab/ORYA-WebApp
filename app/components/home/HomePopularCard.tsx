@@ -97,8 +97,9 @@ export default function HomePopularCard({
               fill
               sizes="260px"
               draggable={false}
-              onLoadingComplete={(image) => {
+              onLoad={(event) => {
                 if (sampledRef.current) return;
+                const image = event.currentTarget;
                 const resolved = sampleTintFromImage(image);
                 if (resolved) {
                   sampledRef.current = true;

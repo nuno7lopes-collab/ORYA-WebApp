@@ -147,7 +147,12 @@ const resolveAssignmentMode = (
 };
 
 export default function ServiceBookingScreen() {
-  const params = useLocalSearchParams<{ id?: string | string[] }>();
+  const params = useLocalSearchParams<{
+    id?: string | string[];
+    orgUsername?: string | string[];
+    bookingVertical?: string | string[];
+    courtId?: string | string[];
+  }>();
   const router = useRouter();
   const navigation = useNavigation();
   const { session } = useAuth();
@@ -165,6 +170,22 @@ export default function ServiceBookingScreen() {
   } = useServiceDetail(serviceId ? String(serviceId) : "");
   const setCheckoutDraft = useCheckoutStore((state) => state.setDraft);
   const setCheckoutIntent = useCheckoutStore((state) => state.setIntent);
+  const bookingVerticalParam = useMemo(() => {
+    const raw = Array.isArray(params.bookingVertical) ? params.bookingVertical[0] : params.bookingVertical;
+    return String(raw ?? "")
+      .trim()
+      .toUpperCase();
+  }, [params.bookingVertical]);
+  const orgUsernameParam = useMemo(() => {
+    const raw = Array.isArray(params.orgUsername) ? params.orgUsername[0] : params.orgUsername;
+    const value = String(raw ?? "").trim();
+    return value || null;
+  }, [params.orgUsername]);
+  const courtIdParam = useMemo(() => {
+    const raw = Array.isArray(params.courtId) ? params.courtId[0] : params.courtId;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
+  }, [params.courtId]);
 
   const [selectedPackageId, setSelectedPackageId] = useState<number | null>(
     null,
@@ -209,6 +230,32 @@ export default function ServiceBookingScreen() {
   const assignmentMode = useMemo(
     () => resolveAssignmentMode(service ?? null),
     [service],
+  );
+  const selectedServiceApiId = service?.backingServiceId ?? serviceId;
+  const resolvedBookingVertical = useMemo(() => {
+    if (bookingVerticalParam === "COURT" || bookingVerticalParam === "CLASS" || bookingVerticalParam === "SERVICE") {
+      return bookingVerticalParam;
+    }
+    const byVertical = String(service?.bookingVertical ?? "")
+      .trim()
+      .toUpperCase();
+    if (byVertical === "COURT" || byVertical === "CLASS" || byVertical === "SERVICE") {
+      return byVertical;
+    }
+    const byKind = String(service?.kind ?? "")
+      .trim()
+      .toUpperCase();
+    if (byKind === "COURT") return "COURT";
+    if (byKind === "CLASS") return "CLASS";
+    return "SERVICE";
+  }, [bookingVerticalParam, service?.bookingVertical, service?.kind]);
+  const resolvedOrgUsername = orgUsernameParam ?? service?.organization?.username ?? null;
+  const resolvedCourtId = courtIdParam ?? service?.courtId ?? null;
+  const publicCourtFlowEnabled = Boolean(
+    resolvedBookingVertical === "COURT" && resolvedOrgUsername && resolvedCourtId && selectedServiceApiId,
+  );
+  const publicClassFlowEnabled = Boolean(
+    resolvedBookingVertical === "CLASS" && resolvedOrgUsername && selectedServiceApiId,
   );
   const serviceTimezone = service?.organization?.timezone?.trim() || "Europe/Lisbon";
   const isAuthenticated = Boolean(session?.user?.id);
@@ -330,7 +377,7 @@ export default function ServiceBookingScreen() {
   const totalCents = Math.max(0, basePriceCents + addonsDeltaCents);
 
   const canFetchCalendar =
-    Boolean(serviceId) &&
+    Boolean(selectedServiceApiId) &&
     (assignmentMode !== "RESOURCE" || Boolean(selectedPartySize));
 
   const buildAvailabilityParams = useCallback(
@@ -362,15 +409,72 @@ export default function ServiceBookingScreen() {
     ],
   );
 
+  const buildCalendarUrl = useCallback(
+    (params: URLSearchParams) => {
+      if (publicCourtFlowEnabled && resolvedOrgUsername && resolvedCourtId) {
+        const query = new URLSearchParams(params);
+        query.set("courtId", String(resolvedCourtId));
+        return `/api/public/org/${encodeURIComponent(resolvedOrgUsername)}/reservas/campos/calendario?${query.toString()}`;
+      }
+      if (publicClassFlowEnabled && resolvedOrgUsername && selectedServiceApiId) {
+        const query = new URLSearchParams(params);
+        query.set("serviceId", String(selectedServiceApiId));
+        return `/api/public/org/${encodeURIComponent(resolvedOrgUsername)}/reservas/aulas/calendario?${query.toString()}`;
+      }
+      return `/api/servicos/${selectedServiceApiId}/calendario?${params.toString()}`;
+    },
+    [
+      publicCourtFlowEnabled,
+      publicClassFlowEnabled,
+      resolvedOrgUsername,
+      resolvedCourtId,
+      selectedServiceApiId,
+    ],
+  );
+
+  const buildReserveRequest = useCallback(
+    (payload: Record<string, unknown>) => {
+      if (publicCourtFlowEnabled && resolvedOrgUsername && resolvedCourtId) {
+        return {
+          url: `/api/public/org/${encodeURIComponent(resolvedOrgUsername)}/reservas/campos/reservar`,
+          body: {
+            ...payload,
+            courtId: resolvedCourtId,
+          },
+        } as const;
+      }
+      if (publicClassFlowEnabled && resolvedOrgUsername && selectedServiceApiId) {
+        return {
+          url: `/api/public/org/${encodeURIComponent(resolvedOrgUsername)}/reservas/aulas/reservar`,
+          body: {
+            ...payload,
+            serviceId: selectedServiceApiId,
+          },
+        } as const;
+      }
+      return {
+        url: `/api/servicos/${selectedServiceApiId}/reservar`,
+        body: payload,
+      } as const;
+    },
+    [
+      publicCourtFlowEnabled,
+      publicClassFlowEnabled,
+      resolvedOrgUsername,
+      resolvedCourtId,
+      selectedServiceApiId,
+    ],
+  );
+
   const loadCalendar = useCallback(async () => {
-    if (!serviceId || !canFetchCalendar) return;
+    if (!selectedServiceApiId || !canFetchCalendar) return;
     setCalendarLoading(true);
     setCalendarError(null);
     try {
       const params = new URLSearchParams({ month: calendarMonth });
       buildAvailabilityParams(params);
       const result = await api.requestRaw<CalendarResponse>(
-        `/api/servicos/${serviceId}/calendario?${params.toString()}`,
+        buildCalendarUrl(params),
         { cache: "no-store" },
       );
       const json: CalendarResponse = result.data ?? { ok: false };
@@ -390,17 +494,17 @@ export default function ServiceBookingScreen() {
     } finally {
       setCalendarLoading(false);
     }
-  }, [buildAvailabilityParams, calendarMonth, canFetchCalendar, serviceId]);
+  }, [buildAvailabilityParams, buildCalendarUrl, calendarMonth, canFetchCalendar, selectedServiceApiId]);
 
   const loadSlots = useCallback(async () => {
-    if (!serviceId || !selectedDay || !canFetchCalendar) return;
+    if (!selectedServiceApiId || !selectedDay || !canFetchCalendar) return;
     setSlotsLoading(true);
     setSlotsError(null);
     try {
       const params = new URLSearchParams({ day: selectedDay });
       buildAvailabilityParams(params);
       const result = await api.requestRaw<SlotsResponse>(
-        `/api/servicos/${serviceId}/calendario?${params.toString()}`,
+        buildCalendarUrl(params),
         {
           cache: "no-store",
         },
@@ -420,7 +524,7 @@ export default function ServiceBookingScreen() {
     } finally {
       setSlotsLoading(false);
     }
-  }, [buildAvailabilityParams, canFetchCalendar, selectedDay, serviceId]);
+  }, [buildAvailabilityParams, buildCalendarUrl, canFetchCalendar, selectedDay, selectedServiceApiId]);
 
   useEffect(() => {
     if (!canFetchCalendar) return;
@@ -492,7 +596,7 @@ export default function ServiceBookingScreen() {
   const reserveSlot = useCallback(
     async (slotOverride?: AvailabilitySlot) => {
       const slot = slotOverride ?? selectedSlot;
-      if (!serviceId || !service || !slot) return;
+      if (!selectedServiceApiId || !service || !slot) return;
       if (!isAuthenticated) {
         openAuth();
         return;
@@ -516,6 +620,7 @@ export default function ServiceBookingScreen() {
           selectedAddons: selectedAddonsPayload,
           packageId: isCourtService ? null : selectedPackageId,
         });
+        const reserveRequest = buildReserveRequest(payload as Record<string, unknown>);
         const result = await api.requestRaw<{
           ok: boolean;
           booking?: {
@@ -525,10 +630,10 @@ export default function ServiceBookingScreen() {
           };
           error?: string;
           message?: string;
-        }>(`/api/servicos/${serviceId}/reservar`, {
+        }>(reserveRequest.url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+          body: JSON.stringify(reserveRequest.body),
         });
         const json = result.data;
         if (!result.ok || !json?.ok) {
@@ -546,12 +651,12 @@ export default function ServiceBookingScreen() {
           );
         }
         trackEvent("booking_hold_created", {
-          serviceId,
+          serviceId: selectedServiceApiId,
           bookingId: json.booking?.id ?? null,
         });
         const idempotencyKey = buildCheckoutIdempotencyKey();
         setCheckoutDraft({
-          serviceId,
+          serviceId: selectedServiceApiId,
           serviceTitle: service.title,
           bookingId: json.booking?.id ?? null,
           bookingStartsAt: json.booking?.startsAt ?? slot.startsAt,
@@ -575,7 +680,7 @@ export default function ServiceBookingScreen() {
         });
         trackEvent("checkout_started", {
           sourceType: "SERVICE_BOOKING",
-          serviceId,
+          serviceId: selectedServiceApiId,
           bookingId: json.booking?.id ?? null,
         });
         safePush(router, "/checkout");
@@ -591,6 +696,7 @@ export default function ServiceBookingScreen() {
       addressSelection?.addressId,
       assignmentMode,
       basePriceCents,
+      buildReserveRequest,
       effectiveDurationMinutes,
       isCourtService,
       isAuthenticated,
@@ -602,8 +708,7 @@ export default function ServiceBookingScreen() {
       selectedProfessionalId,
       selectedSlot,
       service,
-      serviceId,
-      session?.user?.id,
+      selectedServiceApiId,
       setCheckoutDraft,
       setCheckoutIntent,
       totalCents,

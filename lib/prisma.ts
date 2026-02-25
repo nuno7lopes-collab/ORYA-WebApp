@@ -226,31 +226,6 @@ function applyEnvToCreateMany(data: unknown, envValue: string) {
   return withEnvData(data, envValue);
 }
 
-const EVENT_SCHEMA_SAFE_SELECT = {
-  id: true,
-  slug: true,
-  title: true,
-  description: true,
-  type: true,
-  templateType: true,
-  organizationId: true,
-  startsAt: true,
-  endsAt: true,
-  addressId: true,
-  pricingMode: true,
-  status: true,
-  timezone: true,
-  coverImageUrl: true,
-  createdAt: true,
-  updatedAt: true,
-  ownerUserId: true,
-  deletedAt: true,
-  isDeleted: true,
-  resaleMode: true,
-  feeMode: true,
-  payoutMode: true,
-} satisfies Prisma.EventSelect;
-
 type DmmfModel = (typeof Prisma.dmmf.datamodel.models)[number];
 type DmmfField = DmmfModel["fields"][number];
 
@@ -573,55 +548,78 @@ function isMissingColumnError(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2022";
 }
 
-function canApplyEventReadFallback(_args: Record<string, unknown>) {
+function canApplyModelReadFallback(_modelName: string, _args: Record<string, unknown>) {
   return true;
 }
 
-async function withEventSafeReadSelect(args: Record<string, unknown>, client: PrismaClient) {
+async function applyModelReadFilters(
+  client: PrismaClient,
+  modelName: string,
+  args: Record<string, unknown>,
+) {
+  if (isRecord(args.where)) {
+    args.where = await filterWhereForModel(client, modelName, args.where);
+  }
+  if ("orderBy" in args) {
+    args.orderBy = await filterOrderByForModel(client, modelName, args.orderBy);
+    if (args.orderBy === null) {
+      delete args.orderBy;
+    }
+  }
+}
+
+async function buildModelSafeScalarSelect(client: PrismaClient, modelName: string) {
+  const meta = getModelMeta(modelName);
+  if (!meta) return {} as Record<string, true>;
+  const columns = await resolveModelColumns(client, modelName);
+  if (!columns || columns.size === 0) {
+    return {} as Record<string, true>;
+  }
+
+  const safe: Record<string, true> = {};
+  for (const field of meta.fields.values()) {
+    if (field.kind === "object") continue;
+    const columnName = field.dbName ?? field.name;
+    if (columns.has(columnName)) {
+      safe[field.name] = true;
+    }
+  }
+
+  if (Object.keys(safe).length === 0) {
+    const idField = meta.fields.get("id");
+    const idColumn = idField?.dbName ?? "id";
+    if (columns.has(idColumn)) {
+      safe.id = true;
+    }
+  }
+
+  return safe;
+}
+
+async function withModelSafeReadSelect(modelName: string, args: Record<string, unknown>, client: PrismaClient) {
   const nextArgs: Record<string, unknown> = { ...args };
   const include = nextArgs.include;
 
   if (isRecord(nextArgs.select)) {
-    nextArgs.select = await filterSelectionForModel(client, "Event", nextArgs.select, "select");
-    if (isRecord(nextArgs.where)) {
-      nextArgs.where = await filterWhereForModel(client, "Event", nextArgs.where);
-    }
-    if ("orderBy" in nextArgs) {
-      nextArgs.orderBy = await filterOrderByForModel(client, "Event", nextArgs.orderBy);
-      if (nextArgs.orderBy === null) {
-        delete nextArgs.orderBy;
-      }
-    }
+    nextArgs.select = await filterSelectionForModel(client, modelName, nextArgs.select, "select");
+    await applyModelReadFilters(client, modelName, nextArgs);
     return nextArgs;
   }
 
   if (isRecord(include)) {
-    const safeBase = await filterSelectionForModel(client, "Event", EVENT_SCHEMA_SAFE_SELECT, "select");
-    const safeInclude = await filterSelectionForModel(client, "Event", include, "include");
+    const safeBase = await buildModelSafeScalarSelect(client, modelName);
+    const safeInclude = await filterSelectionForModel(client, modelName, include, "include");
     delete nextArgs.include;
-    nextArgs.select = { ...safeBase, ...safeInclude };
-    if (isRecord(nextArgs.where)) {
-      nextArgs.where = await filterWhereForModel(client, "Event", nextArgs.where);
-    }
-    if ("orderBy" in nextArgs) {
-      nextArgs.orderBy = await filterOrderByForModel(client, "Event", nextArgs.orderBy);
-      if (nextArgs.orderBy === null) {
-        delete nextArgs.orderBy;
-      }
-    }
+    nextArgs.select = await filterSelectionForModel(client, modelName, { ...safeBase, ...safeInclude }, "select");
+    await applyModelReadFilters(client, modelName, nextArgs);
     return nextArgs;
   }
 
-  nextArgs.select = await filterSelectionForModel(client, "Event", EVENT_SCHEMA_SAFE_SELECT, "select");
-  if (isRecord(nextArgs.where)) {
-    nextArgs.where = await filterWhereForModel(client, "Event", nextArgs.where);
+  const safeBase = await buildModelSafeScalarSelect(client, modelName);
+  if (Object.keys(safeBase).length > 0) {
+    nextArgs.select = await filterSelectionForModel(client, modelName, safeBase, "select");
   }
-  if ("orderBy" in nextArgs) {
-    nextArgs.orderBy = await filterOrderByForModel(client, "Event", nextArgs.orderBy);
-    if (nextArgs.orderBy === null) {
-      delete nextArgs.orderBy;
-    }
-  }
+  await applyModelReadFilters(client, modelName, nextArgs);
   return nextArgs;
 }
 
@@ -644,17 +642,17 @@ function createEnvExtension(envValue: AppEnv, client: PrismaClient) {
           }
 
           const safeArgs = (args ?? {}) as Record<string, unknown>;
-          const executeReadWithEventFallback = async (
+          const executeReadWithSchemaFallback = async (
             operationArgs: Record<string, unknown>,
             run: (finalArgs: Record<string, unknown>) => Promise<unknown>,
           ) => {
             try {
               return await run(operationArgs);
             } catch (error) {
-              if (model !== "Event" || !isMissingColumnError(error) || !canApplyEventReadFallback(operationArgs)) {
+              if (!isMissingColumnError(error) || !canApplyModelReadFallback(model, operationArgs)) {
                 throw error;
               }
-              const fallbackArgs = await withEventSafeReadSelect(operationArgs, client);
+              const fallbackArgs = await withModelSafeReadSelect(model, operationArgs, client);
               return run(fallbackArgs);
             }
           };
@@ -666,7 +664,7 @@ function createEnvExtension(envValue: AppEnv, client: PrismaClient) {
               const where = mergeEnvWhere(normalized, envValue);
               const method = operation === "findUniqueOrThrow" ? "findFirstOrThrow" : "findFirst";
               const operationArgs = { ...safeArgs, where };
-              return executeReadWithEventFallback(operationArgs, (finalArgs) =>
+              return executeReadWithSchemaFallback(operationArgs, (finalArgs) =>
                 (delegate as any)[method](finalArgs),
               );
             }
@@ -680,7 +678,7 @@ function createEnvExtension(envValue: AppEnv, client: PrismaClient) {
               const where = mergeEnvWhere(normalized, envValue);
               const operationArgs = { ...safeArgs, where };
               if (operation === "findFirst" || operation === "findFirstOrThrow" || operation === "findMany") {
-                return executeReadWithEventFallback(operationArgs, (finalArgs) =>
+                return executeReadWithSchemaFallback(operationArgs, (finalArgs) =>
                   (delegate as any)[operation](finalArgs),
                 );
               }

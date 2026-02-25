@@ -50,7 +50,7 @@ export default function TicketDynamicQr({ qrToken }: TicketDynamicQrProps) {
         className={`w-64 h-64 rounded-xl bg-white p-4 transition-opacity duration-500 ${
           loadedAt ? "opacity-100" : "opacity-0"
         }`}
-        onLoadingComplete={() => setLoadedAt(Date.now())}
+        onLoad={() => setLoadedAt(Date.now())}
       />
 
       <p className="text-[11px] text-white/50 font-medium">

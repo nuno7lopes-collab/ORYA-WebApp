@@ -472,7 +472,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     });
     const allowPaidServices = paidGate.ok;
 
-    const [events, followersCount, followRow, forms, services, professionals, resources] = await Promise.all([
+    const [events, followersCount, followRow, forms, services, professionals, resources, courtBookingConfigs] = await Promise.all([
       prisma.event.findMany({
         where: {
           organizationId: organizationProfile.id,
@@ -681,6 +681,39 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
             select: { id: true, label: true, capacity: true, courtId: true },
           })
         : Promise.resolve([] as Array<{ id: number; label: string; capacity: number; courtId: number | null }>),
+      hasReservasModule
+        ? prisma.courtBookingConfig.findMany({
+            where: { organizationId: organizationProfile.id, isActive: true },
+            orderBy: [{ courtId: "asc" }],
+            select: {
+              courtId: true,
+              backingServiceId: true,
+              displayName: true,
+              displayDescription: true,
+              coverImageUrl: true,
+              category: {
+                select: {
+                  id: true,
+                  slug: true,
+                  label: true,
+                  domain: true,
+                },
+              },
+            },
+          })
+        : Promise.resolve([] as Array<{
+            courtId: number;
+            backingServiceId: number;
+            displayName: string | null;
+            displayDescription: string | null;
+            coverImageUrl: string | null;
+            category: {
+              id: number;
+              slug: string;
+              label: string;
+              domain: "COURT" | "CLASS" | "SERVICE";
+            } | null;
+          }>),
     ]);
 
     const orgEvents: OrganizationEvent[] = events.map((event) => {
@@ -834,21 +867,35 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     const reservasHubClubMode = services.some((service) =>
       ["COURT", "CLASS"].includes(String(service.kind ?? "").toUpperCase()),
     );
-    const reservasServicesForPublic = services.map((service) => ({
-      ...service,
-      bookingVertical: resolveBookingVerticalFromServiceKind(service.kind),
-      category: service.category
-        ? {
-            id: service.category.id,
-            slug: service.category.slug,
-            label: service.category.label,
-            domain: service.category.domain,
-          }
-        : null,
-      categoryTag: service.category?.label ?? service.categoryTag ?? null,
-      coverImageUrl: service.coverImageUrl ?? null,
-      locationMode: (service.locationMode ?? "FIXED") as "FIXED" | "CHOOSE_AT_BOOKING",
-    }));
+    const courtConfigByServiceId = new Map(courtBookingConfigs.map((config) => [config.backingServiceId, config]));
+    const reservasServicesForPublic = services.map((service) => {
+      const bookingVertical = resolveBookingVerticalFromServiceKind(service.kind);
+      const courtConfig = bookingVertical === "COURT" ? courtConfigByServiceId.get(service.id) ?? null : null;
+      const resolvedCategory = courtConfig?.category ?? service.category ?? null;
+      const resolvedTitle = courtConfig?.displayName?.trim() || service.title;
+      const resolvedDescription = courtConfig?.displayDescription?.trim() || service.description || null;
+      const resolvedCoverImage = courtConfig?.coverImageUrl || service.coverImageUrl || null;
+
+      return {
+        ...service,
+        title: resolvedTitle,
+        description: resolvedDescription,
+        bookingVertical,
+        category: resolvedCategory
+          ? {
+              id: resolvedCategory.id,
+              slug: resolvedCategory.slug,
+              label: resolvedCategory.label,
+              domain: resolvedCategory.domain,
+            }
+          : null,
+        categoryTag: resolvedCategory?.label ?? service.categoryTag ?? null,
+        coverImageUrl: resolvedCoverImage,
+        locationMode: (service.locationMode ?? "FIXED") as "FIXED" | "CHOOSE_AT_BOOKING",
+        courtId: courtConfig?.courtId ?? null,
+        backingServiceId: bookingVertical === "COURT" ? service.id : null,
+      };
+    });
     const linkedOrganizations = siblingOrganizations
       .filter((organization): organization is typeof organization & { username: string } => Boolean(organization.username))
       .map((organization) => ({

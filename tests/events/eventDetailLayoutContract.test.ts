@@ -16,6 +16,7 @@ describe("event detail layout contract", () => {
     expect(source).toContain('layout="rail"');
     expect(source).toContain("EventShareButton");
     expect(source).not.toContain("backToExplore");
+    expect(source).not.toContain('id="promotor"');
     expect(source).toContain("ticketCopy.viewLabel");
     expect(source).toContain("href={googleMapsUrl}");
     expect(source).toContain("EventDescriptionReadMore");

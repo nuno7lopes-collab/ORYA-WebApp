@@ -64,4 +64,20 @@ describe("GET /api/servicos/list", () => {
       ]),
     );
   });
+
+  it("aplica categorySlug e categoryDomain no filtro", async () => {
+    const { GET } = await import("@/app/api/servicos/list/route");
+    const req = new NextRequest("http://localhost/api/servicos/list?categorySlug=padel-campo&categoryDomain=COURT");
+    const res = await GET(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.result?.ok ?? body.ok).toBe(true);
+
+    const args = prismaServiceFindMany.mock.calls[0]?.[0];
+    expect(args?.where?.category).toEqual({
+      slug: "padel-campo",
+      domain: "COURT",
+    });
+  });
 });

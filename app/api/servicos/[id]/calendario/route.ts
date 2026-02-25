@@ -258,6 +258,14 @@ async function _GET(
           .filter((link) => link.resource?.isActive)
           .map((link) => link.resourceId)
       : null;
+    const courtIdParam = req.nextUrl.searchParams.get("courtId");
+    const requestedCourtId = parsePositiveInt(courtIdParam);
+    if (courtIdParam != null && !requestedCourtId) {
+      return jsonWrap({ ok: false, error: "INVALID_COURT" }, { status: 400 });
+    }
+    if (requestedCourtId && !assignmentConfig.isCourtService) {
+      return jsonWrap({ ok: false, error: "INVALID_COURT" }, { status: 400 });
+    }
     const dayParam = parseDayParam(req.nextUrl.searchParams.get("day"));
     if (dayParam) {
       const todayParts = getDateParts(new Date(), timezone);
@@ -434,6 +442,7 @@ async function _GET(
             isActive: true,
             ...(partySize != null ? { capacity: { gte: partySize } } : {}),
             ...(assignmentConfig.isCourtService ? { courtId: { not: null } } : {}),
+            ...(requestedCourtId ? { courtId: requestedCourtId } : {}),
             ...(allowedResourceIds ? { id: { in: allowedResourceIds } } : {}),
           },
           orderBy: [{ capacity: "asc" }, { priority: "asc" }, { id: "asc" }],
@@ -554,6 +563,7 @@ async function _GET(
             isActive: true,
             ...(partySize != null ? { capacity: { gte: partySize } } : {}),
             ...(assignmentConfig.isCourtService ? { courtId: { not: null } } : {}),
+            ...(requestedCourtId ? { courtId: requestedCourtId } : {}),
             ...(allowedResourceIds ? { id: { in: allowedResourceIds } } : {}),
           },
           orderBy: [{ capacity: "asc" }, { priority: "asc" }, { id: "asc" }],
@@ -878,6 +888,7 @@ async function _GET(
           isActive: true,
           ...(partySize != null ? { capacity: { gte: partySize } } : {}),
           ...(assignmentConfig.isCourtService ? { courtId: { not: null } } : {}),
+          ...(requestedCourtId ? { courtId: requestedCourtId } : {}),
           ...(allowedResourceIds ? { id: { in: allowedResourceIds } } : {}),
         },
         orderBy: [{ capacity: "asc" }, { priority: "asc" }, { id: "asc" }],
@@ -1008,6 +1019,7 @@ async function _GET(
           isActive: true,
           ...(partySize != null ? { capacity: { gte: partySize } } : {}),
           ...(assignmentConfig.isCourtService ? { courtId: { not: null } } : {}),
+          ...(requestedCourtId ? { courtId: requestedCourtId } : {}),
           ...(allowedResourceIds ? { id: { in: allowedResourceIds } } : {}),
         },
         orderBy: [{ capacity: "asc" }, { priority: "asc" }, { id: "asc" }],

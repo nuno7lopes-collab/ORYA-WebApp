@@ -50,6 +50,21 @@ type BookingConfigResponse = {
   message?: string;
 };
 
+type PendingScopeChangesetsResponse = {
+  ok: boolean;
+  data?: {
+    items?: Array<{
+      id: number;
+      status: "PENDING" | "READY_TO_APPLY" | "APPLIED" | "CANCELLED";
+      conflictsOpen: number;
+      scopeType: ScopeType;
+      scopeId: number;
+      createdAt: string;
+      updatedAt: string;
+    }>;
+  };
+};
+
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 const CHIP_BASE =
@@ -215,6 +230,25 @@ export default function OrgCalendarAvailabilityPage() {
       subtitle: "Define o default de disponibilidade usado pelos servicos com reservas.",
     };
   }, [selectedProfessional, selectedResource]);
+
+  const pendingScopeChangesetsKey = useMemo(() => {
+    if (!organizationId) return null;
+    const params = new URLSearchParams({
+      scopeType: resolvedScope.scopeType,
+      statuses: "PENDING,READY_TO_APPLY",
+      limit: "1",
+    });
+    if (resolvedScope.scopeId) {
+      params.set("scopeId", String(resolvedScope.scopeId));
+    }
+    return `/api/org/${organizationId}/reservas/disponibilidade/changesets?${params.toString()}`;
+  }, [organizationId, resolvedScope.scopeId, resolvedScope.scopeType]);
+
+  const { data: pendingScopeChangesetsData } = useSWR<PendingScopeChangesetsResponse>(
+    pendingScopeChangesetsKey,
+    fetcher,
+  );
+  const pendingScopeChangeSet = pendingScopeChangesetsData?.data?.items?.[0] ?? null;
 
   const handleOperationalToggle = async () => {
     if (!organizationId || toggleBusy) return;
@@ -435,10 +469,29 @@ export default function OrgCalendarAvailabilityPage() {
         </div>
       </section>
 
+      {pendingScopeChangeSet && (
+        <section className="rounded-2xl border border-amber-300/35 bg-amber-500/10 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.28)]">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.18em] text-amber-100/75">Pedido pendente</p>
+              <p className="mt-1 text-sm text-amber-100">
+                Existe um pedido de disponibilidade neste escopo (#{pendingScopeChangeSet.id}) com{" "}
+                {pendingScopeChangeSet.conflictsOpen} conflitos abertos.
+              </p>
+              <p className="text-xs text-amber-50/80">Resolve os conflitos antes de criar/aplicar novas alterações.</p>
+            </div>
+            <Link href={buildOrgHref(organizationId, `/calendar/conflicts/${pendingScopeChangeSet.id}`)} className={CTA_PRIMARY}>
+              Abrir conflitos
+            </Link>
+          </div>
+        </section>
+      )}
+
       <AvailabilityEditor
         orgId={organizationId}
         scopeType={resolvedScope.scopeType as ScopeType}
         scopeId={resolvedScope.scopeId}
+        pendingChangeSetId={pendingScopeChangeSet?.id ?? null}
         title={scopeMeta.title}
         subtitle={scopeMeta.subtitle}
       />

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
 
@@ -69,6 +70,7 @@ type AvailabilityEditorProps = {
   orgId: number;
   scopeType: "ORGANIZATION" | "PROFESSIONAL" | "RESOURCE";
   scopeId?: number | null;
+  pendingChangeSetId?: number | null;
   title?: string;
   subtitle?: string;
   hourHeight?: number;
@@ -144,6 +146,7 @@ export default function AvailabilityEditor({
   orgId,
   scopeType,
   scopeId,
+  pendingChangeSetId = null,
   title = "Disponibilidade semanal",
   subtitle = "Define os intervalos semanais e exceções.",
   hourHeight = 56,
@@ -193,6 +196,9 @@ export default function AvailabilityEditor({
   const timezone = availabilityData?.timezone ?? "Europe/Lisbon";
   const todayParts = getDateParts(new Date(), timezone);
   const minScheduleDate = `${todayParts.year}-${padTime(todayParts.month)}-${padTime(todayParts.day)}`;
+  const pendingChangeSetHref = pendingChangeSetId
+    ? buildOrgHref(orgId, `/calendar/conflicts/${pendingChangeSetId}`)
+    : null;
 
   const [templateDrafts, setTemplateDrafts] = useState<Record<number, IntervalDraft[]>>({});
   const nextDraftIdRef = useRef(0);
@@ -234,6 +240,15 @@ export default function AvailabilityEditor({
     captureElement: HTMLElement | null;
   } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+
+  const guardPendingChangeset = () => {
+    if (!pendingChangeSetId || !pendingChangeSetHref) return false;
+    setAvailabilityError(
+      `Já existe um pedido pendente para este escopo (#${pendingChangeSetId}). Resolve primeiro os conflitos.`,
+    );
+    router.push(pendingChangeSetHref);
+    return true;
+  };
 
   useEffect(() => {
     if (!availabilityData?.templates) return;
@@ -341,6 +356,7 @@ export default function AvailabilityEditor({
   };
 
   const handleTemplateSaveAll = async () => {
+    if (guardPendingChangeset()) return;
     if (!selectedScheduleId) {
       setAvailabilityError("Cria ou seleciona uma disponibilidade base primeiro.");
       return;
@@ -384,19 +400,24 @@ export default function AvailabilityEditor({
       const payload = json?.data ?? json;
       if (!res.ok || !json?.ok) {
         const errorCode = String(json?.errorCode ?? json?.code ?? "");
-        const details = (json?.details ?? json?.data ?? null) as { changeSetId?: number } | null;
+        const details = (json?.details ?? json?.data ?? null) as { changeSetId?: number; existingChangeSetId?: number } | null;
         if (errorCode === "AVAILABILITY_CONFLICTS_FOUND" && Number.isFinite(details?.changeSetId)) {
           const changeSetId = Number(details?.changeSetId);
           setIsDirty(false);
           setHasUnsavedBarDismissed(false);
-          router.push(buildOrgHref(orgId, `/calendar/availability/conflicts/${changeSetId}`));
+          router.push(buildOrgHref(orgId, `/calendar/conflicts/${changeSetId}`));
+          return;
+        }
+        const pendingId = Number(details?.existingChangeSetId ?? details?.changeSetId ?? Number.NaN);
+        if (errorCode === "AVAILABILITY_CHANGESET_PENDING" && Number.isFinite(pendingId)) {
+          router.push(buildOrgHref(orgId, `/calendar/conflicts/${pendingId}`));
           return;
         }
         throw new Error(String(json?.message ?? json?.error ?? "Erro ao aplicar alterações."));
       }
 
       if (payload?.changeSetId && payload?.status === "PENDING") {
-        router.push(buildOrgHref(orgId, `/calendar/availability/conflicts/${payload.changeSetId}`));
+        router.push(buildOrgHref(orgId, `/calendar/conflicts/${payload.changeSetId}`));
         return;
       }
 
@@ -443,7 +464,15 @@ export default function AvailabilityEditor({
   };
 
   const handleScheduleSubmit = async () => {
-    if (!scheduleStartDate) {
+    if (guardPendingChangeset()) return;
+
+    const editingSchedule =
+      scheduleFormMode === "edit" && scheduleDraftId
+        ? schedules.find((schedule) => schedule.id === scheduleDraftId) ?? null
+        : null;
+    const effectiveStartDate = scheduleStartDate || (editingSchedule ? toDateInput(editingSchedule.startDate) : "");
+
+    if (!effectiveStartDate) {
       setAvailabilityError("Seleciona a data de início.");
       return;
     }
@@ -471,7 +500,7 @@ export default function AvailabilityEditor({
           scopeType,
           scopeId,
           scheduleId: scheduleFormMode === "edit" ? scheduleDraftId : null,
-          startDate: scheduleStartDate,
+          ...(effectiveStartDate ? { startDate: effectiveStartDate } : {}),
           endDate: scheduleNoEnd ? null : scheduleEndDate,
           templates: templatePayload,
           overrides: (overrideDrafts ?? []).map((override) => ({
@@ -486,9 +515,14 @@ export default function AvailabilityEditor({
       const payload = json?.data ?? json;
       if (!res.ok || !json?.ok) {
         const errorCode = String(json?.errorCode ?? json?.code ?? "");
-        const details = (json?.details ?? json?.data ?? null) as { changeSetId?: number } | null;
+        const details = (json?.details ?? json?.data ?? null) as { changeSetId?: number; existingChangeSetId?: number } | null;
         if (errorCode === "AVAILABILITY_CONFLICTS_FOUND" && Number.isFinite(details?.changeSetId)) {
-          router.push(buildOrgHref(orgId, `/calendar/availability/conflicts/${Number(details?.changeSetId)}`));
+          router.push(buildOrgHref(orgId, `/calendar/conflicts/${Number(details?.changeSetId)}`));
+          return;
+        }
+        const pendingId = Number(details?.existingChangeSetId ?? details?.changeSetId ?? Number.NaN);
+        if (errorCode === "AVAILABILITY_CHANGESET_PENDING" && Number.isFinite(pendingId)) {
+          router.push(buildOrgHref(orgId, `/calendar/conflicts/${pendingId}`));
           return;
         }
         throw new Error(String(json?.message ?? json?.error ?? "Erro ao guardar disponibilidade."));
@@ -804,6 +838,15 @@ export default function AvailabilityEditor({
             Sem horários próprios. A usar disponibilidade base da organização.
           </p>
         )}
+        {pendingChangeSetId && pendingChangeSetHref && (
+          <div className="mt-3 rounded-xl border border-amber-300/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+            Existe um pedido pendente para este escopo (#{pendingChangeSetId}). Resolve primeiro em{" "}
+            <Link href={pendingChangeSetHref} className="underline underline-offset-2">
+              Conflitos
+            </Link>
+            .
+          </div>
+        )}
       </div>
 
       <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-[0_18px_60px_rgba(0,0,0,0.35)]">
@@ -889,7 +932,6 @@ export default function AvailabilityEditor({
               onChange={setScheduleStartDate}
               className="mt-1 w-full"
               buttonClassName="h-10 rounded-xl"
-              minDate={minScheduleDate}
             />
           </div>
           <div>
@@ -900,7 +942,7 @@ export default function AvailabilityEditor({
               className="mt-1 w-full"
               buttonClassName="h-10 rounded-xl"
               disabled={scheduleNoEnd}
-              minDate={scheduleStartDate || minScheduleDate}
+              minDate={scheduleStartDate || undefined}
             />
           </div>
           <div className="flex flex-col justify-end gap-2">
@@ -918,7 +960,12 @@ export default function AvailabilityEditor({
             </label>
           </div>
           <div className="flex items-end">
-            <button type="button" className={CTA_PRIMARY} onClick={handleScheduleSubmit} disabled={scheduleSaving}>
+            <button
+              type="button"
+              className={CTA_PRIMARY}
+              onClick={handleScheduleSubmit}
+              disabled={scheduleSaving || Boolean(pendingChangeSetId)}
+            >
               {scheduleSaving ? "A guardar..." : scheduleFormMode === "edit" ? "Atualizar disponibilidade" : "Criar disponibilidade"}
             </button>
           </div>
@@ -940,7 +987,7 @@ export default function AvailabilityEditor({
                 type="button"
                 className={CTA_PRIMARY}
                 onClick={handleTemplateSaveAll}
-                disabled={templateSavingAll}
+                disabled={templateSavingAll || Boolean(pendingChangeSetId)}
               >
                 {templateSavingAll ? "A aplicar..." : "Aplicar alterações"}
               </button>
@@ -972,7 +1019,7 @@ export default function AvailabilityEditor({
               type="button"
               className={cn(CTA_NEUTRAL, "text-[11px]")}
               onClick={handleTemplateSaveAll}
-              disabled={templateSavingAll || !isDirty}
+              disabled={templateSavingAll || !isDirty || Boolean(pendingChangeSetId)}
             >
               {templateSavingAll ? "A aplicar..." : "Aplicar alterações"}
             </button>

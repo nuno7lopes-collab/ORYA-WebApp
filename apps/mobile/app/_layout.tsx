@@ -8,7 +8,7 @@ import { queryClient } from "../lib/queryClient";
 import { StatusBar } from "expo-status-bar";
 import { PushGate } from "../components/notifications/PushGate";
 import { StripeProvider } from "@stripe/stripe-react-native";
-import { LogBox, View, ActivityIndicator } from "react-native";
+import { View, ActivityIndicator } from "react-native";
 import { getMobileEnv } from "../lib/env";
 import { resolveAppScheme } from "../lib/deeplink";
 import { useFonts } from "expo-font";
@@ -21,52 +21,10 @@ import { I18nProvider } from "../components/i18n/I18nProvider";
 import { Manrope_500Medium, Manrope_700Bold } from "@expo-google-fonts/manrope";
 import { Sora_600SemiBold, Sora_700Bold } from "@expo-google-fonts/sora";
 import { tokens } from "@orya/shared";
+import { installDevLogFilters } from "../lib/devLogFilters";
 
 WebBrowser.maybeCompleteAuthSession();
-
-const SAFE_AREA_DEPRECATION_PATTERNS = [
-  "SafeAreaView has been deprecated",
-  "SafeAreaView is deprecated",
-  "Please use 'react-native-safe-area-context' instead",
-];
-
-const shouldIgnoreDevWarn = (value: unknown) => {
-  if (typeof value !== "string") return false;
-  return SAFE_AREA_DEPRECATION_PATTERNS.some((pattern) =>
-    value.includes(pattern),
-  );
-};
-
-const installWarnFilter = () => {
-  if (!__DEV__) return;
-  const globalRef = globalThis as typeof globalThis & {
-    __ORYA_WARN_FILTER_INSTALLED__?: boolean;
-  };
-  if (globalRef.__ORYA_WARN_FILTER_INSTALLED__) return;
-  const originalWarn = console.warn;
-  console.warn = (...args: unknown[]) => {
-    if (args.some((entry) => shouldIgnoreDevWarn(entry))) {
-      return;
-    }
-    originalWarn(...(args as Parameters<typeof console.warn>));
-  };
-  globalRef.__ORYA_WARN_FILTER_INSTALLED__ = true;
-};
-
-installWarnFilter();
-
-LogBox.ignoreLogs([
-  "SafeAreaView",
-  "SafeAreaView has been deprecated",
-  "SafeAreaView has been deprecated and will be removed in a future release",
-  "SafeAreaView is deprecated",
-  "SafeAreaView has been deprecated and will be removed in a future release. Please use 'react-native-safe-area-context' instead.",
-  "SafeAreaView has been deprecated and will be removed in a future release. Please use 'react-native-safe-area-context' instead. See https://github.com/th3rdwave/react-native-safe-area-context",
-  "Please use 'react-native-safe-area-context' instead",
-  "WebCrypto API is not supported",
-  "expo-notifications: Android Push notifications",
-  "`expo-notifications` functionality is not fully supported in Expo Go",
-]);
+installDevLogFilters();
 
 const NAV_DURATION_FAST = 110;
 const NAV_DURATION_STANDARD = 130;

@@ -244,6 +244,7 @@ async function _GET(req: NextRequest) {
         durationMinutes: true,
         unitPriceCents: true,
         currency: true,
+        coverImageUrl: true,
         kind: true,
         assignmentMode: true,
         partySizeRequired: true,
@@ -286,6 +287,9 @@ async function _GET(req: NextRequest) {
     const hasMore = services.length > take;
     const trimmed = hasMore ? services.slice(0, take) : services;
     const organizationIds = Array.from(new Set(trimmed.map((service) => service.organization.id)));
+    const courtServiceIds = trimmed
+      .filter((service) => String(service.kind ?? "").toUpperCase() === "COURT")
+      .map((service) => service.id);
     type BookingSettingsRow = {
       organizationId: number;
       bookingGridMinutes: number | null;
@@ -312,7 +316,7 @@ async function _GET(req: NextRequest) {
           })
         : Promise.resolve([]);
 
-    const [schedules, overrides, bookings, professionals, resources, bookingSettings] = await Promise.all([
+    const [schedules, overrides, bookings, professionals, resources, bookingSettings, courtConfigs] = await Promise.all([
       prisma.availabilitySchedule.findMany({
         where: { organizationId: { in: organizationIds } },
         select: { id: true, organizationId: true, scopeType: true, scopeId: true, startDate: true, endDate: true, createdAt: true },
@@ -357,6 +361,31 @@ async function _GET(req: NextRequest) {
         orderBy: [{ capacity: "asc" }, { priority: "asc" }, { id: "asc" }],
       }),
       bookingSettingsPromise,
+      courtServiceIds.length > 0
+        ? prisma.courtBookingConfig.findMany({
+            where: {
+              organizationId: { in: organizationIds },
+              backingServiceId: { in: courtServiceIds },
+              isActive: true,
+            },
+            orderBy: [{ backingServiceId: "asc" }, { courtId: "asc" }],
+            select: {
+              backingServiceId: true,
+              courtId: true,
+              displayName: true,
+              displayDescription: true,
+              coverImageUrl: true,
+              category: {
+                select: {
+                  id: true,
+                  slug: true,
+                  label: true,
+                  domain: true,
+                },
+              },
+            },
+          })
+        : Promise.resolve([]),
     ]);
 
     const scheduleIds = schedules.map((schedule) => schedule.id);
@@ -426,6 +455,22 @@ async function _GET(req: NextRequest) {
         }),
       ]),
     );
+    const courtConfigByServiceId = new Map<
+      number,
+      {
+        backingServiceId: number;
+        courtId: number;
+        displayName: string | null;
+        displayDescription: string | null;
+        coverImageUrl: string | null;
+        category: { id: number; slug: string; label: string; domain: "COURT" | "CLASS" | "SERVICE" } | null;
+      }
+    >();
+    for (const config of courtConfigs) {
+      if (!courtConfigByServiceId.has(config.backingServiceId)) {
+        courtConfigByServiceId.set(config.backingServiceId, config);
+      }
+    }
 
     const mapped = trimmed.map((service) => {
       const orgId = service.organization.id;
@@ -591,18 +636,27 @@ async function _GET(req: NextRequest) {
 
       availableSlots.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
       const nextSlot = findNextSlot(availableSlots);
+      const courtConfig = assignmentConfig.isCourtService ? courtConfigByServiceId.get(service.id) ?? null : null;
+      const resolvedCategory = courtConfig?.category ?? service.category ?? null;
+      const resolvedTitle = courtConfig?.displayName?.trim() || service.title;
+      const resolvedDescription = courtConfig?.displayDescription?.trim() || service.description || null;
       return {
         ...service,
+        title: resolvedTitle,
+        description: resolvedDescription,
+        coverImageUrl: courtConfig?.coverImageUrl ?? service.coverImageUrl ?? null,
+        courtId: courtConfig?.courtId ?? null,
+        backingServiceId: assignmentConfig.isCourtService ? service.id : null,
         bookingVertical: resolveBookingVerticalFromServiceKind(service.kind),
-        category: service.category
+        category: resolvedCategory
           ? {
-              id: service.category.id,
-              slug: service.category.slug,
-              label: service.category.label,
-              domain: service.category.domain,
+              id: resolvedCategory.id,
+              slug: resolvedCategory.slug,
+              label: resolvedCategory.label,
+              domain: resolvedCategory.domain,
             }
           : null,
-        categoryTag: service.category?.label ?? service.categoryTag ?? null,
+        categoryTag: resolvedCategory?.label ?? service.categoryTag ?? null,
         nextAvailability: nextSlot?.startsAt.toISOString() ?? null,
       };
     });

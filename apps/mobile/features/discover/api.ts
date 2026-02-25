@@ -102,6 +102,10 @@ const toServiceQueryString = (params: DiscoverParams): string => {
   if (params.kind === "services") {
     query.set("categoryDomain", "SERVICE");
   }
+  if (params.kind === "classes") {
+    query.set("kind", "CLASS");
+    query.set("categoryDomain", "CLASS");
+  }
   if (params.date && params.date !== "all") query.set("date", params.date);
   if (params.cursor) query.set("cursor", params.cursor);
   query.set("limit", String(params.limit ?? DEFAULT_LIMIT));
@@ -228,8 +232,13 @@ const fetchServices = async (params: DiscoverParams): Promise<SourcePage> => {
   const parsed = parseServiceResponse(unwrapped);
 
   const filteredItems = (() => {
-    if (params.kind !== "services") return parsed.items ?? [];
-    return (parsed.items ?? []).filter((service) => resolveServiceVertical(service) !== "COURT");
+    if (params.kind === "services") {
+      return (parsed.items ?? []).filter((service) => resolveServiceVertical(service) === "SERVICE");
+    }
+    if (params.kind === "classes") {
+      return (parsed.items ?? []).filter((service) => resolveServiceVertical(service) === "CLASS");
+    }
+    return parsed.items ?? [];
   })();
 
   const nextCursor = normalizeServiceCursor(parsed.pagination?.nextCursor);
@@ -256,7 +265,7 @@ export const fetchDiscoverPage = async (params: DiscoverParams = {}): Promise<Di
     };
   }
 
-  if (kind === "services") {
+  if (kind === "services" || kind === "classes") {
     const services = await fetchServices({ ...params, kind, cursor: cursor.service, limit });
     return {
       items: services.items,

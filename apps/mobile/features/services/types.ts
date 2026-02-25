@@ -82,6 +82,9 @@ export type ServiceAssignment = {
 
 export type ServiceDetail = {
   id: number;
+  coverImageUrl?: string | null;
+  courtId?: number | null;
+  backingServiceId?: number | null;
   title: string;
   description: string | null;
   durationMinutes: number;

@@ -1,28 +1,22 @@
 import { NextRequest } from "next/server";
+import {
+  OrganizationMemberRole,
+  OrganizationRolePack,
+} from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
-import { recordOrganizationAudit } from "@/lib/organizationAudit";
-import {
-  CrmInteractionSource,
-  CrmInteractionType,
-  OrganizationMemberRole,
-  OrganizationRolePack,
-} from "@prisma/client";
-import { refundBookingPayment } from "@/lib/reservas/bookingRefund";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
-import { ingestCrmInteraction } from "@/lib/crm/ingest";
-import { createNotification, shouldNotify } from "@/lib/notifications";
-import { cancelBooking } from "@/domain/bookings/commands";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
-  computeCancellationRefundFromSnapshot,
-  parseBookingConfirmationSnapshot,
-} from "@/lib/reservas/confirmationSnapshot";
+  cancelBookingByOrganizationInTx,
+  runOrganizationBookingCancellationPostActions,
+  type OrgBookingCancellationTxResult,
+} from "@/lib/reservas/orgBookingCancellation";
 import { intersectIds, resolveReservasScopesForMember, resolveTrainerProfessionalIds } from "@/lib/reservas/memberScopes";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
@@ -49,30 +43,7 @@ async function _POST(
 ) {
   type CancelTxnResult =
     | { error: Response }
-    | {
-        booking: { id: number; status: string };
-        already: boolean;
-        refundRequired: boolean;
-        paymentIntentId: string | null;
-        refundAmountCents: number | null;
-        splitRefunds: Array<{
-          participantId: number;
-          paymentIntentId: string;
-        }>;
-        snapshotTimezone: string;
-        crmPayload:
-          | {
-              organizationId: number;
-              userId?: string | null;
-              bookingId: number;
-              guestEmail?: string | null;
-              serviceId?: number | null;
-              courtId?: number | null;
-              resourceId?: number | null;
-              professionalId?: number | null;
-            }
-          | null;
-      };
+    | { result: OrgBookingCancellationTxResult };
 
   const resolved = await params;
   const bookingId = parseId(resolved.id);
@@ -130,46 +101,22 @@ async function _POST(
     const payload = await req.json().catch(() => ({}));
     const reason = typeof payload?.reason === "string" ? payload.reason.trim().slice(0, 200) : null;
     const { ip, userAgent } = getRequestMeta(req);
-    const now = new Date();
 
-    let bookingUserId: string | null = null;
-    const result = await prisma.$transaction<CancelTxnResult>(async (tx) => {
-      const booking = await tx.booking.findFirst({
+    const txResult = await prisma.$transaction<CancelTxnResult>(async (tx) => {
+      const bookingForAccess = await tx.booking.findFirst({
         where: { id: bookingId, organizationId: organization.id },
         select: {
           id: true,
-          userId: true,
-          guestEmail: true,
-          status: true,
-          startsAt: true,
-          paymentIntentId: true,
-          organizationId: true,
-          serviceId: true,
-          snapshotTimezone: true,
-          confirmationSnapshot: true,
           courtId: true,
           resourceId: true,
           professionalId: true,
-          professional: { select: { userId: true } },
-          splitPayment: {
-            select: {
-              id: true,
-              status: true,
-              participants: {
-                select: {
-                  id: true,
-                  status: true,
-                  paymentIntentId: true,
-                },
-              },
-            },
-          },
         },
       });
 
-      if (!booking) {
+      if (!bookingForAccess) {
         return { error: fail(404, "BOOKING_NOT_FOUND", "Reserva não encontrada.") };
       }
+
       if (membership.role === OrganizationMemberRole.STAFF) {
         const isCoach = membership.rolePack === OrganizationRolePack.COACH;
         const scopes = await resolveReservasScopesForMember({
@@ -187,164 +134,55 @@ async function _POST(
           const allowedProfessionals = scopes.professionalIds.length
             ? intersectIds(trainerProfessionalIds, scopes.professionalIds)
             : trainerProfessionalIds;
-          if (!allowedProfessionals.length || !booking.professionalId || !allowedProfessionals.includes(booking.professionalId)) {
+          if (
+            !allowedProfessionals.length ||
+            !bookingForAccess.professionalId ||
+            !allowedProfessionals.includes(bookingForAccess.professionalId)
+          ) {
             return { error: fail(403, "FORBIDDEN", "Sem permissões.") };
           }
-          if (scopes.courtIds.length && booking.courtId && !scopes.courtIds.includes(booking.courtId)) {
+          if (scopes.courtIds.length && bookingForAccess.courtId && !scopes.courtIds.includes(bookingForAccess.courtId)) {
             return { error: fail(403, "FORBIDDEN", "Sem permissões.") };
           }
-          if (scopes.resourceIds.length && booking.resourceId && !scopes.resourceIds.includes(booking.resourceId)) {
+          if (scopes.resourceIds.length && bookingForAccess.resourceId && !scopes.resourceIds.includes(bookingForAccess.resourceId)) {
             return { error: fail(403, "FORBIDDEN", "Sem permissões.") };
           }
         } else {
           const allowed = [
-            booking.courtId && scopes.courtIds.includes(booking.courtId),
-            booking.resourceId && scopes.resourceIds.includes(booking.resourceId),
-            booking.professionalId && scopes.professionalIds.includes(booking.professionalId),
+            bookingForAccess.courtId && scopes.courtIds.includes(bookingForAccess.courtId),
+            bookingForAccess.resourceId && scopes.resourceIds.includes(bookingForAccess.resourceId),
+            bookingForAccess.professionalId && scopes.professionalIds.includes(bookingForAccess.professionalId),
           ].some(Boolean);
           if (!allowed) {
             return { error: fail(403, "FORBIDDEN", "Sem permissões.") };
           }
         }
       }
-      if (["CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG", "CANCELLED"].includes(booking.status)) {
-        return {
-          booking: { id: booking.id, status: booking.status },
-          already: true,
-          refundRequired: false,
-          paymentIntentId: booking.paymentIntentId ?? null,
-          refundAmountCents: null,
-          splitRefunds: [],
-          snapshotTimezone: booking.snapshotTimezone,
-          crmPayload: null,
-        };
-      }
 
-      bookingUserId = booking.userId;
-      const isPending = ["PENDING_CONFIRMATION", "PENDING"].includes(booking.status);
-      const snapshot = parseBookingConfirmationSnapshot(booking.confirmationSnapshot);
-      if (!isPending && booking.status === "CONFIRMED" && !snapshot) {
-        return {
-          error: fail(
-            409,
-            "BOOKING_CONFIRMATION_SNAPSHOT_REQUIRED",
-            "Reserva confirmada sem snapshot. Corre o backfill antes de cancelar.",
-            false,
-            { bookingId: booking.id },
-          ),
-        };
-      }
-
-      // Organization cancellation is allowed regardless of the customer's cancellation window,
-      // but we still block after the booking start time to avoid undefined operational states.
-      const startsAtMs = booking.startsAt?.getTime?.() ?? NaN;
-      const canCancel = isPending || (booking.status === "CONFIRMED" && Number.isFinite(startsAtMs) && startsAtMs > now.getTime());
-      if (!canCancel) {
-        return {
-          error: fail(
-            400,
-            "BOOKING_CANCELLATION_NOT_ALLOWED",
-            "Já não é possível cancelar esta reserva.",
-            false,
-          ),
-        };
-      }
-
-      const { booking: updated } = await cancelBooking({
+      const result = await cancelBookingByOrganizationInTx({
         tx,
-        bookingId: booking.id,
-        organizationId: booking.organizationId,
-        actorUserId: profile.id,
-        data: { status: "CANCELLED_BY_ORG" },
-      });
-      const split = booking.splitPayment ?? null;
-      const splitRefunds = split
-        ? split.participants
-            .filter(
-              (participant) => participant.status === "PAID" && Boolean(participant.paymentIntentId),
-            )
-            .map((participant) => ({
-              participantId: participant.id,
-              paymentIntentId: participant.paymentIntentId as string,
-            }))
-        : [];
-
-      if (split) {
-        await tx.bookingSplit.update({
-          where: { id: split.id },
-          data: { status: "CANCELLED" },
-        });
-        await tx.bookingSplitParticipant.updateMany({
-          where: { splitId: split.id, status: "PENDING" },
-          data: { status: "CANCELLED" },
-        });
-      }
-
-      const refundRequired =
-        splitRefunds.length === 0 &&
-        !!booking.paymentIntentId &&
-        (isPending || booking.status === "CONFIRMED");
-      const refundComputation = snapshot
-        ? computeCancellationRefundFromSnapshot(snapshot, { actor: "ORG" })
-        : null;
-      const refundAmountCents = refundComputation?.refundCents ?? null;
-
-      await recordOrganizationAudit(tx, {
         organizationId: organization.id,
+        bookingId,
         actorUserId: profile.id,
-        action: "BOOKING_CANCELLED",
-        metadata: {
-          bookingId: booking.id,
-          serviceId: booking.serviceId,
-          source: "ORG",
-          actorRole: membership.role,
-          reason,
-          refundRequired,
-          deadline: null,
-          refundAmountCents,
-          splitRefundsCount: splitRefunds.length,
-          snapshotVersion: snapshot?.version ?? null,
-          snapshotTimezone: booking.snapshotTimezone,
-        },
+        actorRole: membership.role,
+        reason,
         ip,
         userAgent,
+        auditSource: "ORG",
       });
 
-      return {
-        booking: { id: updated.id, status: updated.status },
-        already: false,
-        refundRequired,
-        paymentIntentId: booking.paymentIntentId ?? null,
-        refundAmountCents,
-        splitRefunds,
-        snapshotTimezone: booking.snapshotTimezone,
-        crmPayload: booking.userId || booking.guestEmail
-          ? {
-              organizationId: organization.id,
-              userId: booking.userId ?? undefined,
-              bookingId: booking.id,
-              guestEmail: booking.guestEmail ?? null,
-              serviceId: booking.serviceId ?? null,
-              courtId: booking.courtId ?? null,
-              resourceId: booking.resourceId ?? null,
-              professionalId: booking.professionalId ?? null,
-            }
-          : null,
-      };
+      return { result };
     });
 
-    if ("error" in result) return result.error;
+    if ("error" in txResult) return txResult.error;
 
-    if (result.refundRequired && result.paymentIntentId) {
-      try {
-        await refundBookingPayment({
-          bookingId: result.booking.id,
-          paymentIntentId: result.paymentIntentId,
-          reason: "ORG_CANCEL",
-          amountCents: result.refundAmountCents,
-        });
-      } catch (refundErr) {
-        console.error("[organizacao/cancel] refund failed", refundErr);
+    try {
+      await runOrganizationBookingCancellationPostActions({
+        prisma,
+        result: txResult.result,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === "BOOKING_REFUND_FAILED") {
         return fail(
           502,
           "BOOKING_REFUND_FAILED",
@@ -352,91 +190,37 @@ async function _POST(
           true,
         );
       }
-    }
-
-    if (result.splitRefunds.length > 0) {
-      const refundedParticipantIds: number[] = [];
-      for (const refund of result.splitRefunds) {
-        try {
-          await refundBookingPayment({
-            bookingId: result.booking.id,
-            paymentIntentId: refund.paymentIntentId,
-            reason: "ORG_CANCEL",
-            amountCents: null,
-            idempotencyKey: `refund:BOOKING:${result.booking.id}:SPLIT:${refund.participantId}`,
-          });
-          refundedParticipantIds.push(refund.participantId);
-        } catch (refundErr) {
-          console.error("[organizacao/cancel] split refund failed", refundErr);
-          return fail(
-            502,
-            "BOOKING_REFUND_FAILED",
-            "Reserva cancelada, mas o reembolso falhou.",
-            true,
-          );
-        }
-      }
-
-      if (refundedParticipantIds.length > 0) {
-        await prisma.bookingSplitParticipant.updateMany({
-          where: { id: { in: refundedParticipantIds } },
-          data: { status: "CANCELLED" },
-        });
-      }
-    }
-
-    const crmPayload = result.crmPayload ?? null;
-    if (!result.already && crmPayload) {
-      try {
-        await ingestCrmInteraction({
-          organizationId: crmPayload.organizationId,
-          userId: crmPayload.userId ?? undefined,
-          type: CrmInteractionType.BOOKING_CANCELLED,
-          sourceType: CrmInteractionSource.BOOKING,
-          sourceId: String(crmPayload.bookingId),
-          occurredAt: new Date(),
-          contactEmail: crmPayload.guestEmail ?? undefined,
-          metadata: {
-            bookingId: crmPayload.bookingId,
-            serviceId: crmPayload.serviceId ?? null,
-            courtId: crmPayload.courtId ?? null,
-            resourceId: crmPayload.resourceId ?? null,
-            professionalId: crmPayload.professionalId ?? null,
-            canceledBy: "ORG",
-          },
-        });
-      } catch (err) {
-        console.warn("[organizacao/cancel] Falha ao criar interação CRM", err);
-      }
-    }
-
-    if (!result.already && bookingUserId) {
-      try {
-        const shouldSend = await shouldNotify(bookingUserId, "SYSTEM_ANNOUNCE");
-        if (shouldSend) {
-          await createNotification({
-            userId: bookingUserId,
-            type: "SYSTEM_ANNOUNCE",
-            title: "Reserva cancelada",
-            body: "A tua reserva foi cancelada pela organização.",
-            ctaUrl: "/me/reservas",
-            ctaLabel: "Ver reservas",
-            organizationId: organization.id,
-          });
-        }
-      } catch (notifyErr) {
-        console.warn("[organizacao/cancel] Falha ao enviar notificação", notifyErr);
-      }
+      throw error;
     }
 
     return respondOk(ctx, {
-      booking: { id: result.booking.id, status: result.booking.status },
-      alreadyCancelled: result.already,
-      snapshotTimezone: result.snapshotTimezone,
+      booking: { id: txResult.result.booking.id, status: txResult.result.booking.status },
+      alreadyCancelled: txResult.result.already,
+      snapshotTimezone: txResult.result.snapshotTimezone,
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "UNAUTHENTICATED", "Não autenticado.");
+    }
+    if (err instanceof Error) {
+      if (err.message === "BOOKING_CONFIRMATION_SNAPSHOT_REQUIRED") {
+        return fail(
+          409,
+          "BOOKING_CONFIRMATION_SNAPSHOT_REQUIRED",
+          "Reserva confirmada sem snapshot. Corre o backfill antes de cancelar.",
+          false,
+          { bookingId },
+        );
+      }
+      if (err.message === "BOOKING_CANCELLATION_NOT_ALLOWED") {
+        return fail(400, "BOOKING_CANCELLATION_NOT_ALLOWED", "Já não é possível cancelar esta reserva.");
+      }
+      if (err.message === "BOOKING_NOT_FOUND") {
+        return fail(404, "BOOKING_NOT_FOUND", "Reserva não encontrada.");
+      }
+      if (err.message === "BOOKING_REFUND_FAILED") {
+        return fail(502, "BOOKING_REFUND_FAILED", "Reserva cancelada, mas o reembolso falhou.", true);
+      }
     }
     console.error("POST /api/org/[orgId]/reservas/[id]/cancel error:", err);
     return fail(500, "BOOKING_CANCEL_FAILED", "Erro ao cancelar reserva.", true);
