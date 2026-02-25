@@ -6,10 +6,10 @@ export default function LoadingEventPage() {
           <div className="h-4 w-32 rounded-full bg-white/10" />
         </div>
 
-        <div className="orya-page-width mt-6 grid grid-cols-1 gap-6 px-4 md:px-8 lg:grid-cols-[minmax(320px,0.92fr)_minmax(420px,1.08fr)]">
-          <div className="relative order-1">
+        <div className="orya-page-width mt-6 grid grid-cols-1 gap-6 px-4 md:mt-8 md:grid-cols-[minmax(268px,0.9fr)_minmax(0,1.1fr)] md:items-start md:gap-7 md:px-8 lg:grid-cols-[minmax(320px,0.92fr)_minmax(420px,1.08fr)]">
+          <div className="relative order-1 md:self-start">
             <div className="pointer-events-none absolute -inset-[1px] rounded-[34px] bg-[conic-gradient(from_120deg,rgba(107,255,255,0.4),rgba(255,0,200,0.3),rgba(22,70,245,0.4),rgba(107,255,255,0.4))] opacity-50 blur-[2px]" />
-            <div className="relative aspect-square w-full overflow-hidden rounded-[32px] border border-white/15 orya-skeleton-surface shadow-[0_28px_70px_rgba(0,0,0,0.75)]" />
+            <div className="relative aspect-square w-full overflow-hidden rounded-[32px] border border-white/15 orya-skeleton-surface shadow-[0_28px_70px_rgba(0,0,0,0.75)] md:aspect-[4/5] lg:aspect-square" />
           </div>
 
           <div className="relative order-2">

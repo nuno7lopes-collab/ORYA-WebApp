@@ -70,12 +70,21 @@ async function tick() {
         "X-ORYA-CRON-SECRET": secret,
       },
     });
-    const json = await res.json().catch(() => null);
+    const rawBody = await res.text().catch(() => "");
+    let json = null;
+    if (rawBody) {
+      try {
+        json = JSON.parse(rawBody);
+      } catch {
+        json = null;
+      }
+    }
 
     if (!res.ok || !json?.ok) {
+      const bodyPreview = json ?? (rawBody ? rawBody.slice(0, 1200) : null);
       console.error("[worker] Falha a processar batch", {
         status: res.status,
-        body: json,
+        body: bodyPreview,
       });
     } else if (json?.processed > 0) {
       failureCount = 0;

@@ -8,6 +8,7 @@ import { respondError, respondOk } from "@/lib/http/envelope";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { recordCronHeartbeat } from "@/lib/cron/heartbeat";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logError } from "@/lib/observability/logger";
 
 function ensureInternalSecret(req: NextRequest, ctx: { requestId: string; correlationId: string }) {
   if (!requireInternalSecret(req)) {
@@ -40,6 +41,10 @@ async function _POST(req: NextRequest) {
       { status: 200 },
     );
   } catch (err) {
+    logError("cron.operations.failed", err, {
+      requestId: ctx.requestId,
+      correlationId: ctx.correlationId,
+    });
     await recordCronHeartbeat("operations", { status: "ERROR", startedAt, error: err });
     return respondError(
       ctx,

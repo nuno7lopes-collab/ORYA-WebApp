@@ -230,20 +230,6 @@ html:not([data-theme-mode="light"]) [data-org-dashboard-shell] {
   --orya-dashboard-surface-rgb: 8 16 30;
   --orya-dashboard-surface-rgb-soft: 11 22 40;
   --orya-dashboard-surface-rgb-accent: 16 34 58;
-  --orya-dashboard-shadow-lite: 0 10px 28px rgba(0, 0, 0, 0.38);
-}
-
-html:not([data-theme-mode="light"]) [data-org-dashboard-shell] [class*="backdrop-blur"] {
-  -webkit-backdrop-filter: none !important;
-  backdrop-filter: none !important;
-}
-
-html:not([data-theme-mode="light"]) [data-org-dashboard-shell] [class*="shadow-["] {
-  box-shadow: var(--orya-dashboard-shadow-lite) !important;
-}
-
-html:not([data-theme-mode="light"]) [data-org-dashboard-shell] [class*="blur-["] {
-  filter: none !important;
 }
 
 html:not([data-theme-mode="light"]) [data-org-dashboard-shell] .bg-black {
@@ -1229,16 +1215,6 @@ body {
   margin-right: auto;
 }
 
-.org-topbar-glass {
-  -webkit-backdrop-filter: blur(18px) saturate(145%);
-  backdrop-filter: blur(18px) saturate(145%);
-}
-
-.org-topbar-subnav-glass {
-  -webkit-backdrop-filter: blur(16px) saturate(140%);
-  backdrop-filter: blur(16px) saturate(140%);
-}
-
 .orya-mobile-topbar {
   border-bottom: 0.5px solid var(--orya-topbar-separator);
   background: var(--orya-topbar-bg);
@@ -1480,8 +1456,8 @@ body.orya-bg-landing {
   background-color: var(--orya-menu-bg-solid) !important;
   background-image: var(--orya-menu-bg) !important;
   box-shadow: var(--orya-menu-shadow) !important;
-  -webkit-backdrop-filter: none !important;
-  backdrop-filter: none !important;
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
   color: var(--theme-text);
 }
 

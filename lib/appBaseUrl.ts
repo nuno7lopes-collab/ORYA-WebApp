@@ -1,11 +1,26 @@
-import { env } from "@/lib/env";
 import { headers as nextHeaders } from "next/headers";
 
 const DEFAULT_BASE_URL = "http://localhost:3000";
+const APP_BASE_URL_KEYS = [
+  "APP_BASE_URL",
+  "NEXT_PUBLIC_BASE_URL",
+  "NEXT_PUBLIC_SITE_URL",
+  "NEXT_PUBLIC_APP_URL",
+  "SITE_URL",
+] as const;
+
+function readConfiguredBaseUrl() {
+  for (const key of APP_BASE_URL_KEYS) {
+    const value = process.env[key];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim().replace(/\/+$/, "");
+    }
+  }
+  return null;
+}
 
 export function getAppBaseUrl() {
-  const isProd = process.env.NODE_ENV === "production";
-  let raw = isProd ? env.appBaseUrl : null;
+  let raw = readConfiguredBaseUrl();
   let headerHost: string | null = null;
   if (!raw) {
     try {

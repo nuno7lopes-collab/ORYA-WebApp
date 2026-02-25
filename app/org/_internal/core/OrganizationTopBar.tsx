@@ -496,10 +496,10 @@ export default function OrganizationTopBar({
     >
       <div
         className={cn(
-          "org-topbar-glass relative w-full border-b transition-all duration-300",
+          "relative w-full border-b transition-all duration-300",
           isAtTop
-            ? "border-white/14 bg-[linear-gradient(120deg,rgba(20,20,20,0.78),rgba(20,20,20,0.86))] shadow-[0_8px_24px_rgba(0,0,0,0.3)]"
-            : "border-white/20 bg-[linear-gradient(120deg,rgba(20,20,20,0.9),rgba(20,20,20,0.96))] shadow-[0_8px_24px_rgba(0,0,0,0.38)]",
+            ? "border-white/18 bg-[#080c14] shadow-[0_16px_40px_rgba(0,0,0,0.56)]"
+            : "border-white/22 bg-[#070b13] shadow-[0_20px_52px_rgba(0,0,0,0.62)]",
         )}
       >
         <div
@@ -511,7 +511,7 @@ export default function OrganizationTopBar({
           <div className="flex min-w-0 items-center gap-2">
             <Link
               href={dashboardHref}
-              className="group flex h-10 min-w-0 shrink-0 items-center gap-2.5 rounded-full border border-white/22 bg-black/25 px-3.5 text-sm text-white shadow-[0_8px_18px_rgba(0,0,0,0.3)] transition hover:border-[#22D3EE]/45 hover:bg-[#22D3EE]/12"
+              className="group flex h-10 min-w-0 shrink-0 items-center gap-2.5 rounded-full border border-white/22 bg-black/25 px-3.5 text-sm text-white shadow-[0_12px_38px_rgba(0,0,0,0.36)] transition hover:border-[#22D3EE]/45 hover:bg-[#22D3EE]/12"
               aria-label={`Voltar ao painel (${currentApp.label})`}
             >
               {currentAppIcon ? (

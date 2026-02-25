@@ -519,6 +519,8 @@ export default async function EventPage({
     event.description && event.description.trim().length > 0
       ? event.description.trim()
       : t("eventDescriptionSoon", locale);
+  const heroDescription =
+    descriptionText.length > 220 ? `${descriptionText.slice(0, 217).trimEnd()}…` : descriptionText;
 
   const cover = getEventCoverUrl(event.coverImageUrl, {
     seed: event.slug ?? event.title ?? String(event.id),
@@ -714,19 +716,19 @@ export default async function EventPage({
   })();
 
   const backgroundDefaults = {
-    blur: 56,
-    scale: 1.28,
-    saturate: 1.28,
-    brightness: 1.06,
-    maskStops: [0, 24, 46, 68, 86, 100] as [number, number, number, number, number, number],
-    maskAlphas: [1, 0.98, 0.82, 0.5, 0.2, 0] as [number, number, number, number, number, number],
-    overlayTop: 0.38,
-    overlayMid: 0.22,
-    overlayBottom: 0.06,
-    fadeStart: 78,
-    fadeMid: 90,
-    fadeEnd: 99,
-    fadeDark: 0.78,
+    blur: 44,
+    scale: 1.22,
+    saturate: 1.14,
+    brightness: 0.9,
+    maskStops: [0, 20, 42, 66, 86, 100] as [number, number, number, number, number, number],
+    maskAlphas: [1, 0.98, 0.88, 0.62, 0.28, 0] as [number, number, number, number, number, number],
+    overlayTop: 0.56,
+    overlayMid: 0.36,
+    overlayBottom: 0.14,
+    fadeStart: 74,
+    fadeMid: 88,
+    fadeEnd: 98,
+    fadeDark: 0.9,
   };
 
   const backgroundVars = {
@@ -819,11 +821,10 @@ export default async function EventPage({
 
           <div
             data-testid="event-detail-dice-split"
-            className="orya-page-width mt-6 grid grid-cols-1 gap-6 px-4 md:px-8 lg:grid-cols-[minmax(320px,0.92fr)_minmax(420px,1.08fr)]"
+            className="orya-page-width mt-6 grid grid-cols-1 gap-6 px-4 md:mt-8 md:grid-cols-[minmax(268px,0.9fr)_minmax(0,1.1fr)] md:items-start md:gap-7 md:px-8 lg:grid-cols-[minmax(320px,0.92fr)_minmax(420px,1.08fr)]"
           >
-            <div data-testid="event-cover-square" className="relative order-1">
-              <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-[#7CFFEA]/70 to-transparent" />
-              <div className="relative aspect-square w-full overflow-hidden rounded-3xl border border-white/12 bg-black/40 shadow-[0_24px_60px_rgba(0,0,0,0.75)]">
+            <div data-testid="event-cover-square" className="relative order-1 md:self-start">
+              <div className="relative aspect-square w-full overflow-hidden rounded-3xl border border-white/12 bg-black/40 shadow-[0_24px_60px_rgba(0,0,0,0.75)] md:aspect-[4/5] lg:aspect-square">
                 <Image
                   src={cover}
                   alt={`${t("eventCoverAlt", locale)} ${event.title}`}
@@ -840,11 +841,27 @@ export default async function EventPage({
             </div>
 
             <div className="relative order-2">
-              <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-[#FF7AD9]/60 to-transparent" />
-              <div className="relative rounded-3xl border border-white/10 bg-black/55 p-6 shadow-[0_24px_60px_rgba(0,0,0,0.6)] backdrop-blur-2xl md:p-8 animate-fade-slide">
-                <h1 className="text-4xl font-semibold leading-tight text-white md:text-5xl lg:text-[3.35rem]">
+              <div className="relative rounded-3xl border border-white/12 bg-black/55 p-6 shadow-[0_24px_60px_rgba(0,0,0,0.6)] backdrop-blur-2xl md:p-7 lg:p-8 animate-fade-slide">
+                <h1 className="text-3xl font-semibold leading-[1.04] text-white sm:text-4xl md:text-[2.55rem] lg:text-[3.15rem]">
                   {event.title}
                 </h1>
+
+                <div className="mt-4 flex flex-wrap items-center gap-2.5">
+                  <span
+                    className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.18em] ${availabilityTone}`}
+                  >
+                    {availabilityLabel}
+                  </span>
+                  {showPriceFrom ? (
+                    <span className="rounded-full border border-white/20 bg-black/45 px-3 py-1 text-[11px] font-medium text-white/85">
+                      {t("fromLabel", locale)} {(displayPriceFrom ?? 0).toFixed(2)} €
+                    </span>
+                  ) : isGratis ? (
+                    <span className="rounded-full border border-emerald-400/40 bg-emerald-500/15 px-3 py-1 text-[11px] font-medium text-emerald-100">
+                      {freeBadgeLabel}
+                    </span>
+                  ) : null}
+                </div>
 
                 <div className="mt-5">
                   <p className="text-[10px] uppercase tracking-[0.2em] text-white/60">
@@ -883,16 +900,16 @@ export default async function EventPage({
                   )}
                 </div>
 
-                <div className="mt-6 space-y-4">
-                  <div>
+                <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-white/12 bg-black/35 px-3.5 py-3">
                     <p className="text-[10px] uppercase tracking-[0.2em] text-white/60">
                       {t("dateLabel", locale)}
                     </p>
-                    <p className="mt-1 text-base font-medium text-white/90">
+                    <p className="mt-1 text-sm font-medium text-white/90 md:text-base">
                       {formattedDate} · {time}
                     </p>
                   </div>
-                  <div>
+                  <div className="rounded-2xl border border-white/12 bg-black/35 px-3.5 py-3">
                     <p className="text-[10px] uppercase tracking-[0.2em] text-white/60">
                       {t("locationLabel", locale)}
                     </p>
@@ -903,7 +920,7 @@ export default async function EventPage({
                         rel="noreferrer"
                         className="mt-1 inline-flex flex-col items-start text-white/90 hover:text-white"
                       >
-                        <span className="text-base font-medium underline decoration-white/35 underline-offset-4">
+                        <span className="text-sm font-medium underline decoration-white/35 underline-offset-4 md:text-base">
                           {safeLocationName}
                         </span>
                         <span className="text-xs text-white/62">{safeLocationAddress}</span>
@@ -917,6 +934,10 @@ export default async function EventPage({
                   </div>
                 </div>
 
+                <p className="mt-5 text-sm leading-relaxed text-white/74 md:text-base">
+                  {heroDescription}
+                </p>
+
                 <div className="mt-7 flex flex-wrap items-center gap-3">
                   <a
                     href="#bilhetes"
@@ -924,6 +945,12 @@ export default async function EventPage({
                   >
                     {ticketCopy.viewLabel}
                     <span className="text-xs">↓</span>
+                  </a>
+                  <a
+                    href="#sobre"
+                    className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/5 px-4 py-2 text-xs font-semibold text-white/90 transition hover:border-white/30 hover:bg-white/10 md:text-sm"
+                  >
+                    {t("aboutEventTitle", locale)}
                   </a>
                 </div>
               </div>
