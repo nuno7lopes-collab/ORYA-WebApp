@@ -26,6 +26,9 @@ import { emitSplitRuntimeAlert, settleBookingSplitRuntime } from "@/domain/booki
 import { normalizeEmail } from "@/lib/utils/email";
 import { updateBooking } from "@/domain/bookings/commands";
 import { ensureEmailIdentity, resolveIdentityForUser } from "@/lib/ownership/identity";
+import { buildSubjectFingerprint } from "@/lib/holds/fingerprint";
+import { isPlatformHoldContractEnabled } from "@/lib/holds/config";
+import { releaseCheckoutHold, verifyCheckoutHoldOwnership } from "@/lib/holds/service";
 
 function parseNumber(value: unknown) {
   const parsed = Number(value);
@@ -920,6 +923,16 @@ export async function fulfillServiceBookingIntent(
     grossAmountCents: meta.grossAmountCents ?? null,
     cardPlatformFeeCents: meta.cardPlatformFeeCents ?? null,
   };
+  const holdId = typeof meta.holdId === "string" ? meta.holdId.trim() : "";
+  const holdClientSessionId =
+    typeof meta.clientSessionId === "string" ? meta.clientSessionId.trim() : "";
+  const holdSubjectFingerprintMeta =
+    typeof meta.subjectFingerprint === "string"
+      ? meta.subjectFingerprint.trim().toLowerCase()
+      : "";
+  const holdContractEnabled = isPlatformHoldContractEnabled();
+  let holdSubjectFingerprintResolved: string | null = null;
+  let holdOrgIdResolved: number | null = null;
 
   const paymentIntentId = intent.id;
   let stripeFeeCents: number | null = null;
@@ -972,12 +985,58 @@ export async function fulfillServiceBookingIntent(
           }
         | null = null;
       if (bookingId) {
+        const bookingForHold = await tx.booking.findUnique({
+          where: { id: bookingId },
+          select: {
+            id: true,
+            organizationId: true,
+            serviceId: true,
+            startsAt: true,
+            durationMinutes: true,
+            resourceId: true,
+            professionalId: true,
+          },
+        });
+        if (!bookingForHold) {
+          throw new Error("SERVICE_BOOKING_NOT_FOUND");
+        }
+        if (holdContractEnabled) {
+          holdOrgIdResolved = bookingForHold.organizationId;
+          if (!holdId || !holdClientSessionId || !holdSubjectFingerprintMeta) {
+            throw new Error("SLOT_TAKEN");
+          }
+          const expectedSubjectFingerprint = buildSubjectFingerprint({
+            orgId: bookingForHold.organizationId,
+            subjectType: "SERVICE",
+            serviceOrEventId: bookingForHold.serviceId,
+            startAtISO: bookingForHold.startsAt.toISOString(),
+            durationMinutes: bookingForHold.durationMinutes,
+            resourceIds: bookingForHold.resourceId ? [bookingForHold.resourceId] : [],
+            professionalId: bookingForHold.professionalId ?? null,
+          });
+          holdSubjectFingerprintResolved = expectedSubjectFingerprint;
+          if (expectedSubjectFingerprint !== holdSubjectFingerprintMeta) {
+            throw new Error("SLOT_TAKEN");
+          }
+          const holdValidation = await verifyCheckoutHoldOwnership({
+            holdId,
+            orgId: bookingForHold.organizationId,
+            subjectType: "SERVICE",
+            subjectFingerprint: expectedSubjectFingerprint,
+            clientSessionId: holdClientSessionId,
+          });
+          if (!holdValidation.ok) {
+            throw new Error("SLOT_TAKEN");
+          }
+        }
+
         const result = await confirmPendingBooking({
           tx,
           bookingId,
           now,
           ignoreExpiry: true,
           paymentMeta,
+          holdId: holdId || null,
         });
 
         if (!result.ok) {
@@ -1103,6 +1162,30 @@ export async function fulfillServiceBookingIntent(
       return true;
     }
     throw err;
+  }
+
+  if (
+    holdContractEnabled &&
+    holdOrgIdResolved &&
+    holdId &&
+    holdClientSessionId &&
+    holdSubjectFingerprintResolved
+  ) {
+    const released = await releaseCheckoutHold({
+      holdId,
+      orgId: holdOrgIdResolved,
+      subjectType: "SERVICE",
+      subjectFingerprint: holdSubjectFingerprintResolved,
+      clientSessionId: holdClientSessionId,
+      consumed: true,
+    });
+    if (!released.ok) {
+      logError("fulfill_service_booking.hold_release_failed", new Error(released.code), {
+        bookingId,
+        paymentIntentId,
+        holdId,
+      });
+    }
   }
 
   if (crmPayload) {
