@@ -48,6 +48,7 @@ type ConfirmBookingParams = {
   now?: Date;
   ignoreExpiry?: boolean;
   paymentMeta?: BookingConfirmationPaymentMeta | null;
+  holdId?: string | null;
 };
 
 function buildBlocks(bookings: Array<{ startsAt: Date; durationMinutes: number; professionalId: number | null; resourceId: number | null }>) {
@@ -93,6 +94,7 @@ export async function confirmPendingBooking({
   now = new Date(),
   ignoreExpiry = false,
   paymentMeta = null,
+  holdId = null,
 }: ConfirmBookingParams): Promise<ConfirmBookingResult> {
   const booking = await tx.booking.findUnique({
     where: { id: bookingId },
@@ -805,6 +807,7 @@ export async function confirmPendingBooking({
           bookingId: booking.id,
           serviceId: booking.serviceId,
           organizationId: booking.organizationId,
+          holdId: holdId ?? null,
         },
       },
     });
