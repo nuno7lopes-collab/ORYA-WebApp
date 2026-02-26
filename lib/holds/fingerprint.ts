@@ -2,7 +2,7 @@ import { createHash } from "crypto";
 import {
   buildHoldSubjectFingerprint,
   type HoldSubjectType,
-} from "@orya/shared";
+} from "@orya/shared/holds/fingerprint";
 
 type BuildSubjectFingerprintInput = {
   orgId: number;

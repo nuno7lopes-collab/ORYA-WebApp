@@ -1,7 +1,7 @@
 import {
   buildHoldSubjectFingerprintSeed,
   type HoldSubjectType,
-} from "@orya/shared";
+} from "@orya/shared/holds/fingerprint";
 
 type SubjectFingerprintInput = {
   orgId: number;
