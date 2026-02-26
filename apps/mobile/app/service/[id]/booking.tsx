@@ -104,6 +104,13 @@ const formatTime = (date: string, timeZone: string) => {
   });
 };
 
+const formatCountdown = (ms: number) => {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+};
+
 const resolveAssignmentMode = (
   service?: {
     kind?: string | null;
@@ -170,6 +177,7 @@ export default function ServiceBookingScreen() {
   } = useServiceDetail(serviceId ? String(serviceId) : "");
   const setCheckoutDraft = useCheckoutStore((state) => state.setDraft);
   const setCheckoutIntent = useCheckoutStore((state) => state.setIntent);
+  const checkoutDraft = useCheckoutStore((state) => state.draft);
   const bookingVerticalParam = useMemo(() => {
     const raw = Array.isArray(params.bookingVertical) ? params.bookingVertical[0] : params.bookingVertical;
     return String(raw ?? "")
@@ -226,6 +234,7 @@ export default function ServiceBookingScreen() {
   const [phoneDraft, setPhoneDraft] = useState("");
   const [phoneSaving, setPhoneSaving] = useState(false);
   const [pendingSlot, setPendingSlot] = useState<AvailabilitySlot | null>(null);
+  const [resumeCheckoutCountdown, setResumeCheckoutCountdown] = useState<string | null>(null);
 
   const assignmentMode = useMemo(
     () => resolveAssignmentMode(service ?? null),
@@ -625,8 +634,11 @@ export default function ServiceBookingScreen() {
           ok: boolean;
           booking?: {
             id?: number;
+            organizationId?: number;
             startsAt?: string;
             pendingExpiresAt?: string | null;
+            professionalId?: number | null;
+            resourceId?: number | null;
           };
           error?: string;
           message?: string;
@@ -655,11 +667,37 @@ export default function ServiceBookingScreen() {
           bookingId: json.booking?.id ?? null,
         });
         const idempotencyKey = buildCheckoutIdempotencyKey();
+        const holdSubjectLabel = `${service.title} · ${new Date(
+          json.booking?.startsAt ?? slot.startsAt,
+        ).toLocaleString("pt-PT", {
+          day: "2-digit",
+          month: "short",
+          hour: "2-digit",
+          minute: "2-digit",
+        })}`;
         setCheckoutDraft({
+          organizationId:
+            (typeof json.booking?.organizationId === "number"
+              ? json.booking.organizationId
+              : null) ??
+            (typeof service.organization?.id === "number"
+              ? service.organization.id
+              : null),
           serviceId: selectedServiceApiId,
           serviceTitle: service.title,
           bookingId: json.booking?.id ?? null,
           bookingStartsAt: json.booking?.startsAt ?? slot.startsAt,
+          bookingDurationMinutes: effectiveDurationMinutes,
+          bookingProfessionalId:
+            typeof json.booking?.professionalId === "number"
+              ? json.booking.professionalId
+              : assignmentMode === "PROFESSIONAL"
+                ? selectedProfessionalId
+                : null,
+          bookingResourceIds:
+            typeof json.booking?.resourceId === "number"
+              ? [json.booking.resourceId]
+              : [],
           pendingExpiresAt: json.booking?.pendingExpiresAt ?? null,
           bookingExpiresAt: json.booking?.pendingExpiresAt ?? null,
           sourceType: "SERVICE_BOOKING",
@@ -670,6 +708,7 @@ export default function ServiceBookingScreen() {
           currency: service.currency ?? "EUR",
           paymentMethod: "card",
           idempotencyKey,
+          holdSubjectLabel,
         });
         setCheckoutIntent({
           clientSecret: null,
@@ -760,6 +799,34 @@ export default function ServiceBookingScreen() {
     (!service ||
       service.locationMode !== "CHOOSE_AT_BOOKING" ||
       Boolean(addressSelection?.addressId));
+
+  const resumableCheckoutDraft = useMemo(() => {
+    if (!checkoutDraft) return null;
+    if (checkoutDraft.sourceType !== "SERVICE_BOOKING") return null;
+    if (!checkoutDraft.holdExpiresAt) return null;
+    if (!selectedServiceApiId || checkoutDraft.serviceId !== selectedServiceApiId) return null;
+    const expiresAtMs = new Date(checkoutDraft.holdExpiresAt).getTime();
+    if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) return null;
+    return checkoutDraft;
+  }, [checkoutDraft, selectedServiceApiId]);
+
+  useEffect(() => {
+    if (!resumableCheckoutDraft?.holdExpiresAt) {
+      setResumeCheckoutCountdown(null);
+      return;
+    }
+    const tick = () => {
+      const remaining = new Date(resumableCheckoutDraft.holdExpiresAt ?? "").getTime() - Date.now();
+      if (!Number.isFinite(remaining) || remaining <= 0) {
+        setResumeCheckoutCountdown(null);
+        return;
+      }
+      setResumeCheckoutCountdown(formatCountdown(remaining));
+    };
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [resumableCheckoutDraft?.holdExpiresAt]);
 
   if (isLoading) {
     return (
@@ -1336,6 +1403,31 @@ export default function ServiceBookingScreen() {
                   >
                     <Text className="text-white text-sm font-semibold text-center">
                       {phoneSaving ? "A guardar..." : "Guardar telemóvel"}
+                    </Text>
+                  </Pressable>
+                </View>
+              </GlassCard>
+            ) : null}
+
+            {resumableCheckoutDraft ? (
+              <GlassCard intensity={50}>
+                <View className="gap-3">
+                  <Text className="text-white text-sm font-semibold">Checkout em pausa</Text>
+                  <Text className="text-white/65 text-xs">
+                    {resumableCheckoutDraft.holdSubjectLabel ??
+                      resumableCheckoutDraft.serviceTitle ??
+                      "Reserva"}
+                    {resumeCheckoutCountdown ? ` · ${resumeCheckoutCountdown}` : ""}
+                  </Text>
+                  <Pressable
+                    onPress={() => safePush(router, "/checkout")}
+                    className="rounded-xl bg-white/12 px-4 py-3"
+                    style={{ minHeight: tokens.layout.touchTarget }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Retomar checkout"
+                  >
+                    <Text className="text-white text-sm font-semibold text-center">
+                      Retomar checkout
                     </Text>
                   </Pressable>
                 </View>

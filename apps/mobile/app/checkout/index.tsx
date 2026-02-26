@@ -8,7 +8,7 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "../../components/icons/Ionicons";
-import { tokens } from "@orya/shared";
+import { buildHoldSubjectFingerprint, tokens } from "@orya/shared";
 import Constants from "expo-constants";
 import {
   initStripe,
@@ -69,6 +69,22 @@ const resolveMethodLabel = (method: CheckoutMethod) => {
 const toApiPaymentMethod = (method: CheckoutMethod): "card" | "mbway" => {
   if (method === "mbway") return "mbway";
   return "card";
+};
+
+const createClientSessionId = () => {
+  const cryptoRef = globalThis.crypto as { randomUUID?: () => string } | undefined;
+  const randomUUID = cryptoRef?.randomUUID?.();
+  if (typeof randomUUID === "string" && randomUUID.length > 0) {
+    return randomUUID;
+  }
+  return `mobsess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
+};
+
+const formatCountdown = (ms: number) => {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 };
 
 const CHECKOUT_BLOCKED_CODES = new Set([
@@ -187,6 +203,7 @@ export default function CheckoutScreen() {
     number | null
   >(null);
   const [checkoutPollingTimedOut, setCheckoutPollingTimedOut] = useState(false);
+  const [holdCountdownLabel, setHoldCountdownLabel] = useState<string | null>(null);
   const recoveredTrackedRef = useRef(false);
   const statusCheckInFlightRef = useRef<Promise<CheckoutStatusResponse | null> | null>(null);
   const bookingStatusInFlightRef = useRef<Promise<string | null> | null>(null);
@@ -267,6 +284,73 @@ export default function CheckoutScreen() {
       bookingTimeoutTrackedRef.current = false;
     }
   }, [draft?.paymentIntentId, draft?.purchaseId, draft?.bookingId]);
+
+  useEffect(() => {
+    if (!draft?.holdExpiresAt) {
+      setHoldCountdownLabel(null);
+      return;
+    }
+    const tick = () => {
+      const remaining = new Date(draft.holdExpiresAt ?? "").getTime() - Date.now();
+      if (!Number.isFinite(remaining) || remaining <= 0) {
+        setHoldCountdownLabel(null);
+        return;
+      }
+      setHoldCountdownLabel(formatCountdown(remaining));
+    };
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [draft?.holdExpiresAt]);
+
+  useEffect(() => {
+    if (!draft) return;
+    if (draft.sourceType !== "SERVICE_BOOKING") return;
+    if (!draft.holdId || !draft.clientSessionId || !draft.holdSubjectFingerprint) return;
+    if (!draft.organizationId) return;
+    const interval = setInterval(() => {
+      void (async () => {
+        const pingResult = await api.requestRaw<{
+          ok: boolean;
+          expiresAt?: string | null;
+          data?: { expiresAt?: string | null };
+        }>("/api/holds/ping", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            holdId: draft.holdId,
+            orgId: draft.organizationId,
+            subjectType: "SERVICE",
+            subjectFingerprint: draft.holdSubjectFingerprint,
+            clientSessionId: draft.clientSessionId,
+          }),
+        });
+        const body = pingResult.data;
+        if (!pingResult.ok || !body?.ok) return;
+        const refreshedExpiresAt =
+          typeof body.expiresAt === "string"
+            ? body.expiresAt
+            : typeof body.data?.expiresAt === "string"
+              ? body.data.expiresAt
+              : null;
+        if (!refreshedExpiresAt) return;
+        const { createdAt: _createdAt, expiresAt: _expiresAt, ...persisted } = draft;
+        setDraft({
+          ...persisted,
+          holdExpiresAt: refreshedExpiresAt,
+        });
+      })().catch(() => undefined);
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, [
+    draft,
+    draft?.clientSessionId,
+    draft?.holdId,
+    draft?.holdSubjectFingerprint,
+    draft?.organizationId,
+    draft?.sourceType,
+    setDraft,
+  ]);
 
   const allowApplePay = Boolean(merchantId && applePaySupported);
   const isExpoGo =
@@ -748,6 +832,179 @@ export default function CheckoutScreen() {
     resolvedMethod,
   ]);
 
+  const ensureServiceCheckoutHold = useCallback(async () => {
+    if (!draft || !isServiceBooking) {
+      throw new Error("Checkout de reserva inválido.");
+    }
+    const orgId = Number(draft.organizationId);
+    const serviceId = Number(draft.serviceId);
+    const bookingId = Number(draft.bookingId);
+    const startsAtISO = String(draft.bookingStartsAt ?? "").trim();
+    const durationMinutes = Number(draft.bookingDurationMinutes);
+    if (
+      !Number.isFinite(orgId) ||
+      !Number.isFinite(serviceId) ||
+      !Number.isFinite(bookingId) ||
+      !startsAtISO ||
+      !Number.isFinite(durationMinutes) ||
+      durationMinutes <= 0
+    ) {
+      throw new Error("Reserva inválida.");
+    }
+
+    const expectedSubjectFingerprint = buildHoldSubjectFingerprint({
+      orgId: Math.trunc(orgId),
+      subjectType: "SERVICE",
+      serviceId: Math.trunc(serviceId),
+      startAtISO: startsAtISO,
+      durationMinutes: Math.trunc(durationMinutes),
+      professionalId:
+        typeof draft.bookingProfessionalId === "number"
+          ? Math.trunc(draft.bookingProfessionalId)
+          : null,
+      resourceIds:
+        Array.isArray(draft.bookingResourceIds) && draft.bookingResourceIds.length > 0
+          ? draft.bookingResourceIds
+          : [],
+    });
+    const nowMs = Date.now();
+    const existingHoldExpiresAtMs = draft.holdExpiresAt
+      ? new Date(draft.holdExpiresAt).getTime()
+      : null;
+    const hasExistingHold =
+      Boolean(draft.holdId) &&
+      Boolean(draft.clientSessionId) &&
+      Boolean(draft.holdSubjectFingerprint) &&
+      typeof existingHoldExpiresAtMs === "number" &&
+      Number.isFinite(existingHoldExpiresAtMs) &&
+      existingHoldExpiresAtMs > nowMs;
+
+    if (hasExistingHold) {
+      const pingResult = await api.requestRaw<{
+        ok: boolean;
+        expiresAt?: string | null;
+        errorCode?: string | null;
+        data?: { expiresAt?: string | null };
+      }>("/api/holds/ping", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            holdId: draft.holdId,
+            orgId: Math.trunc(orgId),
+            subjectType: "SERVICE",
+            subjectFingerprint: draft.holdSubjectFingerprint,
+            clientSessionId: draft.clientSessionId,
+        }),
+      });
+      const pingBody = pingResult.data;
+      if (pingResult.ok && pingBody?.ok) {
+        const refreshedExpiresAt =
+          typeof pingBody.expiresAt === "string"
+            ? pingBody.expiresAt
+            : typeof pingBody.data?.expiresAt === "string"
+              ? pingBody.data.expiresAt
+              : draft.holdExpiresAt ?? null;
+        if (refreshedExpiresAt) {
+          const { createdAt: _createdAt, expiresAt: _expiresAt, ...persisted } = draft;
+          setDraft({
+            ...persisted,
+            holdExpiresAt: refreshedExpiresAt,
+          });
+        }
+        return {
+          holdId: String(draft.holdId),
+          clientSessionId: String(draft.clientSessionId),
+          subjectFingerprint: String(draft.holdSubjectFingerprint),
+        };
+      }
+      const pingErrorCode =
+        typeof pingBody?.errorCode === "string"
+          ? pingBody.errorCode
+          : null;
+      if (pingErrorCode !== "HOLD_EXPIRED" && pingErrorCode !== "SLOT_NOT_AVAILABLE") {
+        return {
+          holdId: String(draft.holdId),
+          clientSessionId: String(draft.clientSessionId),
+          subjectFingerprint: String(draft.holdSubjectFingerprint),
+        };
+      }
+    }
+
+    const clientSessionId =
+      typeof draft.clientSessionId === "string" && draft.clientSessionId.trim().length > 0
+        ? draft.clientSessionId.trim()
+        : createClientSessionId();
+    const createResult = await api.requestRaw<{
+      ok: boolean;
+      holdId?: string;
+      expiresAt?: string;
+      subjectFingerprint?: string;
+      errorCode?: string;
+      message?: string;
+      data?: {
+        holdId?: string;
+        expiresAt?: string;
+        subjectFingerprint?: string;
+      };
+    }>("/api/holds/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        orgId: Math.trunc(orgId),
+        subjectType: "SERVICE",
+        subjectFingerprint: expectedSubjectFingerprint,
+        clientSessionId,
+        metadata: {
+          subjectLabel: draft.holdSubjectLabel ?? draft.serviceTitle ?? "Reserva",
+        },
+      }),
+    });
+    const createBody = createResult.data;
+    if (!createResult.ok || !createBody?.ok) {
+      const errorCode =
+        typeof createBody?.errorCode === "string"
+          ? createBody.errorCode
+          : "SLOT_NOT_AVAILABLE";
+      if (errorCode === "SLOT_NOT_AVAILABLE") {
+        throw new Error("Slot indisponível para checkout.");
+      }
+      throw new Error(createBody?.message || "Não foi possível bloquear o slot para checkout.");
+    }
+
+    const holdId =
+      typeof createBody.holdId === "string"
+        ? createBody.holdId
+        : typeof createBody.data?.holdId === "string"
+          ? createBody.data.holdId
+          : null;
+    const expiresAt =
+      typeof createBody.expiresAt === "string"
+        ? createBody.expiresAt
+        : typeof createBody.data?.expiresAt === "string"
+          ? createBody.data.expiresAt
+          : null;
+    const holdSubjectFingerprint =
+      typeof createBody.subjectFingerprint === "string"
+        ? createBody.subjectFingerprint
+        : typeof createBody.data?.subjectFingerprint === "string"
+          ? createBody.data.subjectFingerprint
+          : null;
+    if (!holdId || !expiresAt || !holdSubjectFingerprint) {
+      throw new Error("Não foi possível validar o bloqueio para checkout.");
+    }
+
+    const { createdAt: _createdAt, expiresAt: _expiresAt, ...persisted } = draft;
+    setDraft({
+      ...persisted,
+      holdId,
+      holdExpiresAt: expiresAt,
+      holdSubjectFingerprint,
+      clientSessionId,
+    });
+
+    return { holdId, clientSessionId, subjectFingerprint: holdSubjectFingerprint };
+  }, [draft, isServiceBooking, setDraft]);
+
   const handlePay = async () => {
     if (!draft) return;
     if (!session?.user?.id) {
@@ -783,6 +1040,7 @@ export default function CheckoutScreen() {
           if (!draft.serviceId || !draft.bookingId) {
             throw new Error("Reserva inválida.");
           }
+          const hold = await ensureServiceCheckoutHold();
           const result = await api.requestRaw<{
             ok: boolean;
             clientSecret?: string | null;
@@ -807,6 +1065,9 @@ export default function CheckoutScreen() {
               bookingId: draft.bookingId,
               paymentMethod: toApiPaymentMethod(resolvedMethod),
               idempotencyKey,
+              holdId: hold.holdId,
+              clientSessionId: hold.clientSessionId,
+              subjectFingerprint: hold.subjectFingerprint,
             }),
           });
           const json = result.data;
@@ -1373,6 +1634,15 @@ export default function CheckoutScreen() {
                   <Text style={{ color: "#F4FAFF", fontSize: 18, fontWeight: "700" }} numberOfLines={2}>
                     {draft.eventTitle ?? draft.serviceTitle ?? "Checkout"}
                   </Text>
+                  {isServiceBooking && draft.holdExpiresAt ? (
+                    <View className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                      <Text style={{ color: "rgba(233,244,255,0.72)", fontSize: 12 }}>
+                        {holdCountdownLabel
+                          ? `Bloqueio de checkout ativo (${holdCountdownLabel})`
+                          : "O seu bloqueio expirou - o slot já não está reservado."}
+                      </Text>
+                    </View>
+                  ) : null}
                   <View className="rounded-2xl border border-white/10 bg-black/20 px-3 py-3 gap-2">
                     <View className="flex-row items-center justify-between">
                       <Text style={{ color: "rgba(238,246,255,0.94)", fontSize: 14, fontWeight: "600" }}>

@@ -22,7 +22,11 @@ import {
 } from "@stripe/react-stripe-js";
 import { loadStripe, type StripeElementsOptions } from "@stripe/stripe-js";
 import { getStripePublishableKey } from "@/lib/stripePublic";
-import { formatIsoDateLabel, parseIsoDateStrict } from "@orya/shared";
+import {
+  buildHoldSubjectFingerprint,
+  formatIsoDateLabel,
+  parseIsoDateStrict,
+} from "@orya/shared";
 
 type ReservationAssignmentMode =
   | "PROFESSIONAL_ONLY"
@@ -139,6 +143,19 @@ type BookingPending = {
   startsAt: string;
 };
 
+type CheckoutHoldSession = {
+  holdId: string;
+  clientSessionId: string;
+  expiresAt: string;
+  subjectFingerprint: string;
+  subjectLabel: string;
+  subjectType: "SERVICE";
+  orgId: number;
+  serviceId: number;
+  bookingId: number;
+  bookingStartsAt: string;
+};
+
 type ReservationStep = 1 | 2 | 3 | 4;
 type PaymentMethod = "mbway" | "card";
 
@@ -185,6 +202,7 @@ const ghostButtonClass =
   "rounded-full border border-white/15 bg-white/5 px-3 py-2 text-[12px] text-white/80 transition hover:border-white/30 hover:bg-white/10 disabled:opacity-60 sm:px-4";
 
 const CARD_FEE_BPS = 100;
+const HOLD_STORAGE_KEY = "orya.checkout.hold.v1";
 const DEFAULT_BOOKING_POLICY: BookingPolicy = {
   gridMinutes: 30,
   durationCatalog: [30, 60, 90, 120],
@@ -234,6 +252,59 @@ function formatIsoDateInTimezone(date: Date, timeZone: string) {
   const day = map.get("day");
   if (!year || !month || !day) return formatLocalISODate(date);
   return `${year}-${month}-${day}`;
+}
+
+function formatRemainingCountdown(ms: number) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function readStoredHold(): CheckoutHoldSession | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(HOLD_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<CheckoutHoldSession>;
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      typeof parsed.holdId !== "string" ||
+      typeof parsed.clientSessionId !== "string" ||
+      typeof parsed.expiresAt !== "string" ||
+      typeof parsed.subjectFingerprint !== "string" ||
+      typeof parsed.orgId !== "number" ||
+      typeof parsed.serviceId !== "number" ||
+      typeof parsed.bookingId !== "number" ||
+      typeof parsed.bookingStartsAt !== "string"
+    ) {
+      return null;
+    }
+    return {
+      holdId: parsed.holdId,
+      clientSessionId: parsed.clientSessionId,
+      expiresAt: parsed.expiresAt,
+      subjectFingerprint: parsed.subjectFingerprint,
+      subjectLabel: typeof parsed.subjectLabel === "string" ? parsed.subjectLabel : "Reserva",
+      subjectType: "SERVICE",
+      orgId: parsed.orgId,
+      serviceId: parsed.serviceId,
+      bookingId: parsed.bookingId,
+      bookingStartsAt: parsed.bookingStartsAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function persistStoredHold(value: CheckoutHoldSession | null) {
+  if (typeof window === "undefined") return;
+  if (!value) {
+    window.sessionStorage.removeItem(HOLD_STORAGE_KEY);
+    return;
+  }
+  window.sessionStorage.setItem(HOLD_STORAGE_KEY, JSON.stringify(value));
 }
 
 function resolveServiceCover(coverImageUrl: string | null | undefined, seed: string | number) {
@@ -446,6 +517,10 @@ export default function ReservasBookingClient({
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [pendingSlot, setPendingSlot] = useState<AvailabilitySlot | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<AvailabilitySlot | null>(null);
+  const [checkoutHold, setCheckoutHold] = useState<CheckoutHoldSession | null>(null);
+  const [holdCountdownMs, setHoldCountdownMs] = useState<number | null>(null);
+  const [resumeCheckoutVisible, setResumeCheckoutVisible] = useState(false);
+  const holdExpiredHandledRef = useRef(false);
 
   const selectedService = activeServices.find((service) => service.id === selectedServiceId) ?? null;
   const selectedServiceVertical = resolveServiceVertical(selectedService);
@@ -796,6 +871,94 @@ export default function ReservasBookingClient({
   }, []);
 
   useEffect(() => {
+    const stored = readStoredHold();
+    if (!stored) return;
+    const stillValid = new Date(stored.expiresAt).getTime() > Date.now();
+    if (!stillValid) {
+      persistStoredHold(null);
+      return;
+    }
+    if (stored.orgId !== organization.id) {
+      return;
+    }
+    if (selectedServiceApiId && stored.serviceId !== selectedServiceApiId) {
+      return;
+    }
+    setCheckoutHold(stored);
+    setResumeCheckoutVisible(true);
+    if (!bookingPending) {
+      setBookingPending({
+        id: stored.bookingId,
+        status: "PENDING_CONFIRMATION",
+        pendingExpiresAt: stored.expiresAt,
+        startsAt: stored.bookingStartsAt,
+      });
+    }
+  }, [organization.id, selectedServiceApiId]);
+
+  useEffect(() => {
+    if (!checkoutHold) {
+      setHoldCountdownMs(null);
+      holdExpiredHandledRef.current = false;
+      return;
+    }
+    const tick = () => {
+      const remaining = new Date(checkoutHold.expiresAt).getTime() - Date.now();
+      setHoldCountdownMs(remaining);
+      if (remaining > 0) return;
+      if (holdExpiredHandledRef.current) return;
+      holdExpiredHandledRef.current = true;
+      setCheckout(null);
+      setCheckoutLoading(false);
+      setResumeCheckoutVisible(false);
+      setBookingError("O seu bloqueio expirou - o slot já não está reservado.");
+      persistStoredHold(null);
+      setCheckoutHold(null);
+      if (bookingPending) {
+        void cancelPendingBooking("HOLD_EXPIRED");
+      }
+    };
+    tick();
+    const interval = window.setInterval(tick, 1000);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [checkoutHold, bookingPending]);
+
+  useEffect(() => {
+    if (!checkoutHold) return;
+    const interval = window.setInterval(() => {
+      void fetch("/api/holds/ping", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          holdId: checkoutHold.holdId,
+          orgId: checkoutHold.orgId,
+          subjectType: checkoutHold.subjectType,
+          subjectFingerprint: checkoutHold.subjectFingerprint,
+          clientSessionId: checkoutHold.clientSessionId,
+        }),
+      })
+        .then((res) => res.json().catch(() => null).then((body) => ({ ok: res.ok, body })))
+        .then(({ ok, body }) => {
+          if (!ok || !body?.ok || typeof body.expiresAt !== "string") return;
+          setCheckoutHold((current) => {
+            if (!current || current.holdId !== checkoutHold.holdId) return current;
+            const next = { ...current, expiresAt: body.expiresAt };
+            persistStoredHold(next);
+            return next;
+          });
+        })
+        .catch(() => {
+          // ignore ping failures to avoid noisy UX
+        });
+    }, 60_000);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [checkoutHold]);
+
+  useEffect(() => {
     if (!selectedService) {
       setSelectedAddons({});
       setSelectedPackageId(null);
@@ -846,6 +1009,7 @@ export default function ReservasBookingClient({
     setPhoneError(null);
     setPendingSlot(null);
     setPaymentMethod("mbway");
+    clearHoldSession();
   }, [selectedServiceId, allowServiceSelection]);
 
   useEffect(() => {
@@ -904,6 +1068,7 @@ export default function ReservasBookingClient({
     setDurationError(null);
     setBookingSuccess(null);
     setPendingSlot(null);
+    clearHoldSession();
   }, [assignmentConfig.assignmentMode, selectedProfessionalId, selectedPartySize, addonsParam, durationOverrideMinutes]);
 
   useEffect(() => {
@@ -1110,7 +1275,144 @@ export default function ReservasBookingClient({
     }
   };
 
-  const startBookingCheckout = async (bookingId: number, method?: PaymentMethod) => {
+  const clearHoldSession = () => {
+    setCheckoutHold(null);
+    setHoldCountdownMs(null);
+    setResumeCheckoutVisible(false);
+    holdExpiredHandledRef.current = false;
+    persistStoredHold(null);
+  };
+
+  const releaseHoldSession = async (hold: CheckoutHoldSession | null, consumed = false) => {
+    if (!hold) return;
+    try {
+      await fetch("/api/holds/release", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          holdId: hold.holdId,
+          orgId: hold.orgId,
+          subjectType: hold.subjectType,
+          subjectFingerprint: hold.subjectFingerprint,
+          clientSessionId: hold.clientSessionId,
+          consumed,
+        }),
+      });
+    } catch {
+      // ignore release failures to keep UX responsive
+    }
+    clearHoldSession();
+  };
+
+  const buildHoldSubjectLabel = (startsAtIso: string) => {
+    const date = new Date(startsAtIso);
+    if (Number.isNaN(date.getTime())) {
+      return selectedService?.title ?? "Reserva";
+    }
+    const dateLabel = date.toLocaleDateString("pt-PT", {
+      day: "2-digit",
+      month: "short",
+      weekday: "short",
+      timeZone: timezone,
+    });
+    const timeLabel = date.toLocaleTimeString("pt-PT", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: timezone,
+    });
+    return `${selectedService?.title ?? "Reserva"} · ${dateLabel} ${timeLabel}`;
+  };
+
+  const ensureCheckoutHold = async (bookingId: number) => {
+    if (!selectedServiceApiId) {
+      throw new Error("Serviço inválido para checkout.");
+    }
+    const startsAtISO = bookingPending?.startsAt ?? selectedSlot?.startsAt ?? null;
+    if (!startsAtISO) {
+      throw new Error("Slot indisponível para checkout.");
+    }
+
+    const subjectFingerprint = buildHoldSubjectFingerprint({
+      orgId: organization.id,
+      subjectType: "SERVICE",
+      serviceId: selectedServiceApiId,
+      startAtISO: new Date(startsAtISO).toISOString(),
+      durationMinutes: effectiveDurationMinutes,
+      resourceIds: [],
+      professionalId: selectedProfessionalId ?? null,
+    });
+    const nowMs = Date.now();
+    if (
+      checkoutHold &&
+      checkoutHold.bookingId === bookingId &&
+      checkoutHold.subjectFingerprint === subjectFingerprint &&
+      new Date(checkoutHold.expiresAt).getTime() > nowMs
+    ) {
+      return checkoutHold;
+    }
+
+    const existing = readStoredHold();
+    if (
+      existing &&
+      existing.bookingId === bookingId &&
+      existing.serviceId === selectedServiceApiId &&
+      existing.orgId === organization.id &&
+      existing.subjectFingerprint === subjectFingerprint &&
+      new Date(existing.expiresAt).getTime() > nowMs
+    ) {
+      setCheckoutHold(existing);
+      persistStoredHold(existing);
+      setResumeCheckoutVisible(false);
+      return existing;
+    }
+
+    const clientSessionId = existing?.clientSessionId ?? crypto.randomUUID();
+    const subjectLabel = buildHoldSubjectLabel(startsAtISO);
+    const response = await fetch("/api/holds/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        orgId: organization.id,
+        subjectType: "SERVICE",
+        subjectFingerprint,
+        clientSessionId,
+        metadata: { subjectLabel },
+      }),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload?.ok) {
+      const errorCode = payload?.errorCode ?? payload?.error ?? "SLOT_NOT_AVAILABLE";
+      if (errorCode === "SLOT_NOT_AVAILABLE") {
+        throw new Error("Slot indisponível para checkout.");
+      }
+      throw new Error(payload?.message || "Não foi possível criar bloqueio de checkout.");
+    }
+    const hold: CheckoutHoldSession = {
+      holdId: String(payload.holdId),
+      clientSessionId,
+      expiresAt: String(payload.expiresAt),
+      subjectFingerprint:
+        typeof payload.subjectFingerprint === "string"
+          ? payload.subjectFingerprint
+          : subjectFingerprint,
+      subjectLabel,
+      subjectType: "SERVICE",
+      orgId: organization.id,
+      serviceId: selectedServiceApiId,
+      bookingId,
+      bookingStartsAt: startsAtISO,
+    };
+    setCheckoutHold(hold);
+    persistStoredHold(hold);
+    setResumeCheckoutVisible(false);
+    return hold;
+  };
+
+  const startBookingCheckout = async (
+    bookingId: number,
+    method?: PaymentMethod,
+    holdOverride?: CheckoutHoldSession | null,
+  ) => {
     if (!selectedServiceApiId) return;
     if (!ensureAuth(redirectPath)) return;
 
@@ -1121,10 +1423,17 @@ export default function ReservasBookingClient({
     setPaymentMessage(null);
 
     try {
+      const hold = holdOverride ?? (await ensureCheckoutHold(bookingId));
       const res = await fetch(`/api/servicos/${selectedServiceApiId}/checkout`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bookingId, paymentMethod: resolvedMethod }),
+        body: JSON.stringify({
+          bookingId,
+          paymentMethod: resolvedMethod,
+          holdId: hold.holdId,
+          clientSessionId: hold.clientSessionId,
+          subjectFingerprint: hold.subjectFingerprint,
+        }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
@@ -1135,6 +1444,8 @@ export default function ReservasBookingClient({
         }
         if (json?.error === "RESERVA_EXPIRADA") {
           setBookingPending(null);
+          await releaseHoldSession(hold, false);
+          return;
         }
         throw new Error(resolveBookingApiErrorMessage(json, "Erro ao iniciar pagamento."));
       }
@@ -1169,6 +1480,8 @@ export default function ReservasBookingClient({
   const cancelPendingBooking = async (reason: string) => {
     if (!bookingPending) return;
     const pendingId = bookingPending.id;
+    const holdToRelease =
+      checkoutHold && checkoutHold.bookingId === pendingId ? checkoutHold : null;
     setBookingPending(null);
     setCheckout(null);
     setCheckoutError(null);
@@ -1189,6 +1502,9 @@ export default function ReservasBookingClient({
     } catch {
       // ignore cancel errors to keep UX responsive
     }
+    if (holdToRelease) {
+      await releaseHoldSession(holdToRelease, false);
+    }
   };
 
   const goToStep = (step: ReservationStep) => {
@@ -1202,6 +1518,20 @@ export default function ReservasBookingClient({
     setActiveStep(step);
   };
 
+  const resumeCheckoutFromHold = async () => {
+    if (!checkoutHold) return;
+    setResumeCheckoutVisible(false);
+    if (!bookingPending) {
+      setBookingPending({
+        id: checkoutHold.bookingId,
+        status: "PENDING_CONFIRMATION",
+        pendingExpiresAt: checkoutHold.expiresAt,
+        startsAt: checkoutHold.bookingStartsAt,
+      });
+    }
+    await startBookingCheckout(checkoutHold.bookingId, paymentMethod, checkoutHold);
+  };
+
   const pollBookingStatus = async (bookingId: number, startsAtIso: string) => {
     for (let attempt = 0; attempt < 8; attempt += 1) {
       if (!mountedRef.current) return;
@@ -1213,6 +1543,7 @@ export default function ReservasBookingClient({
           setBookingSuccess("Agendamento confirmado.");
           setBookingPending(null);
           setCheckout(null);
+          clearHoldSession();
           loadDaySlots(startsAtIso.slice(0, 10), { force: true });
           return;
         }
@@ -1220,6 +1551,7 @@ export default function ReservasBookingClient({
           setBookingError("Esta reserva foi cancelada.");
           setBookingPending(null);
           setCheckout(null);
+          clearHoldSession();
           return;
         }
       } catch {
@@ -1340,6 +1672,13 @@ export default function ReservasBookingClient({
   const pendingExpiryLabel = bookingPending?.pendingExpiresAt
     ? new Date(bookingPending.pendingExpiresAt).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })
     : null;
+  const holdExpiryLabel = checkoutHold?.expiresAt
+    ? new Date(checkoutHold.expiresAt).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })
+    : null;
+  const holdCountdownLabel =
+    holdCountdownMs != null && holdCountdownMs > 0
+      ? formatRemainingCountdown(holdCountdownMs)
+      : null;
   const stepItems = allowServiceSelection
     ? ([
         { id: 1, title: "Serviço", index: 1 },
@@ -1667,12 +2006,27 @@ export default function ReservasBookingClient({
                   Fechar
                 </button>
               )}
-              {bookingPending && pendingExpiryLabel && (
+              {checkoutHold && holdCountdownLabel && (
                 <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] text-white/70">
-                  Pré-reserva até {pendingExpiryLabel}
+                  Hold checkout: {holdCountdownLabel}
                 </div>
               )}
             </div>
+
+            {resumeCheckoutVisible && checkoutHold && !checkout && (
+              <div className={`${panelSoftClass} mt-2 flex flex-wrap items-center justify-between gap-3`}>
+                <div className="space-y-1">
+                  <p className="text-[12px] font-semibold text-white">Checkout em pausa</p>
+                  <p className="text-[11px] text-white/65">
+                    {checkoutHold.subjectLabel}
+                    {holdCountdownLabel ? ` · ${holdCountdownLabel}` : ""}
+                  </p>
+                </div>
+                <button type="button" className={primaryButtonClass} onClick={() => void resumeCheckoutFromHold()}>
+                  Voltar ao checkout
+                </button>
+              </div>
+            )}
 
             <div className="-mx-1 flex gap-2 overflow-x-auto pb-1 px-1 sm:flex-wrap sm:overflow-visible">
               {stepItems.map((step) => {
@@ -2206,7 +2560,11 @@ export default function ReservasBookingClient({
                     <div className={`${panelSoftClass} mt-4`}>
                       <p className="text-sm font-semibold text-white">Pré-reserva</p>
                       <p className="mt-1 text-[12px] text-white/60">
-                        {pendingExpiryLabel ? `Expira às ${pendingExpiryLabel}.` : "Expira em breve."}
+                        {holdCountdownLabel
+                          ? `Bloqueio ativo (${holdCountdownLabel}) · expira às ${holdExpiryLabel ?? pendingExpiryLabel ?? "--:--"}.`
+                          : pendingExpiryLabel
+                            ? `Expira às ${pendingExpiryLabel}.`
+                            : "Expira em breve."}
                       </p>
                       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[12px] text-white/70">
                         <span>
