@@ -68,6 +68,17 @@ describe("calendar ux guardrails", () => {
     expect(booking).toContain("Continuar para pagamento");
   });
 
+  it("mantém resume de checkout com hold em sessionStorage", () => {
+    const booking = readLocal("app/[username]/_components/ReservasBookingClient.tsx");
+
+    expect(booking).toContain('const HOLD_STORAGE_KEY = "orya.checkout.hold.v1"');
+    expect(booking).toContain("window.sessionStorage.getItem(HOLD_STORAGE_KEY)");
+    expect(booking).toContain("window.sessionStorage.setItem(HOLD_STORAGE_KEY");
+    expect(booking).toContain("/api/holds/ping");
+    expect(booking).toContain("Voltar ao checkout");
+    expect(booking).toContain("O seu bloqueio expirou - o slot já não está reservado.");
+  });
+
   it("removes native date/time inputs from standardized flows", () => {
     const migratedFiles = [
       "app/[username]/_components/ReservasBookingClient.tsx",
