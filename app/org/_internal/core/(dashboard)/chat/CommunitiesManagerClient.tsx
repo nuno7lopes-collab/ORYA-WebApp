@@ -3,12 +3,14 @@
 import { useCallback, useMemo, useState } from "react";
 import useSWR from "swr";
 import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/org/_internal/core/dashboardUi";
+import { ORYA_ORG_ID_HEADER } from "@/lib/http/headers";
 import {
   COMMUNITY_ACCESS_MODE_OPTIONS,
   COMMUNITY_TALK_POLICY_OPTIONS,
   formatCommunityAccessModeLabel,
   formatCommunityTalkPolicyLabel,
 } from "@/lib/messages/communityUi";
+import { getOrganizationIdFromBrowser, parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
 
 type CommunityItem = {
   conversationId: string;
@@ -167,13 +169,38 @@ const apiErrorLabels: Record<string, string> = {
   INVALID_ACTION: "Ação inválida.",
 };
 
+function resolveActiveOrganizationId() {
+  if (typeof window === "undefined") return null;
+  return parseOrganizationIdFromPathname(window.location.pathname) ?? getOrganizationIdFromBrowser();
+}
+
+function withOrganizationId(url: string, organizationId: number | null) {
+  if (!organizationId || typeof window === "undefined") return url;
+  try {
+    const parsed = new URL(url, window.location.origin);
+    if (parsed.origin !== window.location.origin) return url;
+    if (!parsed.pathname.startsWith("/api/")) return url;
+    if (!parsed.searchParams.has("organizationId")) {
+      parsed.searchParams.set("organizationId", String(organizationId));
+    }
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return url;
+  }
+}
+
 async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
+  const organizationId = resolveActiveOrganizationId();
+  const requestUrl = withOrganizationId(url, organizationId);
+  const headers = new Headers(init?.headers ?? {});
+  headers.set("content-type", "application/json");
+  if (organizationId && !headers.has(ORYA_ORG_ID_HEADER)) {
+    headers.set(ORYA_ORG_ID_HEADER, String(organizationId));
+  }
+
+  const res = await fetch(requestUrl, {
     ...init,
-    headers: {
-      "content-type": "application/json",
-      ...(init?.headers ?? {}),
-    },
+    headers,
     cache: "no-store",
   });
 
