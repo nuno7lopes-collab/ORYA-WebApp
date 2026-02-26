@@ -5008,6 +5008,29 @@ model Booking {
   @@schema("app_v3")
 }
 
+model ReservationHold {
+  env                String    @default("prod")
+  id                 Int       @id @default(autoincrement())
+  holdId             String    @unique @map("hold_id") @db.Uuid
+  organizationId     Int       @map("organization_id")
+  subjectType        String    @map("subject_type")
+  subjectFingerprint String    @map("subject_fingerprint") @db.Text
+  clientSessionHash  String    @map("client_session_hash") @db.Text
+  status             String    @default("ACTIVE")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt          DateTime  @map("expires_at") @db.Timestamptz(6)
+  releasedAt         DateTime? @map("released_at") @db.Timestamptz(6)
+  consumedAt         DateTime? @map("consumed_at") @db.Timestamptz(6)
+  dedupeHash         String    @unique @map("dedupe_hash") @db.Text
+  metadata           Json?     @default("{}")
+
+  @@index([organizationId], map: "reservation_holds_org_idx")
+  @@index([organizationId, subjectFingerprint], map: "reservation_holds_org_subject_idx")
+  @@index([status, expiresAt], map: "reservation_holds_status_expires_idx")
+  @@map("reservation_holds")
+  @@schema("app_v3")
+}
+
 model BookingChangeRequest {
   env                    String                     @default("prod")
   id                     Int                        @id @default(autoincrement())

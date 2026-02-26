@@ -37,6 +37,9 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { normalizeEmail } from "@/lib/utils/email";
+import { buildSubjectFingerprint } from "@/lib/holds/fingerprint";
+import { isPlatformHoldContractEnabled } from "@/lib/holds/config";
+import { verifyCheckoutHoldOwnership } from "@/lib/holds/service";
 import {
   isValidPhone,
   normalizePhone,
@@ -65,6 +68,25 @@ function normalizeCheckoutPaymentMethod(raw: unknown): "mbway" | "card" | null {
   if (value === "card") return "card";
   if (value === "mbway" || value === "mb_way") return "mbway";
   return null;
+}
+
+function buildServiceBookingFingerprint(params: {
+  orgId: number;
+  serviceId: number;
+  startsAt: Date;
+  durationMinutes: number;
+  resourceId?: number | null;
+  professionalId?: number | null;
+}) {
+  return buildSubjectFingerprint({
+    orgId: params.orgId,
+    subjectType: "SERVICE",
+    serviceOrEventId: params.serviceId,
+    startAtISO: params.startsAt.toISOString(),
+    durationMinutes: params.durationMinutes,
+    resourceIds: params.resourceId ? [params.resourceId] : [],
+    professionalId: params.professionalId ?? null,
+  });
 }
 
 async function _POST(
@@ -129,6 +151,13 @@ async function _POST(
         ? payload.idempotencyKey
         : idempotencyKeyHeader || ""
       ).trim() || null;
+    const holdId = typeof payload?.holdId === "string" ? payload.holdId.trim() : "";
+    const holdClientSessionId =
+      typeof payload?.clientSessionId === "string" ? payload.clientSessionId.trim() : "";
+    const holdSubjectFingerprint =
+      typeof payload?.subjectFingerprint === "string"
+        ? payload.subjectFingerprint.trim().toLowerCase()
+        : "";
     if (!Number.isFinite(bookingId)) {
       return fail("RESERVA_INVALIDA", "Reserva inválida.", 400);
     }
@@ -260,6 +289,34 @@ async function _POST(
         data: { status: "CANCELLED_BY_CLIENT" },
       });
       return fail("RESERVA_EXPIRADA", "Reserva expirada.", 410);
+    }
+
+    const holdContractEnabled = isPlatformHoldContractEnabled();
+    const expectedSubjectFingerprint = buildServiceBookingFingerprint({
+      orgId: booking.organizationId,
+      serviceId: booking.serviceId,
+      startsAt: booking.startsAt,
+      durationMinutes: booking.durationMinutes,
+      resourceId: booking.resourceId,
+      professionalId: booking.professionalId,
+    });
+    if (holdContractEnabled) {
+      if (!holdId || !holdClientSessionId || !holdSubjectFingerprint) {
+        return fail("SLOT_NOT_AVAILABLE", "Slot indisponível para checkout.", 409);
+      }
+      if (holdSubjectFingerprint !== expectedSubjectFingerprint) {
+        return fail("SLOT_NOT_AVAILABLE", "Slot indisponível para checkout.", 409);
+      }
+      const holdCheck = await verifyCheckoutHoldOwnership({
+        holdId,
+        orgId: booking.organizationId,
+        subjectType: "SERVICE",
+        subjectFingerprint: expectedSubjectFingerprint,
+        clientSessionId: holdClientSessionId,
+      });
+      if (!holdCheck.ok) {
+        return fail("SLOT_NOT_AVAILABLE", "Slot indisponível para checkout.", 409);
+      }
     }
 
     if (!user && guestEmail && guestConsent) {
@@ -531,6 +588,10 @@ async function _POST(
           sourceId,
           currency,
           paymentMethod,
+          holdId,
+          clientSessionId: holdClientSessionId,
+          subjectFingerprint: expectedSubjectFingerprint,
+          subjectType: "SERVICE",
         },
         orgContext: {
           stripeAccountId: booking.service.organization.stripeAccountId ?? null,
