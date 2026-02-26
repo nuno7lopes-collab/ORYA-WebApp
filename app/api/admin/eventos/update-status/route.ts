@@ -4,7 +4,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
-import type { EventStatus } from "@prisma/client";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 import { refundKey } from "@/lib/stripe/idempotency";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
@@ -59,18 +58,14 @@ async function _POST(req: NextRequest) {
         { status: 400 }
       );
     }
-    const nextStatusRaw = status.trim().toUpperCase();
-    const nextStatus =
-      (Object.values(EventStatus) as string[]).includes(nextStatusRaw)
-        ? (nextStatusRaw as EventStatus)
-        : null;
+    const nextStatus = status.trim().toUpperCase();
     if (!nextStatus) {
       return jsonWrap(
         { ok: false, error: "STATUS_INVALID" },
         { status: 400 }
       );
     }
-    if (nextStatus !== EventStatus.PUBLISHED && nextStatus !== EventStatus.CANCELLED) {
+    if (nextStatus !== "PUBLISHED" && nextStatus !== "CANCELLED") {
       return jsonWrap(
         { ok: false, error: "UNSUPPORTED_EVENT_STATUS_TRANSITION" },
         { status: 400 }
@@ -125,7 +120,7 @@ async function _POST(req: NextRequest) {
           { status: 404 }
         );
       }
-      if (existing.status === EventStatus.CANCELLED) {
+      if (String(existing.status) === "CANCELLED") {
         return jsonWrap(
           { ok: false, error: "EVENT_CANCELLED_TERMINAL" },
           { status: 409 }
@@ -135,7 +130,7 @@ async function _POST(req: NextRequest) {
       const updated = await prisma.event.update({
         where: { id: existing.id },
         data: {
-          status: nextStatus,
+          status: nextStatus as any,
         },
         select: {
           id: true,
@@ -167,7 +162,7 @@ async function _POST(req: NextRequest) {
       }
 
       const shouldAutoRefund =
-        existing.status !== EventStatus.CANCELLED && updated.status === EventStatus.CANCELLED;
+        String(existing.status) !== "CANCELLED" && String(updated.status) === "CANCELLED";
 
       if (shouldAutoRefund) {
         // Disparar refunds base-only para todas as compras deste evento (idempotente por dedupeKey)

@@ -1,0 +1,68 @@
+import { NextRequest } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { requireAdminUser } from "@/lib/admin/auth";
+import {
+  TELEMETRY_INCIDENT_STATUSES,
+  type TelemetryIncidentStatus,
+} from "@/domain/telemetry/constants";
+import { listTelemetryIncidents } from "@/domain/telemetry/alerts";
+import { logError } from "@/lib/observability/logger";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+function parseOrganizationId(value: string | null): number | null {
+  if (!value) return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed <= 0) return null;
+  return parsed;
+}
+
+function parseTake(value: string | null) {
+  const parsed = Number(value ?? "100");
+  if (!Number.isFinite(parsed) || parsed <= 0) return 100;
+  return Math.min(Math.floor(parsed), 300);
+}
+
+function parseStatuses(value: string | null): TelemetryIncidentStatus[] | undefined {
+  if (!value) return undefined;
+  const tokens = value
+    .split(",")
+    .map((part) => part.trim().toUpperCase())
+    .filter(Boolean);
+
+  const valid = tokens.filter((token): token is TelemetryIncidentStatus =>
+    (TELEMETRY_INCIDENT_STATUSES as readonly string[]).includes(token),
+  );
+
+  return valid.length ? valid : undefined;
+}
+
+async function _GET(req: NextRequest) {
+  try {
+    const admin = await requireAdminUser({ req });
+    if (!admin.ok) {
+      return jsonWrap({ ok: false, error: admin.error }, { status: admin.status, req });
+    }
+
+    const searchParams = req.nextUrl.searchParams;
+    const organizationId = parseOrganizationId(searchParams.get("orgId"));
+    const statuses = parseStatuses(searchParams.get("statuses"));
+    const ruleId = searchParams.get("ruleId")?.trim() || null;
+
+    const items = await listTelemetryIncidents({
+      organizationId,
+      statuses,
+      ruleId,
+      take: parseTake(searchParams.get("take")),
+    });
+
+    return jsonWrap({ ok: true, items }, { status: 200, req });
+  } catch (err) {
+    logError("admin.telemetry.incidents_list_failed", err);
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500, req });
+  }
+}
+
+export const GET = withApiEnvelope(_GET);

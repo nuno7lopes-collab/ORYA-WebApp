@@ -465,6 +465,21 @@ async function handlePadelRegistrationIntent(req: NextRequest, body: Body) {
   if (!pairing?.event || pairing.event.isDeleted) {
     return intentError("EVENT_NOT_FOUND", "Evento não encontrado.", { httpStatus: 404 });
   }
+  const pairingEventStatus = String(pairing.event.status ?? "").toUpperCase();
+  if (pairingEventStatus === "CANCELLED") {
+    return intentError("EVENT_CANCELLED", "Este evento foi cancelado.", {
+      httpStatus: 409,
+      status: "FAILED",
+      retryable: false,
+    });
+  }
+  if (pairingEventStatus !== "PUBLISHED") {
+    return intentError("EVENT_CLOSED", "Evento indisponível para inscrição.", {
+      httpStatus: 409,
+      status: "FAILED",
+      retryable: false,
+    });
+  }
   if (pairing.pairingStatus === "CANCELLED") {
     return intentError("PAIRING_CANCELLED", "A dupla foi cancelada.", { httpStatus: 409, status: "FAILED" });
   }

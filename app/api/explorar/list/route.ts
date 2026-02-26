@@ -345,6 +345,7 @@ async function listMapEvents(params: {
       pricingMode: true,
       coverImageUrl: true,
       ticketTypes: {
+        where: { publicAccess: true },
         select: {
           id: true,
           name: true,

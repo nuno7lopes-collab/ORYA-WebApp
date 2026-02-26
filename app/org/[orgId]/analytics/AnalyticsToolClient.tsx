@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import {
@@ -109,6 +109,41 @@ type AnalyticsEventsResponse = {
   }>;
 };
 
+type TelemetryAlertRuleResponse = {
+  id: string;
+  organizationId: number | null;
+  name: string;
+  description: string | null;
+  metricKey: string;
+  dimensionKey: string | null;
+  dimensionValue: string | null;
+  comparisonOperator: string;
+  threshold: number;
+  windowMinutes: number;
+  cooldownMinutes: number;
+  severity: string;
+  isActive: boolean;
+};
+
+type TelemetryIncidentResponse = {
+  id: string;
+  ruleId: string | null;
+  organizationId: number | null;
+  status: "OPEN" | "ACKNOWLEDGED" | "RESOLVED";
+  severity: string;
+  title: string;
+  description: string | null;
+  metricKey: string | null;
+  dimensionKey: string | null;
+  dimensionValue: string | null;
+  observedValue: number | null;
+  thresholdValue: number | null;
+  triggeredAt: string;
+  acknowledgedAt: string | null;
+  resolvedAt: string | null;
+  rule?: { id: string; name: string } | null;
+};
+
 type TelemetryOverviewResponse = {
   window: { hours: number; from: string; to: string };
   totals: { totalEvents: number; errorEvents: number; uniqueActors: number; errorRateBps: number };
@@ -125,6 +160,8 @@ type TelemetryOverviewResponse = {
     requestId: string | null;
     organizationId: number | null;
   }>;
+  incidents?: TelemetryIncidentResponse[];
+  rules?: TelemetryAlertRuleResponse[];
 };
 
 type TelemetryEventsResponse = {
@@ -139,6 +176,17 @@ type TelemetryEventsResponse = {
     occurredAt: string;
   }>;
   pagination: { hasMore: boolean; nextCursor: string | null };
+};
+
+type TelemetryEvaluationResult = {
+  evaluatedRules: number;
+  evaluatedOrganizations: number;
+  openedIncidents: number;
+  updatedIncidents: number;
+  resolvedIncidents: number;
+  skippedByCooldown: number;
+  breachesDetected: number;
+  errors: number;
 };
 
 const swrOptions = {
@@ -249,6 +297,20 @@ function formatDateTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function formatTelemetryStatus(status: TelemetryIncidentResponse["status"]) {
+  if (status === "OPEN") return "Aberto";
+  if (status === "ACKNOWLEDGED") return "Reconhecido";
+  return "Resolvido";
+}
+
+function formatTelemetryMetricKey(value: string | null | undefined) {
+  if (!value) return "Métrica";
+  if (value === "EVENT_COUNT") return "Total de eventos";
+  if (value === "ERROR_COUNT") return "Total de erros";
+  if (value === "UNIQUE_ACTORS") return "Actores únicos";
+  return value;
 }
 
 function prettyMetricKey(value: MetricOption) {
@@ -460,6 +522,75 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
     isLoading: telemetryEventsLoading,
     mutate: mutateTelemetryEvents,
   } = useSWR<TelemetryEventsResponse>(telemetryEventsKey, apiFetcher, swrOptions);
+  const [telemetryActionBusyKey, setTelemetryActionBusyKey] = useState<string | null>(null);
+  const [telemetryActionError, setTelemetryActionError] = useState<string | null>(null);
+  const [telemetryActionInfo, setTelemetryActionInfo] = useState<string | null>(null);
+  const [telemetryEvaluateBusy, setTelemetryEvaluateBusy] = useState(false);
+  const [telemetryLastEvaluation, setTelemetryLastEvaluation] = useState<TelemetryEvaluationResult | null>(null);
+
+  const applyTelemetryIncidentAction = useCallback(
+    async (incidentId: string, action: "ACK" | "RESOLVE") => {
+      setTelemetryActionError(null);
+      setTelemetryActionInfo(null);
+      const busyKey = `${incidentId}:${action}`;
+      setTelemetryActionBusyKey(busyKey);
+      try {
+        const res = await fetch(`${orgApiBase}/telemetry/incidents/${incidentId}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action }),
+        });
+        const payload = await res.json().catch(() => null);
+        const body = unwrapEnvelope(payload) as Record<string, unknown> | null;
+        const ok = res.ok && body?.ok !== false;
+        if (!ok) {
+          const errorCode =
+            (body?.error as string | undefined) ??
+            (payload && typeof payload === "object" ? (payload as Record<string, unknown>).error : undefined) ??
+            `HTTP_${res.status}`;
+          throw new Error(String(errorCode));
+        }
+        setTelemetryActionInfo(action === "ACK" ? "Incidente reconhecido." : "Incidente resolvido.");
+        await mutateTelemetryOverview();
+      } catch (error) {
+        setTelemetryActionError(formatAnalyticsError(error));
+      } finally {
+        setTelemetryActionBusyKey((current) => (current === busyKey ? null : current));
+      }
+    },
+    [mutateTelemetryOverview, orgApiBase],
+  );
+
+  const runTelemetryEvaluate = useCallback(async () => {
+    setTelemetryActionError(null);
+    setTelemetryActionInfo(null);
+    setTelemetryEvaluateBusy(true);
+    try {
+      const res = await fetch(`${orgApiBase}/telemetry/evaluate`, {
+        method: "POST",
+      });
+      const payload = await res.json().catch(() => null);
+      const body = unwrapEnvelope(payload) as Record<string, unknown> | null;
+      const result =
+        (body?.result as TelemetryEvaluationResult | undefined) ??
+        (payload && typeof payload === "object" ? ((payload as Record<string, unknown>).result as TelemetryEvaluationResult | undefined) : undefined);
+      const ok = res.ok && body?.ok !== false;
+      if (!ok || !result) {
+        const errorCode =
+          (body?.error as string | undefined) ??
+          (payload && typeof payload === "object" ? (payload as Record<string, unknown>).error : undefined) ??
+          `HTTP_${res.status}`;
+        throw new Error(String(errorCode));
+      }
+      setTelemetryLastEvaluation(result);
+      setTelemetryActionInfo("Avaliação de alertas concluída.");
+      await mutateTelemetryOverview();
+    } catch (error) {
+      setTelemetryActionError(formatAnalyticsError(error));
+    } finally {
+      setTelemetryEvaluateBusy(false);
+    }
+  }, [mutateTelemetryOverview, orgApiBase]);
 
   const refreshCurrentView = useCallback(async () => {
     if (view === "overview") await Promise.all([mutateOverview(), mutateSeries()]);
@@ -587,6 +718,14 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
   const telemetrySourceBreakdown = useMemo(
     () => telemetryOverview?.sourceBreakdown ?? [],
     [telemetryOverview?.sourceBreakdown],
+  );
+  const telemetryOpenIncidents = useMemo(
+    () => (telemetryOverview?.incidents ?? []).filter((item) => item.status !== "RESOLVED"),
+    [telemetryOverview?.incidents],
+  );
+  const telemetryActiveRules = useMemo(
+    () => (telemetryOverview?.rules ?? []).filter((item) => item.isActive),
+    [telemetryOverview?.rules],
   );
   const activeFilters = useMemo(() => {
     const chips = [
@@ -1134,6 +1273,105 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
               label="Actores únicos"
               value={String(telemetryOverview?.totals.uniqueActors ?? 0)}
             />
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr]">
+            <Panel title="Incidentes activos" subtitle="Acompanhar e fechar alertas desta organização">
+              {telemetryActionInfo ? (
+                <div className="mb-3 rounded-lg border border-emerald-300/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-100">
+                  {telemetryActionInfo}
+                </div>
+              ) : null}
+              {telemetryActionError ? (
+                <div className="mb-3 rounded-lg border border-rose-300/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">
+                  {telemetryActionError}
+                </div>
+              ) : null}
+              <div className="space-y-2">
+                {telemetryOpenIncidents.map((incident) => {
+                  const canAck = incident.status === "OPEN";
+                  const canResolve = incident.status !== "RESOLVED";
+                  const ackBusy = telemetryActionBusyKey === `${incident.id}:ACK`;
+                  const resolveBusy = telemetryActionBusyKey === `${incident.id}:RESOLVE`;
+                  return (
+                    <div key={incident.id} className="rounded-xl border border-white/12 bg-black/20 p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-white">{incident.title}</p>
+                        <span className="rounded-md border border-white/20 bg-white/[0.08] px-2 py-1 text-[11px] text-white/80">
+                          {formatTelemetryStatus(incident.status)}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-white/70">
+                        {formatTelemetryMetricKey(incident.metricKey)} · Observado {incident.observedValue ?? 0} / Limite {incident.thresholdValue ?? 0}
+                      </p>
+                      <p className="mt-1 text-[11px] text-white/55">{formatDateTime(incident.triggeredAt)}</p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {canAck ? (
+                          <button
+                            type="button"
+                            className="rounded-md border border-cyan-300/45 bg-cyan-300/10 px-2 py-1 text-[11px] font-semibold text-cyan-100 transition hover:bg-cyan-300/20 disabled:opacity-50"
+                            disabled={ackBusy || Boolean(telemetryActionBusyKey)}
+                            onClick={() => void applyTelemetryIncidentAction(incident.id, "ACK")}
+                          >
+                            {ackBusy ? "A processar..." : "Reconhecer"}
+                          </button>
+                        ) : null}
+                        {canResolve ? (
+                          <button
+                            type="button"
+                            className="rounded-md border border-emerald-300/45 bg-emerald-300/10 px-2 py-1 text-[11px] font-semibold text-emerald-100 transition hover:bg-emerald-300/20 disabled:opacity-50"
+                            disabled={resolveBusy || Boolean(telemetryActionBusyKey)}
+                            onClick={() => void applyTelemetryIncidentAction(incident.id, "RESOLVE")}
+                          >
+                            {resolveBusy ? "A processar..." : "Resolver"}
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+                {telemetryOpenIncidents.length === 0 ? (
+                  <EmptyState label="Sem incidentes abertos para esta janela." />
+                ) : null}
+              </div>
+            </Panel>
+
+            <Panel title="Regras e avaliação" subtitle="Regras activas e avaliação manual imediata">
+              <div className="mb-3">
+                <button
+                  type="button"
+                  className="rounded-md border border-[#22D3EE]/45 bg-[#22D3EE]/14 px-3 py-1.5 text-xs font-semibold text-white transition hover:border-[#22D3EE]/70 hover:bg-[#22D3EE]/24 disabled:opacity-60"
+                  onClick={() => void runTelemetryEvaluate()}
+                  disabled={telemetryEvaluateBusy}
+                >
+                  {telemetryEvaluateBusy ? "A avaliar..." : "Avaliar alertas agora"}
+                </button>
+              </div>
+              {telemetryLastEvaluation ? (
+                <div className="mb-3 rounded-lg border border-white/15 bg-black/20 px-3 py-2 text-[11px] text-white/75">
+                  {telemetryLastEvaluation.evaluatedRules} regras · {telemetryLastEvaluation.openedIncidents} novos incidentes ·{" "}
+                  {telemetryLastEvaluation.resolvedIncidents} resolvidos
+                </div>
+              ) : null}
+              <div className="space-y-2">
+                {telemetryActiveRules.map((rule) => (
+                  <div key={rule.id} className="rounded-xl border border-white/12 bg-black/20 px-3 py-2 text-sm">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate">{rule.name}</span>
+                      <span className="rounded-md border border-white/20 bg-white/[0.08] px-2 py-0.5 text-[11px] text-white/70">
+                        {rule.severity}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-white/65">
+                      {formatTelemetryMetricKey(rule.metricKey)} · {rule.comparisonOperator} {rule.threshold} · janela {rule.windowMinutes}m
+                    </p>
+                  </div>
+                ))}
+                {telemetryActiveRules.length === 0 ? (
+                  <EmptyState label="Sem regras activas disponíveis." />
+                ) : null}
+              </div>
+            </Panel>
           </div>
 
           <Panel title="Timeline de telemetria" subtitle="Eventos totais vs erros">

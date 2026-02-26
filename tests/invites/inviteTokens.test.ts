@@ -32,7 +32,7 @@ describe("invite tokens", () => {
     });
     inviteToken.create.mockResolvedValue({ id: "token-1", expiresAt: new Date(Date.now() + 1000) });
 
-    const result = await issueInviteToken({ eventId: 1, email: "user@example.com" });
+    const result = await issueInviteToken({ eventId: 1, email: "user@example.com", ticketTypeId: 10 });
 
     expect(result.token).toBeTruthy();
     const tokenHash = hashInviteToken(result.token);
@@ -41,6 +41,7 @@ describe("invite tokens", () => {
         data: expect.objectContaining({
           tokenHash,
           eventId: 1,
+          ticketTypeId: 10,
           emailNormalized: "user@example.com",
         }),
       })
@@ -51,7 +52,7 @@ describe("invite tokens", () => {
     inviteToken.findUnique.mockResolvedValue({
       id: "token-1",
       eventId: 1,
-      ticketTypeId: null,
+      ticketTypeId: 5,
       emailNormalized: "user@example.com",
       expiresAt: new Date(Date.now() + 10000),
       usedAt: null,
@@ -62,7 +63,7 @@ describe("invite tokens", () => {
       eventId: 1,
       token: "token-raw",
       emailNormalized: "user@example.com",
-      ticketTypeIds: [],
+      ticketTypeIds: [5],
       usedByIdentityId: "identity-1",
     }, { inviteToken } as any);
 
@@ -71,7 +72,7 @@ describe("invite tokens", () => {
         eventId: 1,
         token: "token-raw",
         emailNormalized: "user@example.com",
-        ticketTypeIds: [],
+        ticketTypeIds: [5],
         usedByIdentityId: "identity-1",
       }, { inviteToken } as any)
     ).rejects.toThrow("INVITE_TOKEN_INVALID");
@@ -102,7 +103,7 @@ describe("invite tokens", () => {
     inviteToken.findUnique.mockResolvedValue({
       id: "token-3",
       eventId: 1,
-      ticketTypeId: null,
+      ticketTypeId: 5,
       emailNormalized: "user@example.com",
       expiresAt: new Date(Date.now() - 1000),
       usedAt: null,
@@ -113,7 +114,7 @@ describe("invite tokens", () => {
         eventId: 1,
         token: "token-raw",
         emailNormalized: "user@example.com",
-        ticketTypeIds: [],
+        ticketTypeIds: [5],
         usedByIdentityId: "identity-1",
       }, { inviteToken } as any)
     ).rejects.toThrow("INVITE_TOKEN_INVALID");

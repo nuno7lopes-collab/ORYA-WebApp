@@ -77,6 +77,7 @@
     "gate:runbooks": "node scripts/v9_runbook_gate.mjs",
     "gate:finance-ops": "node scripts/finance_operational_gate.mjs",
     "gate:finance-ops:report": "FINANCE_CYCLES_STRICT=0 node scripts/finance_operational_gate.mjs",
+    "gate:data-integrity": "node scripts/operational_data_integrity_gate.mjs",
     "finance:ledger-hygiene": "node scripts/finance_ledger_hygiene.mjs --apply --create-index",
     "finance:prove-cycles": "node scripts/finance_prove_cycles.mjs",
     "gate:todo": "node scripts/v9_todo_gate.mjs",

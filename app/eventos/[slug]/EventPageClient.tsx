@@ -183,7 +183,12 @@ export default function EventPageClient({
     atualizarDados({
       slug,
       waves: visibleTickets,
-      additional: { checkoutUiVariant, padelMeta, promoCode: promoParam ?? undefined },
+      additional: {
+        checkoutUiVariant,
+        padelMeta,
+        promoCode: promoParam ?? undefined,
+        inviteToken: inviteToken ?? undefined,
+      },
     });
 
     abrirCheckout({
@@ -193,7 +198,12 @@ export default function EventPageClient({
       ticketName: selectedTicket.name,
       eventId: padelMeta?.eventId ? String(padelMeta.eventId) : undefined,
       waves: visibleTickets,
-      additional: { checkoutUiVariant, padelMeta, promoCode: promoParam ?? undefined },
+      additional: {
+        checkoutUiVariant,
+        padelMeta,
+        promoCode: promoParam ?? undefined,
+        inviteToken: inviteToken ?? undefined,
+      },
     });
 
     setTimeout(() => {
@@ -208,6 +218,7 @@ export default function EventPageClient({
     checkoutUiVariant,
     defaultPadelTicketId,
     fallbackWaves,
+    inviteToken,
     padelMeta,
     promoParam,
     searchParams,
@@ -216,6 +227,7 @@ export default function EventPageClient({
   ]);
 
   useEffect(() => {
+    if (!eventIsActive) return;
     if (!inviteToken) return;
     if (inviteHandledRef.current === inviteToken) return;
     inviteHandledRef.current = inviteToken;
@@ -389,9 +401,11 @@ export default function EventPageClient({
     searchParams,
     slug,
     locale,
+    eventIsActive,
   ]);
 
   useEffect(() => {
+    if (!eventIsActive) return;
     if (!pairingIdParam || inviteToken) return;
     if (pairingHandledRef.current === pairingIdParam) return;
     pairingHandledRef.current = pairingIdParam;
@@ -518,6 +532,7 @@ export default function EventPageClient({
     slotIdParam,
     slug,
     locale,
+    eventIsActive,
   ]);
 
   return (

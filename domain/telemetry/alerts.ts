@@ -1,4 +1,6 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { getAppEnv } from "@/lib/appEnv";
 import { sanitizeTelemetryPayload } from "@/domain/telemetry/redaction";
 import {
   TELEMETRY_COMPARISON_OPERATORS,
@@ -811,12 +813,66 @@ type RuleObservation = {
   latestBucketStart: Date | null;
 };
 
+type RawObservationRow = {
+  organization_id: number;
+  observed_value: bigint | number;
+};
+
+function normalizeObservedValue(value: bigint | number | undefined) {
+  if (typeof value === "bigint") return Number(value);
+  if (typeof value === "number") return value;
+  return 0;
+}
+
+async function buildRuleObservationsFromRawEvents(params: {
+  rule: TelemetryAlertRuleRecord;
+  from: Date;
+  now: Date;
+}): Promise<RuleObservation[]> {
+  const metricExpr =
+    params.rule.metricKey === "ERROR_COUNT"
+      ? Prisma.sql`COUNT(*) FILTER (WHERE severity IN ('ERROR', 'CRITICAL'))`
+      : params.rule.metricKey === "UNIQUE_ACTORS"
+        ? Prisma.sql`COUNT(DISTINCT COALESCE(actor_key, actor_user_id::text))`
+        : Prisma.sql`COUNT(*)`;
+  const orgFilter =
+    typeof params.rule.organizationId === "number"
+      ? Prisma.sql`AND organization_id = ${params.rule.organizationId}`
+      : Prisma.empty;
+  const env = getAppEnv();
+
+  const rows = await prisma.$queryRaw<RawObservationRow[]>(Prisma.sql`
+    SELECT
+      organization_id,
+      ${metricExpr} AS observed_value
+    FROM app_v3.telemetry_events
+    WHERE env = ${env}
+      AND organization_id IS NOT NULL
+      AND occurred_at >= ${params.from}
+      AND occurred_at <= ${params.now}
+      ${orgFilter}
+    GROUP BY organization_id
+  `);
+
+  return rows
+    .map((row) => ({
+      organizationId: Number(row.organization_id),
+      observedValue: normalizeObservedValue(row.observed_value),
+      bucketCount: 0,
+      latestBucketStart: null,
+    }))
+    .filter((item) => Number.isFinite(item.organizationId) && item.organizationId > 0);
+}
+
 async function buildRuleObservations(
   rule: TelemetryAlertRuleRecord,
   now: Date,
 ): Promise<{ from: Date; observations: RuleObservation[] }> {
   const delegate = metricRollupDelegate();
   const from = new Date(now.getTime() - rule.windowMinutes * 60 * 1000);
+  const isGlobalDimension = !rule.dimensionKey;
+  const effectiveDimensionKey = rule.dimensionKey ?? "GLOBAL";
+  const effectiveDimensionValue = rule.dimensionValue ?? (isGlobalDimension ? "ALL" : null);
   if (!delegate?.findMany) {
     return { from, observations: [] };
   }
@@ -827,8 +883,8 @@ async function buildRuleObservations(
       ...(typeof rule.organizationId === "number"
         ? { organizationId: rule.organizationId }
         : {}),
-      ...(rule.dimensionKey ? { dimensionKey: rule.dimensionKey } : {}),
-      ...(rule.dimensionValue ? { dimensionValue: rule.dimensionValue } : {}),
+      dimensionKey: effectiveDimensionKey,
+      ...(effectiveDimensionValue ? { dimensionValue: effectiveDimensionValue } : {}),
       bucketStart: {
         gte: from,
         lte: now,
@@ -866,6 +922,17 @@ async function buildRuleObservations(
     }
 
     aggregated.set(organizationId, existing);
+  }
+
+  if (aggregated.size === 0 && isGlobalDimension) {
+    const rawFallback = await buildRuleObservationsFromRawEvents({
+      rule,
+      from,
+      now,
+    });
+    for (const item of rawFallback) {
+      aggregated.set(item.organizationId, item);
+    }
   }
 
   if (aggregated.size === 0 && typeof rule.organizationId === "number") {

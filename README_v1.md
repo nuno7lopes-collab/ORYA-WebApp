@@ -48,6 +48,8 @@ Jobs e defaults:
 - `crm-campanhas` — `60000ms` (`CRON_CRM_CAMPAIGNS_INTERVAL_MS`)
 - `repair-usernames` — `604800000ms` (`CRON_REPAIR_USERNAMES_INTERVAL_MS`)
 - `analytics-rollup` — `86400000ms` (`CRON_ANALYTICS_INTERVAL_MS`)
+- `telemetry-rollup` — `300000ms` (`CRON_TELEMETRY_ROLLUP_INTERVAL_MS`)
+- `telemetry-alerts-evaluate` — `300000ms` (`CRON_TELEMETRY_ALERTS_EVALUATE_INTERVAL_MS`)
 - `loyalty-expire` — `86400000ms` (`CRON_LOYALTY_EXPIRE_INTERVAL_MS`)
 
 Notas operacionais:

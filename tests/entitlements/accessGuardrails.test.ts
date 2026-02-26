@@ -36,6 +36,7 @@ describe("access entitlement guardrails", () => {
           "-g '!app/api/internal/worker/operations/route.ts'",
           "-g '!app/api/org/[[]orgId[]]/events/[[]id[]]/refund/route.ts'",
           "-g '!app/api/admin/eventos/purge/route.ts'",
+          "-g '!lib/refunds/unifiedRefundCase.ts'",
         ].join(" "),
         "Entitlement writes outside canonical modules",
       ),

@@ -63,6 +63,7 @@ const EVENT_SELECT = {
   coverImageUrl: true,
   pricingMode: true,
   ticketTypes: {
+    where: { publicAccess: true },
     select: {
       id: true,
       name: true,

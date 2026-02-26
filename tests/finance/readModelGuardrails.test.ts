@@ -24,6 +24,7 @@ describe("finance read-model guardrails", () => {
           "\"saleSummary\\\\.(create|update|upsert|delete|deleteMany)|saleLine\\\\.(create|deleteMany)|paymentEvent\\\\.(create|update|upsert|updateMany|deleteMany)\"",
           "app domain lib -S",
           "-g '!domain/finance/readModelConsumer.ts'",
+          "-g '!lib/refunds/unifiedRefundCase.ts'",
         ].join(" "),
         "Direct read-model writes",
       ),

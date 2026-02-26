@@ -11,6 +11,8 @@ import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { createNotification, shouldNotify } from "@/lib/notifications";
 import { cancelBooking } from "@/domain/bookings/commands";
 import {
+  BOOKING_CONFIRMATION_SNAPSHOT_VERSION,
+  buildBookingConfirmationSnapshot,
   computeCancellationRefundFromSnapshot,
   parseBookingConfirmationSnapshot,
 } from "@/lib/reservas/confirmationSnapshot";
@@ -36,6 +38,7 @@ type CancelCrmPayload = {
 export type OrgBookingCancellationTxResult = {
   booking: { id: number; status: string };
   already: boolean;
+  snapshotSynthesized: boolean;
   refundRequired: boolean;
   paymentIntentId: string | null;
   refundAmountCents: number | null;
@@ -44,6 +47,16 @@ export type OrgBookingCancellationTxResult = {
   bookingUserId: string | null;
   organizationId: number;
   crmPayload: CancelCrmPayload | null;
+};
+
+export type OrgBookingCancellationPostActionsResult = {
+  refundCaseId: string | null;
+  refundStatus: "SUCCEEDED" | null;
+  splitRefundCases: Array<{
+    participantId: number;
+    refundCaseId: string | null;
+    refundStatus: "SUCCEEDED" | null;
+  }>;
 };
 
 export async function cancelBookingByOrganizationInTx(params: {
@@ -66,11 +79,53 @@ export async function cancelBookingByOrganizationInTx(params: {
       guestEmail: true,
       status: true,
       startsAt: true,
+      price: true,
+      currency: true,
       paymentIntentId: true,
       organizationId: true,
       serviceId: true,
+      confirmationSnapshotVersion: true,
+      confirmationSnapshotCreatedAt: true,
       snapshotTimezone: true,
       confirmationSnapshot: true,
+      policyRef: {
+        select: {
+          policyId: true,
+        },
+      },
+      bookingPackage: {
+        select: {
+          packageId: true,
+          label: true,
+          durationMinutes: true,
+          priceCents: true,
+        },
+      },
+      addons: {
+        select: {
+          addonId: true,
+          label: true,
+          deltaMinutes: true,
+          deltaPriceCents: true,
+          quantity: true,
+          sortOrder: true,
+        },
+      },
+      service: {
+        select: {
+          policyId: true,
+          unitPriceCents: true,
+          currency: true,
+          organization: {
+            select: {
+              feeMode: true,
+              platformFeeBps: true,
+              platformFeeFixedCents: true,
+              orgType: true,
+            },
+          },
+        },
+      },
       courtId: true,
       resourceId: true,
       professionalId: true,
@@ -98,6 +153,7 @@ export async function cancelBookingByOrganizationInTx(params: {
     return {
       booking: { id: booking.id, status: booking.status },
       already: true,
+      snapshotSynthesized: false,
       refundRequired: false,
       paymentIntentId: booking.paymentIntentId ?? null,
       refundAmountCents: null,
@@ -110,9 +166,48 @@ export async function cancelBookingByOrganizationInTx(params: {
   }
 
   const isPending = ["PENDING_CONFIRMATION", "PENDING"].includes(booking.status);
-  const snapshot = parseBookingConfirmationSnapshot(booking.confirmationSnapshot);
+  let snapshot = parseBookingConfirmationSnapshot(booking.confirmationSnapshot);
+  let snapshotSynthesized = false;
   if (!isPending && booking.status === "CONFIRMED" && !snapshot) {
-    throw new Error("BOOKING_CONFIRMATION_SNAPSHOT_REQUIRED");
+    const hasFinancialSettlement =
+      Boolean(booking.paymentIntentId) ||
+      Boolean(
+        booking.splitPayment?.participants?.some(
+          (participant) =>
+            participant.status === "PAID" && Boolean(participant.paymentIntentId),
+        ),
+      );
+
+    if (hasFinancialSettlement) {
+      throw new Error("BOOKING_CONFIRMATION_SNAPSHOT_REQUIRED");
+    }
+
+    const synthesized = await buildBookingConfirmationSnapshot({
+      tx: params.tx,
+      booking,
+      now,
+      policyIdHint: booking.policyRef?.policyId ?? null,
+      paymentMeta: null,
+    });
+    if (!synthesized.ok) {
+      throw new Error("BOOKING_CONFIRMATION_SNAPSHOT_REQUIRED");
+    }
+
+    snapshot = synthesized.snapshot;
+    snapshotSynthesized = true;
+    await params.tx.booking.update({
+      where: { id: booking.id },
+      data: {
+        confirmationSnapshot: synthesized.snapshot,
+        confirmationSnapshotVersion:
+          typeof synthesized.snapshot.version === "number"
+            ? synthesized.snapshot.version
+            : BOOKING_CONFIRMATION_SNAPSHOT_VERSION,
+        confirmationSnapshotCreatedAt: synthesized.snapshot.createdAt
+          ? new Date(synthesized.snapshot.createdAt)
+          : now,
+      },
+    });
   }
 
   const startsAtMs = booking.startsAt?.getTime?.() ?? Number.NaN;
@@ -183,6 +278,7 @@ export async function cancelBookingByOrganizationInTx(params: {
   return {
     booking: { id: updated.id, status: updated.status },
     already: false,
+    snapshotSynthesized,
     refundRequired,
     paymentIntentId: booking.paymentIntentId ?? null,
     refundAmountCents,
@@ -208,8 +304,13 @@ export async function cancelBookingByOrganizationInTx(params: {
 export async function runOrganizationBookingCancellationPostActions(params: {
   prisma: PrismaClient;
   result: OrgBookingCancellationTxResult;
-}) {
+}): Promise<OrgBookingCancellationPostActionsResult> {
   const { result } = params;
+  const output: OrgBookingCancellationPostActionsResult = {
+    refundCaseId: null,
+    refundStatus: null,
+    splitRefundCases: [],
+  };
 
   if (result.refundRequired && result.paymentIntentId) {
     try {
@@ -219,6 +320,7 @@ export async function runOrganizationBookingCancellationPostActions(params: {
         reason: "ORG_CANCEL",
         amountCents: result.refundAmountCents,
       });
+      output.refundStatus = "SUCCEEDED";
     } catch (refundErr) {
       console.error("[org-booking-cancel] refund failed", refundErr);
       throw new Error("BOOKING_REFUND_FAILED");
@@ -237,6 +339,11 @@ export async function runOrganizationBookingCancellationPostActions(params: {
           idempotencyKey: `refund:BOOKING:${result.booking.id}:SPLIT:${refund.participantId}`,
         });
         refundedParticipantIds.push(refund.participantId);
+        output.splitRefundCases.push({
+          participantId: refund.participantId,
+          refundCaseId: null,
+          refundStatus: "SUCCEEDED",
+        });
       } catch (refundErr) {
         console.error("[org-booking-cancel] split refund failed", refundErr);
         throw new Error("BOOKING_REFUND_FAILED");
@@ -294,4 +401,6 @@ export async function runOrganizationBookingCancellationPostActions(params: {
       console.warn("[org-booking-cancel] Falha ao enviar notificação", notifyErr);
     }
   }
+
+  return output;
 }

@@ -22,7 +22,6 @@ import {
   CTA_NEUTRAL,
   CTA_PRIMARY,
   CTA_SECONDARY,
-  CTA_SUCCESS,
 } from "@/app/org/_shared/dashboardUi";
 import { getEventCoverSuggestionIds, getEventCoverUrl } from "@/lib/eventCover";
 import { getOrganizationRoleFlags } from "@/lib/organizationUiPermissions";
@@ -1385,7 +1384,7 @@ function OrganizacaoPageInner({
     swrOptions
   );
 
-  const archiveEvent = useCallback(
+  const handleEventLifecycleAction = useCallback(
     async (target: EventItem, mode: "cancel" | "delete") => {
       setEventActionLoading(target.id);
       setCtaError(null);
@@ -1656,10 +1655,13 @@ function OrganizacaoPageInner({
     let ongoing = 0;
     let finished = 0;
     eventsList.forEach((ev) => {
-      if (ev.status === "ARCHIVED") return;
       const startsAt = ev.startsAt ? new Date(ev.startsAt) : null;
       const endsAt = ev.endsAt ? new Date(ev.endsAt) : null;
-      const isFinished = ev.status === "FINISHED" || (endsAt ? endsAt.getTime() < now.getTime() : false);
+      const isFinished =
+        ev.status === "CANCELLED" ||
+        ev.status === "FINISHED" ||
+        ev.status === "ARCHIVED" ||
+        (endsAt ? endsAt.getTime() < now.getTime() : false);
       const isOngoing =
         startsAt && endsAt
           ? startsAt.getTime() <= now.getTime() && now.getTime() <= endsAt.getTime()
@@ -1806,7 +1808,11 @@ function OrganizacaoPageInner({
       const isFinished = endsAt ? endsAt.getTime() < now.getTime() : false;
       const isFuture = startsAt ? startsAt.getTime() >= now.getTime() : false;
       const isOngoing = startsAt && endsAt ? startsAt.getTime() <= now.getTime() && now.getTime() <= endsAt.getTime() : false;
-      const isTerminated = ev.status === "CANCELLED" || ev.status === "FINISHED" || isFinished;
+      const isTerminated =
+        ev.status === "CANCELLED" ||
+        ev.status === "FINISHED" ||
+        ev.status === "ARCHIVED" ||
+        isFinished;
       const isActive = !isTerminated && ev.status !== "DRAFT" && (isFuture || isOngoing);
 
       if (eventStatusFilter === "draft" && ev.status !== "DRAFT") return false;
@@ -4144,7 +4150,11 @@ function OrganizacaoPageInner({
                                           ? { label: "Concluído", classes: "border-purple-400/60 bg-purple-500/10 text-purple-100" }
                                           : { label: ev.status, classes: "border-white/20 bg-white/5 text-white/70" };
                               const salesLabel = normalizedTemplate === "PADEL" ? "Inscrições" : "Bilhetes";
-                              const isTerminated = ev.status === "CANCELLED" || ev.status === "FINISHED" || isFinished;
+                              const isTerminated =
+                                ev.status === "CANCELLED" ||
+                                ev.status === "FINISHED" ||
+                                ev.status === "ARCHIVED" ||
+                                isFinished;
                               const actionMode: "cancel" | "delete" | null =
                                 ev.status === "DRAFT" ? "delete" : isTerminated ? null : "cancel";
 
@@ -4188,12 +4198,14 @@ function OrganizacaoPageInner({
                                       >
                                         Operação
                                       </Link>
-                                      <Link
-                                        href={`${eventRouteBase}/${ev.id}`}
-                                        className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
-                                      >
-                                        {salesLabel}
-                                      </Link>
+                                      {!isTerminated && ev.status !== "DRAFT" ? (
+                                        <Link
+                                          href={`${eventRouteBase}/${ev.id}`}
+                                          className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
+                                        >
+                                          {salesLabel}
+                                        </Link>
+                                      ) : null}
                                       <Link
                                         href={`/eventos/${ev.slug}`}
                                         className={cn(CTA_NEUTRAL, "px-3 py-1 text-[11px]")}
@@ -4248,9 +4260,7 @@ function OrganizacaoPageInner({
                           const statusBadge =
                             ev.status === "CANCELLED"
                               ? { label: "Cancelado", classes: "border-red-400/60 bg-red-500/10 text-red-100" }
-                              : ev.status === "ARCHIVED"
-                                ? { label: "Arquivado", classes: "border-amber-400/60 bg-amber-500/10 text-amber-100" }
-                                : ev.status === "DRAFT"
+                              : ev.status === "DRAFT"
                                   ? { label: "Rascunho", classes: "border-white/20 bg-white/5 text-white/70" }
                                   : isOngoing
                                     ? { label: "A decorrer", classes: "border-emerald-400/60 bg-emerald-500/10 text-emerald-100" }
@@ -4259,6 +4269,13 @@ function OrganizacaoPageInner({
                                       : isFinished
                                       ? { label: "Concluído", classes: "border-purple-400/60 bg-purple-500/10 text-purple-100" }
                                       : { label: ev.status, classes: "border-white/20 bg-white/5 text-white/70" };
+                          const isTerminated =
+                            ev.status === "CANCELLED" ||
+                            ev.status === "FINISHED" ||
+                            ev.status === "ARCHIVED" ||
+                            isFinished;
+                          const actionMode: "cancel" | "delete" | null =
+                            ev.status === "DRAFT" ? "delete" : isTerminated ? null : "cancel";
                           const coverSuggestions = getEventCoverSuggestionIds({
                             templateType: normalizedTemplate,
                             primaryModule: organization?.primaryModule ?? null,
@@ -4338,39 +4355,30 @@ function OrganizacaoPageInner({
                                   >
                                     Operação
                                   </Link>
-                                  {ev.status !== "ARCHIVED" && (
+                                  {!isTerminated && ev.status !== "DRAFT" ? (
                                     <Link
                                       href={`${eventRouteBase}/${ev.id}`}
                                       className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
                                     >
                                       Inscrições
                                     </Link>
-                                  )}
+                                  ) : null}
                                   <Link
                                     href={`/eventos/${ev.slug}`}
                                     className={cn(CTA_NEUTRAL, "px-3 py-1 text-[11px]")}
                                   >
                                     Página pública
                                   </Link>
-                                  {ev.status === "ARCHIVED" ? (
+                                  {actionMode ? (
                                     <button
                                       type="button"
                                       disabled={eventActionLoading === ev.id}
-                                      onClick={() => setEventDialog({ mode: "unarchive", ev })}
-                                      className={cn(CTA_SUCCESS, "px-3 py-1 text-[11px] disabled:opacity-60")}
-                                    >
-                                      Reativar
-                                    </button>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      disabled={eventActionLoading === ev.id}
-                                      onClick={() => setEventDialog({ mode: ev.status === "DRAFT" ? "delete" : "archive", ev })}
+                                      onClick={() => setEventDialog({ mode: actionMode, ev })}
                                       className={cn(CTA_DANGER, "px-3 py-1 text-[11px] disabled:opacity-60")}
                                     >
-                                      {ev.status === "DRAFT" ? "Apagar rascunho" : "Arquivar"}
+                                      {actionMode === "delete" ? "Apagar rascunho" : "Cancelar"}
                                     </button>
-                                  )}
+                                  ) : null}
                                 </div>
                               </div>
                             </div>
@@ -5847,33 +5855,28 @@ function OrganizacaoPageInner({
           title={
             eventDialog.mode === "delete"
               ? "Apagar rascunho?"
-              : eventDialog.mode === "unarchive"
-                ? `Reativar ${eventDialogLabel}?`
-                : `Arquivar ${eventDialogLabel}?`
+              : `Cancelar ${eventDialogLabel}?`
           }
           description={
             eventDialog.mode === "delete"
               ? "Esta ação remove o rascunho e bilhetes associados."
-              : eventDialog.mode === "unarchive"
-                ? `O ${eventDialogLabel} volta a aparecer nas listas e dashboards.`
-                : `O ${eventDialogLabel} deixa de estar visível para o público. Vendas e relatórios mantêm-se.`
+              : `Ao cancelar, o ${eventDialogLabel} fica em estado final. Compras e inscrições são bloqueadas.`
           }
           consequences={
             eventDialog.mode === "delete"
               ? [`Podes criar outro ${eventDialogLabel} quando quiseres.`]
-              : eventDialog.mode === "unarchive"
-                ? ["Podes sempre voltar a arquivar mais tarde."]
-                : ["Sai de /descobrir e das listas do dashboard.", "Mantém histórico para relatórios/finanças."]
+              : [
+                  "O cancelamento não pode ser revertido.",
+                  "O histórico financeiro mantém-se para auditoria e relatórios.",
+                ]
           }
           confirmLabel={
             eventDialog.mode === "delete"
               ? "Apagar rascunho"
-              : eventDialog.mode === "unarchive"
-                ? `Reativar ${eventDialogLabel}`
-                : `Arquivar ${eventDialogLabel}`
+              : `Cancelar ${eventDialogLabel}`
           }
-          dangerLevel={eventDialog.mode === "delete" ? "high" : eventDialog.mode === "archive" ? "high" : "medium"}
-          onConfirm={() => archiveEvent(eventDialog.ev, eventDialog.mode)}
+          dangerLevel="high"
+          onConfirm={() => handleEventLifecycleAction(eventDialog.ev, eventDialog.mode)}
           onClose={() => setEventDialog(null)}
         />
       )}

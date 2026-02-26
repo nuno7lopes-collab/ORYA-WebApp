@@ -2372,7 +2372,7 @@ Decisão FECHADA (normativa):
 - `approvedAt`: `2026-02-26`
 - `scope`: refunds em `TICKET_ORDER`, `BOOKING`, `PADEL_REGISTRATION`, `STORE_ORDER` (API, worker, webhook, ledger, auditoria, read models)
 - `rationale`: eliminar dupla verdade e estados finais implícitos em refunds; unificar lifecycle com retries determinísticos e override auditado
-- `migrationImpact`: `app_v3.refund_cases` + enums `RefundCasePolicyCause`, `RefundCaseCulpability`, `RefundCaseStatus`; `PROCESS_REFUND_UNIFIED` como operação canónica; `PROCESS_REFUND_SINGLE` mantido só como adapter transitório
+- `migrationImpact`: `app_v3.refund_cases` + enums `RefundCasePolicyCause`, `RefundCaseCulpability`, `RefundCaseStatus`; `PROCESS_REFUND_UNIFIED` como única operação canónica (sem adapter legacy ativo)
 - `reviewChecklist`:
   - `NO_SHOW` sem efeito financeiro
   - culpa da organização => refund total (inclui devolução de fee ao cliente final)

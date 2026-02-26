@@ -162,7 +162,6 @@ export const ENV_MODELS = new Set([
   'SupportTicket',
   'SupportTicketEvent',
   'Ticket',
-  'TicketResale',
   'TicketReservation',
   'TicketType',
   'TelemetryAlertIncident',

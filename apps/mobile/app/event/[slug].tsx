@@ -63,7 +63,6 @@ import { getUserFacingError } from "../../lib/errors";
 import { resolveMediaUri } from "../../lib/media";
 import { resolveSafeHttpUrl } from "../../lib/externalUrl";
 import { trackEvent } from "../../lib/analytics";
-import { useProfileSummary } from "../../features/profile/hooks";
 import { sendEventSignal } from "../../features/events/signals";
 import { formatCurrency, formatDate, formatTime } from "../../lib/formatters";
 import { trackCrmEngagement } from "../../lib/crm";
@@ -310,11 +309,6 @@ const resolveTicketCtaLabel = (state: TicketCtaState): string => {
 
 const isCheckoutSettledStatus = (status: string | null | undefined) =>
   status === "PAID" || status === "SUCCEEDED";
-
-const normalizeEmailValue = (value?: string | null) =>
-  value?.trim().toLowerCase() ?? "";
-const normalizeUsernameValue = (value?: string | null) =>
-  value?.trim().replace(/^@+/, "").toLowerCase() ?? "";
 const resolveErrorMessage = (err: unknown) =>
   err instanceof Error ? err.message : String(err ?? "");
 
@@ -645,17 +639,8 @@ export default function EventDetail() {
     if (Array.isArray(raw)) return raw[0] ?? null;
     return raw ?? null;
   }, [params.pairingId]);
-  const { data, isLoading, isError, error, refetch } = useEventDetail(
-    slugValue ?? "",
-  );
   const { session } = useAuth();
   const accessToken = session?.access_token ?? null;
-  const profileSummaryQuery = useProfileSummary(
-    Boolean(accessToken),
-    accessToken,
-    session?.user?.id ?? null,
-  );
-  const profileSummary = profileSummaryQuery.data ?? null;
   const setCheckoutDraft = useCheckoutStore((state) => state.setDraft);
   const setCheckoutIntent = useCheckoutStore((state) => state.setIntent);
   const insets = useSafeAreaInsets();
@@ -692,15 +677,14 @@ export default function EventDetail() {
     token?: string | null;
     ticketTypeId?: number | null;
   }>({ status: "idle" });
-  const [inviteIdentifierInput, setInviteIdentifierInput] = useState("");
-  const [inviteIdentifierState, setInviteIdentifierState] = useState<{
-    status: "idle" | "checking" | "invited" | "not_invited" | "invalid";
-    message?: string | null;
-    normalized?: string | null;
-    type?: "email" | "username" | null;
-  }>({ status: "idle" });
+  const [detailInviteToken, setDetailInviteToken] = useState<string | null>(
+    inviteTokenParam ?? null,
+  );
+  const { data, isLoading, isError, error, refetch } = useEventDetail(
+    slugValue ?? "",
+    detailInviteToken,
+  );
   const inviteTokenRequestIdRef = useRef(0);
-  const inviteIdentifierRequestIdRef = useRef(0);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(
     null,
   );
@@ -724,6 +708,10 @@ export default function EventDetail() {
       () => undefined,
     );
   }, []);
+
+  useEffect(() => {
+    setDetailInviteToken(inviteTokenParam ?? null);
+  }, [inviteTokenParam]);
 
   useEffect(() => {
     if (!freeCheckoutSuccessVisible) {
@@ -771,51 +759,14 @@ export default function EventDetail() {
   }, [fallbackRoute, navigation, router, triggerLightHaptic]);
   const accessMode = data?.accessPolicy?.mode ?? null;
   const normalizedAccessMode =
-    typeof accessMode === "string" && accessMode.toUpperCase() === "INVITE_ONLY"
-      ? "UNLISTED"
-      : accessMode;
+    typeof accessMode === "string" ? accessMode.toUpperCase() : accessMode;
   const accessBadge = resolveAccessBadge(normalizedAccessMode, t);
-  const isInviteOnly = false;
+  const isInviteOnly = normalizedAccessMode === "INVITE_ONLY";
   const inviteValid = inviteState.status === "valid";
   const inviteToken = inviteState.token ?? null;
   const inviteTicketTypeId = inviteState.ticketTypeId ?? null;
-  const normalizedInviteIdentifier = inviteIdentifierState.normalized ?? null;
-  const identifierMatchesAccount = useMemo(() => {
-    if (!normalizedInviteIdentifier) return false;
-    if (inviteIdentifierState.status !== "invited") return false;
-    const type = inviteIdentifierState.type ?? null;
-    if (type === "email") {
-      const email = normalizeEmailValue(profileSummary?.email ?? null);
-      return Boolean(email && email === normalizedInviteIdentifier);
-    }
-    if (type === "username") {
-      const username = normalizeUsernameValue(profileSummary?.username ?? null);
-      return Boolean(username && username === normalizedInviteIdentifier);
-    }
-    return false;
-  }, [
-    inviteIdentifierState.status,
-    inviteIdentifierState.type,
-    normalizedInviteIdentifier,
-    profileSummary?.email,
-    profileSummary?.username,
-  ]);
-  const inviteIdentifierValid =
-    inviteIdentifierState.status === "invited" &&
-    (!session?.user?.id || identifierMatchesAccount);
-  const canAccessInvite = !isInviteOnly || inviteValid || inviteIdentifierValid;
-  const gateLocked = isInviteOnly && !inviteValid && !inviteIdentifierValid;
-  const inviteIdentifierNeedsLogin =
-    inviteIdentifierState.status === "invited" && !session?.user?.id;
-  const inviteIdentifierCheckingAccount =
-    inviteIdentifierState.status === "invited" &&
-    Boolean(session?.user?.id) &&
-    profileSummaryQuery.isLoading;
-  const inviteIdentifierMismatch =
-    inviteIdentifierState.status === "invited" &&
-    Boolean(session?.user?.id) &&
-    !identifierMatchesAccount &&
-    !profileSummaryQuery.isLoading;
+  const canAccessInvite = !isInviteOnly || inviteValid;
+  const gateLocked = isInviteOnly && !inviteValid;
   const isPadelEvent =
     typeof data?.templateType === "string"
       ? data.templateType.toUpperCase() === "PADEL"
@@ -897,6 +848,7 @@ export default function EventDetail() {
         if (requestId !== inviteTokenRequestIdRef.current) return;
         if (!result.allow) {
           const reasonMessage = mapInviteTokenReason(result.reason, t);
+          setDetailInviteToken(null);
           setInviteState({
             status: "invalid",
             message:
@@ -909,17 +861,29 @@ export default function EventDetail() {
           });
           return;
         }
+        const grantedTicketTypeId =
+          typeof result.ticketTypeId === "number" &&
+          Number.isFinite(result.ticketTypeId) &&
+          result.ticketTypeId > 0
+            ? result.ticketTypeId
+            : null;
+        if (!grantedTicketTypeId) {
+          setDetailInviteToken(null);
+          setInviteState({
+            status: "invalid",
+            message: t("events:invite.tokenInvalid"),
+          });
+          return;
+        }
         setInviteState({
-            status: "valid",
-            token: trimmed,
-            ticketTypeId:
-            typeof result.ticketTypeId === "number" &&
-            Number.isFinite(result.ticketTypeId)
-              ? result.ticketTypeId
-              : null,
+          status: "valid",
+          token: trimmed,
+          ticketTypeId: grantedTicketTypeId,
         });
+        setDetailInviteToken(trimmed);
       } catch (err: unknown) {
         if (requestId !== inviteTokenRequestIdRef.current) return;
+        setDetailInviteToken(null);
         setInviteState({
           status: "invalid",
           message: getUserFacingError(err, t("events:invite.invalid")),
@@ -932,85 +896,6 @@ export default function EventDetail() {
   const handleInviteCheck = useCallback(() => {
     validateInviteToken(inviteTokenInput);
   }, [inviteTokenInput, validateInviteToken]);
-
-  const validateInviteIdentifier = useCallback(
-    async (identifier: string) => {
-      const requestId = inviteIdentifierRequestIdRef.current + 1;
-      inviteIdentifierRequestIdRef.current = requestId;
-      const trimmed = identifier.trim();
-      if (!trimmed || !slugValue) {
-        if (requestId !== inviteIdentifierRequestIdRef.current) return;
-        setInviteIdentifierState({
-          status: "invalid",
-          message: t("events:invite.identifierInvalid"),
-        });
-        return;
-      }
-      setInviteIdentifierState({ status: "checking" });
-      try {
-        const response = await api.request<unknown>(
-          `/api/eventos/${encodeURIComponent(slugValue)}/invites/check`,
-          {
-            method: "POST",
-            body: JSON.stringify({ identifier: trimmed }),
-          },
-        );
-        const result = unwrapApiResponse<{
-          invited?: boolean;
-          type?: "email" | "username";
-          normalized?: string;
-          reason?: string;
-        }>(response);
-        if (requestId !== inviteIdentifierRequestIdRef.current) return;
-        if (!result.invited) {
-          const reasonCode = (result.reason ?? "").toUpperCase();
-          let message: string | null = null;
-          if (reasonCode === "INVITE_IDENTITY_MATCH_REQUIRED") {
-            message = trimmed.includes("@")
-              ? t("events:invite.usernameOnly")
-              : t("events:invite.emailOnly");
-          } else if (reasonCode === "USERNAME_NOT_FOUND") {
-            message = t("events:invite.usernameNotFound");
-          }
-          setInviteIdentifierState({
-            status: "not_invited",
-            message:
-              message ??
-              (result.reason
-                ? t("events:invite.notFoundWithReason", {
-                    reason: result.reason,
-                  })
-                : t("events:invite.notFound")),
-          });
-          return;
-        }
-        const resolvedType =
-          result.type ??
-          (trimmed.includes("@") ? ("email" as const) : ("username" as const));
-        const normalizedRaw = result.normalized ?? trimmed;
-        const normalized =
-          resolvedType === "email"
-            ? normalizeEmailValue(normalizedRaw)
-            : normalizeUsernameValue(normalizedRaw);
-        setInviteIdentifierState({
-          status: "invited",
-          normalized,
-          type: resolvedType,
-        });
-      } catch (err: unknown) {
-        if (requestId !== inviteIdentifierRequestIdRef.current) return;
-        setInviteIdentifierState({
-          status: "invalid",
-          message: getUserFacingError(err, t("events:invite.validateFailed")),
-        });
-      }
-    },
-    [slugValue, t],
-  );
-
-  const handleInviteIdentifierCheck = useCallback(() => {
-    validateInviteIdentifier(inviteIdentifierInput);
-  }, [inviteIdentifierInput, validateInviteIdentifier]);
 
   useEffect(() => {
     if (!isInviteOnly) return;
@@ -2331,80 +2216,6 @@ export default function EventDetail() {
                       ) : inviteState.status === "invalid" ? (
                         <Text className="text-amber-200 text-xs">
                           {inviteState.message ?? t("events:invite.invalid")}
-                        </Text>
-                      ) : null}
-                      <View className="h-px bg-white/10" />
-                      <TextInput
-                        value={inviteIdentifierInput}
-                        onChangeText={setInviteIdentifierInput}
-                        placeholder={t("events:invite.identifierPlaceholder")}
-                        placeholderTextColor="rgba(255,255,255,0.4)"
-                        autoCapitalize="none"
-                        className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-white"
-                        accessibilityLabel={t(
-                          "events:invite.identifierPlaceholder",
-                        )}
-                      />
-                      <Pressable
-                        onPress={handleInviteIdentifierCheck}
-                        disabled={inviteIdentifierState.status === "checking"}
-                        className="rounded-2xl bg-white/15 px-4 py-3"
-                        style={{ minHeight: tokens.layout.touchTarget }}
-                        accessibilityRole="button"
-                        accessibilityLabel={t(
-                          "events:invite.validateIdentifier",
-                        )}
-                        accessibilityState={{
-                          disabled: inviteIdentifierState.status === "checking",
-                        }}
-                      >
-                        <Text className="text-white text-sm font-semibold text-center">
-                          {inviteIdentifierState.status === "checking"
-                            ? t("events:invite.validating")
-                            : t("events:invite.validateIdentifier")}
-                        </Text>
-                      </Pressable>
-                      {inviteIdentifierValid ? (
-                        <GlassPill
-                          label={t("events:invite.confirmed")}
-                          variant="accent"
-                        />
-                      ) : null}
-                      {inviteIdentifierNeedsLogin ? (
-                        <View className="gap-2">
-                          <Text className="text-amber-200 text-xs">
-                            {t("events:invite.foundSignIn")}
-                          </Text>
-                          <Pressable
-                            onPress={openAuth}
-                            className="self-start rounded-full border border-white/15 bg-white/5 px-4 py-2"
-                            style={{ minHeight: tokens.layout.touchTarget }}
-                            accessibilityRole="button"
-                            accessibilityLabel={t("common:actions.signIn")}
-                          >
-                            <Text className="text-white text-xs font-semibold">
-                              {t("common:actions.signIn")}
-                            </Text>
-                          </Pressable>
-                        </View>
-                      ) : null}
-                      {inviteIdentifierCheckingAccount ? (
-                        <Text className="text-white/60 text-xs">
-                          {t("events:invite.checking")}
-                        </Text>
-                      ) : inviteIdentifierMismatch ? (
-                        <Text className="text-amber-200 text-xs">
-                          {t("events:invite.mismatch")}
-                        </Text>
-                      ) : inviteIdentifierState.status === "not_invited" ? (
-                        <Text className="text-amber-200 text-xs">
-                          {inviteIdentifierState.message ??
-                            t("events:invite.notFound")}
-                        </Text>
-                      ) : inviteIdentifierState.status === "invalid" ? (
-                        <Text className="text-amber-200 text-xs">
-                          {inviteIdentifierState.message ??
-                            t("events:invite.identifierInvalid")}
                         </Text>
                       ) : null}
                     </View>

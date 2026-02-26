@@ -103,6 +103,7 @@ async function _GET(req: NextRequest) {
         },
       },
       ticketTypes: {
+        where: { publicAccess: true },
         select: {
           id: true,
           name: true,

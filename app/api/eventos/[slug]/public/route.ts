@@ -9,6 +9,8 @@ import { resolveEventAccessPolicyInput } from "@/lib/events/accessPolicy";
 import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
 import { checkPadelRegistrationWindow } from "@/domain/padelRegistration";
 import { buildPadelEventSnapshot } from "@/lib/padel/eventSnapshot";
+import { resolveInviteTokenGrant } from "@/lib/invites/inviteTokens";
+import { normalizeEmail } from "@/lib/utils/email";
 import { EventAccessMode } from "@prisma/client";
 
 type Params = { slug: string };
@@ -19,6 +21,8 @@ async function _GET(req: NextRequest, context: { params: Params | Promise<Params
   if (!slug) {
     return jsonWrap({ errorCode: "BAD_REQUEST", message: "Slug inválido." }, { status: 400 });
   }
+  const inviteToken = req.nextUrl.searchParams.get("inviteToken")?.trim() || "";
+  const inviteEmailNormalized = normalizeEmail(req.nextUrl.searchParams.get("inviteEmail"));
 
   const event = await prisma.event.findFirst({
     where: {
@@ -52,6 +56,7 @@ async function _GET(req: NextRequest, context: { params: Params | Promise<Params
           price: true,
           currency: true,
           status: true,
+          publicAccess: true,
           startsAt: true,
           endsAt: true,
           totalQuantity: true,
@@ -115,8 +120,43 @@ async function _GET(req: NextRequest, context: { params: Params | Promise<Params
     select: { fullName: true, username: true, avatarUrl: true },
   });
 
+  let hasInviteTokenAccess = false;
+  let inviteTokenTicketTypeId: number | null = null;
+  if (inviteToken) {
+    const grant = await resolveInviteTokenGrant(
+      {
+        eventId: event.id,
+        token: inviteToken,
+        emailNormalized: inviteEmailNormalized || undefined,
+      },
+      prisma,
+    );
+    if (grant.ok) {
+      const grantedTicketTypeId =
+        typeof grant.grant.ticketTypeId === "number" && Number.isFinite(grant.grant.ticketTypeId)
+          ? grant.grant.ticketTypeId
+          : null;
+      if (grantedTicketTypeId) {
+        hasInviteTokenAccess = true;
+        inviteTokenTicketTypeId = grantedTicketTypeId;
+      }
+    }
+  }
+
+  const isCancelledEvent = String(event.status ?? "").toUpperCase() === "CANCELLED";
+  const visibleTicketTypes = (event.ticketTypes ?? []).filter((ticket) => {
+    if (isCancelledEvent) return false;
+    const isPrivateTicket = ticket.publicAccess === false;
+    if (!isPrivateTicket) return true;
+    if (!hasInviteTokenAccess) return false;
+    return inviteTokenTicketTypeId === ticket.id;
+  });
+
   const card = toPublicEventCardWithPrice({
-    event,
+    event: {
+      ...event,
+      ticketTypes: visibleTicketTypes,
+    },
     ownerProfile,
   });
 

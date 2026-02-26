@@ -251,7 +251,6 @@ const EVENT_BASELINE_COLUMNS = new Set([
   "owner_user_id",
   "deleted_at",
   "is_deleted",
-  "resale_mode",
   "fee_mode",
   "payout_mode",
 ]);

@@ -81,7 +81,6 @@ type NewTicketType = {
 
 type UpdateEventBody = {
   eventId?: number;
-  archive?: boolean;
   deleteDraft?: boolean;
   status?: string | null;
   title?: string | null;
@@ -396,7 +395,11 @@ async function _POST(req: NextRequest) {
     if (event.organizationId !== requestOrganizationId) {
       return fail(404, "Evento não encontrado.");
     }
-    if (!event.endsAt || Number.isNaN(event.endsAt.getTime())) {
+    const requestedStatusRawPrecheck =
+      typeof body.status === "string" ? body.status.trim().toUpperCase() : null;
+    const isLifecycleOnlyRequest =
+      body.deleteDraft === true || requestedStatusRawPrecheck === "CANCELLED";
+    if ((!event.endsAt || Number.isNaN(event.endsAt.getTime())) && !isLifecycleOnlyRequest) {
       return fail(409, "Evento inválido: data/hora de fim em falta. Corrige o schedule.");
     }
 
@@ -444,17 +447,9 @@ async function _POST(req: NextRequest) {
       }
     }
 
-    const requestedStatusRaw =
-      typeof body.status === "string" ? body.status.trim().toUpperCase() : null;
     const requestedStatus =
-      requestedStatusRaw &&
-      (Object.values(EventStatus) as string[]).includes(requestedStatusRaw)
-        ? (requestedStatusRaw as EventStatus)
-        : null;
-    if (requestedStatusRaw && !requestedStatus) {
-      return fail(400, "STATUS_INVALID");
-    }
-    if (body.archive === true) {
+      typeof body.status === "string" ? body.status.trim().toUpperCase() : null;
+    if ((body as Record<string, unknown> | null)?.archive === true) {
       return fail(400, "ARCHIVE_REMOVED_USE_STATUS_OR_DELETE");
     }
 
@@ -464,15 +459,15 @@ async function _POST(req: NextRequest) {
     const hasNewTicketTypesPayload =
       Array.isArray(body.newTicketTypes) && body.newTicketTypes.length > 0;
 
-    if (event.status === EventStatus.CANCELLED) {
+    if (String(event.status) === "CANCELLED") {
       return fail(409, "EVENT_CANCELLED_TERMINAL");
     }
-    if (requestedStatus && requestedStatus !== EventStatus.CANCELLED) {
+    if (requestedStatus && requestedStatus !== "CANCELLED") {
       return fail(400, "UNSUPPORTED_EVENT_STATUS_TRANSITION");
     }
     const shouldCancelEvent =
-      requestedStatus === EventStatus.CANCELLED &&
-      event.status !== EventStatus.CANCELLED;
+      requestedStatus === "CANCELLED" &&
+      String(event.status) !== "CANCELLED";
 
     const hasLifecycleAction = shouldDeleteDraft || shouldCancelEvent;
     if (hasLifecycleAction) {
@@ -504,7 +499,7 @@ async function _POST(req: NextRequest) {
     }
 
     if (shouldDeleteDraft) {
-      if (event.status !== EventStatus.DRAFT) {
+      if (String(event.status) !== "DRAFT") {
         return fail(409, "DRAFT_DELETE_ONLY");
       }
       const [paidSalesCount, ticketsCount, reservationsCount, entitlementsCount, registrationsCount] =
@@ -575,7 +570,7 @@ async function _POST(req: NextRequest) {
 
     const dataUpdate: Partial<Prisma.EventUncheckedUpdateInput> = {};
     if (shouldCancelEvent) {
-      dataUpdate.status = EventStatus.CANCELLED;
+      dataUpdate.status = "CANCELLED" as any;
     }
     if (body.title !== undefined) {
       const nextTitle = body.title?.trim() ?? "";

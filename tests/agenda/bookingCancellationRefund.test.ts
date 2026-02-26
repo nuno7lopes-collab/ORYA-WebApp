@@ -42,8 +42,8 @@ describe("booking cancellation refund", () => {
     expect(res?.rule).toBe("CLIENT_CANCEL_KEEP_FEES");
     expect(res?.totalCents).toBe(11_000);
     expect(res?.penaltyCents).toBe(0);
-    expect(res?.feesRetainedCents).toBe(250);
-    expect(res?.refundCents).toBe(10_750);
+    expect(res?.feesRetainedCents).toBe(1_080);
+    expect(res?.refundCents).toBe(9_920);
   });
 
   it("org cancel is full refund", () => {

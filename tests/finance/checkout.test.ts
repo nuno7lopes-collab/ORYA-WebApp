@@ -410,7 +410,7 @@ describe("createCheckout", () => {
     ).rejects.toThrow("INVITE_REQUIRED");
   });
 
-  it("permite bilhete privado quando identidade está convidada", async () => {
+  it("exige token para bilhete privado mesmo quando a identidade está convidada", async () => {
     prismaMock.eventAccessPolicy.findFirst.mockResolvedValue({
       mode: "PUBLIC",
       inviteTokenAllowed: true,
@@ -426,16 +426,16 @@ describe("createCheckout", () => {
     } as any);
     prismaMock.eventInvite.findFirst.mockResolvedValue({ id: 99 } as any);
 
-    const output = await createCheckout({
-      orgId: 10,
-      sourceType: SourceType.TICKET_ORDER,
-      sourceId: ORDER_ID,
-      customerIdentityId: "identity-user",
-      idempotencyKey: "idem-private-allow",
-      resolvedSnapshot: ticketResolvedSnapshot,
-    });
-
-    expect(output.status).toBe("CREATED");
+    await expect(
+      createCheckout({
+        orgId: 10,
+        sourceType: SourceType.TICKET_ORDER,
+        sourceId: ORDER_ID,
+        customerIdentityId: "identity-user",
+        idempotencyKey: "idem-private-allow",
+        resolvedSnapshot: ticketResolvedSnapshot,
+      }),
+    ).rejects.toThrow("INVITE_REQUIRED");
   });
 
   it("usa access engine e bloqueia quando nega", async () => {
@@ -463,7 +463,7 @@ describe("createCheckout", () => {
         idempotencyKey: "idem-access",
         resolvedSnapshot: ticketResolvedSnapshot,
       }),
-    ).rejects.toThrow("INVITE_TOKEN_REQUIRED");
+    ).rejects.toThrow("INVITE_ONLY");
     expect(evaluateEventAccess).toHaveBeenCalled();
   });
 

@@ -91,6 +91,7 @@ vi.mock("@/lib/prisma", () => ({
 
 import { POST } from "@/app/api/me/reservas/[id]/cancel/route";
 import { prisma } from "@/lib/prisma";
+import { computeCancellationRefundFromSnapshot } from "@/lib/reservas/confirmationSnapshot";
 
 const prismaMock = vi.mocked(prisma);
 
@@ -164,12 +165,17 @@ describe("booking cancel snapshot route", () => {
       { params: Promise.resolve({ id: "1" }) },
     );
 
+    const expectedRefund = computeCancellationRefundFromSnapshot(snapshot, {
+      actor: "CLIENT",
+      stripeFeeCentsActual: null,
+    });
+
     expect(res.status).toBe(200);
     expect(refundBookingPaymentMock).toHaveBeenCalledWith(
       expect.objectContaining({
         bookingId: 1,
         paymentIntentId: "pi_1",
-        amountCents: snapshot.pricingSnapshot.totalCents,
+        amountCents: expectedRefund?.refundCents,
       }),
     );
   });

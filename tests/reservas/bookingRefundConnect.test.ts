@@ -50,7 +50,7 @@ vi.mock("@/lib/prisma", () => {
   return { prisma };
 });
 
-import { refundBookingPayment } from "@/lib/reservas/bookingRefund";
+import { refundBookingPayment } from "@/lib/refunds/unifiedRefund";
 import { prisma } from "@/lib/prisma";
 
 const prismaMock = vi.mocked(prisma);

@@ -58,6 +58,7 @@ async function upsertFromEvent(params: {
         select: {
           price: true,
           status: true,
+          publicAccess: true,
           totalQuantity: true,
           soldQuantity: true,
         },
@@ -92,9 +93,10 @@ async function upsertFromEvent(params: {
       })
     : null;
 
+  const publicTicketTypes = event.ticketTypes.filter((ticketType) => ticketType.publicAccess !== false);
   const { isGratis, priceFromCents } = resolveTicketPricingSummary({
     pricingMode: event.pricingMode,
-    ticketTypes: event.ticketTypes,
+    ticketTypes: publicTicketTypes,
   });
 
   const visibility = resolveVisibility({

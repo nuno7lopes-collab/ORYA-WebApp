@@ -58,13 +58,20 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ slug: str
     if (!grantResult.ok) {
       return respondOk(ctx, { invited: false, reason: grantResult.reason });
     }
+    const grantedTicketTypeId =
+      typeof grantResult.grant.ticketTypeId === "number" && Number.isFinite(grantResult.grant.ticketTypeId)
+        ? grantResult.grant.ticketTypeId
+        : null;
+    if (!grantedTicketTypeId) {
+      return respondOk(ctx, { invited: false, reason: "INVITE_TICKET_TYPE_REQUIRED" });
+    }
 
     return respondOk(ctx, {
       invited: true,
       type: "email",
       normalized: grantResult.grant.emailNormalized,
       expiresAt: grantResult.grant.expiresAt,
-      ticketTypeId: grantResult.grant.ticketTypeId ?? undefined,
+      ticketTypeId: grantedTicketTypeId,
     });
   } catch (err) {
     console.error("[eventos/invites/check]", err);

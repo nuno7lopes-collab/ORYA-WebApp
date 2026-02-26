@@ -163,6 +163,7 @@ async function _GET(req: NextRequest) {
         status: true,
         pricingMode: true,
         ticketTypes: {
+          where: { publicAccess: true },
           select: {
             price: true,
             currency: true,

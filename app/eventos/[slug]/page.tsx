@@ -67,8 +67,8 @@ export async function generateMetadata(
     };
   }
 
-  let event = await prisma.event.findUnique({
-    where: { slug },
+  let event = await prisma.event.findFirst({
+    where: { slug, isDeleted: false },
     select: {
       title: true,
       description: true,
@@ -80,8 +80,8 @@ export async function generateMetadata(
   if (!event) {
     const normalized = slugify(slug);
     if (normalized && normalized !== slug) {
-      event = await prisma.event.findUnique({
-        where: { slug: normalized },
+      event = await prisma.event.findFirst({
+        where: { slug: normalized, isDeleted: false },
         select: {
           title: true,
           description: true,
@@ -293,15 +293,15 @@ export default async function EventPage({
 
   type EventWithTickets = Prisma.EventGetPayload<{ select: typeof eventSelect }>;
 
-  const event = await prisma.event.findUnique({
-    where: { slug },
+  const event = await prisma.event.findFirst({
+    where: { slug, isDeleted: false },
     select: eventSelect,
   });
   if (!event || !event.organizationId) {
     const normalized = slugify(slug);
     if (normalized && normalized !== slug) {
-      const fallback = await prisma.event.findUnique({
-        where: { slug: normalized },
+      const fallback = await prisma.event.findFirst({
+        where: { slug: normalized, isDeleted: false },
         select: eventSelect,
       });
       if (fallback && fallback.organizationId) {
@@ -337,10 +337,17 @@ export default async function EventPage({
       prisma,
     );
     if (grant.ok) {
-      hasInviteTokenAccess = true;
-      inviteTokenTicketTypeId = grant.grant.ticketTypeId ?? null;
+      const grantedTicketTypeId =
+        typeof grant.grant.ticketTypeId === "number" && Number.isFinite(grant.grant.ticketTypeId)
+          ? grant.grant.ticketTypeId
+          : null;
+      if (grantedTicketTypeId) {
+        hasInviteTokenAccess = true;
+        inviteTokenTicketTypeId = grantedTicketTypeId;
+      }
     }
   }
+  const inviteTokenForCheckout = hasInviteTokenAccess ? inviteTokenParam : null;
   const canFreeCheckout = Boolean(user) && hasUsername;
   const allowCheckoutBase = isGratis ? canFreeCheckout : true;
   const isPadel = event.templateType === "PADEL";
@@ -497,7 +504,7 @@ export default async function EventPage({
   const eventEnded = isCancelledEvent || endDateObj < nowDate;
   const eventIsActive = !eventEnded;
   const shareUrl = `${getAppBaseUrl()}/eventos/${event.slug}`;
-  const canSeeTickets = true;
+  const canSeeTickets = !isCancelledEvent;
 
   const orderedTickets = visibleTicketTypes
     .filter((t) => {
@@ -541,8 +548,7 @@ export default async function EventPage({
             });
 
     const isPrivateTicket = t.publicAccess === false;
-    const tokenGrantsTicket =
-      hasInviteTokenAccess && (inviteTokenTicketTypeId == null || inviteTokenTicketTypeId === t.id);
+    const tokenGrantsTicket = hasInviteTokenAccess && inviteTokenTicketTypeId === t.id;
     const canSeePrivateTicket = isAdmin || tokenGrantsTicket;
 
     return {
@@ -990,6 +996,7 @@ export default async function EventPage({
                       isGratisEvent={isGratis}
                       checkoutUiVariant={checkoutVariant}
                       locale={locale}
+                      inviteToken={inviteTokenForCheckout}
                       padelMeta={
                         checkoutVariant === "PADEL"
                           ? {
@@ -1038,12 +1045,14 @@ export default async function EventPage({
                 </p>
 
                 <div className="mt-6 flex flex-wrap items-center gap-3">
-                  <a
-                    href="#bilhetes"
-                    className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-semibold text-black shadow-[0_0_22px_rgba(255,255,255,0.28)] transition hover:brightness-110 active:scale-95 md:text-sm"
-                  >
-                    {ticketCopy.viewLabel}
-                  </a>
+                  {!isCancelledEvent ? (
+                    <a
+                      href="#bilhetes"
+                      className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-semibold text-black shadow-[0_0_22px_rgba(255,255,255,0.28)] transition hover:brightness-110 active:scale-95 md:text-sm"
+                    >
+                      {ticketCopy.viewLabel}
+                    </a>
+                  ) : null}
                   {googleMapsUrl ? (
                     <a
                       href={googleMapsUrl}
@@ -1191,35 +1200,46 @@ export default async function EventPage({
                     </h3>
                     <p className="mt-2 max-w-md text-sm text-white/72">{ticketSectionSummary}</p>
                   </div>
-                  <span
-                    className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.16em] ${availabilityTone}`}
-                  >
-                    {availabilityLabel}
-                  </span>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.14em] text-white/58">
-                  <span className="rounded-full border border-white/18 px-2.5 py-1">
-                    {marketTickets.length} {ticketSectionLabel.toLowerCase()}
-                  </span>
-                  {onSaleCount > 0 ? (
-                    <span className="rounded-full border border-emerald-400/35 px-2.5 py-1 text-emerald-100/92">
-                      {onSaleCount} ativos
-                    </span>
-                  ) : null}
-                  {upcomingCount > 0 ? (
-                    <span className="rounded-full border border-yellow-400/35 px-2.5 py-1 text-yellow-100/92">
-                      {upcomingCount} em breve
-                    </span>
-                  ) : null}
-                  {hiddenPrivateTickets.length > 0 ? (
-                    <span className="rounded-full border border-amber-400/35 px-2.5 py-1 text-amber-100/92">
-                      {hiddenPrivateTickets.length} privados
+                  {!isCancelledEvent ? (
+                    <span
+                      className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.16em] ${availabilityTone}`}
+                    >
+                      {availabilityLabel}
                     </span>
                   ) : null}
                 </div>
+                {!isCancelledEvent ? (
+                  <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.14em] text-white/58">
+                    <span className="rounded-full border border-white/18 px-2.5 py-1">
+                      {marketTickets.length} {ticketSectionLabel.toLowerCase()}
+                    </span>
+                    {onSaleCount > 0 ? (
+                      <span className="rounded-full border border-emerald-400/35 px-2.5 py-1 text-emerald-100/92">
+                        {onSaleCount} ativos
+                      </span>
+                    ) : null}
+                    {upcomingCount > 0 ? (
+                      <span className="rounded-full border border-yellow-400/35 px-2.5 py-1 text-yellow-100/92">
+                        {upcomingCount} em breve
+                      </span>
+                    ) : null}
+                    {hiddenPrivateTickets.length > 0 ? (
+                      <span className="rounded-full border border-amber-400/35 px-2.5 py-1 text-amber-100/92">
+                        {hiddenPrivateTickets.length} privados
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
 
-              {!eventEnded ? (
+              {isCancelledEvent ? (
+                <div className="mt-6 border-l-2 border-red-400/70 pl-3 text-sm text-red-100/95">
+                  <p className="font-semibold">Evento cancelado</p>
+                  <p className="text-[11px] text-red-100/85">
+                    Este evento foi cancelado pela organização. Compras e inscrições estão permanentemente desativadas.
+                  </p>
+                </div>
+              ) : !eventEnded ? (
                 <div className="mt-6 space-y-5">
                   <>
                       {isGratis && (
@@ -1272,6 +1292,7 @@ export default async function EventPage({
                             isGratisEvent={isGratis}
                             checkoutUiVariant={checkoutVariant}
                             locale={locale}
+                            inviteToken={inviteTokenForCheckout}
                             padelMeta={
                               checkoutVariant === "PADEL"
                                 ? {
@@ -1289,9 +1310,7 @@ export default async function EventPage({
                 </div>
               ) : (
                 <p className="mt-4 text-sm text-white/76">
-                  {isCancelledEvent
-                    ? "Este evento foi cancelado e já não aceita compras ou inscrições."
-                    : eventEndedCopy}
+                  {eventEndedCopy}
                 </p>
               )}
             </section>

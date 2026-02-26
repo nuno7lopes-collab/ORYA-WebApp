@@ -40,6 +40,7 @@ type WavesSectionClientProps = {
     categoryLinkId?: number | null;
   };
   inviteEmail?: string | null;
+  inviteToken?: string | null;
 };
 
 export default function WavesSectionClient({
@@ -51,15 +52,23 @@ export default function WavesSectionClient({
   locale,
   padelMeta,
   inviteEmail,
+  inviteToken,
 }: WavesSectionClientProps) {
   const { abrirCheckout, atualizarDados } = useCheckout();
   const tickets = initialTickets;
   const ticketCopy = getTicketCopy(checkoutUiVariant, locale);
   const freeCtaLabel = ticketCopy.isPadel ? ticketCopy.buyLabel : t("ctaPublicTicketAction", locale);
+  const inviteTokenValue = inviteToken?.trim() ?? "";
   const inviteAdditional =
     inviteEmail && inviteEmail.trim()
-      ? { guestEmail: inviteEmail.trim(), guestEmailConfirm: inviteEmail.trim() }
-      : {};
+      ? {
+          guestEmail: inviteEmail.trim(),
+          guestEmailConfirm: inviteEmail.trim(),
+          ...(inviteTokenValue ? { inviteToken: inviteTokenValue } : {}),
+        }
+      : inviteTokenValue
+        ? { inviteToken: inviteTokenValue }
+        : {};
 
   const visibleTickets = tickets.filter((t) => t.isVisible);
   const onSaleLabel = ticketCopy.isPadel

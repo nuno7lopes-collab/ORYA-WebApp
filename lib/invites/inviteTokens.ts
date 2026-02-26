@@ -9,7 +9,7 @@ const DEFAULT_INVITE_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
 export type InviteTokenIssueInput = {
   eventId: number;
   email: string;
-  ticketTypeId?: number | null;
+  ticketTypeId: number;
 };
 
 export type InviteTokenConsumeInput = {
@@ -33,6 +33,10 @@ export async function issueInviteToken(
   if (!emailNormalized) {
     throw new Error("INVITE_EMAIL_INVALID");
   }
+  const ticketTypeId = Number(input.ticketTypeId);
+  if (!Number.isFinite(ticketTypeId) || ticketTypeId <= 0) {
+    throw new Error("INVITE_TICKET_TYPE_REQUIRED");
+  }
   const policy = await getLatestPolicyForEvent(input.eventId, client);
 
   const token = crypto.randomUUID();
@@ -47,7 +51,7 @@ export async function issueInviteToken(
     data: {
       tokenHash,
       eventId: input.eventId,
-      ticketTypeId: input.ticketTypeId ?? null,
+      ticketTypeId,
       emailNormalized,
       expiresAt,
       usedAt: null,
@@ -85,10 +89,9 @@ export function assertInviteTokenValid(params: {
   if (tokenRow.expiresAt <= now) return false;
   if (!emailNormalized) return false;
   if (tokenRow.emailNormalized.toLowerCase() !== emailNormalized.toLowerCase()) return false;
-  if (tokenRow.ticketTypeId != null) {
-    if (!ticketTypeIds.length) return false;
-    if (!ticketTypeIds.every((id) => id === tokenRow.ticketTypeId)) return false;
-  }
+  if (tokenRow.ticketTypeId == null) return false;
+  if (!ticketTypeIds.length) return false;
+  if (!ticketTypeIds.every((id) => id === tokenRow.ticketTypeId)) return false;
   return true;
 }
 
@@ -125,6 +128,7 @@ export async function resolveInviteTokenGrant(
     },
   });
   if (!tokenRow) return { ok: false, reason: "INVITE_TOKEN_NOT_FOUND" };
+  if (tokenRow.ticketTypeId == null) return { ok: false, reason: "INVITE_TICKET_TYPE_REQUIRED" };
 
   const emailNormalized = input.emailNormalized ?? tokenRow.emailNormalized;
   if (!emailNormalized) return { ok: false, reason: "INVITE_EMAIL_REQUIRED" };
@@ -132,8 +136,11 @@ export async function resolveInviteTokenGrant(
   const resolvedTicketTypeId =
     typeof input.ticketTypeId === "number" && Number.isFinite(input.ticketTypeId)
       ? input.ticketTypeId
-      : tokenRow.ticketTypeId ?? null;
-  const ticketTypeIds = resolvedTicketTypeId ? [resolvedTicketTypeId] : [];
+      : tokenRow.ticketTypeId;
+  if (!Number.isFinite(resolvedTicketTypeId) || resolvedTicketTypeId <= 0) {
+    return { ok: false, reason: "INVITE_TICKET_TYPE_REQUIRED" };
+  }
+  const ticketTypeIds = [resolvedTicketTypeId];
 
   const ok = assertInviteTokenValid({
     tokenRow,
@@ -149,7 +156,7 @@ export async function resolveInviteTokenGrant(
     grant: {
       tokenId: tokenRow.id,
       emailNormalized,
-      ticketTypeId: tokenRow.ticketTypeId ?? resolvedTicketTypeId ?? null,
+      ticketTypeId: resolvedTicketTypeId,
       expiresAt: tokenRow.expiresAt,
     },
   };

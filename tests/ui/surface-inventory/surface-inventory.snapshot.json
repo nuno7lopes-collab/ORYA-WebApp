@@ -23,6 +23,7 @@
     "app/admin/(protected)/settings/page.tsx",
     "app/admin/(protected)/suporte/[id]/page.tsx",
     "app/admin/(protected)/suporte/page.tsx",
+    "app/admin/(protected)/telemetry/page.tsx",
     "app/admin/(protected)/tickets/page.tsx",
     "app/admin/(protected)/utilizadores/page.tsx",
     "app/admin/forbidden/page.tsx",
@@ -195,7 +196,6 @@
     "app/page.tsx",
     "app/perfil/page.tsx",
     "app/rede/page.tsx",
-    "app/resale/[id]/page.tsx",
     "app/reset-password/page.tsx",
     "app/servicos/[id]/page.tsx",
     "app/servicos/page.tsx",
@@ -345,6 +345,7 @@
       "app/admin/(protected)/settings/page.tsx",
       "app/admin/(protected)/suporte/[id]/page.tsx",
       "app/admin/(protected)/suporte/page.tsx",
+      "app/admin/(protected)/telemetry/page.tsx",
       "app/admin/(protected)/tickets/page.tsx",
       "app/admin/(protected)/utilizadores/page.tsx",
       "app/admin/forbidden/page.tsx",
@@ -422,7 +423,6 @@
       "app/padel/rankings/page.tsx",
       "app/page.tsx",
       "app/perfil/page.tsx",
-      "app/resale/[id]/page.tsx",
       "app/servicos/[id]/page.tsx",
       "app/servicos/page.tsx",
       "app/social/page.tsx",
@@ -467,9 +467,9 @@
     "webTotal": 201,
     "mobileTotal": 45,
     "org": 78,
-    "admin": 17,
+    "admin": 18,
     "user": 20,
-    "public": 54,
+    "public": 53,
     "legacyCompat": 32
   }
 }

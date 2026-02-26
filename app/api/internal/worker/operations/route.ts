@@ -1397,7 +1397,7 @@ async function processOperation(op: OperationRecord) {
     case "UPSERT_LEDGER_FROM_PI_FREE":
       return processUpsertLedger(op);
     case "PROCESS_REFUND_UNIFIED":
-      return processRefundSingle(op);
+      return processRefundUnified(op);
     case "MARK_DISPUTE":
       return processMarkDispute(op);
     case "SEND_EMAIL_RECEIPT":
@@ -2061,11 +2061,10 @@ async function processUpsertLedger(op: OperationRecord) {
   });
 }
 
-async function processRefundSingle(op: OperationRecord) {
+async function processRefundUnified(op: OperationRecord) {
   const payload = op.payload || {};
   const purchaseId =
     op.purchaseId ||
-    (typeof payload.purchaseId === "string" ? payload.purchaseId : null) ||
     (typeof payload.purchaseId === "string" ? payload.purchaseId : null);
   const eventId =
     op.eventId ??

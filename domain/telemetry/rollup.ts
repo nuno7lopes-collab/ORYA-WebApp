@@ -10,6 +10,7 @@ type RollupParams = {
   from?: Date;
   to?: Date;
   bucketUnit?: TelemetryBucketUnit;
+  organizationId?: number | null;
 };
 
 type GroupByRow = {
@@ -82,12 +83,39 @@ export async function recomputeTelemetryMetricRollups(params: RollupParams = {})
   const from =
     params.from ??
     new Date(now.getTime() - (bucketUnit === "HOUR" ? 24 : 14) * 60 * 60 * 1000);
+  const organizationId =
+    typeof params.organizationId === "number" &&
+    Number.isInteger(params.organizationId) &&
+    params.organizationId > 0
+      ? params.organizationId
+      : null;
 
   const env = getAppEnv();
   const bucketSql =
     bucketUnit === "DAY"
       ? Prisma.sql`date_trunc('day', occurred_at)`
       : Prisma.sql`date_trunc('hour', occurred_at)`;
+  const orgFilter =
+    typeof organizationId === "number"
+      ? Prisma.sql`AND organization_id = ${organizationId}`
+      : Prisma.empty;
+
+  const totalRows = await prisma.$queryRaw<GroupByRow[]>(Prisma.sql`
+    SELECT
+      organization_id,
+      ${bucketSql} AS bucket_start,
+      'ALL'::text AS dimension_value,
+      COUNT(*) AS event_count,
+      COUNT(*) FILTER (WHERE severity IN ('ERROR', 'CRITICAL')) AS error_count,
+      COUNT(DISTINCT COALESCE(actor_key, actor_user_id::text)) AS unique_actors
+    FROM app_v3.telemetry_events
+    WHERE env = ${env}
+      AND organization_id IS NOT NULL
+      AND occurred_at >= ${from}
+      AND occurred_at < ${now}
+      ${orgFilter}
+    GROUP BY organization_id, bucket_start
+  `);
 
   const eventRows = await prisma.$queryRaw<GroupByRow[]>(Prisma.sql`
     SELECT
@@ -102,6 +130,7 @@ export async function recomputeTelemetryMetricRollups(params: RollupParams = {})
       AND organization_id IS NOT NULL
       AND occurred_at >= ${from}
       AND occurred_at < ${now}
+      ${orgFilter}
     GROUP BY organization_id, bucket_start, event_name
   `);
 
@@ -117,6 +146,7 @@ export async function recomputeTelemetryMetricRollups(params: RollupParams = {})
       AND organization_id IS NOT NULL
       AND occurred_at >= ${from}
       AND occurred_at < ${now}
+      ${orgFilter}
     GROUP BY organization_id, bucket_start, source_type
   `);
 
@@ -132,10 +162,49 @@ export async function recomputeTelemetryMetricRollups(params: RollupParams = {})
       AND organization_id IS NOT NULL
       AND occurred_at >= ${from}
       AND occurred_at < ${now}
+      ${orgFilter}
     GROUP BY organization_id, bucket_start, actor_type
   `);
 
   let written = 0;
+
+  for (const row of totalRows) {
+    const orgId = Number(row.organization_id);
+    const bucketStart = new Date(row.bucket_start);
+
+    await upsertRollup({
+      organizationId: orgId,
+      bucketStart,
+      bucketUnit,
+      metricKey: "EVENT_COUNT",
+      dimensionKey: "GLOBAL",
+      dimensionValue: "ALL",
+      value: toInt(row.event_count),
+    });
+    written += 1;
+
+    await upsertRollup({
+      organizationId: orgId,
+      bucketStart,
+      bucketUnit,
+      metricKey: "ERROR_COUNT",
+      dimensionKey: "GLOBAL",
+      dimensionValue: "ALL",
+      value: toInt(row.error_count),
+    });
+    written += 1;
+
+    await upsertRollup({
+      organizationId: orgId,
+      bucketStart,
+      bucketUnit,
+      metricKey: "UNIQUE_ACTORS",
+      dimensionKey: "GLOBAL",
+      dimensionValue: "ALL",
+      value: toInt(row.unique_actors),
+    });
+    written += 1;
+  }
 
   for (const row of eventRows) {
     const organizationId = Number(row.organization_id);
@@ -228,6 +297,7 @@ export async function recomputeTelemetryMetricRollups(params: RollupParams = {})
     to: now,
     bucketUnit,
     rows: {
+      totalRows: totalRows.length,
       eventRows: eventRows.length,
       sourceRows: sourceRows.length,
       actorRows: actorRows.length,

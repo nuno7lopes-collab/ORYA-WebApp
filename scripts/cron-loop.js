@@ -236,6 +236,18 @@ const jobs = [
     intervalMs: getInterval("CRON_ANALYTICS_INTERVAL_MS", 86400000),
   },
   {
+    name: "telemetry-rollup",
+    method: "POST",
+    path: "/api/cron/telemetry/rollup",
+    intervalMs: getInterval("CRON_TELEMETRY_ROLLUP_INTERVAL_MS", 300000),
+  },
+  {
+    name: "telemetry-alerts-evaluate",
+    method: "POST",
+    path: "/api/cron/telemetry/evaluate",
+    intervalMs: getInterval("CRON_TELEMETRY_ALERTS_EVALUATE_INTERVAL_MS", 300000),
+  },
+  {
     name: "loyalty-expire",
     method: "POST",
     path: "/api/cron/loyalty/expire",
