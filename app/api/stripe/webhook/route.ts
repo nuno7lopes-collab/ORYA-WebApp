@@ -22,7 +22,10 @@ import {
   PaymentMode,
   PaymentStatus,
   Prisma,
+  RefundCasePolicyCause,
+  RefundCaseStatus,
   SaleSummaryStatus,
+  StoreOrderStatus,
 } from "@prisma/client";
 import {
   constructStripeWebhookEvent,
@@ -40,6 +43,7 @@ import { consumeStripeWebhookEvent } from "@/domain/finance/outbox";
 import { FINANCE_OUTBOX_EVENTS } from "@/domain/finance/events";
 import { resolveRegistrationStatusFromSlots, upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
 import { performPaymentFulfillment } from "@/lib/operations/performPaymentFulfillment";
+import { requestUnifiedRefundCase } from "@/lib/refunds/unifiedRefundCase";
 const STRIPE_OUTBOX_TYPE = "payment.webhook.received";
 
 const logWebhookInfo = (message: string, context?: Record<string, unknown>) =>
@@ -317,20 +321,22 @@ async function publishPaymentRefunded(params: {
   paymentId: string | null;
   stripeEventId?: string | null;
   source: string;
+  paymentStatus?: PaymentStatus;
 }) {
   const paymentId = params.paymentId;
   if (!paymentId) return;
+  const nextStatus = params.paymentStatus ?? PaymentStatus.REFUNDED;
   await prisma.$transaction(async (tx) => {
     const payment = await tx.payment.findUnique({
       where: { id: paymentId },
       select: { status: true, organizationId: true, sourceType: true, sourceId: true },
     });
     if (!payment) return;
-    const alreadyRefunded = payment.status === PaymentStatus.REFUNDED;
+    const alreadyRefunded = payment.status === nextStatus;
     if (!alreadyRefunded) {
       await tx.payment.update({
         where: { id: paymentId },
-        data: { status: PaymentStatus.REFUNDED },
+        data: { status: nextStatus },
       });
     }
 
@@ -339,7 +345,7 @@ async function publishPaymentRefunded(params: {
     const payload = {
       eventLogId,
       paymentId: params.paymentId,
-      status: PaymentStatus.REFUNDED,
+      status: nextStatus,
       source: params.source,
       eventType: "charge.refunded",
     };
@@ -527,14 +533,94 @@ export async function handleRefund(charge: Stripe.Charge, opts?: { stripeEventId
     return;
   }
 
-  // Obter metadata do payment intent para identificar PADEL_SPLIT
+  const refundedAmount = Math.max(0, Number(charge.amount_refunded ?? 0));
+  const chargeAmount = Math.max(0, Number(charge.amount ?? 0));
+  const paymentStatus =
+    chargeAmount > 0 && refundedAmount < chargeAmount
+      ? PaymentStatus.PARTIAL_REFUND
+      : PaymentStatus.REFUNDED;
+
   const intent = await retrievePaymentIntent(paymentIntentId, { expand: ["latest_charge"] }).catch(() => null);
-  const paymentId =
+  const paymentIdFromIntent =
     intent?.metadata?.paymentId ??
     intent?.metadata?.purchaseId ??
     null;
+  const paymentEvent = await prisma.paymentEvent.findFirst({
+    where: { stripePaymentIntentId: paymentIntentId },
+    orderBy: { updatedAt: "desc" },
+    select: { purchaseId: true },
+  });
+  const paymentId = paymentIdFromIntent ?? paymentEvent?.purchaseId ?? null;
+
+  const payment = paymentId
+    ? await prisma.payment.findUnique({
+        where: { id: paymentId },
+        select: { id: true, sourceType: true, sourceId: true },
+      })
+    : null;
+  const stripeRefundId =
+    Array.isArray(charge.refunds?.data) && charge.refunds.data.length > 0
+      ? charge.refunds.data[0]?.id ?? null
+      : null;
+  const ledgerCausationId = stripeRefundId ? `stripe_refund:${stripeRefundId}` : null;
 
   if (paymentId) {
+    try {
+      const existingByStripeRefund = stripeRefundId
+        ? await prisma.refundCase.findFirst({
+            where: { stripeRefundId },
+            select: {
+              id: true,
+              status: true,
+              stripeRefundId: true,
+              paymentIntentId: true,
+            },
+          })
+        : null;
+      const refundCase =
+        existingByStripeRefund ??
+        (await requestUnifiedRefundCase({
+          policyCause: RefundCasePolicyCause.WEBHOOK_RECONCILED,
+          paymentId,
+          paymentIntentId,
+          reasonCode: "WEBHOOK_CHARGE_REFUNDED",
+          idempotencyKey: `refund_case:webhook:${stripeRefundId ?? opts?.stripeEventId ?? charge.id}`,
+          overrideRefundCents: refundedAmount,
+          queue: false,
+          auditPayload: {
+            stripeEventId: opts?.stripeEventId ?? null,
+            chargeId: charge.id,
+            livemode: charge.livemode,
+          },
+        }));
+
+      const shouldUpdate =
+        !!refundCase &&
+        (refundCase.status !== RefundCaseStatus.SUCCEEDED ||
+          refundCase.stripeRefundId !== stripeRefundId ||
+          (paymentIntentId && refundCase.paymentIntentId !== paymentIntentId));
+
+      if (shouldUpdate && refundCase) {
+        await prisma.refundCase.update({
+          where: { id: refundCase.id },
+          data: {
+            status: RefundCaseStatus.SUCCEEDED,
+            stripeRefundId,
+            paymentIntentId,
+            lastError: null,
+          },
+        });
+      }
+    } catch (err) {
+      logWebhookWarn("handle_refund.refund_case_upsert_failed", {
+        paymentId,
+        paymentIntentId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  if (paymentId && payment?.sourceType === SourceType.PADEL_REGISTRATION && paymentStatus === PaymentStatus.REFUNDED) {
     const handled = await handlePadelRegistrationRefund({
       paymentId,
       paymentIntentId,
@@ -542,12 +628,106 @@ export async function handleRefund(charge: Stripe.Charge, opts?: { stripeEventId
     });
     if (handled) {
       await publishPaymentRefunded({
-        paymentId: paymentId ?? null,
+        paymentId,
         stripeEventId: opts?.stripeEventId ?? null,
         source: "stripe.webhook",
+        paymentStatus,
       });
       return;
     }
+  }
+
+  if (paymentId && payment?.sourceType === SourceType.BOOKING) {
+    await prisma.$transaction(async (tx) => {
+      await paymentEventRepo(tx).updateMany({
+        where: { stripePaymentIntentId: paymentIntentId },
+        data: {
+          status: paymentStatus === PaymentStatus.PARTIAL_REFUND ? "PARTIAL_REFUND" : "REFUNDED",
+          errorMessage: null,
+          updatedAt: new Date(),
+          mode: charge.livemode ? PaymentMode.LIVE : PaymentMode.TEST,
+          isTest: !charge.livemode,
+        },
+      });
+
+      if (paymentStatus === PaymentStatus.REFUNDED) {
+        await tx.entitlement.updateMany({
+          where: { purchaseId: paymentId },
+          data: { status: EntitlementStatus.REVOKED },
+        });
+      }
+    });
+
+    await publishPaymentRefunded({
+      paymentId,
+      stripeEventId: opts?.stripeEventId ?? null,
+      source: "stripe.webhook",
+      paymentStatus,
+    });
+
+    if (paymentStatus === PaymentStatus.REFUNDED) {
+      await appendRefundLedgerEntries({
+        paymentId,
+        causationId: ledgerCausationId ?? `refund:BOOKING:${paymentId}`,
+        correlationId: paymentId,
+      });
+    }
+    return;
+  }
+
+  if (paymentId && payment?.sourceType === SourceType.STORE_ORDER) {
+    const storeOrderIdFromSource = Number(payment.sourceId);
+    const storeOrderIdFromMeta =
+      typeof intent?.metadata?.storeOrderId === "string"
+        ? Number(intent.metadata.storeOrderId)
+        : null;
+    const storeOrderId =
+      Number.isFinite(storeOrderIdFromSource)
+        ? storeOrderIdFromSource
+        : Number.isFinite(storeOrderIdFromMeta ?? NaN)
+          ? Number(storeOrderIdFromMeta)
+          : null;
+
+    await prisma.$transaction(async (tx) => {
+      if (storeOrderId) {
+        await tx.storeOrder.updateMany({
+          where: { id: storeOrderId },
+          data: {
+            status:
+              paymentStatus === PaymentStatus.PARTIAL_REFUND
+                ? StoreOrderStatus.PARTIAL_REFUND
+                : StoreOrderStatus.REFUNDED,
+          },
+        });
+      }
+
+      await paymentEventRepo(tx).updateMany({
+        where: { stripePaymentIntentId: paymentIntentId },
+        data: {
+          status: paymentStatus === PaymentStatus.PARTIAL_REFUND ? "PARTIAL_REFUND" : "REFUNDED",
+          errorMessage: null,
+          updatedAt: new Date(),
+          mode: charge.livemode ? PaymentMode.LIVE : PaymentMode.TEST,
+          isTest: !charge.livemode,
+        },
+      });
+    });
+
+    await publishPaymentRefunded({
+      paymentId,
+      stripeEventId: opts?.stripeEventId ?? null,
+      source: "stripe.webhook",
+      paymentStatus,
+    });
+
+    if (paymentStatus === PaymentStatus.REFUNDED) {
+      await appendRefundLedgerEntries({
+        paymentId,
+        causationId: ledgerCausationId ?? `refund:STORE_ORDER:${paymentId}`,
+        correlationId: paymentId,
+      });
+    }
+    return;
   }
 
   const tickets = await prisma.ticket.findMany({
@@ -556,6 +736,14 @@ export async function handleRefund(charge: Stripe.Charge, opts?: { stripeEventId
   });
 
   if (!tickets.length) {
+    if (paymentId) {
+      await publishPaymentRefunded({
+        paymentId,
+        stripeEventId: opts?.stripeEventId ?? null,
+        source: "stripe.webhook",
+        paymentStatus,
+      });
+    }
     logWebhookWarn("handle_refund.no_tickets_for_payment_intent", { paymentIntentId });
     return;
   }
@@ -598,7 +786,7 @@ export async function handleRefund(charge: Stripe.Charge, opts?: { stripeEventId
     entitlementClauses.length > 0 ? ({ OR: entitlementClauses } as Prisma.EntitlementWhereInput) : null;
 
   await prisma.$transaction([
-    ...(entitlementWhere
+    ...(paymentStatus === PaymentStatus.REFUNDED && entitlementWhere
       ? [
           prisma.entitlement.updateMany({
             where: entitlementWhere,
@@ -606,15 +794,19 @@ export async function handleRefund(charge: Stripe.Charge, opts?: { stripeEventId
           }),
         ]
       : []),
-    prisma.ticket.updateMany({
-      where: { id: { in: ticketIds } },
-      data: { status: "REFUNDED" },
-    }),
-    ...stockUpdates,
+    ...(paymentStatus === PaymentStatus.REFUNDED
+      ? [
+          prisma.ticket.updateMany({
+            where: { id: { in: ticketIds } },
+            data: { status: "REFUNDED" },
+          }),
+          ...stockUpdates,
+        ]
+      : []),
     paymentEventRepo(prisma).updateMany({
       where: { stripePaymentIntentId: paymentIntentId },
       data: {
-        status: "REFUNDED",
+        status: paymentStatus === PaymentStatus.PARTIAL_REFUND ? "PARTIAL_REFUND" : "REFUNDED",
         errorMessage: null,
         updatedAt: new Date(),
         mode: charge.livemode ? PaymentMode.LIVE : PaymentMode.TEST,
@@ -623,7 +815,7 @@ export async function handleRefund(charge: Stripe.Charge, opts?: { stripeEventId
     }),
     ...(saleSummary?.id
       ? [
-          ...(saleSummary.purchaseId
+          ...(paymentStatus === PaymentStatus.REFUNDED && saleSummary.purchaseId
             ? [
                 prisma.promoRedemption.deleteMany({
                   where: { purchaseId: saleSummary.purchaseId },
@@ -632,7 +824,13 @@ export async function handleRefund(charge: Stripe.Charge, opts?: { stripeEventId
             : []),
           saleSummaryRepo(prisma).update({
             where: { id: saleSummary.id },
-            data: { status: SaleSummaryStatus.REFUNDED, updatedAt: new Date() },
+            data: {
+              status:
+                paymentStatus === PaymentStatus.PARTIAL_REFUND
+                  ? SaleSummaryStatus.PARTIAL_REFUND
+                  : SaleSummaryStatus.REFUNDED,
+              updatedAt: new Date(),
+            },
           }),
         ]
       : []),
@@ -642,13 +840,16 @@ export async function handleRefund(charge: Stripe.Charge, opts?: { stripeEventId
     paymentId: saleSummary?.purchaseId ?? paymentId,
     stripeEventId: opts?.stripeEventId ?? null,
     source: "stripe.webhook",
+    paymentStatus,
   });
 
   const ledgerPaymentId = saleSummary?.purchaseId ?? paymentId ?? null;
-  if (ledgerPaymentId) {
-    const baseCausationId = saleSummary?.purchaseId
-      ? `refund:TICKET_ORDER:${saleSummary.purchaseId}`
-      : `refund:${paymentIntentId}`;
+  if (ledgerPaymentId && paymentStatus === PaymentStatus.REFUNDED) {
+    const baseCausationId =
+      ledgerCausationId ??
+      (saleSummary?.purchaseId
+        ? `refund:TICKET_ORDER:${saleSummary.purchaseId}`
+        : `refund:${paymentIntentId}`);
     await appendRefundLedgerEntries({
       paymentId: ledgerPaymentId,
       causationId: baseCausationId,
@@ -659,6 +860,7 @@ export async function handleRefund(charge: Stripe.Charge, opts?: { stripeEventId
   logWebhookInfo("handle_refund.tickets_refunded", {
     paymentIntentId,
     ticketCount: tickets.length,
+    paymentStatus,
   });
 }
 export const POST = withApiEnvelope(_POST);

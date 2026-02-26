@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { BookingStatus, Prisma, PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 
@@ -27,6 +27,31 @@ async function main() {
     const value = await op();
     console.log(`OK ${name} ${value}`);
   }
+
+  const snapshotViolationStatuses = [
+    "CONFIRMED",
+    "COMPLETED",
+    "NO_SHOW",
+    "DISPUTED",
+  ] as const satisfies BookingStatus[];
+
+  const bookingSnapshotViolations = await prisma.booking.count({
+    where: {
+      status: { in: [...snapshotViolationStatuses] },
+      OR: [
+        { confirmationSnapshot: { equals: Prisma.DbNull } },
+        { confirmationSnapshotVersion: null },
+        { confirmationSnapshotCreatedAt: null },
+      ],
+    },
+  });
+
+  if (bookingSnapshotViolations > 0) {
+    throw new Error(
+      `BOOKING_SNAPSHOT_INVARIANT_BROKEN: ${bookingSnapshotViolations} reservas em estado final sem snapshot completo`,
+    );
+  }
+  console.log("OK bookingSnapshotInvariant 0");
 
   const blockedChecks: Array<[string, () => Promise<number>]> = [
     ["padelTournamentRoleAssignment", () => prisma.padelTournamentRoleAssignment.count()],

@@ -29,7 +29,6 @@ import {
   EventTemplateType,
   EventStatus,
   PayoutMode,
-  ResaleMode,
   Prisma,
   AddressSourceProvider,
   OrganizationModule,
@@ -56,7 +55,6 @@ type CreateOrganizationEventBody = {
   interestTags?: string[];
   ticketTypes?: TicketTypeInput[];
   addressId?: string | null;
-  resaleMode?: string; // ALWAYS | AFTER_SOLD_OUT | DISABLED
   pricingMode?: string | null;
   coverImageUrl?: string | null;
   payoutMode?: string; // ORGANIZATION | PLATFORM
@@ -225,11 +223,6 @@ async function _POST(req: NextRequest) {
     const endsAtRaw = body.endsAt;
     const addressIdInput = typeof body.addressId === "string" ? body.addressId.trim() || null : null;
     const templateTypeRaw = body.templateType?.toUpperCase();
-    const resaleModeRaw = body.resaleMode?.toUpperCase() as
-      | "ALWAYS"
-      | "AFTER_SOLD_OUT"
-      | "DISABLED"
-      | undefined;
     const payoutModeRequested =
       typeof body.payoutMode === "string"
         ? body.payoutMode.toUpperCase() === "PLATFORM"
@@ -415,10 +408,6 @@ async function _POST(req: NextRequest) {
 
     const baseSlug = slugify(title) || "evento";
     const slug = await generateUniqueSlug(baseSlug);
-    const resaleMode: ResaleMode =
-      resaleModeRaw === "AFTER_SOLD_OUT" || resaleModeRaw === "DISABLED"
-        ? (resaleModeRaw as ResaleMode)
-        : ResaleMode.ALWAYS;
 
     // Criar o evento + EventLog/Outbox na mesma tx
     const event = await prisma.$transaction(async (tx) => {
@@ -438,7 +427,6 @@ async function _POST(req: NextRequest) {
           pricingMode,
           status: eventStatus,
           ...(timezone ? { timezone } : {}),
-          resaleMode,
           coverImageUrl,
           payoutMode,
         },

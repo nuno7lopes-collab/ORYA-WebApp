@@ -274,15 +274,18 @@ export function SalesLineChart({
       </svg>
       {activePoint && activePos && (
         <div
-          className="pointer-events-none absolute rounded-xl border border-white/10 bg-black/80 px-3 py-2 text-[11px] text-white/80 shadow-lg backdrop-blur"
+          className="pointer-events-none absolute rounded-xl border px-3 py-2 text-[11px] shadow-lg backdrop-blur"
           style={{
             left: `${(activePos.x / viewW) * 100}%`,
             top: `${(activePos.y / viewH) * 100}%`,
             transform: "translate(-50%, -110%)",
             minWidth: 140,
+            borderColor: "rgba(226, 232, 240, 0.28)",
+            background: "linear-gradient(155deg, rgba(10,16,32,0.95), rgba(6,11,22,0.99))",
+            color: "rgba(248, 250, 252, 0.92)",
           }}
         >
-          <div className="text-white font-semibold">
+          <div style={{ color: "rgba(248, 250, 252, 0.96)", fontWeight: 700 }}>
             {formatDate(activePoint.date)} · {unit === "tickets" ? `${activePoint.value} bilhetes` : formatEuroValue(activePoint.value)}
           </div>
           {unit !== "tickets" && (
@@ -299,7 +302,7 @@ export function SalesLineChart({
                 <span>Taxas</span>
                 <span>-{toEuros(activePoint.platformFeeCents)}</span>
               </div>
-              <div className="flex justify-between gap-3 text-white">
+              <div className="flex justify-between gap-3" style={{ color: "rgba(248, 250, 252, 0.96)", fontWeight: 600 }}>
                 <span>Líquido</span>
                 <span>{toEuros(activePoint.netCents ?? activePoint.value * 100)}</span>
               </div>

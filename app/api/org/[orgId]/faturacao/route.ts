@@ -81,7 +81,21 @@ async function _GET(_req: NextRequest) {
     { totalCents: 0, netCents: 0, platformFeeCents: 0, countSales: 0, holdCents: 0 },
   );
 
-  const refundsCents = 0;
+  const refundCases = await prisma.refundCase.findMany({
+    where: { organizationId: organization.id, status: "SUCCEEDED" },
+    select: { amountsBreakdown: true },
+  });
+  const refundsCents = refundCases.reduce((sum, row) => {
+    const breakdown =
+      row.amountsBreakdown && typeof row.amountsBreakdown === "object" && !Array.isArray(row.amountsBreakdown)
+        ? (row.amountsBreakdown as Record<string, unknown>)
+        : null;
+    const refundCents =
+      breakdown && typeof breakdown.refundCents === "number"
+        ? Number(breakdown.refundCents)
+        : 0;
+    return sum + Math.max(0, refundCents);
+  }, 0);
   const disputesCents = 0;
 
   return jsonWrap(

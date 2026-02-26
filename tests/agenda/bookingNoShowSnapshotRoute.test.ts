@@ -94,36 +94,6 @@ import { prisma } from "@/lib/prisma";
 
 const prismaMock = vi.mocked(prisma);
 
-const snapshot = {
-  version: 1,
-  createdAt: "2026-01-27T12:00:00.000Z",
-  currency: "EUR",
-  policySnapshot: {
-    policyId: 5,
-    policyType: "MODERATE",
-    cancellationWindowMinutes: 120,
-    guestBookingAllowed: false,
-    noShowFeeCents: 2_000,
-  },
-  pricingSnapshot: {
-    baseCents: 10_000,
-    discountCents: 0,
-    feeCents: 0,
-    platformFeeCents: 0,
-    combinedFeeCents: 0,
-    processorFeesStatus: "PENDING",
-    processorFeesActualCents: null,
-    taxCents: 0,
-    totalCents: 10_000,
-    feeMode: "INCLUDED",
-    platformFeeBps: 800,
-    platformFeeFixedCents: 30,
-    stripeFeeBps: 0,
-    stripeFeeFixedCents: 0,
-    cardPlatformFeeCents: 0,
-  },
-};
-
 describe("booking no-show snapshot route", () => {
   beforeEach(() => {
     ensureAuthenticatedMock.mockReset();
@@ -145,17 +115,15 @@ describe("booking no-show snapshot route", () => {
     profileFindUnique.mockResolvedValue({ id: "user-1" });
   });
 
-  it("aplica no-show fee por snapshot e reembolsa o restante", async () => {
+  it("marca no-show em modo CRM-only sem criar reembolso", async () => {
     bookingFindFirst.mockResolvedValue({
       id: 7,
       userId: "user-guest",
       status: "CONFIRMED",
       startsAt: new Date(Date.now() - 60 * 60 * 1000),
-      paymentIntentId: "pi_7",
       organizationId: 10,
       serviceId: 70,
       snapshotTimezone: "Europe/Lisbon",
-      confirmationSnapshot: snapshot,
       professional: { userId: "user-1" },
     } as any);
     markNoShowBookingMock.mockResolvedValue({
@@ -171,14 +139,7 @@ describe("booking no-show snapshot route", () => {
     );
 
     expect(res.status).toBe(200);
-    expect(refundBookingPaymentMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        bookingId: 7,
-        paymentIntentId: "pi_7",
-        amountCents: snapshot.pricingSnapshot.totalCents - snapshot.policySnapshot.noShowFeeCents,
-        reason: "NO_SHOW_REFUND",
-      }),
-    );
+    expect(refundBookingPaymentMock).not.toHaveBeenCalled();
     expect(markNoShowBookingMock).toHaveBeenCalled();
     expect(ensureAuthenticatedMock).toHaveBeenCalled();
   });

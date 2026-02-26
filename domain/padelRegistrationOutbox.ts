@@ -177,7 +177,7 @@ async function handleRegistrationExpired(payload: PadelRegistrationOutboxPayload
       const purchaseId = payment.id;
       const paymentIntentId = paymentIntentByPurchaseId.get(purchaseId) ?? null;
       return enqueueOperation({
-        operationType: "PROCESS_REFUND_SINGLE",
+        operationType: "PROCESS_REFUND_UNIFIED",
         dedupeKey: refundKey(purchaseId),
         correlations: {
           eventId,
@@ -191,6 +191,9 @@ async function handleRegistrationExpired(payload: PadelRegistrationOutboxPayload
           purchaseId,
           paymentIntentId,
           reason: "CANCELLED",
+          policyCause: "PADEL_SYSTEM_CANCEL",
+          sourceType: "PADEL_REGISTRATION",
+          sourceId: registration.id,
           refundedBy: "system",
           auditPayload: {
             pairingId,

@@ -97,7 +97,7 @@ export function SalesAreaChart({ data, periodLabel, height = 260 }: Props) {
                 month: "short",
               })
             }
-            style={{ fontSize: "11px", fill: "rgba(255,255,255,0.65)" }}
+            style={{ fontSize: "11px", fill: "rgb(var(--theme-text-rgb) / 0.82)" }}
           />
           <Tooltip
             cursor={{ stroke: "rgba(255,255,255,0.3)", strokeWidth: 1 }}

@@ -10,6 +10,11 @@ import {
   formatPriceLabel,
 } from "@/app/descobrir/_lib/discoverFormat";
 import { getEventCoverUrl } from "@/lib/eventCover";
+import {
+  ORYA_APP_INSTALL_CTA_LABEL,
+  ORYA_APP_INSTALL_HINT,
+  ORYA_APP_INSTALL_URL,
+} from "@/lib/mobileAppInstall";
 import type { PublicEventCard } from "@/domain/events/publicEventCard";
 
 export const runtime = "nodejs";
@@ -224,13 +229,14 @@ export default async function HomePage() {
             Eventos, padel e experiências num só lugar. Segue a tua rede, guarda planos e compra bilhetes em segundos.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-            <Link href="/signup" className={primaryCtaClass}>
-              Quero a app
-            </Link>
+            <a href={ORYA_APP_INSTALL_URL} className={primaryCtaClass}>
+              {ORYA_APP_INSTALL_CTA_LABEL}
+            </a>
             <Link href={discoverHref} className={ghostCtaClass}>
               Ver eventos
             </Link>
           </div>
+          <p className="mt-3 text-[12px] text-white/62">{ORYA_APP_INSTALL_HINT}</p>
         </div>
       </section>
 

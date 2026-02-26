@@ -71,7 +71,6 @@ async function _GET(req: NextRequest) {
             TicketStatus.ACTIVE,
             TicketStatus.REFUNDED,
             TicketStatus.TRANSFERRED,
-            TicketStatus.RESALE_LISTED,
           ],
         },
       },

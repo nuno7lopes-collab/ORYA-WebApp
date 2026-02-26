@@ -67,23 +67,9 @@ async function main() {
       isDeleted: false,
       organization: { status: "ACTIVE" },
     },
-    include: {
-      organization: {
-        select: {
-          publicName: true,
-          businessName: true,
-          username: true,
-          brandingAvatarUrl: true,
-        },
-      },
-      addressRef: {
-        select: {
-          formattedAddress: true,
-          canonical: true,
-          latitude: true,
-          longitude: true,
-        },
-      },
+    select: {
+      slug: true,
+      endsAt: true,
       ticketTypes: {
         select: {
           id: true,

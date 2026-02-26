@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "node scripts/run-next-dev.mjs --webpack",
     "dev:fast": "node scripts/run-next-dev.mjs --turbo",
-    "dev:all": "node scripts/dev-all.js",
+    "dev:all": "cross-env DEV_ALL_CLEAN_NEXT=1 DEV_ALL_CLEAN_TOOL_CACHE=1 DEV_ALL_NEXT_SCRIPT=dev node scripts/dev-all.js",
     "mobile:cache:clean": "node scripts/mobile-clean-cache.js",
     "mobile:cache:clean:hard": "node scripts/mobile-clean-cache.js --aggressive",
     "mobile:dev": "npm run mobile:cache:clean && cross-env EXPO_PUBLIC_API_BASE_URL=http://localhost:3000 npm --prefix apps/mobile run start -- -c --go --host lan",
@@ -41,6 +41,7 @@
     "gate:ui-ux:inventory": "node scripts/uiux_surface_inventory.mjs",
     "gate:scripts-ops": "node scripts/operational_scripts_allowlist_gate.mjs",
     "gate:scripts-catalog": "node scripts/operational_scripts_catalog_gate.mjs",
+    "gate:reservas-seed-integrity": "node scripts/run-ts.cjs scripts/reservas_seed_integrity_gate.ts",
     "gate:test-hygiene": "node scripts/test_hygiene_gate.mjs",
     "worker": "node scripts/operations-loop.js",
     "cron:local": "node scripts/cron-loop.js",
@@ -106,6 +107,8 @@
     "admin:totp-key": "node scripts/generate-admin-totp-key.mjs",
     "logo:build": "node scripts/regenerate-logo-assets.mjs",
     "smoke:reservas:hybrid": "node scripts/run-ts.cjs scripts/smoke_reservas_hybrid.ts",
+    "reservas:backfill-confirmation-snapshots:dry": "node scripts/run-ts.cjs scripts/backfill_booking_confirmation_snapshots.ts",
+    "reservas:backfill-confirmation-snapshots:execute": "node scripts/run-ts.cjs scripts/backfill_booking_confirmation_snapshots.ts --execute",
     "secrets:prepare-json": "scripts/prepare-secrets-json.sh"
   },
   "dependencies": {

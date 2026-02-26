@@ -4,14 +4,15 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
-import { refundPurchase } from "@/lib/refunds/refundService";
+import { requestUnifiedRefundCase } from "@/lib/refunds/unifiedRefundCase";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
-import { EntitlementStatus, OrganizationModule, RefundReason } from "@prisma/client";
+import { OrganizationModule, RefundCasePolicyCause, RefundReason } from "@prisma/client";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { resolveRequiredOrganizationIdFromRequest } from "@/lib/organizationId";
+import { requireOrganizationStepUp } from "@/lib/organizationStepUp";
 
 const ALLOWED_REASONS: RefundReason[] = ["CANCELLED", "DELETED", "DATE_CHANGED"];
 
@@ -112,28 +113,48 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     }
 
     const reason = parseReason(payload?.reason);
-    const { ip, userAgent } = getRequestMeta(req);
+    const stepUp = await requireOrganizationStepUp({
+      organizationId: organization.id,
+      userId: user.id,
+      userEmail: user.email ?? null,
+      action: "REFUND_EXECUTE",
+      challengeId: payload?.stepUpChallengeId,
+      code: payload?.stepUpCode,
+    });
+    if (!stepUp.ok) {
+      return respondError(
+        ctx,
+        {
+          errorCode: stepUp.errorCode,
+          message: stepUp.message,
+          retryable: false,
+          details: stepUp.details,
+        },
+        { status: stepUp.status },
+      );
+    }
 
-    const refund = await refundPurchase({
-      purchaseId,
+    const { ip, userAgent } = getRequestMeta(req);
+    const policyCause =
+      reason === "DELETED"
+        ? RefundCasePolicyCause.EVENT_DELETED
+        : reason === "DATE_CHANGED"
+          ? RefundCasePolicyCause.EVENT_DATE_CHANGED
+          : RefundCasePolicyCause.EVENT_CANCELLED;
+
+    const refundCase = await requestUnifiedRefundCase({
+      policyCause,
+      paymentId: purchaseId,
       paymentIntentId: saleSummary.paymentIntentId,
-      eventId,
-      reason,
-      refundedBy: user.id,
+      requestedBy: user.id,
+      reasonCode: reason,
+      idempotencyKey: `refund_case:TICKET_ORDER:${purchaseId}:${reason}`,
       auditPayload: {
         source: "ORG_PANEL",
         eventTitle: event.title,
         actorRole: membership.role,
+        stepUpChallengeId: stepUp.challengeId,
       },
-    });
-
-    if (!refund) {
-      return fail(502, "REFUND_FAILED");
-    }
-
-    await prisma.entitlement.updateMany({
-      where: { purchaseId },
-      data: { status: EntitlementStatus.REVOKED },
     });
 
     await recordOrganizationAudit(prisma, {
@@ -144,14 +165,16 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         eventId,
         purchaseId,
         reason,
+        refundCaseId: refundCase?.id ?? null,
+        refundStatus: refundCase?.status ?? null,
       },
       ip,
       userAgent,
     });
 
     return respondOk(ctx, {
-      refundId: refund.id,
-      refundedAt: refund.refundedAt,
+      refundCaseId: refundCase?.id ?? null,
+      refundStatus: refundCase?.status ?? "QUEUED",
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {

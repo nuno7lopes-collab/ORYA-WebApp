@@ -770,8 +770,12 @@ export default function EventDetail() {
     safeBack(router, navigation, fallbackRoute);
   }, [fallbackRoute, navigation, router, triggerLightHaptic]);
   const accessMode = data?.accessPolicy?.mode ?? null;
-  const accessBadge = resolveAccessBadge(accessMode, t);
-  const isInviteOnly = accessMode?.toUpperCase() === "INVITE_ONLY";
+  const normalizedAccessMode =
+    typeof accessMode === "string" && accessMode.toUpperCase() === "INVITE_ONLY"
+      ? "UNLISTED"
+      : accessMode;
+  const accessBadge = resolveAccessBadge(normalizedAccessMode, t);
+  const isInviteOnly = false;
   const inviteValid = inviteState.status === "valid";
   const inviteToken = inviteState.token ?? null;
   const inviteTicketTypeId = inviteState.ticketTypeId ?? null;

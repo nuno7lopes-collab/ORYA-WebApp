@@ -18,6 +18,16 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import {
+  RECHARTS_AXIS_TICK_STYLE,
+  RECHARTS_LEGEND_WRAPPER_STYLE,
+  RECHARTS_TOOLTIP_CONTENT_STYLE,
+  RECHARTS_TOOLTIP_CURSOR_STYLE,
+  RECHARTS_TOOLTIP_ITEM_STYLE,
+  RECHARTS_TOOLTIP_LABEL_STYLE,
+  formatRechartsLegendLabel,
+  renderReadablePiePercentLabel,
+} from "@/components/ui/rechartsTheme";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
 import { isAnalyticsAllowedView, type AnalyticsAllowedView } from "@/lib/domainBoundaries";
 import { cn } from "@/lib/utils";
@@ -99,6 +109,38 @@ type AnalyticsEventsResponse = {
   }>;
 };
 
+type TelemetryOverviewResponse = {
+  window: { hours: number; from: string; to: string };
+  totals: { totalEvents: number; errorEvents: number; uniqueActors: number; errorRateBps: number };
+  sourceBreakdown: Array<{ sourceType: string; count: number }>;
+  topEvents: Array<{ eventName: string; count: number }>;
+  timeline: Array<{ bucketStart: string; total: number; errors: number }>;
+  latest: Array<{
+    id: string;
+    eventName: string;
+    sourceType: string;
+    severity: string;
+    occurredAt: string;
+    correlationId: string | null;
+    requestId: string | null;
+    organizationId: number | null;
+  }>;
+};
+
+type TelemetryEventsResponse = {
+  items: Array<{
+    id: string;
+    eventName: string;
+    sourceType: string;
+    severity: string;
+    actorType: string;
+    correlationId: string | null;
+    requestId: string | null;
+    occurredAt: string;
+  }>;
+  pagination: { hasMore: boolean; nextCursor: string | null };
+};
+
 const swrOptions = {
   revalidateOnFocus: false,
   revalidateOnReconnect: true,
@@ -150,6 +192,29 @@ function parseEventId(raw: string | null | undefined) {
   return parsed;
 }
 
+function parseTelemetryHours(raw: string | null | undefined) {
+  const parsed = Number(raw ?? "24");
+  if (!Number.isFinite(parsed) || parsed <= 0) return 24;
+  if (parsed <= 6) return 6;
+  if (parsed <= 24) return 24;
+  if (parsed <= 72) return 72;
+  return 168;
+}
+
+function parseTelemetrySource(raw: string | null | undefined) {
+  if (!raw) return "";
+  const normalized = raw.trim().toUpperCase();
+  if (["WEB", "MOBILE", "API", "WORKER", "CRON", "INTERNAL"].includes(normalized)) return normalized;
+  return "";
+}
+
+function parseTelemetrySeverity(raw: string | null | undefined) {
+  if (!raw) return "";
+  const normalized = raw.trim().toUpperCase();
+  if (["INFO", "WARN", "ERROR", "CRITICAL"].includes(normalized)) return normalized;
+  return "";
+}
+
 function toCurrency(cents: number | null | undefined, currency = "EUR") {
   const value = (cents ?? 0) / 100;
   return new Intl.NumberFormat("pt-PT", {
@@ -173,6 +238,17 @@ function compactDate(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat("pt-PT", { day: "2-digit", month: "2-digit" }).format(date);
+}
+
+function formatDateTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("pt-PT", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
 }
 
 function prettyMetricKey(value: MetricOption) {
@@ -277,6 +353,9 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
   const dimensionKey = parseDimension(searchParams?.get("dimensionKey") ?? null);
   const metricKey = parseMetric(searchParams?.get("metricKey") ?? null);
   const selectedEventId = parseEventId(searchParams?.get("eventId") ?? null);
+  const telemetryHours = parseTelemetryHours(searchParams?.get("telemetryHours") ?? null);
+  const telemetrySource = parseTelemetrySource(searchParams?.get("telemetrySource") ?? null);
+  const telemetrySeverity = parseTelemetrySeverity(searchParams?.get("telemetrySeverity") ?? null);
   const orgApiBase = `/api/org/${orgId}`;
   const scopeQuery = buildScopeQuery(scope);
 
@@ -332,6 +411,18 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
     view === "dimensions"
       ? `${orgApiBase}/analytics/dimensoes?${buildQueryString({ dimensionKey })}`
       : null;
+  const telemetryOverviewKey =
+    view === "telemetry"
+      ? `${orgApiBase}/telemetry/overview?${buildQueryString({ hours: telemetryHours })}`
+      : null;
+  const telemetryEventsKey =
+    view === "telemetry"
+      ? `${orgApiBase}/telemetry/events?${buildQueryString({
+          take: 80,
+          sourceType: telemetrySource || null,
+          severity: telemetrySeverity || null,
+        })}`
+      : null;
 
   const { data: overview, error: overviewError, isLoading: overviewLoading, mutate: mutateOverview } = useSWR<AnalyticsOverviewResponse>(
     overviewKey,
@@ -357,6 +448,18 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
   );
   const { data: dimensions, error: dimensionsError, isLoading: dimensionsLoading, mutate: mutateDimensions } =
     useSWR<AnalyticsDimensionsResponse>(dimensionsKey, apiFetcher, swrOptions);
+  const {
+    data: telemetryOverview,
+    error: telemetryOverviewError,
+    isLoading: telemetryOverviewLoading,
+    mutate: mutateTelemetryOverview,
+  } = useSWR<TelemetryOverviewResponse>(telemetryOverviewKey, apiFetcher, swrOptions);
+  const {
+    data: telemetryEvents,
+    error: telemetryEventsError,
+    isLoading: telemetryEventsLoading,
+    mutate: mutateTelemetryEvents,
+  } = useSWR<TelemetryEventsResponse>(telemetryEventsKey, apiFetcher, swrOptions);
 
   const refreshCurrentView = useCallback(async () => {
     if (view === "overview") await Promise.all([mutateOverview(), mutateSeries()]);
@@ -365,7 +468,19 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
     if (view === "buyers") await Promise.all([mutateEvents(), mutateBuyers()]);
     if (view === "time-series") await mutateSeries();
     if (view === "dimensions") await mutateDimensions();
-  }, [mutateBuyers, mutateCohorts, mutateConversion, mutateDimensions, mutateEvents, mutateOverview, mutateSeries, view]);
+    if (view === "telemetry") await Promise.all([mutateTelemetryOverview(), mutateTelemetryEvents()]);
+  }, [
+    mutateBuyers,
+    mutateCohorts,
+    mutateConversion,
+    mutateDimensions,
+    mutateEvents,
+    mutateOverview,
+    mutateSeries,
+    mutateTelemetryEvents,
+    mutateTelemetryOverview,
+    view,
+  ]);
 
   const headerByView = useMemo<Record<AnalyticsAllowedView, string>>(
     () => ({
@@ -375,6 +490,7 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
       buyers: "Compradores",
       "time-series": "Séries temporais",
       dimensions: "Dimensões financeiras",
+      telemetry: "Telemetria operacional",
     }),
     [],
   );
@@ -455,6 +571,23 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
     () => buyersSortedByPaid.reduce((sum, item) => sum + (item.totalPaidCents ?? 0), 0),
     [buyersSortedByPaid],
   );
+  const telemetryTimelineData = useMemo(
+    () =>
+      (telemetryOverview?.timeline ?? []).map((point) => ({
+        date: compactDate(point.bucketStart),
+        total: point.total,
+        errors: point.errors,
+      })),
+    [telemetryOverview?.timeline],
+  );
+  const telemetryTopEvents = useMemo(
+    () => (telemetryOverview?.topEvents ?? []).slice(0, 10),
+    [telemetryOverview?.topEvents],
+  );
+  const telemetrySourceBreakdown = useMemo(
+    () => telemetryOverview?.sourceBreakdown ?? [],
+    [telemetryOverview?.sourceBreakdown],
+  );
   const activeFilters = useMemo(() => {
     const chips = [
       { id: "range", label: `Período: ${range}` },
@@ -466,8 +599,24 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
       chips.push({ id: "metric", label: `Métrica: ${prettyMetricKey(effectiveMetricKey)}` });
     }
     if (view === "buyers" && effectiveEventId) chips.push({ id: "event", label: `Evento #${effectiveEventId}` });
+    if (view === "telemetry") {
+      chips.push({ id: "telemetry-hours", label: `Telemetria: ${telemetryHours}h` });
+      if (telemetrySource) chips.push({ id: "telemetry-source", label: `Source: ${telemetrySource}` });
+      if (telemetrySeverity) chips.push({ id: "telemetry-severity", label: `Sev: ${telemetrySeverity}` });
+    }
     return chips;
-  }, [dimensionKey, effectiveEventId, effectiveMetricKey, months, range, scope, view]);
+  }, [
+    dimensionKey,
+    effectiveEventId,
+    effectiveMetricKey,
+    months,
+    range,
+    scope,
+    telemetryHours,
+    telemetrySeverity,
+    telemetrySource,
+    view,
+  ]);
 
   const resetGlobalFilters = useCallback(() => {
     updateQuery({
@@ -477,6 +626,9 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
       dimensionKey: DEFAULT_DIMENSION,
       metricKey: null,
       eventId: null,
+      telemetryHours: 24,
+      telemetrySource: null,
+      telemetrySeverity: null,
     });
   }, [updateQuery]);
 
@@ -564,6 +716,49 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
               placeholder={eventsLoading ? "A carregar eventos..." : "Sem eventos"}
             />
           )}
+          {view === "telemetry" && (
+            <FilterSelect
+              label="Janela telemetria"
+              value={String(telemetryHours)}
+              onChange={(value) => updateQuery({ telemetryHours: Number(value) })}
+              options={[
+                { label: "6 horas", value: "6" },
+                { label: "24 horas", value: "24" },
+                { label: "72 horas", value: "72" },
+                { label: "7 dias", value: "168" },
+              ]}
+            />
+          )}
+          {view === "telemetry" && (
+            <FilterSelect
+              label="Source"
+              value={telemetrySource}
+              onChange={(value) => updateQuery({ telemetrySource: value || null })}
+              options={[
+                { label: "Todos", value: "" },
+                { label: "WEB", value: "WEB" },
+                { label: "MOBILE", value: "MOBILE" },
+                { label: "API", value: "API" },
+                { label: "WORKER", value: "WORKER" },
+                { label: "CRON", value: "CRON" },
+                { label: "INTERNAL", value: "INTERNAL" },
+              ]}
+            />
+          )}
+          {view === "telemetry" && (
+            <FilterSelect
+              label="Severidade"
+              value={telemetrySeverity}
+              onChange={(value) => updateQuery({ telemetrySeverity: value || null })}
+              options={[
+                { label: "Todas", value: "" },
+                { label: "INFO", value: "INFO" },
+                { label: "WARN", value: "WARN" },
+                { label: "ERROR", value: "ERROR" },
+                { label: "CRITICAL", value: "CRITICAL" },
+              ]}
+            />
+          )}
           <div className="flex items-end">
             <button
               type="button"
@@ -640,13 +835,16 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#ffffff18" />
-                    <XAxis dataKey="date" tick={{ fill: "#E5E7EB", fontSize: 11 }} />
-                    <YAxis tick={{ fill: "#E5E7EB", fontSize: 11 }} />
+                    <XAxis dataKey="date" tick={RECHARTS_AXIS_TICK_STYLE} tickLine={false} />
+                    <YAxis tick={RECHARTS_AXIS_TICK_STYLE} tickLine={false} axisLine={false} />
                     <Tooltip
-                      contentStyle={{ background: "#161616", border: "1px solid #ffffff2e", borderRadius: 10 }}
+                      contentStyle={RECHARTS_TOOLTIP_CONTENT_STYLE}
+                      itemStyle={RECHARTS_TOOLTIP_ITEM_STYLE}
+                      labelStyle={RECHARTS_TOOLTIP_LABEL_STYLE}
+                      cursor={RECHARTS_TOOLTIP_CURSOR_STYLE}
                       formatter={(value, key) => [toEuroChartLabel(value), String(key ?? "")]}
                     />
-                    <Legend />
+                    <Legend formatter={formatRechartsLegendLabel} wrapperStyle={RECHARTS_LEGEND_WRAPPER_STYLE} />
                     <Area type="monotone" dataKey="gross" stroke="#60A5FA" fill="url(#gGross)" name="Bruto" strokeWidth={2} />
                     <Area type="monotone" dataKey="fees" stroke="#F59E0B" fillOpacity={0.06} fill="#F59E0B" name="Taxas" strokeWidth={2} />
                     <Area type="monotone" dataKey="net" stroke="#22C55E" fill="url(#gNet)" name="Líquido" strokeWidth={2} />
@@ -679,12 +877,15 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={conversionChartData} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#ffffff18" />
-                    <XAxis dataKey="sourceType" tick={{ fill: "#E5E7EB", fontSize: 11 }} />
-                    <YAxis tick={{ fill: "#E5E7EB", fontSize: 11 }} />
+                    <XAxis dataKey="sourceType" tick={RECHARTS_AXIS_TICK_STYLE} tickLine={false} />
+                    <YAxis tick={RECHARTS_AXIS_TICK_STYLE} tickLine={false} axisLine={false} />
                     <Tooltip
-                      contentStyle={{ background: "#161616", border: "1px solid #ffffff2e", borderRadius: 10 }}
+                      contentStyle={RECHARTS_TOOLTIP_CONTENT_STYLE}
+                      itemStyle={RECHARTS_TOOLTIP_ITEM_STYLE}
+                      labelStyle={RECHARTS_TOOLTIP_LABEL_STYLE}
+                      cursor={RECHARTS_TOOLTIP_CURSOR_STYLE}
                     />
-                    <Legend />
+                    <Legend formatter={formatRechartsLegendLabel} wrapperStyle={RECHARTS_LEGEND_WRAPPER_STYLE} />
                     <Bar dataKey="started" name="Iniciados" radius={[6, 6, 0, 0]} fill="#64748B" />
                     <Bar dataKey="succeeded" name="Concluídos" radius={[6, 6, 0, 0]} fill="#22C55E" />
                   </BarChart>
@@ -779,14 +980,17 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
                         cx="50%"
                         cy="50%"
                         outerRadius={86}
-                        label={({ percent }) => `${Math.round((percent ?? 0) * 100)}%`}
+                        label={renderReadablePiePercentLabel}
+                        labelLine={{ stroke: "rgba(226, 232, 240, 0.4)", strokeWidth: 1 }}
                       >
                         {buyersStatusChartData.map((entry, index) => (
                           <Cell key={`${entry.status}-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
                         ))}
                       </Pie>
                       <Tooltip
-                        contentStyle={{ background: "#161616", border: "1px solid #ffffff2e", borderRadius: 10 }}
+                        contentStyle={RECHARTS_TOOLTIP_CONTENT_STYLE}
+                        itemStyle={RECHARTS_TOOLTIP_ITEM_STYLE}
+                        labelStyle={RECHARTS_TOOLTIP_LABEL_STYLE}
                         formatter={(value, key, item) => {
                           const count = Number(value ?? 0);
                           const payload = (item as { payload?: { amount?: number } } | undefined)?.payload;
@@ -854,13 +1058,16 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={seriesChartData} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#ffffff18" />
-                  <XAxis dataKey="date" tick={{ fill: "#E5E7EB", fontSize: 11 }} />
-                  <YAxis tick={{ fill: "#E5E7EB", fontSize: 11 }} />
+                  <XAxis dataKey="date" tick={RECHARTS_AXIS_TICK_STYLE} tickLine={false} />
+                  <YAxis tick={RECHARTS_AXIS_TICK_STYLE} tickLine={false} axisLine={false} />
                   <Tooltip
-                    contentStyle={{ background: "#161616", border: "1px solid #ffffff2e", borderRadius: 10 }}
+                    contentStyle={RECHARTS_TOOLTIP_CONTENT_STYLE}
+                    itemStyle={RECHARTS_TOOLTIP_ITEM_STYLE}
+                    labelStyle={RECHARTS_TOOLTIP_LABEL_STYLE}
+                    cursor={RECHARTS_TOOLTIP_CURSOR_STYLE}
                     formatter={(value, key) => [toEuroChartLabel(value), String(key ?? "")]}
                   />
-                  <Legend />
+                  <Legend formatter={formatRechartsLegendLabel} wrapperStyle={RECHARTS_LEGEND_WRAPPER_STYLE} />
                   <Area type="monotone" dataKey="gross" stroke="#60A5FA" fill="#60A5FA33" name="Bruto" strokeWidth={2} />
                   <Area type="monotone" dataKey="fees" stroke="#F59E0B" fill="#F59E0B22" name="Taxas" strokeWidth={2} />
                   <Area type="monotone" dataKey="net" stroke="#22C55E" fill="#22C55E22" name="Líquido" strokeWidth={2} />
@@ -888,10 +1095,13 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={dimensionsChartData} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#ffffff18" />
-                    <XAxis dataKey="dimensionValue" tick={{ fill: "#E5E7EB", fontSize: 11 }} />
-                    <YAxis tick={{ fill: "#E5E7EB", fontSize: 11 }} />
+                    <XAxis dataKey="dimensionValue" tick={RECHARTS_AXIS_TICK_STYLE} tickLine={false} />
+                    <YAxis tick={RECHARTS_AXIS_TICK_STYLE} tickLine={false} axisLine={false} />
                     <Tooltip
-                      contentStyle={{ background: "#161616", border: "1px solid #ffffff2e", borderRadius: 10 }}
+                      contentStyle={RECHARTS_TOOLTIP_CONTENT_STYLE}
+                      itemStyle={RECHARTS_TOOLTIP_ITEM_STYLE}
+                      labelStyle={RECHARTS_TOOLTIP_LABEL_STYLE}
+                      cursor={RECHARTS_TOOLTIP_CURSOR_STYLE}
                       formatter={(value) => [toEuroChartLabel(value), prettyMetricKey(effectiveMetricKey)]}
                     />
                     <Bar dataKey="value" radius={[6, 6, 0, 0]} fill="#38BDF8" />
@@ -901,6 +1111,121 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
             ) : (
               <EmptyState label="Sem dados suficientes nesta dimensão." />
             )}
+          </Panel>
+        </ViewSection>
+      )}
+
+      {view === "telemetry" && (
+        <ViewSection
+          loading={telemetryOverviewLoading || telemetryEventsLoading}
+          error={telemetryOverviewError ?? telemetryEventsError}
+          onRetry={() => void Promise.all([mutateTelemetryOverview(), mutateTelemetryEvents()])}
+          empty={!telemetryOverview}
+          emptyLabel="Sem telemetria para o período selecionado."
+        >
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <MetricCard label="Eventos" value={String(telemetryOverview?.totals.totalEvents ?? 0)} />
+            <MetricCard label="Erros" value={String(telemetryOverview?.totals.errorEvents ?? 0)} />
+            <MetricCard
+              label="Taxa de erro"
+              value={toPctFromBps(telemetryOverview?.totals.errorRateBps)}
+            />
+            <MetricCard
+              label="Actores únicos"
+              value={String(telemetryOverview?.totals.uniqueActors ?? 0)}
+            />
+          </div>
+
+          <Panel title="Timeline de telemetria" subtitle="Eventos totais vs erros">
+            {telemetryTimelineData.length > 0 ? (
+              <ChartWrap className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={telemetryTimelineData} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff18" />
+                    <XAxis dataKey="date" tick={RECHARTS_AXIS_TICK_STYLE} tickLine={false} />
+                    <YAxis tick={RECHARTS_AXIS_TICK_STYLE} tickLine={false} axisLine={false} />
+                    <Tooltip
+                      contentStyle={RECHARTS_TOOLTIP_CONTENT_STYLE}
+                      itemStyle={RECHARTS_TOOLTIP_ITEM_STYLE}
+                      labelStyle={RECHARTS_TOOLTIP_LABEL_STYLE}
+                      cursor={RECHARTS_TOOLTIP_CURSOR_STYLE}
+                    />
+                    <Legend formatter={formatRechartsLegendLabel} wrapperStyle={RECHARTS_LEGEND_WRAPPER_STYLE} />
+                    <Bar dataKey="total" name="Total" radius={[6, 6, 0, 0]} fill="#38BDF8" />
+                    <Bar dataKey="errors" name="Erros" radius={[6, 6, 0, 0]} fill="#F87171" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </ChartWrap>
+            ) : (
+              <EmptyState label="Sem pontos de timeline." />
+            )}
+          </Panel>
+
+          <div className="grid gap-3 lg:grid-cols-2">
+            <Panel title="Top eventos" subtitle="Mais frequentes na janela selecionada">
+              <div className="space-y-2">
+                {telemetryTopEvents.map((item) => (
+                  <div key={item.eventName} className="flex items-center justify-between rounded-xl border border-white/12 bg-black/20 px-3 py-2 text-sm">
+                    <span className="truncate pr-3">{item.eventName}</span>
+                    <strong>{item.count}</strong>
+                  </div>
+                ))}
+                {telemetryTopEvents.length === 0 && <EmptyState label="Sem eventos agregados." />}
+              </div>
+            </Panel>
+
+            <Panel title="Breakdown por source" subtitle="Distribuição da origem de eventos">
+              <div className="space-y-2">
+                {telemetrySourceBreakdown.map((item) => (
+                  <div key={item.sourceType} className="flex items-center justify-between rounded-xl border border-white/12 bg-black/20 px-3 py-2 text-sm">
+                    <span>{item.sourceType}</span>
+                    <strong>{item.count}</strong>
+                  </div>
+                ))}
+                {telemetrySourceBreakdown.length === 0 && <EmptyState label="Sem breakdown por source." />}
+              </div>
+            </Panel>
+          </div>
+
+          <Panel title="Eventos recentes" subtitle="Feed operativo de telemetria">
+            <div className="space-y-2 md:hidden">
+              {(telemetryEvents?.items ?? []).map((item) => (
+                <div key={`telemetry-mobile-${item.id}`} className="rounded-xl border border-white/12 bg-black/20 p-3">
+                  <p className="text-sm font-semibold text-white">{item.eventName}</p>
+                  <p className="text-xs text-white/65">{formatDateTime(item.occurredAt)}</p>
+                  <div className="mt-2 flex items-center gap-2 text-[11px]">
+                    <span className="rounded-md border border-white/15 bg-white/[0.08] px-2 py-1">{item.sourceType}</span>
+                    <span className="rounded-md border border-white/15 bg-white/[0.08] px-2 py-1">{item.severity}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="hidden overflow-auto rounded-xl border border-white/10 md:block">
+              <table className="min-w-full text-sm">
+                <thead className="bg-white/5 text-left text-[11px] uppercase tracking-wide text-white/60">
+                  <tr>
+                    <th className="px-3 py-2">Data</th>
+                    <th className="px-3 py-2">Evento</th>
+                    <th className="px-3 py-2">Source</th>
+                    <th className="px-3 py-2">Sev</th>
+                    <th className="px-3 py-2">Actor</th>
+                    <th className="px-3 py-2">Correlation</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/10">
+                  {(telemetryEvents?.items ?? []).map((item) => (
+                    <tr key={item.id} className="bg-black/10">
+                      <td className="px-3 py-2">{formatDateTime(item.occurredAt)}</td>
+                      <td className="px-3 py-2">{item.eventName}</td>
+                      <td className="px-3 py-2">{item.sourceType}</td>
+                      <td className="px-3 py-2">{item.severity}</td>
+                      <td className="px-3 py-2">{item.actorType}</td>
+                      <td className="px-3 py-2 max-w-[220px] truncate">{item.correlationId || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </Panel>
         </ViewSection>
       )}

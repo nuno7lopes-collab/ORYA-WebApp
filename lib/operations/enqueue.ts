@@ -71,7 +71,7 @@ export async function enqueueOperation(params: EnqueueParams) {
             END,
             payload = CASE
               WHEN ${forceRequeue} THEN EXCLUDED.payload
-              WHEN operations.status IN ('SUCCEEDED'::app_v3."OperationStatus", 'DEAD_LETTER'::app_v3."OperationStatus", 'RUNNING'::app_v3."OperationStatus')
+              WHEN operations.status::text IN ('SUCCEEDED', 'DEAD_LETTER', 'RUNNING')
                 THEN operations.payload
               ELSE EXCLUDED.payload
             END,

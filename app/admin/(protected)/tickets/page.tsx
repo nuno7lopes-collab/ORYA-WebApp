@@ -84,8 +84,6 @@ function statusBadgeClasses(status: string) {
       return "bg-red-500/12 text-red-100 border-red-400/30";
     case "CANCELLED":
       return "bg-rose-500/12 text-rose-100 border-rose-400/30";
-    case "RESALE_LISTED":
-      return "bg-purple-500/12 text-purple-100 border-purple-400/30";
     default:
       return "bg-white/10 text-white/70 border-white/20";
   }
@@ -104,8 +102,6 @@ function statusLabel(status?: string | null) {
       return "Chargeback";
     case "CANCELLED":
       return "Cancelado";
-    case "RESALE_LISTED":
-      return "Em revenda";
     default:
       return status;
   }
@@ -330,7 +326,6 @@ export default function AdminTicketsPage() {
                   <option value="REFUNDED">Reembolsados</option>
                   <option value="CHARGEBACK_LOST">Chargeback</option>
                   <option value="CANCELLED">Cancelados</option>
-                  <option value="RESALE_LISTED">Em revenda</option>
                 </select>
               </div>
             </div>

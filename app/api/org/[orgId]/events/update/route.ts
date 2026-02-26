@@ -41,6 +41,8 @@ import { normalizeInterestIds } from "@/lib/ranking/interests";
 import { isEndsAtAfterStart } from "@/lib/events/schedule";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { resolveRequiredOrganizationIdFromRequest } from "@/lib/organizationId";
+import { enqueueOperation } from "@/lib/operations/enqueue";
+import { refundKey } from "@/lib/stripe/idempotency";
 
 const canonicalize = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -80,6 +82,7 @@ type NewTicketType = {
 type UpdateEventBody = {
   eventId?: number;
   archive?: boolean;
+  status?: string | null;
   title?: string | null;
   slug?: string | null;
   description?: string | null;
@@ -486,27 +489,69 @@ async function _POST(req: NextRequest) {
       return fail(400, "Seleciona uma morada normalizada.");
     }
 
+    const requestedStatusRaw = typeof body.status === "string" ? body.status.trim().toUpperCase() : null;
+    const requestedStatus =
+      requestedStatusRaw &&
+      (Object.values(EventStatus) as string[]).includes(requestedStatusRaw)
+        ? (requestedStatusRaw as EventStatus)
+        : null;
+    if (requestedStatusRaw && !requestedStatus) {
+      return fail(400, "STATUS_INVALID");
+    }
+    if (event.status === EventStatus.CANCELLED && body.archive !== true) {
+      return fail(409, "EVENT_CANCELLED_TERMINAL");
+    }
+    if (requestedStatus && requestedStatus !== EventStatus.CANCELLED) {
+      return fail(400, "UNSUPPORTED_EVENT_STATUS_TRANSITION");
+    }
+    if (requestedStatus === EventStatus.CANCELLED && event.status === EventStatus.CANCELLED) {
+      return fail(409, "EVENT_ALREADY_CANCELLED");
+    }
+    if (body.archive === true && requestedStatus === EventStatus.CANCELLED) {
+      return fail(400, "INVALID_STATUS_ACTION_COMBINATION");
+    }
+    const shouldCancelEvent = requestedStatus === EventStatus.CANCELLED && event.status !== EventStatus.CANCELLED;
+    if (shouldCancelEvent) {
+      const hasOtherMutations =
+        body.title !== undefined ||
+        body.slug !== undefined ||
+        body.description !== undefined ||
+        body.startsAt !== undefined ||
+        body.endsAt !== undefined ||
+        body.addressId !== undefined ||
+        body.templateType !== undefined ||
+        body.interestTags !== undefined ||
+        body.isGratis !== undefined ||
+        body.pricingMode !== undefined ||
+        body.coverImageUrl !== undefined ||
+        body.payoutMode !== undefined ||
+        body.accessPolicy !== undefined ||
+        (Array.isArray(body.ticketTypeUpdates) && body.ticketTypeUpdates.length > 0) ||
+        (Array.isArray(body.newTicketTypes) && body.newTicketTypes.length > 0);
+      if (hasOtherMutations) {
+        return fail(400, "CANCEL_STATUS_REQUIRES_EXCLUSIVE_ACTION");
+      }
+    }
+
     const dataUpdate: Partial<Prisma.EventUncheckedUpdateInput> = {};
     if (body.archive === true) {
-      const hasSoldTickets = event.ticketTypes.some((t) => (t.soldQuantity ?? 0) > 0);
-      const hasRegistrations = (event._count?.tickets ?? 0) > 0 || (event._count?.reservations ?? 0) > 0;
-      const hasPayments = hasSoldTickets;
-      if (hasRegistrations || hasPayments) {
-        return respondError(
-          ctx,
-          {
-            errorCode: "EVENT_HAS_ATTENDEES",
-            message:
-              "Não é possível apagar/arquivar este evento porque já existem inscrições ou pagamentos associados.",
-            retryable: false,
-          },
-          { status: 400 },
-        );
+      const now = new Date();
+      const isActiveStatus =
+        event.status === EventStatus.PUBLISHED || event.status === EventStatus.DATE_CHANGED;
+      const isActiveWindow =
+        event.startsAt.getTime() >= now.getTime() || (event.endsAt ? event.endsAt.getTime() >= now.getTime() : true);
+      if (isActiveStatus && isActiveWindow) {
+        return fail(409, "ACTIVE_EVENT_MUST_BE_CANCELLED");
       }
     }
     if (body.archive === true) {
+      const archivedAt = new Date();
       dataUpdate.isDeleted = true;
-      dataUpdate.deletedAt = new Date();
+      dataUpdate.deletedAt = archivedAt;
+      (dataUpdate as Record<string, unknown>).archivedAt = archivedAt;
+    }
+    if (shouldCancelEvent) {
+      dataUpdate.status = EventStatus.CANCELLED;
     }
     if (body.title !== undefined) {
       const nextTitle = body.title?.trim() ?? "";
@@ -760,6 +805,14 @@ async function _POST(req: NextRequest) {
           }),
         );
       }
+      if (shouldCancelEvent) {
+        txOps.push(
+          tx.ticketType.updateMany({
+            where: { eventId },
+            data: { status: TicketTypeStatus.CLOSED },
+          }),
+        );
+      }
       if (hasTicketUpdates) {
         ticketUpdateOps.forEach((op) => {
           txOps.push(
@@ -855,6 +908,35 @@ async function _POST(req: NextRequest) {
         );
       }
     });
+
+    if (shouldCancelEvent && event.startsAt.getTime() > Date.now()) {
+      const summaries = await prisma.saleSummary.findMany({
+        where: { eventId, status: "PAID" },
+        select: { purchaseId: true, paymentIntentId: true },
+      });
+      await Promise.all(
+        summaries.map((summary) =>
+          enqueueOperation({
+            operationType: "PROCESS_REFUND_UNIFIED",
+            dedupeKey: refundKey(summary.purchaseId ?? summary.paymentIntentId ?? "unknown"),
+            correlations: {
+              eventId,
+              purchaseId: summary.purchaseId ?? summary.paymentIntentId ?? null,
+              paymentIntentId: summary.paymentIntentId ?? null,
+            },
+            payload: {
+              eventId,
+              purchaseId: summary.purchaseId ?? summary.paymentIntentId ?? null,
+              paymentIntentId: summary.paymentIntentId ?? null,
+              reason: "CANCELLED",
+              policyCause: "EVENT_CANCELLED",
+              sourceType: "TICKET_ORDER",
+              refundedBy: user.id,
+            },
+          }),
+        ),
+      );
+    }
 
     return respondOk(ctx, {}, { status: 200 });
   } catch (err) {

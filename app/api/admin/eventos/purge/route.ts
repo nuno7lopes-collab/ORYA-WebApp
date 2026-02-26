@@ -189,7 +189,6 @@ async function _POST(req: Request) {
       await tx.padelEventCategoryLink.deleteMany({ where: { eventId } });
 
       if (ticketIds.length) {
-        await tx.ticketResale.deleteMany({ where: { ticketId: { in: ticketIds } } });
         await tx.guestTicketLink.deleteMany({ where: { ticketId: { in: ticketIds } } });
       }
       await tx.ticketReservation.deleteMany({ where: { eventId } });

@@ -3,7 +3,6 @@ import { prisma } from "@/lib/prisma";
 import { normalizeEmail } from "@/lib/utils/email";
 import { rateLimit } from "@/lib/auth/rateLimit";
 import { resolveInviteTokenGrant } from "@/lib/invites/inviteTokens";
-import { evaluateEventAccess } from "@/domain/access/evaluateAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -45,15 +44,10 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ slug: str
 
   const event = await prisma.event.findUnique({
     where: { slug: resolved.slug },
-    select: { id: true, ownerUserId: true },
+    select: { id: true },
   });
   if (!event) {
     return respondOk(ctx, { allow: false, reason: "EVENT_NOT_FOUND" });
-  }
-
-  const accessDecision = await evaluateEventAccess({ eventId: event.id, intent: "INVITE_TOKEN" });
-  if (!accessDecision.allowed) {
-    return respondOk(ctx, { allow: false, reason: accessDecision.reasonCode });
   }
 
   const grantResult = await resolveInviteTokenGrant(
@@ -69,42 +63,11 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ slug: str
     return respondOk(ctx, { allow: false, reason: grantResult.reason });
   }
 
-  if (!event.ownerUserId) {
-    return respondError(
-      ctx,
-      { errorCode: "EVENT_OWNER_REQUIRED", message: "EVENT_OWNER_REQUIRED", retryable: false },
-      { status: 500 },
-    );
-  }
-
-  const invite = await prisma.eventInvite.findFirst({
-    where: { eventId: event.id, targetIdentifier: grantResult.grant.emailNormalized, scope: "PUBLIC" },
-    select: { id: true },
-  });
-
-  const ensuredInvite =
-    invite ??
-    (await prisma.eventInvite.create({
-      data: {
-        eventId: event.id,
-        invitedByUserId: event.ownerUserId,
-        targetIdentifier: grantResult.grant.emailNormalized,
-        scope: "PUBLIC",
-      },
-      select: { id: true },
-    }));
-
   return respondOk(ctx, {
     allow: true,
-    eventInviteId: ensuredInvite.id,
     normalized: grantResult.grant.emailNormalized,
     expiresAt: grantResult.grant.expiresAt,
     ticketTypeId: grantResult.grant.ticketTypeId ?? undefined,
-    accessGrant: {
-      type: "EVENT_INVITE",
-      eventInviteId: ensuredInvite.id,
-      scope: "PUBLIC",
-    },
   });
 }
 

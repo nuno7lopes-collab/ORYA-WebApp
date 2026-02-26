@@ -101,7 +101,6 @@ export default function Step2Pagamento() {
   const scenarioCopy: Record<string, string> = {
     GROUP_SPLIT: "Estás a pagar apenas a tua parte desta dupla.",
     GROUP_FULL: "Estás a comprar 2 lugares (tu + parceiro).",
-    RESALE: `Estás a comprar ${ticketCopy.articleSingular} ${ticketCopy.singular} em revenda.`,
     FREE_CHECKOUT: `${ticketCopy.freeLabel} — só para utilizadores com conta e username.`,
   };
 

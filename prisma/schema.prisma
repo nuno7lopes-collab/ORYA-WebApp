@@ -238,6 +238,7 @@ model Organization {
   events                                                                   Event[]
   promoCodes                                                               PromoCode[]
   payments                                                                 Payment[]
+  refundCases                                                              RefundCase[]
   notifications                                                            Notification[]                                @relation("NotificationOrganization")
   notificationMutes                                                        NotificationMute[]
   memberInvites                                                            OrganizationMemberInvite[]
@@ -1851,6 +1852,7 @@ model Event {
   /// auth.users.id de quem criou (user base)
   ownerUserId                    String                          @map("owner_user_id") @db.Uuid
   deletedAt                      DateTime?                       @map("deleted_at") @db.Timestamp(6)
+  archivedAt                     DateTime?                       @map("archived_at") @db.Timestamp(6)
   isDeleted                      Boolean                         @default(false) @map("is_deleted")
   resaleMode                     ResaleMode                      @default(ALWAYS) @map("resale_mode")
   feeMode                        FeeMode                         @default(INCLUDED) @map("fee_mode")
@@ -2158,6 +2160,7 @@ model Payment {
   updatedAt           DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   organization        Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   ledgerEntries       LedgerEntry[]
+  refundCases         RefundCase[]
 
   @@unique([idempotencyKey], map: "payments_idempotency_key_unique")
   @@index([organizationId], map: "payments_org_idx")
@@ -2656,6 +2659,42 @@ model Refund {
   @@index([purchaseId], map: "refunds_purchase_idx")
   @@index([paymentIntentId], map: "refunds_payment_intent_idx")
   @@map("refunds")
+  @@schema("app_v3")
+}
+
+model RefundCase {
+  env              String                 @default("prod")
+  id               String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId   Int                    @map("organization_id")
+  sourceType       SourceType             @map("source_type")
+  sourceId         String                 @map("source_id") @db.Text
+  paymentId        String                 @map("payment_id") @db.Text
+  paymentIntentId  String?                @map("payment_intent_id")
+  policyCause      RefundCasePolicyCause  @map("policy_cause")
+  culpability      RefundCaseCulpability  @default(SYSTEM)
+  requestedBy      String?                @map("requested_by")
+  reasonCode       String?                @map("reason_code")
+  amountsBreakdown Json                   @map("amounts_breakdown")
+  status           RefundCaseStatus       @default(REQUESTED)
+  attempts         Int                    @default(0)
+  nextRetryAt      DateTime?              @map("next_retry_at") @db.Timestamptz(6)
+  lastError        String?                @map("last_error")
+  stripeRefundId   String?                @map("stripe_refund_id")
+  idempotencyKey   String                 @unique(map: "refund_cases_idempotency_key_unique") @map("idempotency_key")
+  overridePayload  Json?                  @map("override_payload")
+  overrideBy       String?                @map("override_by")
+  overrideAt       DateTime?              @map("override_at") @db.Timestamptz(6)
+  createdAt        DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  payment          Payment                @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId], map: "refund_cases_org_idx")
+  @@index([organizationId, status], map: "refund_cases_org_status_idx")
+  @@index([sourceType, sourceId], map: "refund_cases_source_idx")
+  @@index([paymentId], map: "refund_cases_payment_idx")
+  @@index([paymentIntentId], map: "refund_cases_payment_intent_idx")
+  @@map("refund_cases")
   @@schema("app_v3")
 }
 
@@ -6618,6 +6657,189 @@ model AnalyticsRollup {
   @@schema("app_v3")
 }
 
+enum TelemetrySourceType {
+  WEB
+  MOBILE
+  API
+  WORKER
+  CRON
+  INTERNAL
+
+  @@schema("app_v3")
+}
+
+enum TelemetryActorType {
+  ANONYMOUS
+  USER
+  SYSTEM
+  SERVICE
+
+  @@schema("app_v3")
+}
+
+enum TelemetrySeverity {
+  INFO
+  WARN
+  ERROR
+  CRITICAL
+
+  @@schema("app_v3")
+}
+
+enum TelemetryBucketUnit {
+  HOUR
+  DAY
+
+  @@schema("app_v3")
+}
+
+enum TelemetryMetricKey {
+  EVENT_COUNT
+  UNIQUE_ACTORS
+  ERROR_COUNT
+
+  @@schema("app_v3")
+}
+
+enum TelemetryIncidentStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+
+  @@schema("app_v3")
+}
+
+model TelemetryEvent {
+  env            String              @default("prod")
+  id             String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId Int?                @map("organization_id")
+  eventName      String              @map("event_name")
+  eventVersion   String              @map("event_version")
+  sourceType     TelemetrySourceType @map("source_type")
+  severity       TelemetrySeverity   @default(INFO)
+  actorType      TelemetryActorType  @map("actor_type")
+  actorUserId    String?             @map("actor_user_id") @db.Uuid
+  actorKey       String?             @map("actor_key") @db.Text
+  requestId      String?             @map("request_id")
+  correlationId  String?             @map("correlation_id")
+  idempotencyKey String?             @map("idempotency_key") @db.Text
+  sessionId      String?             @map("session_id") @db.Text
+  surface        String?             @map("surface") @db.Text
+  outcome        String?             @map("outcome") @db.Text
+  payload        Json                @default("{}")
+  tags           Json                @default("{}")
+  occurredAt     DateTime            @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  ingestedAt     DateTime            @default(now()) @map("ingested_at") @db.Timestamptz(6)
+
+  @@unique([env, sourceType, idempotencyKey], map: "telemetry_events_source_idempotency_unique")
+  @@index([env, organizationId, occurredAt], map: "telemetry_events_org_time_idx")
+  @@index([env, eventName, occurredAt], map: "telemetry_events_name_time_idx")
+  @@index([env, sourceType, occurredAt], map: "telemetry_events_source_time_idx")
+  @@index([env, severity, occurredAt], map: "telemetry_events_severity_time_idx")
+  @@index([env, actorUserId, occurredAt], map: "telemetry_events_actor_user_time_idx")
+  @@index([env, actorKey, occurredAt], map: "telemetry_events_actor_key_time_idx")
+  @@index([env, requestId], map: "telemetry_events_request_idx")
+  @@index([env, correlationId], map: "telemetry_events_correlation_idx")
+  @@map("telemetry_events")
+  @@schema("app_v3")
+}
+
+model TelemetryMetricRollup {
+  env            String             @default("prod")
+  id             Int                @id @default(autoincrement())
+  organizationId Int                @map("organization_id")
+  bucketStart    DateTime           @map("bucket_start") @db.Timestamptz(6)
+  bucketUnit     TelemetryBucketUnit @map("bucket_unit")
+  metricKey      TelemetryMetricKey @map("metric_key")
+  dimensionKey   String             @map("dimension_key")
+  dimensionValue String             @map("dimension_value")
+  value          Int                @map("value")
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([env, organizationId, bucketStart, bucketUnit, metricKey, dimensionKey, dimensionValue], map: "telemetry_metric_rollups_unique")
+  @@index([env, organizationId, bucketStart], map: "telemetry_metric_rollups_org_bucket_idx")
+  @@index([env, metricKey, bucketStart], map: "telemetry_metric_rollups_metric_bucket_idx")
+  @@map("telemetry_metric_rollups")
+  @@schema("app_v3")
+}
+
+model TelemetryAlertRule {
+  env                String              @default("prod")
+  id                 String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId     Int?                @map("organization_id")
+  name               String              @map("name") @db.Text
+  description        String?             @map("description") @db.Text
+  metricKey          TelemetryMetricKey  @map("metric_key")
+  dimensionKey       String?             @map("dimension_key")
+  dimensionValue     String?             @map("dimension_value")
+  comparisonOperator String              @default("GTE") @map("comparison_operator") @db.Text
+  threshold          Int                 @map("threshold")
+  windowMinutes      Int                 @default(15) @map("window_minutes")
+  cooldownMinutes    Int                 @default(30) @map("cooldown_minutes")
+  severity           TelemetrySeverity   @default(WARN)
+  isActive           Boolean             @default(true) @map("is_active")
+  createdByUserId    String?             @map("created_by_user_id") @db.Uuid
+  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  incidents          TelemetryAlertIncident[]
+
+  @@index([env, organizationId, isActive], map: "telemetry_alert_rules_org_active_idx")
+  @@index([env, metricKey, isActive], map: "telemetry_alert_rules_metric_active_idx")
+  @@map("telemetry_alert_rules")
+  @@schema("app_v3")
+}
+
+model TelemetryAlertIncident {
+  env                 String                 @default("prod")
+  id                  String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ruleId              String?                @map("rule_id") @db.Uuid
+  organizationId      Int?                   @map("organization_id")
+  status              TelemetryIncidentStatus @default(OPEN)
+  severity            TelemetrySeverity
+  title               String                 @map("title") @db.Text
+  description         String?                @map("description") @db.Text
+  metricKey           TelemetryMetricKey?    @map("metric_key")
+  dimensionKey        String?                @map("dimension_key")
+  dimensionValue      String?                @map("dimension_value")
+  observedValue       Int?                   @map("observed_value")
+  thresholdValue      Int?                   @map("threshold_value")
+  triggeredAt         DateTime               @default(now()) @map("triggered_at") @db.Timestamptz(6)
+  acknowledgedAt      DateTime?              @map("acknowledged_at") @db.Timestamptz(6)
+  resolvedAt          DateTime?              @map("resolved_at") @db.Timestamptz(6)
+  acknowledgedByUserId String?               @map("acknowledged_by_user_id") @db.Uuid
+  resolvedByUserId    String?                @map("resolved_by_user_id") @db.Uuid
+  context             Json                   @default("{}")
+  createdAt           DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  rule                TelemetryAlertRule?    @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+
+  @@index([env, status, triggeredAt], map: "telemetry_alert_incidents_status_time_idx")
+  @@index([env, organizationId, triggeredAt], map: "telemetry_alert_incidents_org_time_idx")
+  @@index([env, ruleId, triggeredAt], map: "telemetry_alert_incidents_rule_time_idx")
+  @@map("telemetry_alert_incidents")
+  @@schema("app_v3")
+}
+
+model TelemetryIngestError {
+  env            String              @default("prod")
+  id             String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId Int?                @map("organization_id")
+  sourceType     TelemetrySourceType @map("source_type")
+  eventName      String?             @map("event_name")
+  reason         String              @map("reason") @db.Text
+  requestId      String?             @map("request_id")
+  correlationId  String?             @map("correlation_id")
+  payload        Json                @default("{}")
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([env, createdAt], map: "telemetry_ingest_errors_time_idx")
+  @@index([env, organizationId, createdAt], map: "telemetry_ingest_errors_org_time_idx")
+  @@index([env, sourceType, createdAt], map: "telemetry_ingest_errors_source_time_idx")
+  @@map("telemetry_ingest_errors")
+  @@schema("app_v3")
+}
+
 enum StoreStatus {
   DRAFT
   CLOSED
@@ -6803,6 +7025,46 @@ enum RefundReason {
   CANCELLED
   DELETED
   DATE_CHANGED
+
+  @@schema("app_v3")
+}
+
+enum RefundCasePolicyCause {
+  BOOKING_ORG_CANCEL
+  BOOKING_FORCED_RESCHEDULE
+  BOOKING_CLIENT_CANCEL
+  BOOKING_NO_SHOW
+  EVENT_CANCELLED
+  EVENT_DELETED
+  EVENT_DATE_CHANGED
+  PADEL_SYSTEM_CANCEL
+  PADEL_EVENT_CANCEL
+  STORE_ORG_CANCEL
+  STORE_CLIENT_CANCEL
+  ADMIN_MANUAL
+  WEBHOOK_RECONCILED
+
+  @@schema("app_v3")
+}
+
+enum RefundCaseCulpability {
+  ORG
+  CLIENT
+  SYSTEM
+  NONE
+
+  @@schema("app_v3")
+}
+
+enum RefundCaseStatus {
+  REQUESTED
+  WAITING_PROCESSOR_FEE
+  QUEUED
+  PROCESSING
+  RETRYING
+  SUCCEEDED
+  MANUAL_REVIEW
+  FAILED_FINAL
 
   @@schema("app_v3")
 }
@@ -7645,6 +7907,8 @@ enum OrganizationStepUpAction {
   ORG_SUSPEND
   ORG_REACTIVATE
   ORG_DELETE
+  REFUND_EXECUTE
+  REFUND_OVERRIDE
 
   @@schema("app_v3")
 }

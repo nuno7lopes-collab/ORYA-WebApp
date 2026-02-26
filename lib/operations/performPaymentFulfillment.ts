@@ -3,7 +3,6 @@ import { fulfillStoreOrderIntent } from "@/lib/operations/fulfillStoreOrder";
 import { fulfillBookingChargeIntent } from "@/lib/operations/fulfillBookingCharge";
 import { fulfillServiceBookingIntent } from "@/lib/operations/fulfillServiceBooking";
 import { fulfillServiceCreditPurchaseIntent } from "@/lib/operations/fulfillServiceCredits";
-import { fulfillResaleIntent } from "@/lib/operations/fulfillResale";
 import { fulfillPadelRegistrationIntent } from "@/lib/operations/fulfillPadelRegistration";
 import { fulfillPadelSecondCharge } from "@/lib/operations/fulfillPadelSecondCharge";
 import { fulfillPaidIntent } from "@/lib/operations/fulfillPaid";
@@ -18,7 +17,6 @@ export async function performPaymentFulfillment(
     ? false
     : await fulfillServiceBookingIntent(intent);
   const handledCredits = await fulfillServiceCreditPurchaseIntent(intent);
-  const handledResale = await fulfillResaleIntent(intent);
   const handledPadelRegistration = await fulfillPadelRegistrationIntent(
     intent,
     null,
@@ -29,7 +27,6 @@ export async function performPaymentFulfillment(
     handledCharge ||
     handledService ||
     handledCredits ||
-    handledResale ||
     handledPadelRegistration ||
     handledSecondCharge
       ? true
@@ -41,7 +38,6 @@ export async function performPaymentFulfillment(
       handledCharge ||
       handledService ||
       handledCredits ||
-      handledResale ||
       handledPadelRegistration ||
       handledSecondCharge ||
       handledPaid,
@@ -49,7 +45,6 @@ export async function performPaymentFulfillment(
     handledCharge,
     handledService,
     handledCredits,
-    handledResale,
     handledPadelRegistration,
     handledSecondCharge,
     handledPaid,

@@ -481,7 +481,7 @@ export async function applyPaymentStatusToEntitlements(
     SUCCEEDED: EntitlementStatus.ACTIVE,
     FAILED: null,
     CANCELLED: null,
-    PARTIAL_REFUND: EntitlementStatus.REVOKED,
+    PARTIAL_REFUND: null,
     REFUNDED: EntitlementStatus.REVOKED,
     DISPUTED: EntitlementStatus.SUSPENDED,
     CHARGEBACK_WON: EntitlementStatus.ACTIVE,

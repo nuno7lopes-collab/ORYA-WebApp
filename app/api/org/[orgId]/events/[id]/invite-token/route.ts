@@ -8,7 +8,6 @@ import { issueInviteToken } from "@/lib/invites/inviteTokens";
 import { normalizeEmail } from "@/lib/utils/email";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { rateLimit } from "@/lib/auth/rateLimit";
-import { evaluateEventAccess } from "@/domain/access/evaluateAccess";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { appendEventLog } from "@/domain/eventLog/append";
 import { getRequestContext } from "@/lib/http/requestContext";
@@ -115,22 +114,16 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       typeof body?.ticketTypeId === "number" && Number.isFinite(body.ticketTypeId)
         ? body.ticketTypeId
         : null;
-
-    if (ticketTypeId) {
-      const ticketType = await prisma.ticketType.findUnique({
-        where: { id: ticketTypeId },
-        select: { id: true, eventId: true },
-      });
-      if (!ticketType || ticketType.eventId !== eventId) {
-        return fail(400, "INVITE_TICKET_TYPE_INVALID");
-      }
+    if (!ticketTypeId) {
+      return fail(400, "INVITE_TICKET_TYPE_REQUIRED");
     }
 
-    const accessDecision = await evaluateEventAccess({ eventId, userId: user.id, intent: "INVITE_TOKEN" });
-    if (!accessDecision.allowed) {
-      const reason = accessDecision.reasonCode;
-      const status = reason === "INVITE_TOKEN_TTL_REQUIRED" ? 400 : 409;
-      return fail(status, reason);
+    const ticketType = await prisma.ticketType.findUnique({
+      where: { id: ticketTypeId },
+      select: { id: true, eventId: true },
+    });
+    if (!ticketType || ticketType.eventId !== eventId) {
+      return fail(400, "INVITE_TICKET_TYPE_INVALID");
     }
 
     const issued = await prisma.$transaction(async (tx) => {
@@ -180,16 +173,6 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
     return respondOk(ctx, { token: issued.token, expiresAt: issued.expiresAt });
   } catch (err: any) {
-    const message = typeof err?.message === "string" ? err.message : "";
-    if (message === "INVITE_TOKEN_NOT_ALLOWED") {
-      return fail(409, "INVITE_TOKEN_NOT_ALLOWED");
-    }
-    if (message === "INVITE_TOKEN_TTL_REQUIRED") {
-      return fail(400, "INVITE_TOKEN_TTL_REQUIRED");
-    }
-    if (message === "INVITE_TOKEN_REQUIRES_EMAIL") {
-      return fail(409, "INVITE_TOKEN_REQUIRES_EMAIL");
-    }
     console.error("[organizacao/eventos/invite-token][POST]", err);
     return fail(500, "UNKNOWN_ERROR");
   }

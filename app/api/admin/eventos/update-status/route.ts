@@ -163,7 +163,7 @@ async function _POST(req: NextRequest) {
         await Promise.all(
           summaries.map((s) =>
             enqueueOperation({
-              operationType: "PROCESS_REFUND_SINGLE",
+              operationType: "PROCESS_REFUND_UNIFIED",
               dedupeKey: refundKey(s.purchaseId ?? s.paymentIntentId ?? "unknown"),
               correlations: { eventId: updated.id, purchaseId: s.purchaseId ?? s.paymentIntentId ?? null, paymentIntentId: s.paymentIntentId ?? null },
               payload: {
@@ -171,6 +171,8 @@ async function _POST(req: NextRequest) {
                 purchaseId: s.purchaseId ?? s.paymentIntentId ?? null,
                 paymentIntentId: s.paymentIntentId ?? null,
                 reason: "CANCELLED",
+                policyCause: "EVENT_CANCELLED",
+                sourceType: "TICKET_ORDER",
                 refundedBy: admin.userId,
               },
             }),

@@ -38,6 +38,7 @@ import ProfileLegalInlineSection from "@/app/[username]/_components/ProfileLegal
 import ProfileCommunitySection, {
   type ProfileCommunityItem,
 } from "@/app/[username]/_components/ProfileCommunitySection";
+import ProfileSectionsShell from "@/app/[username]/_components/ProfileSectionsShell";
 import { formatEventLocationLabel, pickCanonicalField } from "@/lib/location/eventLocation";
 import { getUserFollowCounts, isUserFollowing } from "@/domain/social/follows";
 import type { Metadata } from "next";
@@ -1099,6 +1100,11 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
       return `/${organizationProfile.username ?? usernameParam}${query ? `?${query}` : ""}`;
     };
 
+    const sectionNavItems = organizationSectionNav.map((item) => ({
+      ...item,
+      href: buildSectionHref(item.id),
+    }));
+
     const fixedSections = [
       showAgendaSection
         ? {
@@ -1356,40 +1362,16 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
 
           <div className="px-5 sm:px-8">
             <div className="orya-page-width flex flex-col gap-6">
-              {organizationSectionNav.length >= 2 ? (
-                <nav className="overflow-x-auto border-b border-white/12">
-                  <div className="flex min-w-max items-center gap-1">
-                    {organizationSectionNav.map((item) => {
-                      const isActive = item.id === activeSectionId;
-                      return (
-                        <Link
-                          key={`profile-nav-${item.id}`}
-                          href={buildSectionHref(item.id)}
-                          className={`relative rounded-t-xl px-4 py-3 text-[12px] font-semibold transition ${
-                            isActive ? "text-white" : "text-white/78 hover:text-white"
-                          }`}
-                        >
-                          {item.label}
-                          <span
-                            className={`absolute inset-x-2 bottom-0 h-[2px] rounded-full transition ${
-                              isActive ? "bg-white" : "bg-transparent"
-                            }`}
-                            aria-hidden="true"
-                          />
-                        </Link>
-                      );
-                    })}
-                  </div>
-                </nav>
-              ) : null}
-
-              {activeSection ? (
-                <div className="pt-2">{activeSection.content}</div>
-              ) : (
-                <section className="border-b border-white/10 pb-6 text-sm text-white/85">
-                  Este perfil público está em preparação.
-                </section>
-              )}
+              <ProfileSectionsShell
+                navItems={sectionNavItems}
+                defaultSectionId={defaultSectionId}
+                serverSection={activeSection ? { id: activeSection.id, content: activeSection.content } : null}
+                emptyContent={
+                  <section className="border-b border-white/10 pb-6 text-sm text-white/85">
+                    Este perfil público está em preparação.
+                  </section>
+                }
+              />
             </div>
           </div>
         </section>

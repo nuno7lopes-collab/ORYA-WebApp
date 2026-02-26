@@ -40,6 +40,8 @@ function hashChallengeCode(challengeId: string, code: string) {
 function actionLabel(action: OrganizationStepUpAction) {
   if (action === "ORG_SUSPEND") return "suspender a organização";
   if (action === "ORG_REACTIVATE") return "reativar a organização";
+  if (action === "REFUND_EXECUTE") return "executar um reembolso";
+  if (action === "REFUND_OVERRIDE") return "validar um override de reembolso";
   return "apagar a organização";
 }
 

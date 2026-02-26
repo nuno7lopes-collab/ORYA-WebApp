@@ -130,12 +130,19 @@ export async function createRefund(
     idempotencyKey?: string;
     requireStripe?: boolean;
     org?: StripeOrgContext | null;
+    reverseTransfer?: boolean;
+    refundApplicationFee?: boolean;
   },
 ) {
   assertConnectReady(opts?.org ?? null, opts?.requireStripe ?? true);
   const stripe = getStripeClient();
+  const requestParams: Stripe.RefundCreateParams = {
+    ...params,
+    ...(opts?.reverseTransfer ? { reverse_transfer: true } : {}),
+    ...(opts?.refundApplicationFee ? { refund_application_fee: true } : {}),
+  };
   return stripe.refunds.create(
-    params,
+    requestParams,
     opts?.idempotencyKey ? { idempotencyKey: opts.idempotencyKey } : undefined,
   );
 }

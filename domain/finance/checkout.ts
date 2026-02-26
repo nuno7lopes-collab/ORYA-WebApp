@@ -10,7 +10,6 @@ import { makeOutboxDedupeKey } from "@/domain/outbox/dedupe";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { FINANCE_OUTBOX_EVENTS } from "@/domain/finance/events";
 import { FINANCE_SOURCE_TYPE_ALLOWLIST, type FinanceSourceType } from "@/domain/sourceType";
-import { sanitizeUsername } from "@/lib/username";
 import { insertLedgerEntriesSafely } from "@/domain/finance/ledgerWrite";
 import { FeeMode, LedgerEntryType, PaymentStatus, ProcessorFeesStatus, SourceType } from "@prisma/client";
 import { logWarn } from "@/lib/observability/logger";
@@ -576,100 +575,57 @@ export async function createCheckout(input: CreateCheckoutInput): Promise<Create
         throw new Error("EVENT_ID_REQUIRED");
       }
       const policy = await getLatestPolicyForEvent(resolved.eventId, tx);
-      if (policy) {
-        if (input.inviteToken && !policy.inviteTokenAllowed) {
+      if (policy && !input.customerIdentityId && !policy.guestCheckoutAllowed) {
+        throw new Error("GUEST_CHECKOUT_NOT_ALLOWED");
+      }
+
+      const identity = input.customerIdentityId
+        ? await tx.emailIdentity.findUnique({
+            where: { id: input.customerIdentityId },
+            select: { emailNormalized: true, userId: true },
+          })
+        : null;
+      const selectedTicketTypeIds = Array.isArray(resolved.ticketTypeIds) ? resolved.ticketTypeIds : [];
+      const privateTicketRows =
+        selectedTicketTypeIds.length > 0
+          ? await tx.ticketType.findMany({
+              where: { eventId: resolved.eventId, id: { in: selectedTicketTypeIds } },
+              select: { id: true, publicAccess: true },
+            })
+          : [];
+      const hasPrivateTicketSelection = privateTicketRows.some((ticketType) => ticketType.publicAccess === false);
+
+      if (hasPrivateTicketSelection && !input.inviteToken) {
+        throw new Error("INVITE_REQUIRED");
+      }
+
+      const accessDecision = await evaluateEventAccess({
+        eventId: resolved.eventId,
+        userId: identity?.userId ?? null,
+        intent: "VIEW",
+      });
+      if (!accessDecision.allowed) {
+        throw new Error(accessDecision.reasonCode || "ACCESS_DENIED");
+      }
+      if (input.customerIdentityId) {
+        if (!identity) {
           throw new Error("INVITE_TOKEN_INVALID");
         }
-        if (policy.inviteIdentityMatch === "USERNAME") {
-          throw new Error("INVITE_TOKEN_REQUIRES_EMAIL");
-        }
-        if (!input.customerIdentityId && !policy.guestCheckoutAllowed) {
+        const isGuest = !identity.userId;
+        if (isGuest && policy && !policy.guestCheckoutAllowed) {
           throw new Error("GUEST_CHECKOUT_NOT_ALLOWED");
         }
-        const identity = input.customerIdentityId
-          ? await tx.emailIdentity.findUnique({
-              where: { id: input.customerIdentityId },
-              select: { emailNormalized: true, userId: true },
-            })
-          : null;
-        const selectedTicketTypeIds = Array.isArray(resolved.ticketTypeIds) ? resolved.ticketTypeIds : [];
-        const privateTicketRows =
-          selectedTicketTypeIds.length > 0
-            ? await tx.ticketType.findMany({
-                where: { eventId: resolved.eventId, id: { in: selectedTicketTypeIds } },
-                select: { id: true, publicAccess: true },
-              })
-            : [];
-        const hasPrivateTicketSelection = privateTicketRows.some((ticketType) => ticketType.publicAccess === false);
-        const requiresInviteAccess = policy.mode === "INVITE_ONLY" || hasPrivateTicketSelection;
-
-        const hasIdentityInvite = async () => {
-          if (!identity) return false;
-          const identifiers: string[] = [];
-          const identityMatch = policy.inviteIdentityMatch;
-          if ((identityMatch === "EMAIL" || identityMatch === "BOTH") && identity.emailNormalized) {
-            identifiers.push(identity.emailNormalized);
-          }
-          if ((identityMatch === "USERNAME" || identityMatch === "BOTH") && identity.userId) {
-            const profile = await tx.profile.findUnique({
-              where: { id: identity.userId },
-              select: { username: true },
-            });
-            const username = profile?.username ? sanitizeUsername(profile.username) : null;
-            if (username) identifiers.push(username);
-          }
-          if (identifiers.length === 0) return false;
-          const inviteMatch = await tx.eventInvite.findFirst({
-            where: {
+        if (input.inviteToken) {
+          await consumeInviteToken(
+            {
               eventId: resolved.eventId,
-              scope: "PUBLIC",
-              targetIdentifier: { in: identifiers },
+              token: input.inviteToken,
+              emailNormalized: identity.emailNormalized,
+              ticketTypeIds: selectedTicketTypeIds,
+              usedByIdentityId: input.customerIdentityId ?? null,
             },
-            select: { id: true },
-          });
-          return Boolean(inviteMatch);
-        };
-
-        const inviteGrantedWithoutToken =
-          requiresInviteAccess && !input.inviteToken ? await hasIdentityInvite() : false;
-        if (requiresInviteAccess && !input.inviteToken && !inviteGrantedWithoutToken) {
-          throw new Error(policy.mode === "INVITE_ONLY" ? "INVITE_TOKEN_REQUIRED" : "INVITE_REQUIRED");
-        }
-
-        const accessDecision = await evaluateEventAccess({
-          eventId: resolved.eventId,
-          userId: identity?.userId ?? null,
-          intent: input.inviteToken ? "INVITE_TOKEN" : "VIEW",
-        });
-        if (!accessDecision.allowed) {
-          const mapped =
-            accessDecision.reasonCode === "INVITE_ONLY"
-              ? "INVITE_TOKEN_REQUIRED"
-              : accessDecision.reasonCode || "ACCESS_DENIED";
-          throw new Error(mapped);
-        }
-        if (input.customerIdentityId) {
-          if (!identity) {
-            throw new Error("INVITE_TOKEN_INVALID");
-          }
-          const isGuest = !identity.userId;
-          if (isGuest && !policy.guestCheckoutAllowed) {
-            throw new Error("GUEST_CHECKOUT_NOT_ALLOWED");
-          }
-          if (input.inviteToken) {
-            await consumeInviteToken(
-              {
-                eventId: resolved.eventId,
-                token: input.inviteToken,
-                emailNormalized: identity.emailNormalized,
-                ticketTypeIds: selectedTicketTypeIds,
-                usedByIdentityId: input.customerIdentityId ?? null,
-              },
-              tx,
-            );
-          }
-        } else if (input.inviteToken) {
-          throw new Error("INVITE_TOKEN_INVALID");
+            tx,
+          );
         }
       } else if (input.inviteToken) {
         throw new Error("INVITE_TOKEN_INVALID");

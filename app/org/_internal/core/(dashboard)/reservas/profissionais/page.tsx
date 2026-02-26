@@ -57,6 +57,7 @@ export default function ProfissionaisPage() {
   const [memberRoleTitle, setMemberRoleTitle] = useState("");
   const [editing, setEditing] = useState<{ id: number; name: string; roleTitle: string } | null>(null);
   const [editSavingId, setEditSavingId] = useState<number | null>(null);
+  const [deleteSavingId, setDeleteSavingId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -145,6 +146,30 @@ export default function ProfissionaisPage() {
       setError(err instanceof Error ? err.message : "Erro ao atualizar profissional.");
     } finally {
       setEditSavingId(null);
+    }
+  };
+
+  const handleDelete = async (item: ProfessionalItem) => {
+    const confirmed = window.confirm(
+      `Remover ${item.name} da lista de profissionais? Esta ação pode afetar disponibilidade e reservas futuras.`,
+    );
+    if (!confirmed || deleteSavingId === item.id) return;
+    setDeleteSavingId(item.id);
+    setError(null);
+    try {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas/profissionais/${item.id}`), {
+        method: "DELETE",
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || "Erro ao remover profissional.");
+      }
+      if (editing?.id === item.id) setEditing(null);
+      mutate();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao remover profissional.");
+    } finally {
+      setDeleteSavingId(null);
     }
   };
 
@@ -286,6 +311,14 @@ export default function ProfissionaisPage() {
                         </button>
                         <button type="button" className={CTA_SECONDARY} onClick={() => handleToggle(item)}>
                           {item.isActive ? "Desativar" : "Ativar"}
+                        </button>
+                        <button
+                          type="button"
+                          className={CTA_SECONDARY}
+                          onClick={() => handleDelete(item)}
+                          disabled={deleteSavingId === item.id}
+                        >
+                          {deleteSavingId === item.id ? "A remover..." : "Remover"}
                         </button>
                         <Link
                           href={appendOrganizationIdToHref(

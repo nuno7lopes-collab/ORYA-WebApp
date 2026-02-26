@@ -172,10 +172,6 @@ type TrainerItem = {
   rolePack?: string | null;
   professionalId?: number | null;
   professionalIsActive?: boolean | null;
-  isPublished: boolean;
-  reviewStatus: "DRAFT" | "PENDING" | "APPROVED" | "REJECTED";
-  reviewNote: string | null;
-  reviewRequestedAt: string | null;
 };
 
 type TrainersResponse = {
@@ -715,18 +711,6 @@ const CATEGORY_GENDER_OPTIONS = [
   { value: "MIXED_FREE", label: "Misto livre" },
 ];
 const CATEGORY_LEVEL_OPTIONS = ["7", "8", "9", "10", "11", "12"];
-const TRAINER_STATUS_LABEL: Record<TrainerItem["reviewStatus"], string> = {
-  DRAFT: "Rascunho",
-  PENDING: "Em revisão",
-  APPROVED: "Aprovado",
-  REJECTED: "Recusado",
-};
-const TRAINER_STATUS_TONE: Record<TrainerItem["reviewStatus"], string> = {
-  DRAFT: "border-white/15 bg-white/5 text-white/60",
-  PENDING: "border-amber-300/50 bg-amber-400/10 text-amber-100",
-  APPROVED: "border-emerald-300/50 bg-emerald-400/10 text-emerald-100",
-  REJECTED: "border-rose-300/50 bg-rose-400/10 text-rose-100",
-};
 const LESSON_DURATION_OPTIONS = [60, 90];
 const LESSON_TAG = "AULAS";
 const LESSON_DEFAULT_START_TIME = "10:00";
@@ -1460,7 +1444,7 @@ export default function PadelHubClient({
     { revalidateOnFocus: false },
   );
   const { data: trainersRes, isLoading: trainersLoading, mutate: mutateTrainers } = useSWR<TrainersResponse>(
-    buildOrgApiPath("/trainers"),
+    buildOrgApiPath("/padel/trainers"),
     fetcher,
     { revalidateOnFocus: false },
   );
@@ -2320,49 +2304,64 @@ export default function PadelHubClient({
     }
   };
 
-  const handleTrainerAction = async (
-    trainer: TrainerItem,
-    action: "APPROVE" | "REJECT" | "HIDE" | "PUBLISH",
-    note?: string,
-  ) => {
+  const handleEnsureTrainerOperational = async (trainer: TrainerItem, source: "trainers" | "lessons" = "trainers") => {
     if (!organizationId) return;
-    setTrainerActionLoading(trainer.userId);
-    setTrainerError(null);
-    setTrainerMessage(null);
+    if (source === "trainers") {
+      setTrainerActionLoading(trainer.userId);
+      setTrainerError(null);
+      setTrainerMessage(null);
+    } else {
+      setLessonProvisioningTrainer(true);
+      setLessonError(null);
+      setLessonMessage(null);
+    }
     try {
-      const trainersApiPath = buildOrgApiPath("/trainers");
+      const trainersApiPath = buildOrgApiPath("/padel/trainers");
       if (!trainersApiPath) throw new Error("Organização indisponível.");
       const res = await fetch(trainersApiPath, {
-        method: "PATCH",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           organizationId,
           userId: trainer.userId,
-          action,
-          reviewNote: note ?? null,
         }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        throw new Error(sanitizeUiErrorMessage(json?.error, "Não foi possível atualizar o treinador."));
+        throw new Error(
+          sanitizeUiErrorMessage(
+            json?.error ?? json?.errorCode,
+            "Não foi possível garantir o treinador em Reservas.",
+          ),
+        );
       }
       if (mutateTrainers) await mutateTrainers();
-      const message =
-        action === "APPROVE"
-          ? "Treinador aprovado."
-          : action === "REJECT"
-            ? "Treinador recusado."
-            : action === "HIDE"
-              ? "Treinador ocultado."
-              : "Treinador publicado.";
-      setTrainerMessage(message);
-      toast(message, "ok");
+      if (source === "trainers") {
+        setTrainerMessage("Treinador ligado a Reservas.");
+        toast("Treinador ligado a Reservas.", "ok");
+      } else {
+        setLessonMessage("Treinador criado em reservas.");
+        toast("Treinador criado em reservas.", "ok");
+      }
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Erro ao atualizar treinador.";
-      setTrainerError(message);
+      const message =
+        err instanceof Error
+          ? err.message
+          : source === "trainers"
+            ? "Erro ao ligar treinador a Reservas."
+            : "Erro ao criar treinador em Reservas.";
+      if (source === "trainers") {
+        setTrainerError(message);
+      } else {
+        setLessonError(message);
+      }
       toast(message, "err");
     } finally {
-      setTrainerActionLoading(null);
+      if (source === "trainers") {
+        setTrainerActionLoading(null);
+      } else {
+        setLessonProvisioningTrainer(false);
+      }
     }
   };
 
@@ -2372,7 +2371,7 @@ export default function PadelHubClient({
     setTrainerError(null);
     setTrainerMessage(null);
     try {
-      const trainersApiPath = buildOrgApiPath("/trainers");
+      const trainersApiPath = buildOrgApiPath("/padel/trainers");
       if (!trainersApiPath) throw new Error("Organização indisponível.");
       const res = await fetch(trainersApiPath, {
         method: "POST",
@@ -2399,38 +2398,45 @@ export default function PadelHubClient({
     }
   };
 
-  const handleProvisionLessonTrainer = async () => {
-    if (!organizationId || !selectedLessonTrainer || lessonProvisioningTrainer) return;
-    setLessonProvisioningTrainer(true);
-    setLessonError(null);
-    setLessonMessage(null);
+  const handleRemoveTrainer = async (trainer: TrainerItem) => {
+    if (!organizationId) return;
+    const confirmed = window.confirm(
+      `Remover ${trainer.fullName || trainer.username || "este treinador"} da lista de treinadores?`,
+    );
+    if (!confirmed) return;
+    setTrainerActionLoading(trainer.userId);
+    setTrainerError(null);
+    setTrainerMessage(null);
     try {
-      const trainersApiPath = buildOrgApiPath("/trainers");
+      const trainersApiPath = buildOrgApiPath("/padel/trainers");
       if (!trainersApiPath) throw new Error("Organização indisponível.");
       const res = await fetch(trainersApiPath, {
-        method: "POST",
+        method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           organizationId,
-          userId: selectedLessonTrainer.userId,
+          userId: trainer.userId,
         }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        throw new Error(
-          sanitizeUiErrorMessage(json?.error ?? json?.errorCode, "Não foi possível criar o treinador em reservas."),
-        );
+        throw new Error(sanitizeUiErrorMessage(json?.error, "Não foi possível remover o treinador."));
       }
       if (mutateTrainers) await mutateTrainers();
-      setLessonMessage("Treinador criado em reservas.");
-      toast("Treinador criado em reservas.", "ok");
+      setTrainerMessage("Treinador removido.");
+      toast("Treinador removido.", "ok");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Erro ao criar treinador em reservas.";
-      setLessonError(message);
+      const message = err instanceof Error ? err.message : "Erro ao remover treinador.";
+      setTrainerError(message);
       toast(message, "err");
     } finally {
-      setLessonProvisioningTrainer(false);
+      setTrainerActionLoading(null);
     }
+  };
+
+  const handleProvisionLessonTrainer = async () => {
+    if (!organizationId || !selectedLessonTrainer || lessonProvisioningTrainer) return;
+    await handleEnsureTrainerOperational(selectedLessonTrainer, "lessons");
   };
 
   const handleCreateLesson = async () => {
@@ -6495,7 +6501,7 @@ export default function PadelHubClient({
       {
         id: "open-trainers",
         label: "Treinadores",
-        description: "Perfis e estado de aprovação.",
+        description: "Perfis e ligação operacional a Reservas.",
         run: () => setPadelSection("trainers"),
         enabled: toolMode === "CLUB",
       },
@@ -7801,7 +7807,7 @@ export default function PadelHubClient({
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Treinadores</p>
-              <p className="text-sm text-white/70">Perfis aprovados e equipa técnica associada aos torneios.</p>
+              <p className="text-sm text-white/70">Equipa técnica ativa e ligação operacional a Reservas.</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Link
@@ -7811,10 +7817,10 @@ export default function PadelHubClient({
                 Equipa
               </Link>
               <Link
-                href={organizationId ? buildOrgHref(organizationId, "/team/trainers") : buildOrgHubHref("/organizations")}
+                href={organizationId ? buildOrgHref(organizationId, "/bookings/professionals") : buildOrgHubHref("/organizations")}
                 className="rounded-full border border-white/15 px-4 py-2 text-[12px] font-semibold text-white/80 hover:border-white/35"
               >
-                Perfil treinador
+                Profissionais
               </Link>
             </div>
           </div>
@@ -7831,7 +7837,7 @@ export default function PadelHubClient({
             <div className="rounded-2xl border border-white/12 bg-white/5 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
               <p className="text-sm font-semibold text-white">Adicionar treinador da equipa</p>
               <p className="mt-1 text-[11px] text-white/60">
-                Treinador é um papel adicional e pode acumular com Admin/Owner.
+                Ao associar, o treinador fica imediatamente operacional no fluxo de aulas e Reservas.
               </p>
               <div className="mt-3 flex flex-wrap items-end gap-2">
                 <label className="min-w-[260px] flex-1">
@@ -7878,12 +7884,6 @@ export default function PadelHubClient({
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {trainers.map((trainer) => {
                 const busy = trainerActionLoading === trainer.userId;
-                const isPending = trainer.reviewStatus === "PENDING";
-                const isApproved = trainer.reviewStatus === "APPROVED";
-                const canPublish = isApproved && !trainer.isPublished;
-                const canHide = isApproved && trainer.isPublished;
-                const canApprove = trainer.reviewStatus !== "APPROVED";
-                const showReject = isPending;
                 return (
                   <div
                     key={trainer.userId}
@@ -7912,20 +7912,9 @@ export default function PadelHubClient({
                       </div>
                       <div className="flex flex-col items-end gap-2">
                         <span
-                          className={`rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${
-                            TRAINER_STATUS_TONE[trainer.reviewStatus]
-                          }`}
+                          className="rounded-full border border-emerald-300/50 bg-emerald-400/10 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-emerald-100"
                         >
-                          {TRAINER_STATUS_LABEL[trainer.reviewStatus]}
-                        </span>
-                        <span
-                          className={`rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${
-                            trainer.isPublished
-                              ? "border-emerald-300/50 bg-emerald-400/10 text-emerald-100"
-                              : "border-white/15 bg-white/5 text-white/60"
-                          }`}
-                        >
-                          {trainer.isPublished ? "Publicado" : "Oculto"}
+                          Treinador ativo
                         </span>
                         <span
                           className={`rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${
@@ -7941,12 +7930,8 @@ export default function PadelHubClient({
                       </div>
                     </div>
 
-                    {trainer.reviewNote && trainer.reviewStatus === "REJECTED" && (
-                      <p className="mt-2 text-[11px] text-rose-200">Motivo: {trainer.reviewNote}</p>
-                    )}
-
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {trainer.professionalId ? (
+                      {trainer.professionalId && trainer.professionalIsActive === true ? (
                         <Link
                           href={
                             organizationId
@@ -7961,57 +7946,23 @@ export default function PadelHubClient({
                           Disponibilidade
                         </Link>
                       ) : (
-                        <Link
-                          href={organizationId ? buildOrgHref(organizationId, "/bookings/professionals") : buildOrgHubHref("/organizations")}
-                          className="rounded-full border border-white/20 px-3 py-1.5 text-[11px] text-white/70 hover:border-white/35"
-                        >
-                          Ligar profissional
-                        </Link>
-                      )}
-                      {canApprove && (
                         <button
                           type="button"
-                          onClick={() => handleTrainerAction(trainer, "APPROVE")}
+                          onClick={() => handleEnsureTrainerOperational(trainer, "trainers")}
                           disabled={busy}
-                          className="rounded-full border border-emerald-300/50 bg-emerald-400/10 px-3 py-1.5 text-[11px] text-emerald-100 hover:border-emerald-200/70 disabled:opacity-60"
+                          className="rounded-full border border-amber-300/50 bg-amber-500/10 px-3 py-1.5 text-[11px] text-amber-100 hover:border-amber-200/70 disabled:opacity-60"
                         >
-                          Aprovar
+                          {busy ? "A ligar…" : "Ligar Reservas"}
                         </button>
                       )}
-                      {showReject && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const note = window.prompt("Motivo (opcional)") ?? null;
-                            if (note === null) return;
-                            handleTrainerAction(trainer, "REJECT", note.trim() || undefined);
-                          }}
-                          disabled={busy}
-                          className="rounded-full border border-rose-300/50 bg-rose-500/10 px-3 py-1.5 text-[11px] text-rose-100 hover:border-rose-200/70 disabled:opacity-60"
-                        >
-                          Recusar
-                        </button>
-                      )}
-                      {canPublish && (
-                        <button
-                          type="button"
-                          onClick={() => handleTrainerAction(trainer, "PUBLISH")}
-                          disabled={busy}
-                          className="rounded-full border border-white/25 px-3 py-1.5 text-[11px] text-white/80 hover:border-white/40 disabled:opacity-60"
-                        >
-                          Publicar
-                        </button>
-                      )}
-                      {canHide && (
-                        <button
-                          type="button"
-                          onClick={() => handleTrainerAction(trainer, "HIDE")}
-                          disabled={busy}
-                          className="rounded-full border border-white/20 px-3 py-1.5 text-[11px] text-white/70 hover:border-white/35 disabled:opacity-60"
-                        >
-                          Ocultar
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveTrainer(trainer)}
+                        disabled={busy}
+                        className="rounded-full border border-rose-300/50 bg-rose-500/10 px-3 py-1.5 text-[11px] text-rose-100 hover:border-rose-200/70 disabled:opacity-60"
+                      >
+                        {busy ? "A remover…" : "Remover treinador"}
+                      </button>
                     </div>
                   </div>
                 );

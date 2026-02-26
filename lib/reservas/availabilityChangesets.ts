@@ -1537,12 +1537,6 @@ export function mapChangesetError(error: unknown): MappedChangesetError {
         errorCode: "BOOKING_CONFIRMATION_SNAPSHOT_REQUIRED",
         message: "Reserva confirmada sem snapshot. Corre o backfill antes de cancelar.",
       };
-    case "BOOKING_REFUND_FAILED":
-      return {
-        status: 502,
-        errorCode: "BOOKING_REFUND_FAILED",
-        message: "Reserva cancelada, mas o reembolso falhou.",
-      };
     case "INVALID_START_DATE":
     case "INVALID_END_DATE":
     case "END_BEFORE_START":

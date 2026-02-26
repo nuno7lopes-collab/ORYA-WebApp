@@ -141,6 +141,13 @@ export const CRON_JOBS: CronJobDefinition[] = [
     endpoint: "/api/cron/analytics/rollup",
   },
   {
+    key: "telemetry-rollup",
+    envIntervalMs: "CRON_TELEMETRY_ROLLUP_INTERVAL_MS",
+    defaultIntervalMs: 300_000,
+    method: "POST",
+    endpoint: "/api/cron/telemetry/rollup",
+  },
+  {
     key: "loyalty-expire",
     envIntervalMs: "CRON_LOYALTY_EXPIRE_INTERVAL_MS",
     defaultIntervalMs: 86_400_000,

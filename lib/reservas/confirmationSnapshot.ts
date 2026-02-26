@@ -1,7 +1,6 @@
 import { FeeMode, type Prisma } from "@prisma/client";
 import { computePricing } from "@/lib/pricing";
 import { computeCombinedFees } from "@/lib/fees";
-import { getPlatformFees } from "@/lib/platformSettings";
 
 export const BOOKING_CONFIRMATION_SNAPSHOT_VERSION = 5;
 
@@ -149,6 +148,59 @@ const clampNonNegative = (value: unknown, fallback = 0) => {
   return parsed;
 };
 
+const envPlatformFeeBps = process.env.PLATFORM_FEE_BPS ?? process.env.NEXT_PUBLIC_PLATFORM_FEE_BPS;
+const envPlatformFeePercent = process.env.PLATFORM_FEE_PERCENT ?? process.env.NEXT_PUBLIC_PLATFORM_FEE_PERCENT;
+const envPlatformFeeFixedCents =
+  process.env.PLATFORM_FEE_FIXED_CENTS ?? process.env.NEXT_PUBLIC_PLATFORM_FEE_FIXED_CENTS;
+const envPlatformFeeFixedEur =
+  process.env.PLATFORM_FEE_FIXED_EUR ?? process.env.NEXT_PUBLIC_PLATFORM_FEE_FIXED_EUR;
+const DEFAULT_PLATFORM_FEE_BPS = Number.isFinite(Number(envPlatformFeeBps))
+  ? Math.max(0, Math.round(Number(envPlatformFeeBps)))
+  : Math.round(Number(envPlatformFeePercent ?? 0.08) * 10_000) || 800;
+const DEFAULT_PLATFORM_FEE_FIXED_CENTS = Number.isFinite(Number(envPlatformFeeFixedCents))
+  ? Math.max(0, Math.round(Number(envPlatformFeeFixedCents)))
+  : Math.round(Number(envPlatformFeeFixedEur ?? 0.3) * 100) || 30;
+
+const toNonNegativeInt = (value: unknown, fallback: number) => {
+  const parsed = toInt(value);
+  if (parsed == null || parsed < 0) return fallback;
+  return parsed;
+};
+
+async function resolvePlatformFeeDefaults(tx: Prisma.TransactionClient) {
+  const fallback = {
+    feeBps: DEFAULT_PLATFORM_FEE_BPS,
+    feeFixedCents: DEFAULT_PLATFORM_FEE_FIXED_CENTS,
+  };
+  const platformSetting = (tx as Prisma.TransactionClient & {
+    platformSetting?: {
+      findMany?: (args: {
+        where: { key: { in: string[] } };
+        select: { key: true; value: true };
+      }) => Promise<Array<{ key: string; value: string }>>;
+    };
+  }).platformSetting;
+
+  if (!platformSetting?.findMany) return fallback;
+
+  try {
+    const rows = await platformSetting.findMany({
+      where: { key: { in: ["platform_fee_bps", "platform_fee_fixed_cents"] } },
+      select: { key: true, value: true },
+    });
+    const map = rows.reduce<Record<string, string>>((acc, row) => {
+      acc[row.key] = row.value;
+      return acc;
+    }, {});
+    return {
+      feeBps: toNonNegativeInt(map.platform_fee_bps, fallback.feeBps),
+      feeFixedCents: toNonNegativeInt(map.platform_fee_fixed_cents, fallback.feeFixedCents),
+    };
+  } catch {
+    return fallback;
+  }
+}
+
 async function resolvePolicy(params: {
   tx: Prisma.TransactionClient;
   organizationId: number;
@@ -278,10 +330,11 @@ function buildPackageSnapshot(
 }
 
 async function buildPricingSnapshot(params: {
+  tx: Prisma.TransactionClient;
   booking: BookingRow;
   paymentMeta?: BookingConfirmationPaymentMeta | null;
 }): Promise<BookingPricingSnapshot | null> {
-  const { booking, paymentMeta } = params;
+  const { tx, booking, paymentMeta } = params;
   const baseCentsRaw = toInt(booking.price) ?? toInt(booking.service?.unitPriceCents) ?? 0;
   const baseCents = Math.max(0, baseCentsRaw);
   if (!Number.isFinite(baseCents)) return null;
@@ -289,7 +342,7 @@ async function buildPricingSnapshot(params: {
   const cardPlatformFeeCents = Math.max(0, toInt(paymentMeta?.cardPlatformFeeCents) ?? 0);
   const grossAmountCents = toInt(paymentMeta?.grossAmountCents);
 
-  const platformDefaults = await getPlatformFees();
+  const platformDefaults = await resolvePlatformFeeDefaults(tx);
   const org = booking.service?.organization ?? null;
   const isPlatformOrg = org?.orgType === "PLATFORM";
 
@@ -364,7 +417,7 @@ export async function buildBookingConfirmationSnapshot({
     return { ok: false, code: "POLICY_SNAPSHOT_MISSING" };
   }
 
-  const pricingSnapshot = await buildPricingSnapshot({ booking, paymentMeta });
+  const pricingSnapshot = await buildPricingSnapshot({ tx, booking, paymentMeta });
   if (!pricingSnapshot) {
     return { ok: false, code: "PRICING_SNAPSHOT_MISSING" };
   }
@@ -599,7 +652,9 @@ export function computeCancellationRefundFromSnapshot(
     0,
     params?.stripeFeeCentsActual ?? snapshot.pricingSnapshot.processorFeesActualCents ?? 0,
   );
-  const feesRetainedCents = stripeFeeCents;
+  const platformFeeCents = Math.max(0, snapshot.pricingSnapshot.platformFeeCents ?? 0);
+  const cardPlatformFeeCents = Math.max(0, snapshot.pricingSnapshot.cardPlatformFeeCents ?? 0);
+  const feesRetainedCents = platformFeeCents + cardPlatformFeeCents + stripeFeeCents;
   const penaltyCents = 0;
   const refundCents = Math.max(0, totalCents - feesRetainedCents);
 

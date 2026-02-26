@@ -63,8 +63,6 @@ export default async function TrainerProfilePage({ params }: PageProps) {
   const profile = await prisma.trainerProfile.findFirst({
     where: {
       organizationId: organization.id,
-      isPublished: true,
-      reviewStatus: "APPROVED",
       user: {
         OR: [
           { username: trainerParam },

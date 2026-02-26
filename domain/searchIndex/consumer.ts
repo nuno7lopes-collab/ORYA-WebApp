@@ -261,6 +261,57 @@ export async function consumeSearchIndexEvent(eventLogId: string): Promise<Searc
   });
 }
 
+function parseInteger(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+async function fallbackUpsertFromOutboxPayload(params: {
+  eventLogId: string;
+  payload: Record<string, unknown>;
+}): Promise<SearchIndexConsumeResult> {
+  const sourceType =
+    normalizeAgendaSourceType(
+      typeof params.payload.sourceType === "string" ? params.payload.sourceType : null,
+    ) ?? SourceType.EVENT;
+  if (sourceType !== SourceType.EVENT) return { ok: true, deduped: true };
+
+  const sourceIdRaw =
+    typeof params.payload.sourceId === "string"
+      ? params.payload.sourceId
+      : typeof params.payload.eventId === "number" || typeof params.payload.eventId === "string"
+        ? String(params.payload.eventId)
+        : null;
+  const eventId = parseInteger(sourceIdRaw);
+  if (!eventId) return { ok: true, deduped: true };
+
+  return upsertFromEvent({
+    eventId,
+    eventLogId: params.eventLogId,
+    // O event-log pode já ter sido purgado; usamos "agora" para manter monotonicidade.
+    eventLogCreatedAt: new Date(),
+    organizationId: parseInteger(params.payload.organizationId),
+  });
+}
+
+async function fallbackOrgStatusFromOutboxPayload(params: {
+  eventLogId: string;
+  payload: Record<string, unknown>;
+}): Promise<SearchIndexConsumeResult> {
+  const organizationId = parseInteger(params.payload.organizationId);
+  if (!organizationId) return { ok: true, deduped: true };
+  return handleOrgStatusUpdate({
+    organizationId,
+    eventLogId: params.eventLogId,
+    // O event-log pode já ter sido purgado; usamos "agora" para manter monotonicidade.
+    eventLogCreatedAt: new Date(),
+  });
+}
+
 export async function handleSearchIndexOutboxEvent(params: {
   eventType: string;
   payload: Record<string, unknown>;
@@ -268,12 +319,16 @@ export async function handleSearchIndexOutboxEvent(params: {
   if (params.eventType === "search.index.upsert.requested") {
     const eventLogId = typeof params.payload.eventId === "string" ? params.payload.eventId : null;
     if (!eventLogId) return { ok: false, code: "SEARCH_INDEX_EVENT_ID_MISSING" };
-    return consumeSearchIndexEvent(eventLogId);
+    const consumed = await consumeSearchIndexEvent(eventLogId);
+    if (consumed.ok || consumed.code !== "EVENTLOG_NOT_FOUND") return consumed;
+    return fallbackUpsertFromOutboxPayload({ eventLogId, payload: params.payload });
   }
   if (params.eventType === "search.index.org_status_changed") {
     const eventLogId = typeof params.payload.eventId === "string" ? params.payload.eventId : null;
     if (!eventLogId) return { ok: false, code: "SEARCH_INDEX_EVENT_ID_MISSING" };
-    return consumeSearchIndexEvent(eventLogId);
+    const consumed = await consumeSearchIndexEvent(eventLogId);
+    if (consumed.ok || consumed.code !== "EVENTLOG_NOT_FOUND") return consumed;
+    return fallbackOrgStatusFromOutboxPayload({ eventLogId, payload: params.payload });
   }
   return { ok: true, deduped: true };
 }

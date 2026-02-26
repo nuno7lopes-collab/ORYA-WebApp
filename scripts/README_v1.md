@@ -35,3 +35,12 @@ Este gate valida:
 - owner, runbook e comando npm oficial para cada script da allowlist;
 - existencia real dos runbooks e das ancoras por script;
 - alinhamento de ambientes entre allowlist e catalogo.
+
+## Guardrail de seeds/reservas
+
+- Gate: `npm run gate:reservas-seed-integrity`
+- Backfill canónico de snapshots: `npm run reservas:backfill-confirmation-snapshots:dry`
+- Runbook de reconstrucao: `docs/runbooks/reservas_snapshot_reconstruction_v1.md`
+
+Este guardrail bloqueia scripts/SQL que tentem confirmar bookings sem snapshot de confirmação completo.
+O scan cobre todos os ficheiros de `scripts/` com extensões operacionais (`.ts`, `.tsx`, `.js`, `.cjs`, `.mjs`, `.sh`, `.sql`).

@@ -5,6 +5,7 @@ export const ANALYTICS_ALLOWED_VIEWS = [
   "buyers",
   "time-series",
   "dimensions",
+  "telemetry",
 ] as const;
 
 export const FINANCE_ALLOWED_VIEWS = [

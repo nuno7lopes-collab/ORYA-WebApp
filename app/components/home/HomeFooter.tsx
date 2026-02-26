@@ -1,6 +1,11 @@
 import Image from "next/image";
 import Link from "next/link";
 import { PLATFORM_SECURITY_EMAIL, PLATFORM_SUPPORT_EMAIL } from "@/lib/platformContact";
+import {
+  ORYA_APP_INSTALL_CTA_LABEL,
+  ORYA_APP_INSTALL_HINT,
+  ORYA_APP_INSTALL_URL,
+} from "@/lib/mobileAppInstall";
 
 type FooterLink = { label: string; href?: string; external?: boolean };
 
@@ -117,12 +122,12 @@ export default function HomeFooter() {
                 tua rede sempre por perto.
               </p>
               <div className="flex flex-wrap items-center gap-2.5">
-                <Link
-                  href="/signup"
+                <a
+                  href={ORYA_APP_INSTALL_URL}
                   className="inline-flex items-center justify-center rounded-full border border-white/60 bg-white px-5 py-2 text-[12px] font-semibold text-black shadow-[0_14px_30px_rgba(0,0,0,0.45)] transition hover:-translate-y-[1px] hover:shadow-[0_18px_36px_rgba(0,0,0,0.55)]"
                 >
-                  Quero a app
-                </Link>
+                  {ORYA_APP_INSTALL_CTA_LABEL}
+                </a>
                 <Link
                   href="/descobrir"
                   className="inline-flex items-center justify-center rounded-full border border-white/20 bg-white/5 px-4 py-2 text-[12px] text-white/80 transition hover:border-white/35 hover:bg-white/10"
@@ -130,6 +135,7 @@ export default function HomeFooter() {
                   Explorar agora
                 </Link>
               </div>
+              <p className="text-[11px] text-white/58">{ORYA_APP_INSTALL_HINT}</p>
             </div>
 
             <div className="grid w-full gap-6 sm:grid-cols-2 lg:max-w-[620px] lg:grid-cols-3">

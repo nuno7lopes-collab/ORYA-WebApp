@@ -138,20 +138,6 @@ type EventEditClientProps = {
 
 type EventAccessPolicyUI = NonNullable<EventEditClientProps["event"]["accessPolicy"]>;
 
-type EventInvite = {
-  id: number;
-  targetIdentifier: string;
-  targetUserId?: string | null;
-  scope?: "PUBLIC" | "PARTICIPANT";
-  createdAt?: string;
-  targetUser?: {
-    id: string;
-    username: string | null;
-    fullName: string | null;
-    avatarUrl: string | null;
-  } | null;
-};
-
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 const normalizeIntegerInput = (value: string) => {
   const match = value.trim().match(/^\d+/);
@@ -232,16 +218,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
       })
     : null;
   const [currentAccessPolicy, setCurrentAccessPolicy] = useState<EventAccessPolicyUI | null>(event.accessPolicy ?? null);
-  const normalizedInviteIdentityMatch =
-    typeof currentAccessPolicy?.inviteIdentityMatch === "string"
-      ? currentAccessPolicy.inviteIdentityMatch.trim().toUpperCase()
-      : "BOTH";
-  const inviteIdentityMatch =
-    normalizedInviteIdentityMatch === "EMAIL" ||
-    normalizedInviteIdentityMatch === "USERNAME" ||
-    normalizedInviteIdentityMatch === "BOTH"
-      ? normalizedInviteIdentityMatch
-      : "BOTH";
+  const inviteIdentityMatch = "BOTH";
   const checkinMethods = Array.isArray(currentAccessPolicy?.checkinMethods)
     ? currentAccessPolicy.checkinMethods
         .map((method) => String(method).trim().toUpperCase())
@@ -253,7 +230,6 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
       ? currentAccessPolicy.mode.trim().toUpperCase()
       : "PUBLIC";
   const inviteTokenAllowed = currentAccessPolicy?.inviteTokenAllowed === true;
-  const isInviteRestricted = accessMode === "INVITE_ONLY";
   const { data: padelEventCategories, mutate: mutatePadelEventCategories } = useSWR<{ ok?: boolean; items?: PadelCategoryLink[] }>(
     isPadel ? `/api/padel/event-categories?eventId=${event.id}` : null,
     fetcher,
@@ -276,21 +252,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     Partial<Record<"title" | "startsAt" | "endsAt" | "location", string>>
   >({});
   const [errorSummary, setErrorSummary] = useState<{ field: string; message: string }[]>([]);
-  const [publicInviteInput, setPublicInviteInput] = useState("");
-  const [publicInviteError, setPublicInviteError] = useState<string | null>(null);
-  const [publicInviteSaving, setPublicInviteSaving] = useState(false);
-  const [inviteRemovingId, setInviteRemovingId] = useState<number | null>(null);
   const [visibilityUpdates, setVisibilityUpdates] = useState<Record<number, boolean>>({});
-  const { data: publicInvitesData, mutate: mutatePublicInvites, isLoading: publicInvitesLoading } = useSWR<{
-    ok?: boolean;
-    items?: EventInvite[];
-  }>(user ? resolveOrgApiPath(`/api/org/[orgId]/events/${event.id}/invites?scope=PUBLIC`) : null, fetcher, {
-    revalidateOnFocus: false,
-  });
-  const publicInvites = useMemo(
-    () => (Array.isArray(publicInvitesData?.items) ? publicInvitesData.items : []),
-    [publicInvitesData?.items],
-  );
   const steps = useMemo(
     () =>
       isGratis || isPadel
@@ -491,57 +453,25 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     const hasPublicTickets = ticketList.some(
       (ticket) => (visibilityUpdates[ticket.id] ?? ticket.publicAccess) !== false,
     );
-    const shouldBeInviteRestricted = hasPrivateTickets && !hasPublicTickets;
-    const hasInviteAccess = shouldBeInviteRestricted || inviteTokenAllowed || hasPrivateTickets;
-    const policyOutOfSync = isInviteRestricted !== shouldBeInviteRestricted || (hasPrivateTickets && !inviteTokenAllowed);
+    const policyOutOfSync = hasPrivateTickets && !inviteTokenAllowed;
 
-    if (shouldBeInviteRestricted) {
-      warnings.push(`${primaryLabelTitle} apenas por convite.`);
-    }
-    if (!shouldBeInviteRestricted && hasPrivateTickets && hasPublicTickets) {
+    if (hasPrivateTickets && hasPublicTickets) {
       warnings.push(`Acesso misto: ${ticketLabelPlural} públicos e por convite.`);
-    } else if (!shouldBeInviteRestricted && hasPrivateTickets) {
+    } else if (hasPrivateTickets) {
       warnings.push(`${ticketLabelPluralCap} disponíveis apenas por convite.`);
     }
     if (policyOutOfSync) {
       warnings.push("A política de acesso está desalinhada com os bilhetes. Guarda para sincronizar.");
     }
-    if (hasInviteAccess && !publicInvitesLoading && publicInvites.length === 0) {
-      warnings.push("Sem convites de público.");
-    }
     return warnings;
   }, [
     inviteTokenAllowed,
-    isInviteRestricted,
-    primaryLabelTitle,
-    publicInvites.length,
-    publicInvitesLoading,
     ticketLabelPlural,
     ticketLabelPluralCap,
     ticketList,
     visibilityUpdates,
   ]);
 
-  const hasInviteFlows =
-    ticketList.some((ticket) => (visibilityUpdates[ticket.id] ?? ticket.publicAccess) === false) ||
-    inviteTokenAllowed ||
-    isInviteRestricted;
-
-  const inviteGroups = [
-    {
-      scope: "PUBLIC" as const,
-      enabled: hasInviteFlows,
-      title: "Convites do público",
-      description: `Quem pode ver ${ticketLabelPlural} por convite.`,
-      footer: `Convites por email permitem checkout como convidado. ${primaryLabelPlural} grátis continuam a exigir conta e username.`,
-      input: publicInviteInput,
-      setInput: setPublicInviteInput,
-      error: publicInviteError,
-      isSaving: publicInviteSaving,
-      invites: publicInvites,
-      isLoading: publicInvitesLoading,
-    }
-  ].filter((group) => group.enabled);
   const FormAlert = ({
     variant,
     title,
@@ -722,62 +652,6 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     await uploadCoverFile(file);
   };
 
-  const handleAddInvite = async () => {
-    const value = publicInviteInput.trim();
-    if (!value) {
-      setPublicInviteError("Indica um email ou @username.");
-      return;
-    }
-    setPublicInviteSaving(true);
-    setPublicInviteError(null);
-    try {
-      const res = await fetch(resolveOrgApiPath(`/api/org/[orgId]/events/${event.id}/invites`), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ identifier: value, scope: "PUBLIC" }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "Erro ao criar convite.");
-      }
-      setPublicInviteInput("");
-      await mutatePublicInvites();
-      pushToast("Convite adicionado.", "success");
-    } catch (err) {
-      console.error("Erro ao criar convite", err);
-      const message = err instanceof Error ? err.message : "Erro ao criar convite.";
-      setPublicInviteError(message);
-      pushToast(message);
-    } finally {
-      setPublicInviteSaving(false);
-    }
-  };
-
-  const handleRemoveInvite = async (inviteId: number) => {
-    setInviteRemovingId(inviteId);
-    setPublicInviteError(null);
-    try {
-      const res = await fetch(resolveOrgApiPath(`/api/org/[orgId]/events/${event.id}/invites`), {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ inviteId }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "Erro ao remover convite.");
-      }
-      await mutatePublicInvites();
-      pushToast("Convite removido.", "success");
-    } catch (err) {
-      console.error("Erro ao remover convite", err);
-      const message = err instanceof Error ? err.message : "Erro ao remover convite.";
-      setPublicInviteError(message);
-      pushToast(message);
-    } finally {
-      setInviteRemovingId(null);
-    }
-  };
-
   const handleSave = async () => {
     setStripeAlert(null);
     setValidationAlert(null);
@@ -865,9 +739,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
         ...newTicketsPayload.map((ticket) => ticket.publicAccess !== false),
       ];
       const hasPrivateTickets = effectiveTicketVisibility.some((isPublic) => !isPublic);
-      const hasPublicTickets =
-        effectiveTicketVisibility.length === 0 || effectiveTicketVisibility.some((isPublic) => isPublic);
-      const nextMode = hasPrivateTickets && !hasPublicTickets ? "INVITE_ONLY" : "PUBLIC";
+      const nextMode = "PUBLIC";
       const nextAccessPolicy = {
         mode: nextMode,
         guestCheckoutAllowed: currentAccessPolicy?.guestCheckoutAllowed === true,
@@ -1198,90 +1070,10 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
           </div>
         )}
 
-        {inviteGroups.length > 0 && (
-          <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-white/75 space-y-4">
-            <div>
-              <p className="font-semibold text-white">Convites</p>
-              <p className="text-[12px] text-white/65">Lista de convidados para {ticketLabelPlural} por convite.</p>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              {inviteGroups.map((group) => (
-                <div
-                  key={group.scope}
-                  className="rounded-xl border border-white/10 bg-black/30 px-3 py-3 space-y-3"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <p className="font-semibold text-white">{group.title}</p>
-                      <p className="text-[11px] text-white/55">{group.description}</p>
-                    </div>
-                    <span className="rounded-full border border-white/20 bg-black/40 px-3 py-1 text-[10px] text-white/65 uppercase tracking-[0.18em]">
-                      Público
-                    </span>
-                  </div>
-
-                  <div className="flex flex-col gap-2 sm:flex-row">
-                    <input
-                      value={group.input}
-                      onChange={(e) => group.setInput(e.target.value)}
-                      placeholder="Email ou @username"
-                      className="w-full rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/60"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleAddInvite()}
-                      disabled={group.isSaving}
-                      className="rounded-full border border-white/20 px-4 py-2 text-[12px] font-semibold text-white hover:bg-white/10 disabled:opacity-60"
-                    >
-                      {group.isSaving ? "A adicionar…" : "Adicionar"}
-                    </button>
-                  </div>
-                  {group.error && <p className="text-[11px] font-semibold text-amber-100">{group.error}</p>}
-
-                  <div className="space-y-2">
-                    {group.isLoading && <p className="text-[11px] text-white/60">A carregar convites…</p>}
-                    {!group.isLoading && group.invites.length === 0 && (
-                      <p className="text-[11px] text-white/60">Sem convites adicionados.</p>
-                    )}
-                    {group.invites.map((invite) => {
-                      const resolvedUsername = invite.targetUser?.username
-                        ? `@${invite.targetUser.username}`
-                        : null;
-                      return (
-                        <div
-                          key={invite.id}
-                          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[12px]"
-                        >
-                          <div className="flex flex-col">
-                            <span className="font-semibold text-white">
-                              {resolvedUsername ?? invite.targetIdentifier}
-                            </span>
-                            {resolvedUsername && (
-                              <span className="text-[11px] text-white/60">{invite.targetIdentifier}</span>
-                            )}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveInvite(invite.id)}
-                            disabled={inviteRemovingId === invite.id}
-                            className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/70 hover:bg-white/10 disabled:opacity-60"
-                          >
-                            {inviteRemovingId === invite.id ? "A remover…" : "Remover"}
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <p className="text-[11px] text-white/55">
-                    Convites por email permitem checkout como convidado. {primaryLabelPlural} grátis continuam a exigir conta e username.
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-white/75">
+          Convites por evento foram removidos. Para acesso privado, usa bilhetes com visibilidade "Por convite" e
+          emite tokens por bilhete.
+        </div>
       </div>
     );
 

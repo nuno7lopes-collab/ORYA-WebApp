@@ -5,12 +5,14 @@ import {
   Prisma,
   PrismaClient,
 } from "@prisma/client";
-import { refundBookingPayment } from "@/lib/reservas/bookingRefund";
+import { requestBookingRefundCase } from "@/lib/reservas/refundCase";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { createNotification, shouldNotify } from "@/lib/notifications";
 import { cancelBooking } from "@/domain/bookings/commands";
 import {
+  BOOKING_CONFIRMATION_SNAPSHOT_VERSION,
+  buildBookingConfirmationSnapshot,
   computeCancellationRefundFromSnapshot,
   parseBookingConfirmationSnapshot,
 } from "@/lib/reservas/confirmationSnapshot";
@@ -40,10 +42,21 @@ export type OrgBookingCancellationTxResult = {
   paymentIntentId: string | null;
   refundAmountCents: number | null;
   splitRefunds: SplitRefund[];
+  snapshotSynthesized: boolean;
   snapshotTimezone: string;
   bookingUserId: string | null;
   organizationId: number;
   crmPayload: CancelCrmPayload | null;
+};
+
+export type OrgBookingCancellationPostActionsResult = {
+  refundCaseId: string | null;
+  refundStatus: string | null;
+  splitRefundCases: Array<{
+    participantId: number;
+    refundCaseId: string | null;
+    status: string;
+  }>;
 };
 
 export async function cancelBookingByOrganizationInTx(params: {
@@ -66,11 +79,49 @@ export async function cancelBookingByOrganizationInTx(params: {
       guestEmail: true,
       status: true,
       startsAt: true,
+      price: true,
+      currency: true,
       paymentIntentId: true,
       organizationId: true,
       serviceId: true,
+      createdAt: true,
+      updatedAt: true,
       snapshotTimezone: true,
       confirmationSnapshot: true,
+      policyRef: { select: { policyId: true } },
+      service: {
+        select: {
+          policyId: true,
+          unitPriceCents: true,
+          currency: true,
+          organization: {
+            select: {
+              feeMode: true,
+              platformFeeBps: true,
+              platformFeeFixedCents: true,
+              orgType: true,
+            },
+          },
+        },
+      },
+      addons: {
+        select: {
+          addonId: true,
+          label: true,
+          deltaMinutes: true,
+          deltaPriceCents: true,
+          quantity: true,
+          sortOrder: true,
+        },
+      },
+      bookingPackage: {
+        select: {
+          packageId: true,
+          label: true,
+          durationMinutes: true,
+          priceCents: true,
+        },
+      },
       courtId: true,
       resourceId: true,
       professionalId: true,
@@ -102,6 +153,7 @@ export async function cancelBookingByOrganizationInTx(params: {
       paymentIntentId: booking.paymentIntentId ?? null,
       refundAmountCents: null,
       splitRefunds: [],
+      snapshotSynthesized: false,
       snapshotTimezone: booking.snapshotTimezone,
       bookingUserId: booking.userId,
       organizationId: booking.organizationId,
@@ -110,9 +162,55 @@ export async function cancelBookingByOrganizationInTx(params: {
   }
 
   const isPending = ["PENDING_CONFIRMATION", "PENDING"].includes(booking.status);
-  const snapshot = parseBookingConfirmationSnapshot(booking.confirmationSnapshot);
+  const split = booking.splitPayment ?? null;
+  const splitRefunds: SplitRefund[] = split
+    ? split.participants
+        .filter((participant) => participant.status === "PAID" && Boolean(participant.paymentIntentId))
+        .map((participant) => ({
+          participantId: participant.id,
+          paymentIntentId: participant.paymentIntentId as string,
+        }))
+    : [];
+
+  let snapshot = parseBookingConfirmationSnapshot(booking.confirmationSnapshot);
+  let snapshotSynthesized = false;
   if (!isPending && booking.status === "CONFIRMED" && !snapshot) {
-    throw new Error("BOOKING_CONFIRMATION_SNAPSHOT_REQUIRED");
+    const hasFinancialSettlement = Boolean(booking.paymentIntentId) || splitRefunds.length > 0;
+    if (hasFinancialSettlement) {
+      throw new Error("BOOKING_CONFIRMATION_SNAPSHOT_REQUIRED");
+    }
+
+    const snapshotResult = await buildBookingConfirmationSnapshot({
+      tx: params.tx,
+      booking,
+      now,
+      policyIdHint: booking.policyRef?.policyId ?? null,
+      paymentMeta: null,
+    });
+    if (!snapshotResult.ok) {
+      throw new Error("BOOKING_CONFIRMATION_SNAPSHOT_REQUIRED");
+    }
+
+    const snapshotVersion =
+      typeof snapshotResult.snapshot.version === "number"
+        ? Math.max(BOOKING_CONFIRMATION_SNAPSHOT_VERSION, snapshotResult.snapshot.version)
+        : BOOKING_CONFIRMATION_SNAPSHOT_VERSION;
+    const parsedCreatedAt = snapshotResult.snapshot.createdAt
+      ? new Date(snapshotResult.snapshot.createdAt)
+      : now;
+    const snapshotCreatedAt = Number.isNaN(parsedCreatedAt.getTime()) ? now : parsedCreatedAt;
+
+    await params.tx.booking.update({
+      where: { id: booking.id },
+      data: {
+        confirmationSnapshot: snapshotResult.snapshot as Prisma.InputJsonValue,
+        confirmationSnapshotVersion: snapshotVersion,
+        confirmationSnapshotCreatedAt: snapshotCreatedAt,
+      },
+    });
+
+    snapshot = snapshotResult.snapshot;
+    snapshotSynthesized = true;
   }
 
   const startsAtMs = booking.startsAt?.getTime?.() ?? Number.NaN;
@@ -128,16 +226,6 @@ export async function cancelBookingByOrganizationInTx(params: {
     actorUserId: params.actorUserId,
     data: { status: "CANCELLED_BY_ORG" },
   });
-
-  const split = booking.splitPayment ?? null;
-  const splitRefunds: SplitRefund[] = split
-    ? split.participants
-        .filter((participant) => participant.status === "PAID" && Boolean(participant.paymentIntentId))
-        .map((participant) => ({
-          participantId: participant.id,
-          paymentIntentId: participant.paymentIntentId as string,
-        }))
-    : [];
 
   if (split) {
     await params.tx.bookingSplit.update({
@@ -174,6 +262,7 @@ export async function cancelBookingByOrganizationInTx(params: {
       refundAmountCents,
       splitRefundsCount: splitRefunds.length,
       snapshotVersion: snapshot?.version ?? null,
+      snapshotSynthesized,
       snapshotTimezone: booking.snapshotTimezone,
     },
     ip: params.ip ?? null,
@@ -187,6 +276,7 @@ export async function cancelBookingByOrganizationInTx(params: {
     paymentIntentId: booking.paymentIntentId ?? null,
     refundAmountCents,
     splitRefunds,
+    snapshotSynthesized,
     snapshotTimezone: booking.snapshotTimezone,
     bookingUserId: booking.userId,
     organizationId: booking.organizationId,
@@ -208,20 +298,31 @@ export async function cancelBookingByOrganizationInTx(params: {
 export async function runOrganizationBookingCancellationPostActions(params: {
   prisma: PrismaClient;
   result: OrgBookingCancellationTxResult;
-}) {
+}): Promise<OrgBookingCancellationPostActionsResult> {
   const { result } = params;
+  let refundCaseId: string | null = null;
+  let refundStatus: string | null = null;
+  const splitRefundCases: Array<{
+    participantId: number;
+    refundCaseId: string | null;
+    status: string;
+  }> = [];
 
   if (result.refundRequired && result.paymentIntentId) {
     try {
-      await refundBookingPayment({
+      const refundCase = await requestBookingRefundCase({
         bookingId: result.booking.id,
         paymentIntentId: result.paymentIntentId,
         reason: "ORG_CANCEL",
         amountCents: result.refundAmountCents,
+        requestedBy: result.bookingUserId ?? null,
+        auditPayload: { route: "org/reservas/cancel" },
       });
+      refundCaseId = refundCase?.id ?? null;
+      refundStatus = refundCase?.status ?? null;
     } catch (refundErr) {
-      console.error("[org-booking-cancel] refund failed", refundErr);
-      throw new Error("BOOKING_REFUND_FAILED");
+      console.error("[org-booking-cancel] refund case failed", refundErr);
+      refundStatus = "MANUAL_REVIEW";
     }
   }
 
@@ -229,17 +330,32 @@ export async function runOrganizationBookingCancellationPostActions(params: {
     const refundedParticipantIds: number[] = [];
     for (const refund of result.splitRefunds) {
       try {
-        await refundBookingPayment({
+        const splitRefundCase = await requestBookingRefundCase({
           bookingId: result.booking.id,
           paymentIntentId: refund.paymentIntentId,
           reason: "ORG_CANCEL",
           amountCents: null,
-          idempotencyKey: `refund:BOOKING:${result.booking.id}:SPLIT:${refund.participantId}`,
+          requestedBy: result.bookingUserId ?? null,
+          idempotencyKey: `refund_case:BOOKING:${result.booking.id}:SPLIT:${refund.participantId}`,
+          auditPayload: {
+            route: "org/reservas/cancel",
+            split: true,
+            participantId: refund.participantId,
+          },
         });
         refundedParticipantIds.push(refund.participantId);
+        splitRefundCases.push({
+          participantId: refund.participantId,
+          refundCaseId: splitRefundCase?.id ?? null,
+          status: splitRefundCase?.status ?? "QUEUED",
+        });
       } catch (refundErr) {
-        console.error("[org-booking-cancel] split refund failed", refundErr);
-        throw new Error("BOOKING_REFUND_FAILED");
+        console.error("[org-booking-cancel] split refund case failed", refundErr);
+        splitRefundCases.push({
+          participantId: refund.participantId,
+          refundCaseId: null,
+          status: "MANUAL_REVIEW",
+        });
       }
     }
 
@@ -248,6 +364,12 @@ export async function runOrganizationBookingCancellationPostActions(params: {
         where: { id: { in: refundedParticipantIds } },
         data: { status: "CANCELLED" },
       });
+    }
+
+    if (!refundStatus && splitRefundCases.length > 0) {
+      refundStatus = splitRefundCases.some((item) => item.status === "MANUAL_REVIEW")
+        ? "MANUAL_REVIEW"
+        : "QUEUED";
     }
   }
 
@@ -294,4 +416,10 @@ export async function runOrganizationBookingCancellationPostActions(params: {
       console.warn("[org-booking-cancel] Falha ao enviar notificação", notifyErr);
     }
   }
+
+  return {
+    refundCaseId,
+    refundStatus,
+    splitRefundCases,
+  };
 }

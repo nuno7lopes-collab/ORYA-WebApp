@@ -46,7 +46,6 @@ import {
 import { normalizeEmail } from "@/lib/utils/email";
 import { isValidPhone, normalizePhone, resolvePhoneNormalizationOptions } from "@/lib/phone";
 import { hasActiveEntitlementForEvent } from "@/lib/entitlements/accessChecks";
-import { getLatestPolicyForEvent } from "@/lib/checkin/accessPolicy";
 import { evaluateEventAccess } from "@/domain/access/evaluateAccess";
 import { resolveTicketPricingSummary } from "@/domain/events/ticketPricing";
 import { INACTIVE_REGISTRATION_STATUSES, mapRegistrationToPairingLifecycle, upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
@@ -59,13 +58,13 @@ import { appendEventLog } from "@/domain/eventLog/append";
 import { makeOutboxDedupeKey } from "@/domain/outbox/dedupe";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { checkPadelCategoryLimit } from "@/domain/padelCategoryLimit";
-import { sanitizeUsername } from "@/lib/username";
 import { checkoutKey } from "@/lib/stripe/idempotency";
 import { logFinanceError } from "@/lib/observability/finance";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 import { requiresOrganizationStripe } from "@/domain/finance/payoutModePolicy";
 import { getStripeEnv, tryGetStripePublishableKeyForEnv } from "@/lib/stripeKeys";
 import { paymentEventRepo } from "@/domain/finance/readModelConsumer";
+import { resolveInviteTokenGrant } from "@/lib/invites/inviteTokens";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
@@ -1045,7 +1044,6 @@ type Body = {
   intentFingerprint?: string | null;
   pairingId?: number | null;
   slotId?: number | null;
-  resaleId?: string | null;
   ticketId?: string | number | null;
   ticketTypeId?: number | null;
   eventId?: number | null;
@@ -1335,11 +1333,10 @@ async function _POST(req: NextRequest) {
         httpStatus: 404,
       });
     }
-    const accessIntent = inviteToken ? "INVITE_TOKEN" : "VIEW";
     const accessDecision = await evaluateEventAccess({
       eventId: event.id,
       userId,
-      intent: accessIntent,
+      intent: "VIEW",
     });
     if (!accessDecision.allowed) {
       return intentError(
@@ -1371,9 +1368,6 @@ async function _POST(req: NextRequest) {
       return intentError("EVENT_ENDED", "Vendas encerradas: evento já terminou.", { httpStatus: 400 });
     }
 
-    const accessPolicy = await getLatestPolicyForEvent(event.id);
-    const inviteRestricted = accessPolicy?.mode === "INVITE_ONLY";
-
     const padelConfig = await prisma.padelTournamentConfig.findUnique({
       where: { eventId: event.id },
       select: { organizationId: true },
@@ -1386,86 +1380,6 @@ async function _POST(req: NextRequest) {
         status: "FAILED",
         retryable: false,
       });
-    }
-
-    const isResaleRequest =
-      requestedScenarioEarly === "RESALE" ||
-      (typeof body?.resaleId === "string" && body.resaleId.trim().length > 0);
-
-    let resaleContext: {
-      resaleId: string;
-      ticketId: string;
-      ticketTypeId: number;
-      sellerUserId: string | null;
-      priceCents: number;
-    } | null = null;
-
-    if (isResaleRequest) {
-      const resaleId = typeof body?.resaleId === "string" ? body.resaleId.trim() : "";
-      if (!resaleId) {
-        return intentError("INVALID_RESALE_ID", "Revenda inválida.", { httpStatus: 400 });
-      }
-      if (!userId) {
-        return intentError(
-          "AUTH_REQUIRED_FOR_RESALE",
-          "Precisas de sessão iniciada para comprar revendas.",
-          { httpStatus: 401, status: "FAILED", nextAction: "LOGIN", retryable: false },
-        );
-      }
-
-      const resale = await prisma.ticketResale.findUnique({
-        where: { id: resaleId },
-        select: {
-          id: true,
-          status: true,
-          sellerUserId: true,
-          price: true,
-          ticket: {
-            select: { id: true, ticketTypeId: true, status: true, userId: true, eventId: true },
-          },
-        },
-      });
-
-      if (!resale || !resale.ticket) {
-        return intentError("RESALE_NOT_FOUND", "Revenda não encontrada.", { httpStatus: 404 });
-      }
-      if (resale.status !== "LISTED") {
-        return intentError("RESALE_NOT_AVAILABLE", "Revenda indisponível.", { httpStatus: 400 });
-      }
-      if (resale.ticket.status !== "ACTIVE") {
-        return intentError("TICKET_NOT_ACTIVE", "Bilhete indisponível para revenda.", { httpStatus: 400 });
-      }
-      if (resale.ticket.eventId !== event.id) {
-        return intentError("RESALE_EVENT_MISMATCH", "Revenda não corresponde a este evento.", { httpStatus: 400 });
-      }
-      if (resale.sellerUserId && resale.sellerUserId === userId) {
-        return intentError("CANNOT_BUY_OWN_RESALE", "Não podes comprar a tua própria revenda.", {
-          httpStatus: 400,
-          status: "FAILED",
-          retryable: false,
-        });
-      }
-
-      const resalePriceCents = typeof resale.price === "number" ? resale.price : null;
-
-      if (!Number.isFinite(resalePriceCents) || Number(resalePriceCents) <= 0) {
-        return intentError("INVALID_RESALE_PRICE", "Preço de revenda inválido.", { httpStatus: 400 });
-      }
-
-      resaleContext = {
-        resaleId,
-        ticketId: resale.ticket.id,
-        ticketTypeId: resale.ticket.ticketTypeId,
-        sellerUserId: resale.sellerUserId ?? null,
-        priceCents: Number(resalePriceCents),
-      };
-
-      if (items.length !== 1) {
-        return intentError("RESALE_SINGLE_ITEM_ONLY", "Revenda suporta apenas um bilhete por compra.", {
-          httpStatus: 400,
-          status: "FAILED",
-        });
-      }
     }
 
     const ticketTypeIds = Array.from(
@@ -1522,7 +1436,7 @@ async function _POST(req: NextRequest) {
       isFreeOnlyEvent && userId ? await hasExistingFreeEntryForUser({ eventId: event.id, userId }) : false;
 
     const hasPrivateTicketSelection = ticketTypes.some((ticketType) => ticketType.publicAccess === false);
-    const requiresInviteAccess = inviteRestricted || hasPrivateTicketSelection;
+    const requiresInviteAccess = hasPrivateTicketSelection;
 
     if (requiresInviteAccess && !isAdmin) {
       if (!userId) {
@@ -1531,45 +1445,48 @@ async function _POST(req: NextRequest) {
           status: "FAILED",
           nextAction: "LOGIN",
           retryable: false,
-          extra: { inviteRestricted: true },
+          extra: { inviteRestricted: true, scope: "TICKET" },
         });
       }
 
-      const identifiers: string[] = [];
       const userEmail = normalizeEmail(userData?.user?.email ?? null);
-      const username = profile?.username ? sanitizeUsername(profile.username) : null;
-      const identityMatch = accessPolicy?.inviteIdentityMatch ?? "BOTH";
-
-      if ((identityMatch === "EMAIL" || identityMatch === "BOTH") && userEmail) {
-        identifiers.push(userEmail);
-      }
-      if ((identityMatch === "USERNAME" || identityMatch === "BOTH") && username) {
-        identifiers.push(username);
-      }
-
-      if (identifiers.length === 0) {
+      if (!inviteToken) {
         return intentError("INVITE_REQUIRED", "Este bilhete é apenas por convite.", {
           httpStatus: 403,
           status: "FAILED",
           nextAction: "NONE",
           retryable: false,
-          extra: { inviteRestricted: true },
+          extra: { inviteRestricted: true, scope: "TICKET" },
         });
       }
 
-      const inviteMatch = await prisma.eventInvite.findFirst({
-        where: { eventId: event.id, targetIdentifier: { in: identifiers }, scope: "PUBLIC" },
-        select: { id: true },
-      });
+      const privateTicketTypeIds = Array.from(
+        new Set(
+          ticketTypes
+            .filter((ticketType) => ticketType.publicAccess === false)
+            .map((ticketType) => ticketType.id),
+        ),
+      );
 
-      if (!inviteMatch) {
-        return intentError("INVITE_REQUIRED", "Este bilhete é apenas por convite.", {
-          httpStatus: 403,
-          status: "FAILED",
-          nextAction: "NONE",
-          retryable: false,
-          extra: { inviteRestricted: true },
-        });
+      for (const privateTicketTypeId of privateTicketTypeIds) {
+        const grant = await resolveInviteTokenGrant(
+          {
+            eventId: event.id,
+            token: inviteToken,
+            emailNormalized: userEmail ?? undefined,
+            ticketTypeId: privateTicketTypeId,
+          },
+          prisma,
+        );
+        if (!grant.ok) {
+          return intentError("INVITE_REQUIRED", "Este bilhete é apenas por convite.", {
+            httpStatus: 403,
+            status: "FAILED",
+            nextAction: "NONE",
+            retryable: false,
+            extra: { inviteRestricted: true, scope: "TICKET", reason: grant.reason },
+          });
+        }
       }
     }
 
@@ -1627,21 +1544,6 @@ async function _POST(req: NextRequest) {
         return intentError("INVALID_QUANTITY", "Quantidade inválida.", { httpStatus: 400 });
       }
 
-      if (resaleContext) {
-        if (ticketTypeId !== resaleContext.ticketTypeId) {
-          return intentError("RESALE_TICKET_MISMATCH", "Revenda não corresponde ao bilhete selecionado.", {
-            httpStatus: 400,
-            status: "FAILED",
-          });
-        }
-        if (qty !== 1) {
-          return intentError("RESALE_QUANTITY_INVALID", "Revenda apenas permite 1 bilhete por compra.", {
-            httpStatus: 400,
-            status: "FAILED",
-          });
-        }
-      }
-
       // limite agora é apenas o stock disponível; o cap de 6 foi removido
 
       // Validação de stock (incluindo reservas ativas de outros)
@@ -1661,9 +1563,7 @@ async function _POST(req: NextRequest) {
         }
       }
 
-      const priceCents = resaleContext && ticketTypeId === resaleContext.ticketTypeId
-        ? resaleContext.priceCents
-        : Number(ticketType.price);
+      const priceCents = Number(ticketType.price);
       if (!Number.isFinite(priceCents) || priceCents < 0) {
         return intentError("INVALID_PRICE_SERVER", "Preço inválido no servidor.", { httpStatus: 500 });
       }
@@ -2004,7 +1904,7 @@ async function _POST(req: NextRequest) {
     const scenarioAdjusted: PaymentScenario = (() => {
       if (paymentScenario === "GROUP_FULL") return "GROUP_FULL";
       if (paymentScenario === "GROUP_SPLIT") return "GROUP_SPLIT";
-      if (paymentScenario === "RESALE" || paymentScenario === "SUBSCRIPTION") return paymentScenario;
+      if (paymentScenario === "SUBSCRIPTION") return paymentScenario;
       if (paymentScenario === "FREE_CHECKOUT") return "FREE_CHECKOUT";
       return "SINGLE";
     })();
@@ -2257,15 +2157,6 @@ async function _POST(req: NextRequest) {
           }
         }
       }
-    }
-
-    // Revendas desativadas (só admins internos podem usar via outros canais)
-    if (scenarioAdjusted === "RESALE") {
-      return intentError("RESALE_DISABLED", "A revenda está temporariamente indisponível.", {
-        httpStatus: 403,
-        status: "FAILED",
-        nextAction: "NONE",
-      });
     }
 
     // Checkouts gratuitos exigem sessão + username definido
@@ -2849,9 +2740,7 @@ async function _POST(req: NextRequest) {
     if (ownerResolved.emailNormalized) metadata.emailNormalized = ownerResolved.emailNormalized;
     if (typeof body?.pairingId === "number") metadata.pairingId = String(body.pairingId);
     if (typeof body?.slotId === "number") metadata.slotId = String(body.slotId);
-    if (typeof body?.resaleId === "string") metadata.resaleId = body.resaleId;
     if (typeof body?.ticketId === "string" || typeof body?.ticketId === "number") metadata.ticketId = String(body.ticketId);
-    if (paymentScenario === "RESALE" && userId) metadata.buyerUserId = userId;
 
     const allowedPaymentMethods =
       paymentMethod === "card" ? (["card"] as const) : (["mb_way"] as const);

@@ -1,0 +1,32 @@
+import { NextRequest } from "next/server";
+import { jsonWrap } from "@/lib/api/wrapResponse";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getTelemetryOverview } from "@/domain/telemetry/query";
+import { requireOrgTelemetryAccess } from "@/app/api/org/[orgId]/telemetry/_access";
+import { logError } from "@/lib/observability/logger";
+
+function parseHours(value: string | null) {
+  const parsed = Number(value ?? "24");
+  if (!Number.isFinite(parsed) || parsed <= 0) return 24;
+  return Math.min(Math.floor(parsed), 24 * 7);
+}
+
+async function _GET(req: NextRequest) {
+  try {
+    const access = await requireOrgTelemetryAccess(req);
+    if (!access.ok) return access.response;
+
+    const hours = parseHours(req.nextUrl.searchParams.get("hours"));
+    const overview = await getTelemetryOverview({
+      organizationId: access.organizationId,
+      hours,
+    });
+
+    return jsonWrap({ ok: true, ...overview }, { status: 200, req });
+  } catch (err) {
+    logError("org.telemetry.overview_failed", err);
+    return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500, req });
+  }
+}
+
+export const GET = withApiEnvelope(_GET);

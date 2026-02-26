@@ -96,6 +96,17 @@
       "status": "active"
     },
     {
+      "script": "scripts/backfill_booking_confirmation_snapshots.ts",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#backfill-booking-confirmation-snapshots-ts",
+      "npmCommand": "reservas:backfill-confirmation-snapshots:dry",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
       "script": "scripts/build-and-push.sh",
       "owner": "platform-infra",
       "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#build-and-push-sh",
@@ -521,6 +532,18 @@
       "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#regenerate-logo-assets-mjs",
       "npmCommand": "logo:build",
       "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/reservas_seed_integrity_gate.ts",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#reservas-seed-integrity-gate-ts",
+      "npmCommand": "gate:reservas-seed-integrity",
+      "environments": [
+        "ci",
         "dev",
         "local"
       ],

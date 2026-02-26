@@ -66,12 +66,14 @@ Data de referencia: 2026-02-24
 | `scripts/audit_event_ticket_integrity.ts` | `audit:event-ticket-integrity` | `ci,dev` |
 | `scripts/audit_padel_category_ticket_links.ts` | `audit:padel-category-ticket-links` | `ci,dev` |
 | `scripts/audit_public_events.ts` | `audit:public-events` | `ci,dev` |
+| `scripts/backfill_booking_confirmation_snapshots.ts` | `reservas:backfill-confirmation-snapshots:dry` | `dev,local` |
 | `scripts/codemods/enforce-verified-auth.mjs` | `auth:codemod:enforce-verified` | `dev,local` |
 | `scripts/convert_test_orgs_to_platform.ts` | `orgs:convert-test-platform` | `dev,local` |
 | `scripts/gate_auth_verified.mjs` | `gate:auth-verified` | `ci,dev` |
 | `scripts/generate_api_ui_orphan_burndown_plan.mjs` | `report:api-ui-burndown` | `ci,dev` |
 | `scripts/operational_scripts_allowlist_gate.mjs` | `gate:scripts-ops` | `ci,dev,local` |
 | `scripts/operational_scripts_catalog_gate.mjs` | `gate:scripts-catalog` | `ci,dev,local` |
+| `scripts/reservas_seed_integrity_gate.ts` | `gate:reservas-seed-integrity` | `ci,dev,local` |
 | `scripts/smoke_reservas_hybrid.ts` | `smoke:reservas:hybrid` | `dev,local` |
 | `scripts/ssot_normative_gate.mjs` | `gate:ssot-normative` | `ci,dev` |
 | `scripts/sync_api_ui_orphan_baseline.mjs` | `baseline:api-ui:sync` | `ci,dev` |
@@ -202,6 +204,13 @@ Data de referencia: 2026-02-24
 - Owner: `platform-infra`
 - Comando npm oficial: `npm run aws:prod:start`
 - Ambientes: `dev,prod`
+
+### backfill-booking-confirmation-snapshots-ts
+
+- Script: `scripts/backfill_booking_confirmation_snapshots.ts`
+- Owner: `platform-architecture`
+- Comando npm oficial: `npm run reservas:backfill-confirmation-snapshots:dry`
+- Ambientes: `dev,local`
 
 ### build-and-push-sh
 
@@ -475,6 +484,13 @@ Data de referencia: 2026-02-24
 - Owner: `content-brand`
 - Comando npm oficial: `npm run logo:build`
 - Ambientes: `dev,local`
+
+### reservas-seed-integrity-gate-ts
+
+- Script: `scripts/reservas_seed_integrity_gate.ts`
+- Owner: `platform-architecture`
+- Comando npm oficial: `npm run gate:reservas-seed-integrity`
+- Ambientes: `ci,dev,local`
 
 ### reset-dev-servers-sh
 

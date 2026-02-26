@@ -5,6 +5,8 @@ import { config } from "dotenv";
 config({ path: ".env.local" });
 config();
 
+const BOOKING_CONFIRMATION_SNAPSHOT_VERSION = 5;
+
 type SmokeMode = "PROFESSIONAL_ONLY" | "RESOURCE_ONLY" | "PROFESSIONAL_AND_RESOURCE";
 type PaymentsBlockedStage = "CALENDAR_MONTH" | "CALENDAR_DAY" | "RESERVAR" | "CHECKOUT";
 type SmokeOutcome = "BOOKING_CONFIRMED" | "PAYMENTS_BLOCKED";
@@ -59,6 +61,112 @@ async function fetchJson(url: string, init?: RequestInit) {
   const response = await fetch(url, init);
   const json = await response.json().catch(() => ({}));
   return { status: response.status, json };
+}
+
+async function buildSmokeConfirmationSnapshot(bookingId: number) {
+  const booking = await prisma.booking.findUnique({
+    where: { id: bookingId },
+    select: {
+      id: true,
+      organizationId: true,
+      price: true,
+      currency: true,
+      createdAt: true,
+      policyRef: { select: { policyId: true } },
+      service: {
+        select: {
+          policyId: true,
+          unitPriceCents: true,
+          currency: true,
+        },
+      },
+    },
+  });
+  if (!booking || !booking.service) return null;
+
+  const policy =
+    (await prisma.organizationPolicy.findFirst({
+      where: {
+        organizationId: booking.organizationId,
+        id: booking.policyRef?.policyId ?? booking.service.policyId ?? undefined,
+      },
+      select: {
+        id: true,
+        policyType: true,
+        allowCancellation: true,
+        cancellationWindowMinutes: true,
+        allowReschedule: true,
+        rescheduleWindowMinutes: true,
+        guestBookingAllowed: true,
+        noShowFeeCents: true,
+      },
+    })) ??
+    (await prisma.organizationPolicy.findFirst({
+      where: { organizationId: booking.organizationId },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        policyType: true,
+        allowCancellation: true,
+        cancellationWindowMinutes: true,
+        allowReschedule: true,
+        rescheduleWindowMinutes: true,
+        guestBookingAllowed: true,
+        noShowFeeCents: true,
+      },
+    }));
+  if (!policy) return null;
+
+  const totalCents = Math.max(
+    0,
+    Number.isFinite(Number(booking.price))
+      ? Number(booking.price)
+      : Number(booking.service.unitPriceCents ?? 0),
+  );
+  const createdAt = (booking.createdAt ?? new Date()).toISOString();
+  const currency = (booking.currency ?? booking.service.currency ?? "EUR").toUpperCase();
+
+  return {
+    version: BOOKING_CONFIRMATION_SNAPSHOT_VERSION,
+    createdAt,
+    currency,
+    policySnapshot: {
+      policyId: policy.id,
+      policyType: policy.policyType,
+      allowCancellation: policy.allowCancellation ?? true,
+      cancellationWindowMinutes:
+        typeof policy.cancellationWindowMinutes === "number"
+          ? policy.cancellationWindowMinutes
+          : null,
+      cancellationPenaltyBps: 0,
+      allowReschedule: policy.allowReschedule ?? true,
+      rescheduleWindowMinutes:
+        typeof policy.rescheduleWindowMinutes === "number"
+          ? policy.rescheduleWindowMinutes
+          : null,
+      guestBookingAllowed: policy.guestBookingAllowed ?? true,
+      noShowFeeCents: Math.max(0, Number(policy.noShowFeeCents ?? 0)),
+    },
+    pricingSnapshot: {
+      baseCents: totalCents,
+      discountCents: 0,
+      feeCents: 0,
+      platformFeeCents: 0,
+      combinedFeeCents: 0,
+      processorFeesStatus: "PENDING",
+      processorFeesActualCents: null,
+      taxCents: 0,
+      totalCents,
+      feeMode: "INCLUDED",
+      platformFeeBps: 0,
+      platformFeeFixedCents: 0,
+      stripeFeeBps: 0,
+      stripeFeeFixedCents: 0,
+      cardPlatformFeeCents: 0,
+    },
+    packageSnapshot: null,
+    addonsSnapshot: null,
+  };
 }
 
 function isPaymentsNotReadyResult(params: { status: number; json: any }) {
@@ -203,9 +311,19 @@ async function runMode(mode: SmokeMode, service: any) {
   }
 
   // Simula confirmação final no DB para fechar o fluxo smoke sem depender de pagamento real.
+  const snapshot = await buildSmokeConfirmationSnapshot(bookingId);
+  if (!snapshot) {
+    throw new Error(`[${mode}] não foi possível gerar snapshot de confirmação`);
+  }
   await prisma.booking.update({
     where: { id: bookingId },
-    data: { status: "CONFIRMED", pendingExpiresAt: null },
+    data: {
+      status: "CONFIRMED",
+      pendingExpiresAt: null,
+      confirmationSnapshot: snapshot as any,
+      confirmationSnapshotVersion: snapshot.version,
+      confirmationSnapshotCreatedAt: new Date(snapshot.createdAt),
+    },
   });
 
   const confirmed = await prisma.booking.findUnique({

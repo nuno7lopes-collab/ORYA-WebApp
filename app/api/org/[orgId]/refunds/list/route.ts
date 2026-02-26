@@ -5,7 +5,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import type { Prisma } from "@prisma/client";
-import { OrganizationModule, RefundReason } from "@prisma/client";
+import { OrganizationModule, RefundCasePolicyCause, RefundReason } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -61,7 +61,7 @@ async function _GET(req: NextRequest) {
 
     const url = new URL(req.url);
     const cursorRaw = url.searchParams.get("cursor");
-    const cursor = cursorRaw ? Number(cursorRaw) : null;
+    const cursor = typeof cursorRaw === "string" && cursorRaw.trim() ? cursorRaw.trim() : null;
     const q = url.searchParams.get("q")?.trim() ?? "";
     const reasonParam = url.searchParams.get("reason")?.trim().toUpperCase() ?? "";
     const fromParam = url.searchParams.get("from");
@@ -69,49 +69,52 @@ async function _GET(req: NextRequest) {
     const fromDate = fromParam ? new Date(fromParam) : null;
     const toDate = toParam ? new Date(toParam) : null;
 
-    const events = await prisma.event.findMany({
-      where: { organizationId: organization.id },
-      select: { id: true, title: true },
-    });
-    if (!events.length) {
-      return respondOk(
-        ctx,
-        { items: [], pagination: { nextCursor: null, hasMore: false } },
-        { status: 200 },
-      );
-    }
-    const eventIds = events.map((event) => event.id);
-    const eventById = new Map(events.map((event) => [event.id, event]));
-
-    const where: Prisma.RefundWhereInput = {
-      eventId: { in: eventIds },
+    const where: Prisma.RefundCaseWhereInput = {
+      organizationId: organization.id,
     };
     const reason = (["CANCELLED", "DELETED", "DATE_CHANGED"] as string[]).includes(reasonParam)
       ? (reasonParam as RefundReason)
       : null;
     if (reason) {
-      where.reason = reason;
+      if (reason === "DELETED") {
+        where.policyCause = RefundCasePolicyCause.EVENT_DELETED;
+      } else if (reason === "DATE_CHANGED") {
+        where.policyCause = RefundCasePolicyCause.EVENT_DATE_CHANGED;
+      } else {
+        where.policyCause = {
+          in: [
+            RefundCasePolicyCause.EVENT_CANCELLED,
+            RefundCasePolicyCause.PADEL_EVENT_CANCEL,
+            RefundCasePolicyCause.PADEL_SYSTEM_CANCEL,
+            RefundCasePolicyCause.BOOKING_ORG_CANCEL,
+            RefundCasePolicyCause.STORE_ORG_CANCEL,
+            RefundCasePolicyCause.ADMIN_MANUAL,
+          ],
+        };
+      }
     }
-    const refundedAtFilter: Prisma.DateTimeNullableFilter = {};
+    const createdAtFilter: Prisma.DateTimeFilter = {};
     if (fromDate && !Number.isNaN(fromDate.getTime())) {
-      refundedAtFilter.gte = fromDate;
+      createdAtFilter.gte = fromDate;
     }
     if (toDate && !Number.isNaN(toDate.getTime())) {
-      refundedAtFilter.lte = toDate;
+      createdAtFilter.lte = toDate;
     }
-    if (Object.keys(refundedAtFilter).length) {
-      where.refundedAt = refundedAtFilter;
+    if (Object.keys(createdAtFilter).length) {
+      where.createdAt = createdAtFilter;
     }
     if (q) {
       where.OR = [
-        { purchaseId: { contains: q, mode: "insensitive" } },
+        { paymentId: { contains: q, mode: "insensitive" } },
         { paymentIntentId: { contains: q, mode: "insensitive" } },
+        { sourceId: { contains: q, mode: "insensitive" } },
+        { idempotencyKey: { contains: q, mode: "insensitive" } },
       ];
     }
 
-    const items = await prisma.refund.findMany({
+    const items = await prisma.refundCase.findMany({
       where,
-      orderBy: { id: "desc" },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: PAGE_SIZE + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
@@ -120,33 +123,52 @@ async function _GET(req: NextRequest) {
     const trimmed = hasMore ? items.slice(0, PAGE_SIZE) : items;
     const nextCursor = hasMore ? trimmed[trimmed.length - 1]?.id ?? null : null;
 
-    const purchaseIds = Array.from(
-      new Set(trimmed.map((item) => item.purchaseId).filter((id): id is string => Boolean(id))),
-    );
-    const saleSummaries = purchaseIds.length
+    const paymentIds = Array.from(new Set(trimmed.map((item) => item.paymentId).filter(Boolean)));
+    const saleSummaries = paymentIds.length
       ? await prisma.saleSummary.findMany({
-          where: { purchaseId: { in: purchaseIds } },
-          select: { purchaseId: true, currency: true },
+          where: { purchaseId: { in: paymentIds } },
+          select: { purchaseId: true, currency: true, eventId: true, event: { select: { title: true } } },
         })
       : [];
-    const currencyByPurchase = new Map(
-      saleSummaries.map((summary) => [summary.purchaseId ?? "", summary.currency ?? "EUR"]),
+    const saleSummaryByPayment = new Map(
+      saleSummaries.map((summary) => [summary.purchaseId ?? "", summary]),
     );
 
-    const mapped = trimmed.map((refund) => {
-      const event = eventById.get(refund.eventId);
+    const mapped = trimmed.map((refundCase) => {
+      const saleSummary = saleSummaryByPayment.get(refundCase.paymentId);
+      const amounts =
+        refundCase.amountsBreakdown &&
+        typeof refundCase.amountsBreakdown === "object" &&
+        !Array.isArray(refundCase.amountsBreakdown)
+          ? (refundCase.amountsBreakdown as Record<string, unknown>)
+          : null;
       return {
-        id: refund.id,
-        eventId: refund.eventId,
-        eventTitle: event?.title ?? "Evento",
-        purchaseId: refund.purchaseId,
-        paymentIntentId: refund.paymentIntentId,
-        baseAmountCents: refund.baseAmountCents,
-        feesExcludedCents: refund.feesExcludedCents,
-        currency: refund.purchaseId ? currencyByPurchase.get(refund.purchaseId) ?? "EUR" : "EUR",
-        reason: refund.reason,
-        refundedAt: refund.refundedAt,
-        createdAt: refund.createdAt,
+        id: refundCase.id,
+        refundCaseId: refundCase.id,
+        eventId: saleSummary?.eventId ?? null,
+        eventTitle: saleSummary?.event?.title ?? null,
+        sourceType: refundCase.sourceType,
+        sourceId: refundCase.sourceId,
+        purchaseId: refundCase.paymentId,
+        paymentIntentId: refundCase.paymentIntentId,
+        baseAmountCents: amounts && typeof amounts.refundCents === "number" ? Number(amounts.refundCents) : null,
+        feesExcludedCents:
+          amounts &&
+          typeof amounts.retainedPlatformFeeCents === "number" &&
+          typeof amounts.retainedCardPlatformFeeCents === "number" &&
+          typeof amounts.retainedProcessorFeeCents === "number"
+            ? Number(amounts.retainedPlatformFeeCents) +
+              Number(amounts.retainedCardPlatformFeeCents) +
+              Number(amounts.retainedProcessorFeeCents)
+            : null,
+        currency:
+          (amounts && typeof amounts.currency === "string" ? amounts.currency : null) ??
+          saleSummary?.currency ??
+          "EUR",
+        reason: refundCase.reasonCode,
+        refundStatus: refundCase.status,
+        refundedAt: refundCase.updatedAt,
+        createdAt: refundCase.createdAt,
       };
     });
 

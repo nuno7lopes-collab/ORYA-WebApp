@@ -4,7 +4,7 @@ const {
   ensureAuthenticatedMock,
   recordOrganizationAuditMock,
   cancelBookingMock,
-  refundBookingPaymentMock,
+  requestBookingRefundCaseMock,
   bookingFindUnique,
   paymentEventFindFirst,
   paymentFindUnique,
@@ -13,7 +13,7 @@ const {
   const ensureAuthenticatedMock = vi.fn();
   const recordOrganizationAuditMock = vi.fn();
   const cancelBookingMock = vi.fn();
-  const refundBookingPaymentMock = vi.fn();
+  const requestBookingRefundCaseMock = vi.fn();
   const bookingFindUnique = vi.fn();
   const paymentEventFindFirst = vi.fn();
   const paymentFindUnique = vi.fn();
@@ -46,7 +46,7 @@ const {
     ensureAuthenticatedMock,
     recordOrganizationAuditMock,
     cancelBookingMock,
-    refundBookingPaymentMock,
+    requestBookingRefundCaseMock,
     bookingFindUnique,
     paymentEventFindFirst,
     paymentFindUnique,
@@ -81,8 +81,8 @@ vi.mock("@/domain/bookings/commands", () => ({
   cancelBooking: (...args: any[]) => cancelBookingMock(...args),
 }));
 
-vi.mock("@/lib/reservas/bookingRefund", () => ({
-  refundBookingPayment: (...args: any[]) => refundBookingPaymentMock(...args),
+vi.mock("@/lib/reservas/refundCase", () => ({
+  requestBookingRefundCase: (...args: any[]) => requestBookingRefundCaseMock(...args),
 }));
 
 vi.mock("@/lib/prisma", () => ({
@@ -129,7 +129,7 @@ describe("booking cancel snapshot route", () => {
     ensureAuthenticatedMock.mockReset();
     recordOrganizationAuditMock.mockReset();
     cancelBookingMock.mockReset();
-    refundBookingPaymentMock.mockReset();
+    requestBookingRefundCaseMock.mockReset();
     bookingFindUnique.mockReset();
     paymentEventFindFirst.mockReset();
     paymentFindUnique.mockReset();
@@ -150,6 +150,10 @@ describe("booking cancel snapshot route", () => {
       confirmationSnapshot: snapshot,
     } as any);
     paymentEventFindFirst.mockResolvedValue(null);
+    requestBookingRefundCaseMock.mockResolvedValue({
+      id: "rc_1",
+      status: "QUEUED",
+    });
     cancelBookingMock.mockResolvedValue({
       booking: { id: 1, status: "CANCELLED_BY_CLIENT" },
       outboxEventId: "evt_1",
@@ -165,11 +169,15 @@ describe("booking cancel snapshot route", () => {
     );
 
     expect(res.status).toBe(200);
-    expect(refundBookingPaymentMock).toHaveBeenCalledWith(
+    expect(requestBookingRefundCaseMock).toHaveBeenCalledWith(
       expect.objectContaining({
         bookingId: 1,
         paymentIntentId: "pi_1",
-        amountCents: snapshot.pricingSnapshot.totalCents,
+        reason: "CLIENT_CANCEL",
+        amountCents:
+          snapshot.pricingSnapshot.totalCents -
+          snapshot.pricingSnapshot.platformFeeCents -
+          snapshot.pricingSnapshot.cardPlatformFeeCents,
       }),
     );
   });
@@ -202,6 +210,6 @@ describe("booking cancel snapshot route", () => {
     expect(json.errorCode).toBe("BOOKING_CONFIRMATION_SNAPSHOT_REQUIRED");
     expect(json.requestId).toBe("req_test");
     expect(json.correlationId).toBe("corr_test");
-    expect(refundBookingPaymentMock).not.toHaveBeenCalled();
+    expect(requestBookingRefundCaseMock).not.toHaveBeenCalled();
   });
 });

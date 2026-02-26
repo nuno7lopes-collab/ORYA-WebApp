@@ -2,18 +2,15 @@ import { NextRequest } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import {
-  NotificationType,
   OrganizationMemberRole,
   TrainerProfileReviewStatus,
 } from "@prisma/client";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { parseOrganizationId, resolveOrganizationIdFromRequest } from "@/lib/organizationId";
-import { createNotification } from "@/lib/notifications";
 import { normalizeProfileCoverUrl } from "@/lib/profileMedia";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
-import { buildOrgHref } from "@/lib/organizationIdUtils";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
@@ -96,10 +93,6 @@ async function _GET(req: NextRequest) {
         certifications: true,
         experienceYears: true,
         coverImageUrl: true,
-        isPublished: true,
-        reviewStatus: true,
-        reviewNote: true,
-        reviewRequestedAt: true,
         user: { select: { id: true, fullName: true, username: true, avatarUrl: true } },
         organization: { select: { id: true, username: true, publicName: true } },
       },
@@ -181,7 +174,6 @@ async function _PATCH(req: NextRequest) {
       : null;
     const rawCoverImageUrl = typeof body?.coverImageUrl === "string" ? body.coverImageUrl.trim() : null;
     const coverImageUrl = rawCoverImageUrl ? normalizeProfileCoverUrl(rawCoverImageUrl) : null;
-    const requestReview = body?.requestReview === true;
 
     if (title.length > MAX_TITLE) {
       return fail(ctx, 400, "TITULO_DEMASIADO_LONGO");
@@ -191,8 +183,6 @@ async function _PATCH(req: NextRequest) {
     }
 
     const specialties = parseSpecialties(body?.specialties);
-
-    const reviewStatus = requestReview ? TrainerProfileReviewStatus.PENDING : TrainerProfileReviewStatus.DRAFT;
     const now = new Date();
 
     const profile = await prisma.trainerProfile.upsert({
@@ -204,11 +194,11 @@ async function _PATCH(req: NextRequest) {
         certifications: certifications || null,
         experienceYears,
         coverImageUrl: coverImageUrl || null,
-        isPublished: false,
-        reviewStatus,
-        reviewRequestedAt: requestReview ? now : null,
+        isPublished: true,
+        reviewStatus: TrainerProfileReviewStatus.APPROVED,
+        reviewRequestedAt: null,
         reviewNote: null,
-        reviewedAt: null,
+        reviewedAt: now,
         reviewedByUserId: null,
       },
       create: {
@@ -220,28 +210,16 @@ async function _PATCH(req: NextRequest) {
         certifications: certifications || null,
         experienceYears,
         coverImageUrl: coverImageUrl || null,
-        isPublished: false,
-        reviewStatus,
-        reviewRequestedAt: requestReview ? now : null,
+        isPublished: true,
+        reviewStatus: TrainerProfileReviewStatus.APPROVED,
+        reviewRequestedAt: null,
+        reviewedAt: now,
       },
       include: {
         user: { select: { id: true, fullName: true, username: true, avatarUrl: true } },
         organization: { select: { id: true, username: true, publicName: true } },
       },
     });
-
-    if (requestReview) {
-      const trainersHref = buildOrgHref(organization.id, "/team/trainers");
-      await createNotification({
-        userId: user.id,
-        type: NotificationType.SYSTEM_ANNOUNCE,
-        title: "Perfil enviado para revisão",
-        body: `O teu perfil de treinador foi enviado para revisão pela organização ${organization.publicName ?? "ORYA"}.`,
-        ctaUrl: trainersHref,
-        ctaLabel: "Ver perfil",
-        organizationId: organization.id,
-      }).catch((err) => console.warn("[trainer][review-request] notification fail", err));
-    }
 
     return respondOk(ctx, { profile }, { status: 200 });
   } catch (err) {

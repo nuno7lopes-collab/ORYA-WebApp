@@ -19,6 +19,16 @@ import {
 import InvoicesClient from "@/app/org/_internal/core/pagamentos/invoices/invoices-client";
 import PayoutsPanel from "@/app/org/_internal/core/pagamentos/PayoutsPanel";
 import RefundsPanel from "@/app/org/_internal/core/pagamentos/RefundsPanel";
+import {
+  RECHARTS_AXIS_TICK_STYLE,
+  RECHARTS_LEGEND_WRAPPER_STYLE,
+  RECHARTS_TOOLTIP_CONTENT_STYLE,
+  RECHARTS_TOOLTIP_CURSOR_STYLE,
+  RECHARTS_TOOLTIP_ITEM_STYLE,
+  RECHARTS_TOOLTIP_LABEL_STYLE,
+  formatRechartsLegendLabel,
+  renderReadablePiePercentLabel,
+} from "@/components/ui/rechartsTheme";
 import { OryaDateField } from "@/components/ui/datetime";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
 import { isFinanceAllowedView, type FinanceAllowedView } from "@/lib/domainBoundaries";
@@ -444,10 +454,13 @@ export default function FinanceToolClient({ orgId, initialView }: FinanceToolCli
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={overviewTotalsChartData} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#ffffff18" />
-                      <XAxis dataKey="metric" tick={{ fill: "#E5E7EB", fontSize: 11 }} />
-                      <YAxis tick={{ fill: "#E5E7EB", fontSize: 11 }} />
+                      <XAxis dataKey="metric" tick={RECHARTS_AXIS_TICK_STYLE} tickLine={false} />
+                      <YAxis tick={RECHARTS_AXIS_TICK_STYLE} tickLine={false} axisLine={false} />
                       <Tooltip
-                        contentStyle={{ background: "#161616", border: "1px solid #ffffff2e", borderRadius: 10 }}
+                        contentStyle={RECHARTS_TOOLTIP_CONTENT_STYLE}
+                        itemStyle={RECHARTS_TOOLTIP_ITEM_STYLE}
+                        labelStyle={RECHARTS_TOOLTIP_LABEL_STYLE}
+                        cursor={RECHARTS_TOOLTIP_CURSOR_STYLE}
                         formatter={(value) => [toEuroChartLabel(value), "Valor"]}
                       />
                       <Bar dataKey="value" radius={[6, 6, 0, 0]}>
@@ -469,13 +482,16 @@ export default function FinanceToolClient({ orgId, initialView }: FinanceToolCli
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={overviewEventsChartData} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#ffffff18" />
-                      <XAxis dataKey="event" tick={{ fill: "#E5E7EB", fontSize: 11 }} />
-                      <YAxis tick={{ fill: "#E5E7EB", fontSize: 11 }} />
+                      <XAxis dataKey="event" tick={RECHARTS_AXIS_TICK_STYLE} tickLine={false} />
+                      <YAxis tick={RECHARTS_AXIS_TICK_STYLE} tickLine={false} axisLine={false} />
                       <Tooltip
-                        contentStyle={{ background: "#161616", border: "1px solid #ffffff2e", borderRadius: 10 }}
+                        contentStyle={RECHARTS_TOOLTIP_CONTENT_STYLE}
+                        itemStyle={RECHARTS_TOOLTIP_ITEM_STYLE}
+                        labelStyle={RECHARTS_TOOLTIP_LABEL_STYLE}
+                        cursor={RECHARTS_TOOLTIP_CURSOR_STYLE}
                         formatter={(value, key) => [toEuroChartLabel(value), String(key ?? "")]}
                       />
-                      <Legend />
+                      <Legend formatter={formatRechartsLegendLabel} wrapperStyle={RECHARTS_LEGEND_WRAPPER_STYLE} />
                       <Bar dataKey="gross" fill="#64748B" radius={[6, 6, 0, 0]} name="Bruto" />
                       <Bar dataKey="net" fill="#22C55E" radius={[6, 6, 0, 0]} name="Líquido" />
                     </BarChart>
@@ -530,10 +546,13 @@ export default function FinanceToolClient({ orgId, initialView }: FinanceToolCli
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={reconciliationChartData} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#ffffff18" />
-                    <XAxis dataKey="event" tick={{ fill: "#E5E7EB", fontSize: 11 }} />
-                    <YAxis tick={{ fill: "#E5E7EB", fontSize: 11 }} />
+                    <XAxis dataKey="event" tick={RECHARTS_AXIS_TICK_STYLE} tickLine={false} />
+                    <YAxis tick={RECHARTS_AXIS_TICK_STYLE} tickLine={false} axisLine={false} />
                     <Tooltip
-                      contentStyle={{ background: "#161616", border: "1px solid #ffffff2e", borderRadius: 10 }}
+                      contentStyle={RECHARTS_TOOLTIP_CONTENT_STYLE}
+                      itemStyle={RECHARTS_TOOLTIP_ITEM_STYLE}
+                      labelStyle={RECHARTS_TOOLTIP_LABEL_STYLE}
+                      cursor={RECHARTS_TOOLTIP_CURSOR_STYLE}
                       formatter={(value) => [toEuroChartLabel(value), "Líquido pós-reembolsos"]}
                     />
                     <Bar dataKey="netAfterRefunds" fill="#22C55E" radius={[6, 6, 0, 0]} />
@@ -640,15 +659,14 @@ export default function FinanceToolClient({ orgId, initialView }: FinanceToolCli
                         cx="50%"
                         cy="50%"
                         outerRadius={84}
-                        label={({ percent }) => `${Math.round((percent ?? 0) * 100)}%`}
+                        label={renderReadablePiePercentLabel}
+                        labelLine={{ stroke: "rgba(226, 232, 240, 0.4)", strokeWidth: 1 }}
                       >
                         {opsSourceDistribution.map((entry, index) => (
                           <Cell key={`${entry.sourceType}-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
                         ))}
                       </Pie>
-                      <Tooltip
-                        contentStyle={{ background: "#161616", border: "1px solid #ffffff2e", borderRadius: 10 }}
-                      />
+                      <Tooltip contentStyle={RECHARTS_TOOLTIP_CONTENT_STYLE} itemStyle={RECHARTS_TOOLTIP_ITEM_STYLE} labelStyle={RECHARTS_TOOLTIP_LABEL_STYLE} />
                     </PieChart>
                   </ResponsiveContainer>
                 </ChartWrap>

@@ -29,7 +29,7 @@ async function _GET(req: NextRequest) {
     const cursor = cursorRaw ? Number(cursorRaw) : null;
 
     const where: Prisma.OperationWhereInput = {
-      operationType: "PROCESS_REFUND_SINGLE",
+      operationType: { in: ["PROCESS_REFUND_UNIFIED", "PROCESS_REFUND_SINGLE"] },
     };
 
     if (statusParam === "PENDING") {
@@ -64,6 +64,16 @@ async function _GET(req: NextRequest) {
 
     const purchaseIds = Array.from(new Set(trimmed.map((op) => op.purchaseId).filter(Boolean))) as string[];
     const paymentIntentIds = Array.from(new Set(trimmed.map((op) => op.paymentIntentId).filter(Boolean))) as string[];
+    const refundCaseIds = Array.from(
+      new Set(
+        trimmed
+          .map((op) => {
+            const payload = op.payload as Record<string, unknown> | null;
+            return typeof payload?.refundCaseId === "string" ? payload.refundCaseId : null;
+          })
+          .filter((value): value is string => Boolean(value)),
+      ),
+    );
 
     const refunds = purchaseIds.length || paymentIntentIds.length
       ? await prisma.refund.findMany({
@@ -76,10 +86,39 @@ async function _GET(req: NextRequest) {
         })
       : [];
 
+    const refundCases =
+      refundCaseIds.length || purchaseIds.length || paymentIntentIds.length
+        ? await prisma.refundCase.findMany({
+            where: {
+              OR: [
+                refundCaseIds.length ? { id: { in: refundCaseIds } } : undefined,
+                purchaseIds.length ? { paymentId: { in: purchaseIds } } : undefined,
+                paymentIntentIds.length ? { paymentIntentId: { in: paymentIntentIds } } : undefined,
+              ].filter(Boolean) as Prisma.RefundCaseWhereInput[],
+            },
+          })
+        : [];
+
     const refundByPurchase = new Map(refunds.filter((r) => r.purchaseId).map((r) => [r.purchaseId!, r]));
     const refundByPaymentIntent = new Map(refunds.filter((r) => r.paymentIntentId).map((r) => [r.paymentIntentId!, r]));
+    const refundCaseById = new Map(refundCases.map((refundCase) => [refundCase.id, refundCase]));
+    const refundCaseByPayment = new Map(refundCases.map((refundCase) => [refundCase.paymentId, refundCase]));
+    const refundCaseByIntent = new Map(
+      refundCases
+        .filter((refundCase) => refundCase.paymentIntentId)
+        .map((refundCase) => [refundCase.paymentIntentId!, refundCase]),
+    );
 
     const items = trimmed.map((op) => {
+      const payload = op.payload as Record<string, unknown> | null;
+      const opRefundCaseId = typeof payload?.refundCaseId === "string" ? payload.refundCaseId : null;
+      const refundCase = opRefundCaseId
+        ? refundCaseById.get(opRefundCaseId) ?? null
+        : op.purchaseId
+          ? refundCaseByPayment.get(op.purchaseId) ?? null
+          : op.paymentIntentId
+            ? refundCaseByIntent.get(op.paymentIntentId) ?? null
+            : null;
       const refund = op.purchaseId
         ? refundByPurchase.get(op.purchaseId)
         : op.paymentIntentId
@@ -102,16 +141,33 @@ async function _GET(req: NextRequest) {
         eventId: op.eventId,
         createdAt: op.createdAt,
         updatedAt: op.updatedAt,
-        refund: refund
-          ? {
-              id: refund.id,
-              baseAmountCents: refund.baseAmountCents,
-              feesExcludedCents: refund.feesExcludedCents,
-              refundedAt: refund.refundedAt,
-              stripeRefundId: refund.stripeRefundId,
-              reason: refund.reason,
-            }
-          : null,
+        refundCaseId: refundCase?.id ?? null,
+        refundStatus: refundCase?.status ?? null,
+        refund:
+          refundCase
+            ? {
+                id: refundCase.id,
+                amountCents:
+                  refundCase.amountsBreakdown &&
+                  typeof refundCase.amountsBreakdown === "object" &&
+                  !Array.isArray(refundCase.amountsBreakdown) &&
+                  typeof (refundCase.amountsBreakdown as Record<string, unknown>).refundCents === "number"
+                    ? Number((refundCase.amountsBreakdown as Record<string, unknown>).refundCents)
+                    : null,
+                stripeRefundId: refundCase.stripeRefundId,
+                reasonCode: refundCase.reasonCode,
+                status: refundCase.status,
+              }
+            : refund
+              ? {
+                  id: refund.id,
+                  baseAmountCents: refund.baseAmountCents,
+                  feesExcludedCents: refund.feesExcludedCents,
+                  refundedAt: refund.refundedAt,
+                  stripeRefundId: refund.stripeRefundId,
+                  reason: refund.reason,
+                }
+              : null,
       };
     });
 

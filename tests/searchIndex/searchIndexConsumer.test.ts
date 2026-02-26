@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SearchIndexVisibility, SourceType } from "@prisma/client";
-import { consumeSearchIndexEvent } from "@/domain/searchIndex/consumer";
+import { consumeSearchIndexEvent, handleSearchIndexOutboxEvent } from "@/domain/searchIndex/consumer";
 
 const mocks = vi.hoisted(() => ({
   eventLogFindUnique: vi.fn(),
@@ -217,5 +217,89 @@ describe("searchIndex consumer", () => {
         }),
       }),
     );
+  });
+
+  it("faz fallback pelo payload do outbox quando o event log já não existe", async () => {
+    const now = new Date("2026-02-26T18:31:00Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+
+    mocks.eventLogFindUnique.mockResolvedValue(null);
+    mocks.searchIndexFindUnique.mockResolvedValue(null);
+    mocks.eventFindUnique.mockResolvedValue({
+      id: 822,
+      slug: "evento-822",
+      title: "Evento 822",
+      description: "Desc",
+      startsAt: now,
+      endsAt: now,
+      status: "PUBLISHED",
+      templateType: null,
+      interestTags: [],
+      pricingMode: "STANDARD",
+      isDeleted: false,
+      coverImageUrl: null,
+      addressId: null,
+      ownerUserId: null,
+      organizationId: 9,
+      organization: { status: "ACTIVE", publicName: "Org 9" },
+      ticketTypes: [{ price: 1000, status: "ON_SALE", totalQuantity: 10, soldQuantity: 0 }],
+    });
+    mocks.profileFindUnique.mockResolvedValue(null);
+
+    const res = await handleSearchIndexOutboxEvent({
+      eventType: "search.index.upsert.requested",
+      payload: {
+        eventId: "evt-log-822",
+        sourceType: SourceType.EVENT,
+        sourceId: "822",
+        organizationId: 9,
+      },
+    });
+
+    expect(res.ok).toBe(true);
+    expect(mocks.searchIndexUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          organizationId: 9,
+          sourceType: SourceType.EVENT,
+          sourceId: "822",
+          lastEventId: "evt-log-822",
+        }),
+      }),
+    );
+
+    vi.useRealTimers();
+  });
+
+  it("faz fallback de org status pelo payload quando o event log já não existe", async () => {
+    const now = new Date("2026-02-26T18:40:00Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+
+    mocks.eventLogFindUnique.mockResolvedValue(null);
+    mocks.organizationFindUnique.mockResolvedValue({ id: 2, status: "SUSPENDED" });
+
+    const res = await handleSearchIndexOutboxEvent({
+      eventType: "search.index.org_status_changed",
+      payload: {
+        eventId: "evt-org-status-2",
+        organizationId: 2,
+        status: "SUSPENDED",
+      },
+    });
+
+    expect(res.ok).toBe(true);
+    expect(mocks.searchIndexUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { organizationId: 2 },
+        data: expect.objectContaining({
+          visibility: SearchIndexVisibility.HIDDEN,
+          lastEventId: "evt-org-status-2",
+        }),
+      }),
+    );
+
+    vi.useRealTimers();
   });
 });

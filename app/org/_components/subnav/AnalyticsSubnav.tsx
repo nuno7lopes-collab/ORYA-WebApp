@@ -14,7 +14,8 @@ export default function AnalyticsSubnav({ orgId, className }: { orgId: number | 
       view === "cohorts" ||
       view === "buyers" ||
       view === "time-series" ||
-      view === "dimensions"
+      view === "dimensions" ||
+      view === "telemetry"
     ) {
       return view;
     }
@@ -60,6 +61,12 @@ export default function AnalyticsSubnav({ orgId, className }: { orgId: number | 
           label: "Dimensões",
           href: buildOrgHref(orgId, "/analytics", { view: "dimensions" }),
           isActive: ({ searchParams }) => resolveView(searchParams) === "dimensions",
+        },
+        {
+          id: "telemetry",
+          label: "Telemetria",
+          href: buildOrgHref(orgId, "/analytics", { view: "telemetry" }),
+          isActive: ({ searchParams }) => resolveView(searchParams) === "telemetry",
         },
       ]}
     />

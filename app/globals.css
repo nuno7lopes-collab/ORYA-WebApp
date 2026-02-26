@@ -253,6 +253,43 @@ body[data-theme-mode="light"]:is([data-orya-bg="orya-bg-user"], [data-orya-bg="o
   color: rgb(var(--theme-text-rgb) / 0.95) !important;
 }
 
+/* Recharts: contraste previsível em tooltips, legendas e labels de pie. */
+[data-org-dashboard-shell] .recharts-default-tooltip {
+  background: linear-gradient(155deg, rgba(10, 16, 32, 0.95), rgba(6, 11, 22, 0.99)) !important;
+  border: 1px solid rgba(226, 232, 240, 0.34) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.45) !important;
+  color: rgba(248, 250, 252, 0.95) !important;
+  padding: 10px 12px !important;
+}
+
+[data-org-dashboard-shell] .recharts-default-tooltip .recharts-tooltip-label {
+  color: rgba(248, 250, 252, 0.96) !important;
+  font-weight: 700 !important;
+}
+
+[data-org-dashboard-shell] .recharts-default-tooltip .recharts-tooltip-item {
+  color: rgba(248, 250, 252, 0.92) !important;
+  font-weight: 500 !important;
+}
+
+[data-org-dashboard-shell] .recharts-legend-item-text {
+  color: rgb(var(--theme-text-rgb) / 0.9) !important;
+  fill: rgb(var(--theme-text-rgb) / 0.9) !important;
+}
+
+[data-org-dashboard-shell] .recharts-cartesian-axis-tick-value {
+  fill: rgb(var(--theme-text-rgb) / 0.9) !important;
+}
+
+[data-org-dashboard-shell] .recharts-pie-label-text {
+  fill: rgba(248, 250, 252, 0.95) !important;
+  paint-order: stroke;
+  stroke: rgba(8, 12, 24, 0.78);
+  stroke-width: 1.2px;
+  stroke-linejoin: round;
+}
+
 /* Dashboard: superfícies e contraste unificados (modo escuro). */
 html:not([data-theme-mode="light"]) [data-org-dashboard-shell] {
   --orya-dashboard-surface-rgb: 8 16 30;

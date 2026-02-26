@@ -6,7 +6,8 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
-import { OrganizationMemberRole } from "@prisma/client";
+import { listEffectiveOrganizationMembers } from "@/lib/organizationMembers";
+import { OrganizationMemberRole, OrganizationRolePack } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -106,13 +107,25 @@ async function _GET(req: NextRequest) {
     const linkedUserIds = items
       .map((item) => item.user?.id)
       .filter((userId): userId is string => typeof userId === "string" && userId.length > 0);
-    const trainerProfiles = linkedUserIds.length
-      ? await prisma.trainerProfile.findMany({
-          where: { organizationId: organization.id, userId: { in: linkedUserIds } },
-          select: { userId: true },
-        })
-      : [];
-    const trainerUserIds = new Set(trainerProfiles.map((entry) => entry.userId));
+    const [trainerProfiles, trainerMembers] = linkedUserIds.length
+      ? await Promise.all([
+          prisma.trainerProfile.findMany({
+            where: { organizationId: organization.id, userId: { in: linkedUserIds } },
+            select: { userId: true },
+          }),
+          listEffectiveOrganizationMembers({
+            organizationId: organization.id,
+            userIds: linkedUserIds,
+            roles: [OrganizationMemberRole.STAFF],
+          }),
+        ])
+      : [[], []];
+    const trainerUserIds = new Set<string>(trainerProfiles.map((entry) => entry.userId));
+    for (const member of trainerMembers) {
+      if (member.rolePack === OrganizationRolePack.COACH) {
+        trainerUserIds.add(member.userId);
+      }
+    }
     const enrichedItems = items.map((item) => ({
       ...item,
       isTrainer: item.user?.id ? trainerUserIds.has(item.user.id) : false,

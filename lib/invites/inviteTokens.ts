@@ -4,6 +4,8 @@ import type { Prisma } from "@prisma/client";
 import { normalizeEmail } from "@/lib/utils/email";
 import { getLatestPolicyForEvent } from "@/lib/checkin/accessPolicy";
 
+const DEFAULT_INVITE_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
+
 export type InviteTokenIssueInput = {
   eventId: number;
   email: string;
@@ -32,19 +34,14 @@ export async function issueInviteToken(
     throw new Error("INVITE_EMAIL_INVALID");
   }
   const policy = await getLatestPolicyForEvent(input.eventId, client);
-  if (!policy || !policy.inviteTokenAllowed) {
-    throw new Error("INVITE_TOKEN_NOT_ALLOWED");
-  }
-  if (policy.inviteIdentityMatch === "USERNAME") {
-    throw new Error("INVITE_TOKEN_REQUIRES_EMAIL");
-  }
-  if (policy.inviteTokenTtlSeconds == null) {
-    throw new Error("INVITE_TOKEN_TTL_REQUIRED");
-  }
 
   const token = crypto.randomUUID();
   const tokenHash = hashInviteToken(token);
-  const expiresAt = new Date(Date.now() + policy.inviteTokenTtlSeconds * 1000);
+  const ttlSeconds = Math.max(
+    60,
+    Number(policy?.inviteTokenTtlSeconds ?? DEFAULT_INVITE_TOKEN_TTL_SECONDS),
+  );
+  const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
 
   const created = await client.inviteToken.create({
     data: {

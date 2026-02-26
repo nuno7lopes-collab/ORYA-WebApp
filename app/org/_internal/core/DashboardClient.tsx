@@ -522,7 +522,7 @@ const OBJECTIVE_TABS: ObjectiveTab[] = ["create", "manage", "promote", "analyze"
 type SalesRange = "7d" | "30d" | "90d" | "365d" | "all";
 type FinanceFocusView = "overview" | "payouts" | "refunds";
 
-type EventStatusFilter = "all" | "active" | "draft" | "finished" | "ongoing" | "archived";
+type EventStatusFilter = "all" | "active" | "terminated" | "draft";
 
 const DATE_LOCALE = "pt-PT";
 const DATE_TIMEZONE = "Europe/Lisbon";
@@ -576,7 +576,7 @@ function OrganizacaoPageInner({
   const [entityType, setEntityType] = useState<string>("");
   const [businessName, setBusinessName] = useState<string>("");
   const [payoutIban, setPayoutIban] = useState<string>("");
-  const [eventStatusFilter, setEventStatusFilter] = useState<EventStatusFilter>("all");
+  const [eventStatusFilter, setEventStatusFilter] = useState<EventStatusFilter>("active");
   const [eventCategoryFilter, setEventCategoryFilter] = useState<string>("all");
   const [eventPartnerClubFilter, setEventPartnerClubFilter] = useState<string>("all");
   const [salesEventId, setSalesEventId] = useState<number | null>(null);
@@ -585,7 +585,7 @@ function OrganizacaoPageInner({
   const [eventView, setEventView] = useState<"list" | "grid">("grid");
   const [manageFiltersOpen, setManageFiltersOpen] = useState<"status" | "period" | "filters" | null>(null);
   const [eventActionLoading, setEventActionLoading] = useState<number | null>(null);
-  const [eventDialog, setEventDialog] = useState<{ mode: "archive" | "delete" | "unarchive"; ev: EventItem } | null>(null);
+  const [eventDialog, setEventDialog] = useState<{ mode: "archive" | "delete" | "cancel"; ev: EventItem } | null>(null);
   const [toolsModalOpen, setToolsModalOpen] = useState(false);
   const [moduleActivationLoading, setModuleActivationLoading] = useState<OrganizationModule | null>(null);
   const [moduleDeactivationLoading, setModuleDeactivationLoading] = useState<OrganizationModule | null>(null);
@@ -676,7 +676,9 @@ function OrganizacaoPageInner({
           ? (sectionParamRaw as MarketingSectionKey)
           : null;
 
-    if (statusParam) setEventStatusFilter(statusParam as typeof eventStatusFilter);
+    if (statusParam && ["all", "active", "terminated", "draft"].includes(statusParam)) {
+      setEventStatusFilter(statusParam as EventStatusFilter);
+    }
     if (catParam) setEventCategoryFilter(catParam);
     if (clubParam) setEventPartnerClubFilter(clubParam);
     if (searchParam) setSearchTerm(searchParam);
@@ -1381,18 +1383,21 @@ function OrganizacaoPageInner({
   );
 
   const archiveEvent = useCallback(
-    async (target: EventItem, mode: "archive" | "delete" | "unarchive") => {
+    async (target: EventItem, mode: "archive" | "delete" | "cancel") => {
       setEventActionLoading(target.id);
       setCtaError(null);
       setCtaSuccess(null);
-      const archive = mode === "archive" || mode === "delete";
       const targetLabel = target.templateType === "PADEL" ? "Torneio" : "Evento";
       try {
         if (!orgApiBase) throw new Error("ORG_CONTEXT_MISSING");
+        const payload =
+          mode === "cancel"
+            ? { eventId: target.id, status: "CANCELLED" }
+            : { eventId: target.id, archive: true };
         const res = await fetch(`${orgApiBase}/events/update`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ eventId: target.id, archive }),
+          body: JSON.stringify(payload),
         });
         const json = await res.json().catch(() => null);
         if (!res.ok || json?.ok === false) {
@@ -1402,17 +1407,17 @@ function OrganizacaoPageInner({
           if (mode === "delete") {
             setCtaSuccess("Rascunho apagado.");
             trackEvent("event_draft_deleted", { eventId: target.id, status: target.status });
+          } else if (mode === "cancel") {
+            setCtaSuccess(`${targetLabel} cancelado.`);
+            trackEvent("event_cancelled", { eventId: target.id, status: target.status });
           } else if (mode === "archive") {
             setCtaSuccess(`${targetLabel} arquivado.`);
             trackEvent("event_archived", { eventId: target.id, status: target.status });
-          } else {
-            setCtaSuccess(`${targetLabel} reativado.`);
-            trackEvent("event_unarchived", { eventId: target.id, status: target.status });
           }
           setTimeout(() => setCtaSuccess(null), 3000);
         }
       } catch (err) {
-        console.error("[events][archive]", err);
+        console.error("[events][lifecycle]", err);
         setCtaError("Erro inesperado ao processar a ação.");
       } finally {
         setEventActionLoading(null);
@@ -1621,10 +1626,8 @@ function OrganizacaoPageInner({
   const statusLabelMap: Record<EventStatusFilter, string> = {
     all: "Todos",
     active: "Ativos",
+    terminated: "Terminados",
     draft: "Rascunhos",
-    finished: "Concluídos",
-    ongoing: "Em curso",
-    archived: "Arquivados",
   };
   const timeScopeLabels: Record<"all" | "upcoming" | "ongoing" | "past", string> = {
     all: "Todos",
@@ -1653,7 +1656,6 @@ function OrganizacaoPageInner({
     let ongoing = 0;
     let finished = 0;
     eventsList.forEach((ev) => {
-      if (ev.status === "ARCHIVED") return;
       const startsAt = ev.startsAt ? new Date(ev.startsAt) : null;
       const endsAt = ev.endsAt ? new Date(ev.endsAt) : null;
       const isFinished = ev.status === "FINISHED" || (endsAt ? endsAt.getTime() < now.getTime() : false);
@@ -1779,7 +1781,9 @@ function OrganizacaoPageInner({
         section?: string;
         marketing?: string;
       };
-      if (parsed.status) setEventStatusFilter(parsed.status as typeof eventStatusFilter);
+      if (parsed.status && ["all", "active", "terminated", "draft"].includes(parsed.status)) {
+        setEventStatusFilter(parsed.status as EventStatusFilter);
+      }
       if (parsed.cat) setEventCategoryFilter(parsed.cat);
       if (parsed.club) setEventPartnerClubFilter(parsed.club);
       if (parsed.search) setSearchTerm(parsed.search);
@@ -1801,12 +1805,12 @@ function OrganizacaoPageInner({
       const isFinished = endsAt ? endsAt.getTime() < now.getTime() : false;
       const isFuture = startsAt ? startsAt.getTime() >= now.getTime() : false;
       const isOngoing = startsAt && endsAt ? startsAt.getTime() <= now.getTime() && now.getTime() <= endsAt.getTime() : false;
+      const isTerminated = ev.status === "CANCELLED" || ev.status === "FINISHED" || isFinished;
+      const isActive = !isTerminated && (isFuture || isOngoing);
 
       if (eventStatusFilter === "draft" && ev.status !== "DRAFT") return false;
-      if (eventStatusFilter === "archived" && ev.status !== "ARCHIVED") return false;
-      if (eventStatusFilter === "active" && !(ev.status === "PUBLISHED" && isFuture)) return false;
-      if (eventStatusFilter === "finished" && !isFinished) return false;
-      if (eventStatusFilter === "ongoing" && !isOngoing) return false;
+      if (eventStatusFilter === "active" && !isActive) return false;
+      if (eventStatusFilter === "terminated" && !isTerminated) return false;
 
       if (eventCategoryFilter !== "all") {
         const cats = ev.categories ?? [];
@@ -1834,7 +1838,7 @@ function OrganizacaoPageInner({
   const activeFilterCount = useMemo(
     () =>
       [
-        eventStatusFilter !== "all",
+        eventStatusFilter !== "active",
         eventCategoryFilter !== "all",
         eventPartnerClubFilter !== "all",
         timeScope !== "all",
@@ -2735,7 +2739,7 @@ function OrganizacaoPageInner({
       if (!value || value === defaultVal) params.delete(key);
       else params.set(key, value);
     };
-    setParam("status", eventStatusFilter, "all");
+    setParam("status", eventStatusFilter, "active");
     setParam("cat", eventCategoryFilter, "all");
     setParam("club", eventPartnerClubFilter, "all");
     setParam("search", searchTerm, "");
@@ -3680,7 +3684,7 @@ function OrganizacaoPageInner({
                           onClick={() => setManageFiltersOpen((open) => (open === "status" ? null : "status"))}
                           className={cn(
                             "inline-flex items-center gap-2 rounded-2xl border border-white/12 bg-white/5 px-3 py-2 text-[12px] font-semibold text-white/80 shadow-[0_14px_40px_rgba(0,0,0,0.35)] transition hover:bg-white/10",
-                            eventStatusFilter !== "all" &&
+                            eventStatusFilter !== "active" &&
                               "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(34,211,238,0.45)]",
                           )}
                         >
@@ -3689,7 +3693,7 @@ function OrganizacaoPageInner({
                         {manageFiltersOpen === "status" && (
                           <div className="absolute left-0 z-[var(--z-popover)] mt-2 w-48 rounded-2xl orya-menu-surface p-2 backdrop-blur-2xl animate-popover">
                             <p className="px-2 pb-1 text-[10px] uppercase tracking-[0.22em] text-white/50">Estado</p>
-                            {(["all", "active", "ongoing", "finished", "draft", "archived"] as const).map((key) => (
+                            {(["all", "active", "terminated", "draft"] as const).map((key) => (
                               <button
                                 key={key}
                                 type="button"
@@ -3766,7 +3770,7 @@ function OrganizacaoPageInner({
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setEventStatusFilter("all");
+                                    setEventStatusFilter("active");
                                     setEventCategoryFilter("all");
                                     setEventPartnerClubFilter("all");
                                     setSearchTerm("");
@@ -3872,7 +3876,7 @@ function OrganizacaoPageInner({
                               <button
                                 type="button"
                                 onClick={() => {
-                                  setEventStatusFilter("all");
+                                  setEventStatusFilter("active");
                                   setEventCategoryFilter("all");
                                   setEventPartnerClubFilter("all");
                                   setSearchTerm("");
@@ -3922,10 +3926,10 @@ function OrganizacaoPageInner({
                 {activeFilterCount > 0 && (
                   <div className="relative z-10 flex flex-wrap items-center gap-2 rounded-2xl border border-white/12 bg-gradient-to-r from-white/8 via-white/6 to-white/4 px-3 py-2 text-[12px] text-white/80 shadow-[0_12px_36px_rgba(0,0,0,0.45)] backdrop-blur-2xl">
                     <span className="font-semibold text-white/75">Filtros ativos ({activeFilterCount})</span>
-                    {eventStatusFilter !== "all" && (
+                    {eventStatusFilter !== "active" && (
                       <button
                         type="button"
-                        onClick={() => setEventStatusFilter("all")}
+                        onClick={() => setEventStatusFilter("active")}
                         className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2.5 py-1 hover:border-white/40"
                       >
                         Estado: {statusLabelMap[eventStatusFilter]} ×
@@ -4063,7 +4067,7 @@ function OrganizacaoPageInner({
                   <button
                     type="button"
                     onClick={() => {
-                      setEventStatusFilter("all");
+                      setEventStatusFilter("active");
                       setEventCategoryFilter("all");
                       setTimeScope("all");
                       setEventPartnerClubFilter("all");
@@ -4129,18 +4133,22 @@ function OrganizacaoPageInner({
                               const statusBadge =
                                 ev.status === "CANCELLED"
                                   ? { label: "Cancelado", classes: "border-red-400/60 bg-red-500/10 text-red-100" }
-                                  : ev.status === "ARCHIVED"
-                                    ? { label: "Arquivado", classes: "border-amber-400/60 bg-amber-500/10 text-amber-100" }
-                                    : ev.status === "DRAFT"
-                                      ? { label: "Rascunho", classes: "border-white/20 bg-white/5 text-white/70" }
-                                      : isOngoing
-                                        ? { label: "A decorrer", classes: "border-emerald-400/60 bg-emerald-500/10 text-emerald-100" }
-                                        : isFuture
-                                          ? { label: "Publicado", classes: "border-sky-400/60 bg-sky-500/10 text-sky-100" }
-                                          : isFinished
-                                            ? { label: "Concluído", classes: "border-purple-400/60 bg-purple-500/10 text-purple-100" }
-                                            : { label: ev.status, classes: "border-white/20 bg-white/5 text-white/70" };
-                              const salesLabel = normalizedTemplate === "PADEL" ? "Inscrições" : "Bilhetes";
+                                  : ev.status === "DRAFT"
+                                    ? { label: "Rascunho", classes: "border-white/20 bg-white/5 text-white/70" }
+                                    : isOngoing
+                                      ? { label: "A decorrer", classes: "border-emerald-400/60 bg-emerald-500/10 text-emerald-100" }
+                                      : isFuture
+                                        ? { label: "Publicado", classes: "border-sky-400/60 bg-sky-500/10 text-sky-100" }
+                                        : isFinished
+                                          ? { label: "Concluído", classes: "border-purple-400/60 bg-purple-500/10 text-purple-100" }
+                                          : { label: ev.status, classes: "border-white/20 bg-white/5 text-white/70" };
+                              const actionMode = ev.status === "DRAFT" ? "delete" : ev.status === "CANCELLED" || isFinished ? "archive" : "cancel";
+                              const actionLabel =
+                                actionMode === "delete"
+                                  ? "Apagar rascunho"
+                                  : actionMode === "archive"
+                                    ? "Arquivar"
+                                    : "Cancelar";
 
                               return (
                                 <tr key={ev.id} className="hover:bg-white/10 transition duration-150">
@@ -4182,39 +4190,23 @@ function OrganizacaoPageInner({
                                       >
                                         Operação
                                       </Link>
-                                      {ev.status !== "ARCHIVED" && (
-                                        <Link
-                                          href={`${eventRouteBase}/${ev.id}`}
-                                          className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
-                                        >
-                                          {salesLabel}
-                                        </Link>
-                                      )}
                                       <Link
                                         href={`/eventos/${ev.slug}`}
                                         className={cn(CTA_NEUTRAL, "px-3 py-1 text-[11px]")}
                                       >
                                         Página pública
                                       </Link>
-                                      {ev.status === "ARCHIVED" ? (
-                                        <button
-                                          type="button"
-                                          disabled={eventActionLoading === ev.id}
-                                          onClick={() => setEventDialog({ mode: "unarchive", ev })}
-                                          className={cn(CTA_SUCCESS, "px-3 py-1 text-[11px] disabled:opacity-60")}
-                                        >
-                                          Reativar
-                                        </button>
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          disabled={eventActionLoading === ev.id}
-                                          onClick={() => setEventDialog({ mode: ev.status === "DRAFT" ? "delete" : "archive", ev })}
-                                          className={cn(CTA_DANGER, "px-3 py-1 text-[11px] disabled:opacity-60")}
-                                        >
-                                          {ev.status === "DRAFT" ? "Apagar rascunho" : "Arquivar"}
-                                        </button>
-                                      )}
+                                      <button
+                                        type="button"
+                                        disabled={eventActionLoading === ev.id}
+                                        onClick={() => setEventDialog({ mode: actionMode, ev })}
+                                        className={cn(
+                                          actionMode === "archive" ? CTA_SECONDARY : CTA_DANGER,
+                                          "px-3 py-1 text-[11px] disabled:opacity-60",
+                                        )}
+                                      >
+                                        {actionLabel}
+                                      </button>
                                     </div>
                                   </td>
                                 </tr>
@@ -4253,17 +4245,22 @@ function OrganizacaoPageInner({
                           const statusBadge =
                             ev.status === "CANCELLED"
                               ? { label: "Cancelado", classes: "border-red-400/60 bg-red-500/10 text-red-100" }
-                              : ev.status === "ARCHIVED"
-                                ? { label: "Arquivado", classes: "border-amber-400/60 bg-amber-500/10 text-amber-100" }
-                                : ev.status === "DRAFT"
-                                  ? { label: "Rascunho", classes: "border-white/20 bg-white/5 text-white/70" }
-                                  : isOngoing
-                                    ? { label: "A decorrer", classes: "border-emerald-400/60 bg-emerald-500/10 text-emerald-100" }
-                                    : isFuture
-                                      ? { label: "Publicado", classes: "border-sky-400/60 bg-sky-500/10 text-sky-100" }
-                                      : isFinished
+                              : ev.status === "DRAFT"
+                                ? { label: "Rascunho", classes: "border-white/20 bg-white/5 text-white/70" }
+                                : isOngoing
+                                  ? { label: "A decorrer", classes: "border-emerald-400/60 bg-emerald-500/10 text-emerald-100" }
+                                  : isFuture
+                                    ? { label: "Publicado", classes: "border-sky-400/60 bg-sky-500/10 text-sky-100" }
+                                    : isFinished
                                       ? { label: "Concluído", classes: "border-purple-400/60 bg-purple-500/10 text-purple-100" }
                                       : { label: ev.status, classes: "border-white/20 bg-white/5 text-white/70" };
+                          const actionMode = ev.status === "DRAFT" ? "delete" : ev.status === "CANCELLED" || isFinished ? "archive" : "cancel";
+                          const actionLabel =
+                            actionMode === "delete"
+                              ? "Apagar rascunho"
+                              : actionMode === "archive"
+                                ? "Arquivar"
+                                : "Cancelar";
                           const coverSuggestions = getEventCoverSuggestionIds({
                             templateType: normalizedTemplate,
                             primaryModule: organization?.primaryModule ?? null,
@@ -4343,39 +4340,23 @@ function OrganizacaoPageInner({
                                   >
                                     Operação
                                   </Link>
-                                  {ev.status !== "ARCHIVED" && (
-                                    <Link
-                                      href={`${eventRouteBase}/${ev.id}`}
-                                      className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
-                                    >
-                                      Inscrições
-                                    </Link>
-                                  )}
                                   <Link
                                     href={`/eventos/${ev.slug}`}
                                     className={cn(CTA_NEUTRAL, "px-3 py-1 text-[11px]")}
                                   >
                                     Página pública
                                   </Link>
-                                  {ev.status === "ARCHIVED" ? (
-                                    <button
-                                      type="button"
-                                      disabled={eventActionLoading === ev.id}
-                                      onClick={() => setEventDialog({ mode: "unarchive", ev })}
-                                      className={cn(CTA_SUCCESS, "px-3 py-1 text-[11px] disabled:opacity-60")}
-                                    >
-                                      Reativar
-                                    </button>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      disabled={eventActionLoading === ev.id}
-                                      onClick={() => setEventDialog({ mode: ev.status === "DRAFT" ? "delete" : "archive", ev })}
-                                      className={cn(CTA_DANGER, "px-3 py-1 text-[11px] disabled:opacity-60")}
-                                    >
-                                      {ev.status === "DRAFT" ? "Apagar rascunho" : "Arquivar"}
-                                    </button>
-                                  )}
+                                  <button
+                                    type="button"
+                                    disabled={eventActionLoading === ev.id}
+                                    onClick={() => setEventDialog({ mode: actionMode, ev })}
+                                    className={cn(
+                                      actionMode === "archive" ? CTA_SECONDARY : CTA_DANGER,
+                                      "px-3 py-1 text-[11px] disabled:opacity-60",
+                                    )}
+                                  >
+                                    {actionLabel}
+                                  </button>
                                 </div>
                               </div>
                             </div>
@@ -5852,32 +5833,35 @@ function OrganizacaoPageInner({
           title={
             eventDialog.mode === "delete"
               ? "Apagar rascunho?"
-              : eventDialog.mode === "unarchive"
-                ? `Reativar ${eventDialogLabel}?`
+              : eventDialog.mode === "cancel"
+                ? `Cancelar ${eventDialogLabel}?`
                 : `Arquivar ${eventDialogLabel}?`
           }
           description={
             eventDialog.mode === "delete"
               ? "Esta ação remove o rascunho e bilhetes associados."
-              : eventDialog.mode === "unarchive"
-                ? `O ${eventDialogLabel} volta a aparecer nas listas e dashboards.`
+              : eventDialog.mode === "cancel"
+                ? `O ${eventDialogLabel} fica em estado final cancelado e deixa de aceitar novas compras.`
                 : `O ${eventDialogLabel} deixa de estar visível para o público. Vendas e relatórios mantêm-se.`
           }
           consequences={
             eventDialog.mode === "delete"
               ? [`Podes criar outro ${eventDialogLabel} quando quiseres.`]
-              : eventDialog.mode === "unarchive"
-                ? ["Podes sempre voltar a arquivar mais tarde."]
+              : eventDialog.mode === "cancel"
+                ? [
+                    "Cancelado é estado terminal e não pode voltar a ativo.",
+                    "Se o início ainda não ocorreu, o sistema agenda reembolsos integrais automaticamente.",
+                  ]
                 : ["Sai de /descobrir e das listas do dashboard.", "Mantém histórico para relatórios/finanças."]
           }
           confirmLabel={
             eventDialog.mode === "delete"
               ? "Apagar rascunho"
-              : eventDialog.mode === "unarchive"
-                ? `Reativar ${eventDialogLabel}`
+              : eventDialog.mode === "cancel"
+                ? `Cancelar ${eventDialogLabel}`
                 : `Arquivar ${eventDialogLabel}`
           }
-          dangerLevel={eventDialog.mode === "delete" ? "high" : eventDialog.mode === "archive" ? "high" : "medium"}
+          dangerLevel={eventDialog.mode === "archive" ? "medium" : "high"}
           onConfirm={() => archiveEvent(eventDialog.ev, eventDialog.mode)}
           onClose={() => setEventDialog(null)}
         />

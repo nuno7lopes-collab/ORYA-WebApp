@@ -114,6 +114,8 @@ function runCapture(cmd, args) {
   }
   if (legacyIntent > 1) process.exit(1);
 
+  if (await run("npm", ["run", "gate:reservas-seed-integrity"])) process.exit(1);
+
   const tests = ["tests/finance", "tests/outbox"];
   if (await run("npx", ["vitest", "run", ...tests])) process.exit(1);
 })();

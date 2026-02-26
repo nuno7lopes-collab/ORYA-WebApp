@@ -79,7 +79,7 @@ async function queueCategoryRefunds(params: {
   await Promise.all(
     Array.from(unique.values()).map((summary) =>
       enqueueOperation({
-        operationType: "PROCESS_REFUND_SINGLE",
+        operationType: "PROCESS_REFUND_UNIFIED",
         dedupeKey: refundKey(summary.purchaseId ?? summary.paymentIntentId ?? "unknown"),
         correlations: {
           eventId,
@@ -91,6 +91,8 @@ async function queueCategoryRefunds(params: {
           purchaseId: summary.purchaseId ?? summary.paymentIntentId ?? null,
           paymentIntentId: summary.paymentIntentId ?? null,
           reason: "CANCELLED",
+          policyCause: "PADEL_EVENT_CANCEL",
+          sourceType: "PADEL_REGISTRATION",
           refundedBy,
           auditPayload: { categoryLinkId: linkId },
         },

@@ -41,6 +41,7 @@ const navGroups = [
     label: "Sistema",
     items: [
       { href: "/admin/audit", label: "Auditoria" },
+      { href: "/admin/telemetry", label: "Telemetria" },
       { href: "/admin/settings", label: "Configurações" },
       { href: "/admin/infra", label: "Infra" },
     ],

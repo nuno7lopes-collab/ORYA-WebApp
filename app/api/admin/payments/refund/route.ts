@@ -1,8 +1,7 @@
 import { NextRequest } from "next/server";
 import { requireAdminUser } from "@/lib/admin/auth";
-import { enqueueOperation } from "@/lib/operations/enqueue";
+import { requestUnifiedRefundCase } from "@/lib/refunds/unifiedRefundCase";
 import { prisma } from "@/lib/prisma";
-import { refundKey } from "@/lib/stripe/idempotency";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { auditAdminAction } from "@/lib/admin/audit";
 import { getRequestContext } from "@/lib/http/requestContext";
@@ -48,21 +47,16 @@ async function _POST(req: NextRequest) {
     }
 
     const purchaseId = sale.purchaseId ?? sale.paymentIntentId ?? paymentIntentId;
-    await enqueueOperation({
-      operationType: "PROCESS_REFUND_SINGLE",
-      dedupeKey: refundKey(purchaseId),
-      correlations: {
-        purchaseId,
-        paymentIntentId: sale.paymentIntentId ?? paymentIntentId,
-        eventId: sale.eventId,
-      },
-      payload: {
-        eventId: sale.eventId,
-        purchaseId,
-        paymentIntentId: sale.paymentIntentId ?? paymentIntentId,
-        reason: "CANCELLED",
-        refundedBy: admin.userId,
-        auditPayload: { reason: "ADMIN_REFUND" },
+    const refundCase = await requestUnifiedRefundCase({
+      policyCause: "ADMIN_MANUAL",
+      paymentId: purchaseId,
+      paymentIntentId: sale.paymentIntentId ?? paymentIntentId,
+      reasonCode: "ADMIN_REFUND",
+      requestedBy: admin.userId,
+      idempotencyKey: `refund_case:TICKET_ORDER:${purchaseId}:ADMIN_MANUAL`,
+      auditPayload: {
+        reason: "ADMIN_REFUND",
+        source: "ADMIN_PANEL",
       },
     });
 
@@ -95,7 +89,16 @@ async function _POST(req: NextRequest) {
       },
     });
 
-    return respondOk(ctx, { queued: true, purchaseId }, { status: 200 });
+    return respondOk(
+      ctx,
+      {
+        queued: true,
+        purchaseId,
+        refundCaseId: refundCase?.id ?? null,
+        refundStatus: refundCase?.status ?? null,
+      },
+      { status: 200 },
+    );
   } catch (err) {
     logError("admin.payments.refund_failed", err);
     return respondError(

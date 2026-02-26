@@ -64,7 +64,6 @@ export default function Step3Sucesso() {
   const scenarioCopy: Record<string, string> = {
     GROUP_SPLIT: "Pagaste apenas a tua parte desta dupla.",
     GROUP_FULL: "Pagaste 2 lugares (tu + parceiro).",
-    RESALE: `Compra de ${ticketCopy.singular} em revenda.`,
     FREE_CHECKOUT: `${ticketCopy.freeLabel} concluída.`,
   };
 

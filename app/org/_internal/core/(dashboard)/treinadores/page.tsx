@@ -44,10 +44,6 @@ type TrainerProfile = {
   certifications: string | null;
   experienceYears: number | null;
   coverImageUrl: string | null;
-  isPublished: boolean;
-  reviewStatus: "DRAFT" | "PENDING" | "APPROVED" | "REJECTED";
-  reviewNote: string | null;
-  reviewRequestedAt: string | null;
   organization: { id: number; username: string | null; publicName: string | null };
   user: { id: string; fullName: string | null; username: string | null; avatarUrl: string | null };
 };
@@ -81,7 +77,6 @@ export default function TrainerProfilePage() {
   const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   const profile = data?.profile ?? null;
@@ -89,19 +84,11 @@ export default function TrainerProfilePage() {
   const profileUser = profile?.user ?? data?.user ?? null;
   const canEdit = data?.canEdit === true;
   const manageTrainerRoleHref = appendOrganizationIdToHref(
-    "/org/padel/clubs/trainers",
+    "/org/team/trainers",
     organization?.id ?? browserOrgId,
   );
   const displayName = profileUser?.fullName || profileUser?.username || "Treinador";
-  const reviewStatus = profile?.reviewStatus ?? "DRAFT";
-  const statusLabel =
-    reviewStatus === "PENDING"
-      ? "Em revisão"
-      : reviewStatus === "APPROVED"
-        ? "Aprovado"
-        : reviewStatus === "REJECTED"
-          ? "Recusado"
-          : "Rascunho";
+  const statusLabel = canEdit ? "Ativo" : "Não associado";
 
   useEffect(() => {
     if (!profile) return;
@@ -120,9 +107,11 @@ export default function TrainerProfilePage() {
   }, [profile?.id]);
 
   const previewHref = useMemo(() => {
-    if (!organization?.username || !profileUser?.username) return null;
-    return `/${organization.username}/treinadores/${profileUser.username}`;
-  }, [organization?.username, profileUser?.username]);
+    if (!organization?.username || !profileUser) return null;
+    const trainerSlug = profileUser.username || profileUser.id;
+    if (!trainerSlug) return null;
+    return `/${organization.username}/treinadores/${trainerSlug}`;
+  }, [organization?.username, profileUser]);
   const coverPreviewUrl = coverImageUrl
     ? getProfileCoverUrl(coverImageUrl, {
         width: 900,
@@ -154,7 +143,7 @@ export default function TrainerProfilePage() {
         return;
       }
       setCoverImageUrl(json.url as string);
-      setMessage("Capa atualizada. Guarda para publicar.");
+      setMessage("Capa atualizada. Guarda alterações.");
     } catch (err) {
       setMessage("Erro ao carregar a capa.");
     } finally {
@@ -196,41 +185,6 @@ export default function TrainerProfilePage() {
     }
   };
 
-  const handleSubmitReview = async () => {
-    if (!user) {
-      openModal({ mode: "login", redirectTo: loginRedirectHref });
-      return;
-    }
-    if (!canEdit) return;
-    setSubmitting(true);
-    setMessage(null);
-    try {
-      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/trainers/profile"), {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          bio,
-          specialties,
-          certifications: certifications.join(", "),
-          experienceYears,
-          coverImageUrl,
-          requestReview: true,
-        }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) {
-        setMessage(json?.error || "Não foi possível submeter o perfil.");
-        return;
-      }
-      setMessage("Perfil enviado para revisão.");
-      await mutate();
-    } catch {
-      setMessage("Erro ao submeter o perfil.");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   if (!user && !isLoading) {
     return (
       <main className="min-h-screen w-full py-10 text-white">
@@ -256,7 +210,7 @@ export default function TrainerProfilePage() {
           <p className="text-[11px] uppercase tracking-[0.3em] text-white/50">Treinador</p>
           <h1 className="text-3xl font-semibold text-white">{displayName}</h1>
           <p className="text-sm text-white/65">
-            Este perfil só aparece na aba &quot;Treinadores&quot; depois de aprovado e publicado.
+            O perfil fica operacional assim que és associado como treinador pela gestão da equipa.
           </p>
           {canEdit && (
             <div className="flex flex-wrap gap-2">
@@ -287,21 +241,14 @@ export default function TrainerProfilePage() {
         <section className="rounded-3xl border border-white/12 bg-white/5 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[12px] text-white/70">
             <div className="space-y-1">
-              <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Estado</p>
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Estado operacional</p>
               <p className="text-sm font-semibold text-white">{statusLabel}</p>
-              {profile?.reviewNote && reviewStatus === "REJECTED" && (
-                <p className="text-[11px] text-rose-200">Motivo: {profile.reviewNote}</p>
-              )}
             </div>
             <span
               className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.18em] ${
-                reviewStatus === "APPROVED"
+                canEdit
                   ? "border-emerald-300/50 bg-emerald-400/10 text-emerald-100"
-                  : reviewStatus === "PENDING"
-                    ? "border-amber-300/50 bg-amber-400/10 text-amber-100"
-                    : reviewStatus === "REJECTED"
-                      ? "border-rose-300/50 bg-rose-400/10 text-rose-100"
-                      : "border-white/15 bg-white/10 text-white/60"
+                  : "border-white/15 bg-white/10 text-white/60"
               }`}
             >
               {statusLabel}
@@ -429,32 +376,11 @@ export default function TrainerProfilePage() {
             >
               {saving ? "A guardar…" : "Guardar perfil"}
             </button>
-            <button
-              type="button"
-              onClick={handleSubmitReview}
-              disabled={!canEdit || submitting || reviewStatus === "PENDING"}
-              className={`${CTA_SECONDARY} disabled:opacity-60`}
-            >
-              {submitting ? "A enviar…" : "Enviar para revisão"}
-            </button>
-            {previewHref && profile?.isPublished && (
+            {previewHref && (
               <Link href={previewHref} className={CTA_SECONDARY}>
                 Ver página pública
               </Link>
             )}
-            <span
-              className={`rounded-full border px-3 py-1 text-[11px] ${
-                profile?.isPublished
-                  ? "border-emerald-300/40 bg-emerald-400/10 text-emerald-100"
-                  : reviewStatus === "PENDING"
-                    ? "border-amber-300/40 bg-amber-400/10 text-amber-100"
-                    : reviewStatus === "REJECTED"
-                      ? "border-rose-300/40 bg-rose-400/10 text-rose-100"
-                      : "border-white/15 bg-white/10 text-white/60"
-              }`}
-            >
-              {statusLabel}
-            </span>
           </div>
 
           {message && (

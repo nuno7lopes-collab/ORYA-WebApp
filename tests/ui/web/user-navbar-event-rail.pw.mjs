@@ -73,5 +73,7 @@ test("@web user navbar global behavior e rail de compra no evento", async ({ pag
   }
 
   await expect(page.locator("#local")).toBeVisible();
-  await expect(page.getByRole("link", { name: /Instalar app ORYA/i })).toBeVisible();
+  const installAppLink = page.getByRole("link", { name: /Instalar app ORYA/i });
+  await expect(installAppLink).toBeVisible();
+  await expect(installAppLink).toHaveAttribute("href", "https://testflight.apple.com/join/rw661rQX");
 });

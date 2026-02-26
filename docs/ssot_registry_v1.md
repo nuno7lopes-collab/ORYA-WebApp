@@ -60,6 +60,7 @@ Atualizado: 2026-02-26
 - Criação de torneio Padel v1: entrada canónica fechada em `POST /api/org/[orgId]/tournaments/create`; `POST /api/org/[orgId]/events/create` rejeita payload Padel com `410 PADEL_CREATE_MOVED` e `target` explícito.
 - Entrada de UI Padel: `/org/[orgId]/events/new?preset=padel` redireciona para `/org/[orgId]/padel/tournaments/create`.
 - Lifecycle Padel: criação mantém `DRAFT` por contrato e publicação continua exclusiva em `/api/padel/tournaments/lifecycle`.
+- Pagamentos+Reservas+Calendário (“A-Perfeito”): hold de checkout ao nível de plataforma (`5m`), sem drafts server por default, profissional como recurso primário, eventos com flag opcional `consumesResources`, torneios em `preview -> commit`, e `forced reschedule => refund`.
 
 ### 00.6 Registo de Decisão Normativa (NORMATIVO)
 - Decisões FECHADO NÃO dependem de drafts/ficheiros temporários para serem válidas.
@@ -95,6 +96,8 @@ Atualizado: 2026-02-26
 | SSOT-2026-02-22-COURT-DURATION-CATALOG-PRICING | Nuno | 2026-02-22 | Política de duração e preço por duração em reservas de campos (web+mobile+API) | FECHADO | remover ambiguidade final de pricing/duração em campos e garantir paridade operacional | catálogo fixo `30/60/90/120` com subset ativo por organização; preço por duração em `ServiceDurationPrice`; `allowCustomDuration=true` inválido para campos; `ServicePackage` deixa de ser fonte de preço em booking público de `COURT` |
 | SSOT-2026-02-23-LEGACY-HARDCUT-404 | Nuno | 2026-02-23 | hard-cut final de legacy/tombstones | FECHADO | eliminar compatibilidade residual e consolidar semântica de inexistência | rotas legacy removidas fisicamente devolvem `404`; edge fail-closed em `404`; `410` reservado apenas para estados de negócio legítimos (ex.: expirado) |
 | SSOT-2026-02-26-SINGLE-DOC-GOVERNANCE | Nuno | 2026-02-26 | SSOT como documento único de decisão/revisão normativa | FECHADO | consolidar o SSOT como único cérebro normativo e eliminar ruído não normativo do corpo | secção 103 removida; referências internas de fonte removidas do corpo; secção 104 fica vazia quando não há pendências |
+| SSOT-2026-02-26-A-PERFEITO-PAYMENTS-RESERVATIONS-CALENDAR | Nuno | 2026-02-26 | Pagamentos+Reservas+Calendário em arquitetura A (Next.js host) | FECHADO | tornar checkout/booking/calendar determinísticos e resistentes a duplicação em MVP solo-dev | hold de plataforma 5m, confirmação atómica no server, dedupe webhook/idempotência, sem drafts server por default, regras explícitas de evento/recursos e torneios preview->commit |
+| SSOT-2026-02-26-UNIFIED-REFUND-CASE-V1 | Nuno | 2026-02-26 | Unificação canónica de refunds (`RefundCase`) em TICKET/BOOKING/PADEL/STORE | FECHADO | eliminar dupla verdade de refunds e fechar lifecycle com retries/override auditado | `app_v3.refund_cases` + `PROCESS_REFUND_UNIFIED`; `NO_SHOW` CRM-only sem efeito financeiro; webhook `charge.refunded` cobre todos os `sourceType`; step-up em refund/override org |
 ---
 
 ### 00.6.2 Workflow de Decisão do Owner (NORMATIVO)
@@ -184,8 +187,8 @@ Atualizado: 2026-02-26
 
 #### 00.9.3 Fecho de Tabelas Críticas (resolvido)
 - `app_v3.padel_tournament_roles`: materializada e alinhada ao contrato Prisma.
-- `app_v3.refund_policy_versions`: materializada e alinhada ao contrato Prisma.
-- Resultado: eliminação do drift runtime `P2021` nestes dois delegates.
+- `app_v3.refund_policy_versions`: desmaterializada por decisão de hygiene (`DROP` em `20260224154000_schema_hygiene_drop_inactive_runtime_tables_v1`); qualquer referência normativa a tabela runtime ativa está revogada.
+- Resultado: eliminação do drift runtime `P2021` nos delegates ativos e remoção explícita de dupla verdade em refunds policy versioning.
 
 #### 00.9.4 Exceções Intencionais de Modelação
 - `app_v3.cron_job_locks` permanece fora do Prisma por desenho (uso SQL raw em lock de cron).
@@ -292,6 +295,148 @@ Atualizado: 2026-02-26
   - `SLOT_OVERRUN_ALERT`: disparar quando `delayedMatchesCount >= 8` ou `delayedMatchesCount/liveMatchesCount > 0.25` numa janela contínua de 10 minutos.
   - `MASS_CONFLICT_ALERT`: disparar quando `conflictsClaimsCount` cresce `>= 10` em 5 minutos.
   - `OVERRIDE_SPIKE_ALERT`: disparar quando `overridesCount` em 1 hora `>= max(5, 3x baseline média-horária de 7 dias)`.
+
+### 00.11 Payments+Reservations+Calendar (A-Perfeito, NORMATIVO)
+- `decisionId`: `SSOT-2026-02-26-A-PERFEITO-PAYMENTS-RESERVATIONS-CALENDAR`
+- `owner`: Nuno
+- `approvedAt`: 2026-02-26
+- `scope`: checkout/pagamentos/reservas/calendário/eventos/recursos/padel sob arquitetura A (`Next.js` como host web+API)
+- `rationale`: evitar double-charge, double-book e drift de estado com contratos simples e idempotentes em MVP solo-dev
+- `migrationImpact`: rollout faseado por PRs pequenos, feature flags e rollback de aplicação (sem rollback destrutivo de schema)
+- `reviewChecklist`:
+  - contratos canónicos publicados neste SSOT (secção 00.11.1..00.11.5)
+  - provas de baseline de implementação anexadas em 00.11.6
+  - plano de PRs incrementais definido em `docs/architecture/a-perfect.md`
+
+#### 00.11.1 Definições canónicas
+- `ScheduleItem`: unidade canónica de ocupação temporal do calendário operacional. Lifecycle normativo: `DRAFT | PENDING_PAYMENT | HELD | CONFIRMED | CANCELLED | MOVED | EXPIRED`.
+- `Resource`: capacidade reservável (ex.: profissional, campo, cadeira, sala). Para serviços, o recurso primário canónico é o profissional.
+- `AvailabilityPolicy`: política de disponibilidade por escopo (`ORGANIZATION | PROFESSIONAL | RESOURCE`) com grelha, janelas e overrides.
+- `Booking`: compromisso de reserva com janela temporal e política aplicada; só é definitivo após confirmação server-side.
+- `PaymentAttempt`: tentativa de cobrança associada a um `PaymentSubject`; representa o estado transacional da tentativa (não substitui `Payment`/`Ledger`).
+
+#### 00.11.2 Regras de plataforma fechadas
+- Hold de checkout é obrigatório e criado pela plataforma quando o checkout inicia.
+- TTL do hold: `5 minutos` (`300s`).
+- Não existem drafts server-side por default para checkout/reserva.
+- Profissional é o recurso primário para serviços; recursos adicionais continuam suportados.
+- Eventos, por default, não bloqueiam recursos. Se `consumesResources=true`, o evento converte-se em bloqueio de recursos no calendário.
+- Torneios/motor produzem `preview/esboço`; só em confirmação do gestor passam a gravação canónica no calendário.
+- Política de reembolso: não há refund por default; em `forced reschedule`, o refund é obrigatório.
+
+#### 00.11.3 Fluxo canónico de checkout/hold/confirm
+1. Cliente inicia checkout -> plataforma cria hold (`orgId + subjectType + subjectId + clientSessionId`) com TTL `300s`.
+2. UI mostra countdown de `5m` e CTA para retomar checkout se o utilizador sair e voltar durante o TTL.
+3. `CreatePaymentIntent` exige `holdId` válido; sem hold válido devolve erro canónico `SLOT_NOT_AVAILABLE`.
+4. Em pagamento concluído, webhook processa com dedupe por `stripeEventId`.
+5. Confirm server-side valida hold + ownership (`clientSessionId`) e executa transação atómica:
+   - grava/atualiza `ScheduleItem`;
+   - confirma `Booking`;
+   - marca `PaymentAttempt`/`Payment` em sucesso;
+   - emite evento auditável (outbox/event log).
+6. Replays de webhook não podem duplicar efeitos.
+7. Hold expira automaticamente ao fim de `5m` se não houver confirmação; release explícito em cancelamento é permitido.
+
+#### 00.11.4 Semântica de eventos e recursos
+- `Event.consumesResources` (flag canónica) controla se um evento bloqueia recursos de calendário.
+- `consumesResources=false`: evento informativo, sem bloqueio de recursos.
+- `consumesResources=true`: evento gera bloqueios canónicos de calendário para os recursos envolvidos.
+
+#### 00.11.5 Semântica de forced reschedule
+- Objetivo operacional: prevenir refunds através de hold + confirmação atómica.
+- Se ocorrer `forced reschedule` após pagamento confirmado, a política canónica é:
+  - refund imediato do pagamento original;
+  - criação de novo hold para remarcação;
+  - trilho auditável obrigatório (payment event + outbox/event log).
+
+#### 00.11.6 Prova de baseline na repo (informativo, não normativo)
+- Hold atual em reservas é temporário e server-side (hoje: `10m`):
+  - `app/api/servicos/[id]/reservar/route.ts`
+  ```ts
+  const PENDING_HOLD_MINUTES = 10;
+  const pendingExpiresAt = new Date(now.getTime() + PENDING_HOLD_MINUTES * 60 * 1000);
+  ```
+- Checkout de reserva já valida estado pendente e expiração:
+  - `app/api/servicos/[id]/checkout/route.ts`
+  ```ts
+  if (!["PENDING_CONFIRMATION", "PENDING"].includes(booking.status)) { ... }
+  const pendingExpiry = booking.pendingExpiresAt ?? new Date(booking.createdAt.getTime() + HOLD_MINUTES * 60 * 1000);
+  ```
+- Confirmação de reserva já aplica lock transacional e limpa hold:
+  - `lib/reservas/confirmBooking.ts`
+  ```ts
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+  status: "CONFIRMED",
+  pendingExpiresAt: null,
+  ```
+- Modelo de booking já suporta profissional + recurso + pending expiry:
+  - `prisma/schema.prisma`
+  ```prisma
+  status           BookingStatus @default(PENDING_CONFIRMATION)
+  pendingExpiresAt DateTime?     @map("pending_expires_at")
+  professionalId   Int?          @map("professional_id")
+  resourceId       Int?          @map("resource_id")
+  ```
+- Profissional já está definido como default de assignment ao nível de org e serviço:
+  - `prisma/schema.prisma`
+  ```prisma
+  reservationAssignmentMode ReservationAssignmentMode @default(PROFESSIONAL_ONLY)
+  assignmentMode           ReservationAssignmentMode @default(PROFESSIONAL_ONLY)
+  ```
+- Política de disponibilidade já é scoped por organização/profissional/recurso:
+  - `lib/reservas/scopedAvailability.ts`
+  ```ts
+  export type AvailabilityScopeType = "ORGANIZATION" | "PROFESSIONAL" | "RESOURCE";
+  export function buildScopeKey(scopeType: AvailabilityScopeType, scopeId: number) {
+  ```
+- Calendário canónico já existe em `AgendaItem` com chaves por fonte:
+  - `prisma/schema.prisma`
+  ```prisma
+  model AgendaItem { sourceType SourceType @map("source_type") ... }
+  @@unique([organizationId, sourceType, sourceId], map: "agenda_items_unique")
+  ```
+- Motor de conflitos já define prioridades canónicas dos candidatos de agenda:
+  - `domain/agenda/conflictEngine.ts`
+  ```ts
+  export type AgendaCandidateType = "HARD_BLOCK" | "CLASS_SESSION" | "MATCH" | "BOOKING" | "SOFT_BLOCK";
+  const PRIORITY_BY_TYPE = { HARD_BLOCK: 5, CLASS_SESSION: 4, MATCH: 3, BOOKING: 2, SOFT_BLOCK: 1 };
+  ```
+- Pagamentos já usam idempotência em create intent:
+  - `domain/finance/paymentIntent.ts`
+  ```ts
+  const checkoutIdempotencyKey = checkoutKey(purchaseId);
+  await createCheckout({ ..., idempotencyKey: checkoutIdempotencyKey, ... });
+  ```
+- Webhook Stripe já usa dedupe por `event.id`:
+  - `app/api/stripe/webhook/route.ts`
+  ```ts
+  dedupeKey: makeOutboxDedupeKey(STRIPE_OUTBOX_TYPE, event.id),
+  if (outbox.deduped) { logWebhookWarn("duplicate_event_ignored", ...); }
+  ```
+- UI de reservas já mostra expiração de pré-reserva (base para countdown/CTA):
+  - `app/[username]/_components/ReservasBookingClient.tsx`
+  ```tsx
+  const pendingExpiryLabel = bookingPending?.pendingExpiresAt ? ... : null;
+  {pendingExpiryLabel ? `Expira às ${pendingExpiryLabel}.` : "Expira em breve."}
+  ```
+- Torneio já nasce em `DRAFT` e lifecycle é transicionado via endpoint dedicado:
+  - `app/api/org/[orgId]/tournaments/create/route.ts`
+  ```ts
+  status: EventStatus.DRAFT,
+  lifecycleStatus: "DRAFT",
+  ```
+  - `app/api/padel/tournaments/lifecycle/route.ts`
+  ```ts
+  if (!canTransitionLifecycle(current, nextStatus)) { ... }
+  const nextEventStatus = resolveEventStatusForLifecycle(nextStatus);
+  ```
+- `Event` ainda não tem `consumesResources` materializado no schema atual (gap conhecido a fechar na faseada):
+  - `prisma/schema.prisma`
+  ```prisma
+  model Event {
+    startsAt DateTime @map("starts_at")
+    endsAt   DateTime @map("ends_at")
+  ```
 
 ## 01 Global Invariants (I*)
 
@@ -2218,6 +2363,41 @@ Migração:
 
 Guardrail:
 	•	Architecture test falha se algum módulo importar/ler os campos legacy.
+
+#### G05.024 (origem: SSOT-2026-02-26-UNIFIED-REFUND-CASE-V1)
+
+Decisão FECHADA (normativa):
+- `decisionId`: `SSOT-2026-02-26-UNIFIED-REFUND-CASE-V1`
+- `owner`: Nuno
+- `approvedAt`: `2026-02-26`
+- `scope`: refunds em `TICKET_ORDER`, `BOOKING`, `PADEL_REGISTRATION`, `STORE_ORDER` (API, worker, webhook, ledger, auditoria, read models)
+- `rationale`: eliminar dupla verdade e estados finais implícitos em refunds; unificar lifecycle com retries determinísticos e override auditado
+- `migrationImpact`: `app_v3.refund_cases` + enums `RefundCasePolicyCause`, `RefundCaseCulpability`, `RefundCaseStatus`; `PROCESS_REFUND_UNIFIED` como operação canónica; `PROCESS_REFUND_SINGLE` mantido só como adapter transitório
+- `reviewChecklist`:
+  - `NO_SHOW` sem efeito financeiro
+  - culpa da organização => refund total (inclui devolução de fee ao cliente final)
+  - culpa do cliente => refund parcial com retenção `platformFee + cardPlatformFee + processorFeeFinal`
+  - reconciliação síncrona de processor fee antes de calcular refund do cliente
+  - retries sem “fecho silencioso”; terminal apenas `SUCCEEDED` ou `FAILED_FINAL` (manual)
+  - overrides manuais com `reasonCode` + evidência + trilho before/after
+
+Matriz canónica por fluxo:
+- `BOOKING.ORG_CANCEL` e `BOOKING.FORCED_RESCHEDULE` => refund total.
+- `BOOKING.CLIENT_CANCEL` => refund parcial (retenções de fees).
+- `BOOKING.NO_SHOW` => CRM-only, sem refund.
+- `TICKET_ORDER.EVENT_CANCELLED|DELETED|DATE_CHANGED` => refund total.
+- `PADEL_REGISTRATION` por cancelamento sistémico/evento => refund total.
+- `STORE_ORDER` elegível => culpa da org total; culpa do cliente parcial com retenções.
+
+Semântica Stripe Connect Standard:
+- `reverse_transfer=true` para org `EXTERNAL`.
+- `refund_application_fee=true` quando a política exige devolução integral ao cliente.
+- idempotência obrigatória por `refundCase.idempotencyKey`.
+
+Supersedes (normativo):
+- qualquer fluxo que finalize cancelamento com erro 502 sem `refundCase` aberto passa a `SUPERSEDED_BY_SSOT-2026-02-26-UNIFIED-REFUND-CASE-V1`.
+- qualquer branch financeira em `NO_SHOW` passa a `SUPERSEDED_BY_SSOT-2026-02-26-UNIFIED-REFUND-CASE-V1`.
+- qualquer referência runtime a `refund_policy_versions` como tabela ativa passa a `SUPERSEDED_BY_SSOT-2026-02-26-UNIFIED-REFUND-CASE-V1`.
 
 ## G06) Eventos, Bilhetes, Acesso e Check-in
 

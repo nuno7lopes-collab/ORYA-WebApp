@@ -21,19 +21,21 @@ import type { CSSProperties } from "react";
 import EventBackgroundTuner from "./EventBackgroundTuner";
 import { normalizeEmail } from "@/lib/utils/email";
 import { sanitizeUsername } from "@/lib/username";
-import InviteGateClient from "./InviteGateClient";
 import { Avatar } from "@/components/ui/avatar";
 import { CTA_PRIMARY } from "@/app/org/_shared/dashboardUi";
 import { getTicketCopy } from "@/app/components/checkout/checkoutCopy";
 import { resolveEventLocation } from "@/lib/location/eventLocation";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { resolveTicketPricingSummary } from "@/domain/events/ticketPricing";
-import { EventAccessMode } from "@prisma/client";
 import { resolveInviteTokenGrant } from "@/lib/invites/inviteTokens";
-import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
 import { formatCurrency, resolveLocale, t } from "@/lib/i18n";
 import CrmEngagementTracker from "@/app/components/crm/CrmEngagementTracker";
 import EventShareButton from "./EventShareButton";
+import {
+  ORYA_APP_INSTALL_CTA_LABEL,
+  ORYA_APP_INSTALL_HINT,
+  ORYA_APP_INSTALL_URL,
+} from "@/lib/mobileAppInstall";
 
 type EventPageParams = { slug: string };
 type EventPageParamsInput = EventPageParams | Promise<EventPageParams>;
@@ -135,18 +137,6 @@ export async function generateMetadata(
     },
   };
 }
-
-type EventResale = {
-  id: string;
-  ticketId: string;
-  price: number;
-  currency: string;
-  seller?: {
-    username: string | null;
-    fullName: string | null;
-  } | null;
-  ticketTypeName?: string | null;
-};
 
 const EVENT_BG_MASK = `linear-gradient(
   to bottom,
@@ -326,12 +316,6 @@ export default async function EventPage({
   });
   const isGratis = pricingSummary.isGratis;
   const visibleTicketTypes = event.ticketTypes;
-  const accessPolicy = event.accessPolicies?.[0] ?? null;
-  const accessMode = resolveEventAccessMode(accessPolicy, EventAccessMode.PUBLIC);
-  const isInviteRestricted = accessMode === EventAccessMode.INVITE_ONLY;
-  const isPublicEvent =
-    isPublicAccessMode(accessMode) &&
-    ["PUBLISHED", "DATE_CHANGED", "FINISHED", "CANCELLED"].includes(event.status);
   const userEmailNormalized = user ? normalizeEmail(user.email ?? null) : null;
   const usernameNormalized = profile?.username ? sanitizeUsername(profile.username) : null;
   const hasUsername = Boolean(usernameNormalized);
@@ -341,17 +325,6 @@ export default async function EventPage({
       : Array.isArray(resolvedSearchParams?.inviteToken)
         ? String(resolvedSearchParams?.inviteToken[0] ?? "").trim()
         : "";
-  const inviteIdentifiers: string[] = [];
-  if (userEmailNormalized) inviteIdentifiers.push(userEmailNormalized);
-  if (usernameNormalized) inviteIdentifiers.push(usernameNormalized);
-  const accountInvite =
-    !isAdmin && inviteIdentifiers.length > 0
-      ? await prisma.eventInvite.findFirst({
-          where: { eventId: event.id, targetIdentifier: { in: inviteIdentifiers }, scope: "PUBLIC" },
-          select: { id: true },
-        })
-      : null;
-  const hasAccountInvite = Boolean(accountInvite) || isAdmin;
   let inviteTokenTicketTypeId: number | null = null;
   let hasInviteTokenAccess = false;
   if (inviteTokenParam) {
@@ -368,12 +341,8 @@ export default async function EventPage({
       inviteTokenTicketTypeId = grant.grant.ticketTypeId ?? null;
     }
   }
-  const hasInviteAccess = hasAccountInvite || hasInviteTokenAccess;
-  const needsInviteCheck = isInviteRestricted;
-  const isInvited = !needsInviteCheck || hasInviteAccess;
-  const showInviteGate = isInviteRestricted && !isInvited;
-  const canFreeCheckout = Boolean(user) && hasUsername && (!isInviteRestricted || isInvited);
-  const allowCheckoutBase = !showInviteGate && (isGratis ? canFreeCheckout : true);
+  const canFreeCheckout = Boolean(user) && hasUsername;
+  const allowCheckoutBase = isGratis ? canFreeCheckout : true;
   const isPadel = event.templateType === "PADEL";
   const ticketCopy = getTicketCopy(isPadel ? "PADEL" : "DEFAULT", locale);
   const ticketSectionLabel = ticketCopy.pluralCap;
@@ -397,18 +366,6 @@ export default async function EventPage({
   const soldOutDescription = ticketCopy.isPadel
     ? t("soldOutPadelDesc", locale)
     : t("soldOutEventDesc", locale);
-  const resalesTitle = ticketCopy.isPadel
-    ? t("resalesTitlePadel", locale)
-    : t("resalesTitleEvent", locale);
-  const resalesDescription = ticketCopy.isPadel
-    ? t("resalesDescPadel", locale)
-    : t("resalesDescEvent", locale);
-  const resalesFallbackLabel = ticketCopy.isPadel
-    ? t("resalesFallbackPadel", locale)
-    : t("resalesFallbackEvent", locale);
-  const resalesCtaLabel = ticketCopy.isPadel
-    ? ticketCopy.buyLabel
-    : t("resalesCtaEvent", locale);
   const eventEndedCopy = ticketCopy.isPadel
     ? t("eventEndedPadel", locale)
     : t("eventEndedEvent", locale);
@@ -536,10 +493,11 @@ export default async function EventPage({
   const hasCover = Boolean(backgroundCover);
 
   const nowDate = new Date();
-  const eventEnded = endDateObj < nowDate;
+  const isCancelledEvent = event.status === "CANCELLED";
+  const eventEnded = isCancelledEvent || endDateObj < nowDate;
   const eventIsActive = !eventEnded;
   const shareUrl = `${getAppBaseUrl()}/eventos/${event.slug}`;
-  const canSeeTickets = !isInviteRestricted || isInvited || isAdmin;
+  const canSeeTickets = true;
 
   const orderedTickets = visibleTicketTypes
     .filter((t) => {
@@ -585,7 +543,7 @@ export default async function EventPage({
     const isPrivateTicket = t.publicAccess === false;
     const tokenGrantsTicket =
       hasInviteTokenAccess && (inviteTokenTicketTypeId == null || inviteTokenTicketTypeId === t.id);
-    const canSeePrivateTicket = hasAccountInvite || tokenGrantsTicket;
+    const canSeePrivateTicket = isAdmin || tokenGrantsTicket;
 
     return {
       id: String(t.id),
@@ -673,8 +631,10 @@ export default async function EventPage({
       : anyOnSale
         ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-100"
         : "border-yellow-400/40 bg-yellow-500/15 text-yellow-100";
-  const ticketSectionSummary = eventEnded
-    ? eventEndedCopy
+  const ticketSectionSummary = isCancelledEvent
+    ? "Evento cancelado. Compras e inscrições encerradas."
+    : eventEnded
+      ? eventEndedCopy
     : allSoldOut
       ? soldOutDescription
       : salesNotOpen
@@ -729,7 +689,7 @@ export default async function EventPage({
     };
   })();
   const railState = (() => {
-    if (showInviteGate) return "invite" as const;
+    if (isCancelledEvent) return "cancelled" as const;
     if (eventEnded) return "ended" as const;
     if (!allowCheckoutBase && freeUsernameGateMessage) return "free_gate" as const;
     if (padelRegistrationMessage) return "padel_window_closed" as const;
@@ -741,13 +701,13 @@ export default async function EventPage({
   })();
   const railMessage = railState === "active"
     ? null
-    : railState === "invite"
+    : railState === "cancelled"
       ? {
-          title: t("inviteAccessLabel", locale),
-          description: t("inviteGateHelper", locale),
-          ctaLabel: t("inviteGateValidate", locale),
-          ctaHref: "#bilhetes",
-          tone: "border-white/40 text-white/88",
+          title: "Evento cancelado",
+          description: "Este evento foi cancelado pela organização. Novas compras e inscrições estão desativadas.",
+          ctaLabel: null,
+          ctaHref: null,
+          tone: "border-red-400/65 text-red-100",
         }
       : railState === "ended"
         ? {
@@ -801,8 +761,8 @@ export default async function EventPage({
                     ? {
                         title: t("inviteAccessLabel", locale),
                         description: `Existem ${ticketCopy.plural} privados para convidados.`,
-                        ctaLabel: t("inviteGateValidate", locale),
-                        ctaHref: "#bilhetes",
+                        ctaLabel: null,
+                        ctaHref: null,
                         tone: "border-amber-400/65 text-amber-100",
                       }
                     : {
@@ -812,39 +772,6 @@ export default async function EventPage({
                         ctaHref: "#bilhetes",
                         tone: "border-white/35 text-white/78",
                       };
-
-  const protocol = headersList.get("x-forwarded-proto") ?? "http";
-  const host = headersList.get("host");
-  const baseUrl = host ? `${protocol}://${host}` : null;
-
-  // Carregar revendas deste evento via API F5-9
-  let resales: EventResale[] = [];
-  try {
-    if (baseUrl) {
-      const res = await fetch(
-        `${baseUrl}/api/eventos/${encodeURIComponent(slug)}/resales`,
-        { cache: "no-store" }
-      );
-
-      if (res.ok) {
-        const data = (await res.json().catch(() => null)) as
-          | { ok?: boolean; resales?: EventResale[] }
-          | null;
-
-        if (data?.ok && Array.isArray(data.resales)) {
-          resales = data.resales;
-        }
-      } else {
-        console.error(
-          "Falha ao carregar revendas para o evento",
-          slug,
-          res.status,
-        );
-      }
-    }
-  } catch (err) {
-    console.error("Erro ao carregar revendas para o evento", slug, err);
-  }
 
   const padelV2Enabled = Boolean(event.padelTournamentConfig?.padelV2Enabled);
   const padelCategoryLinks = Array.isArray(event.padelCategoryLinks) ? event.padelCategoryLinks : [];
@@ -1246,13 +1173,10 @@ export default async function EventPage({
                 Descobre eventos, guarda bilhetes e entra mais rápido nos teus próximos planos.
               </p>
               <div className="mt-5 flex flex-wrap items-center gap-3">
-                <Link
-                  href="/landing"
-                  className={`${CTA_PRIMARY} px-5 py-2.5 text-sm`}
-                >
-                  Instalar app ORYA
-                </Link>
-                <span className="text-xs text-white/58">Disponível para iOS e Android</span>
+                <a href={ORYA_APP_INSTALL_URL} className={`${CTA_PRIMARY} px-5 py-2.5 text-sm`}>
+                  {ORYA_APP_INSTALL_CTA_LABEL}
+                </a>
+                <span className="text-xs text-white/58">{ORYA_APP_INSTALL_HINT}</span>
               </div>
             </section>
           </div>
@@ -1297,30 +1221,7 @@ export default async function EventPage({
 
               {!eventEnded ? (
                 <div className="mt-6 space-y-5">
-                  {showInviteGate ? (
-                    <InviteGateClient
-                      slug={event.slug}
-                      isGratis={isGratis}
-                      isAuthenticated={Boolean(user)}
-                      hasUsername={hasUsername}
-                      userEmailNormalized={userEmailNormalized}
-                      usernameNormalized={usernameNormalized}
-                      uiTickets={uiTickets}
-                      checkoutUiVariant={checkoutVariant}
-                      locale={locale}
-                      padelMeta={
-                        checkoutVariant === "PADEL"
-                          ? {
-                              eventId: event.id,
-                              organizationId: event.organizationId ?? null,
-                              categoryId: padelDefaultCategoryId ?? null,
-                              categoryLinkId: padelDefaultCategoryLinkId ?? null,
-                            }
-                          : undefined
-                      }
-                    />
-                  ) : (
-                    <>
+                  <>
                       {isGratis && (
                         <div className="border-l-2 border-emerald-400/70 pl-3 text-sm text-emerald-100/95">
                           <p className="font-semibold">{freeBadgeLabel}</p>
@@ -1385,66 +1286,13 @@ export default async function EventPage({
                         )
                       ) : null}
                     </>
-                  )}
-
-                  {resales.length > 0 && (
-                    <div className="space-y-4 border-t border-white/12 pt-5">
-                      <div className="flex items-center justify-between gap-2">
-                        <h3 className="text-base font-semibold">{resalesTitle}</h3>
-                        <span className="text-xs text-white/70">
-                          {resales.length}{" "}
-                          {resales.length === 1
-                            ? t("resaleOfferLabel", locale)
-                            : t("resaleOffersLabel", locale)}
-                        </span>
-                      </div>
-
-                      <p className="text-xs text-white/65">
-                        {resalesDescription} {t("resalesPaymentHint", locale)}
-                      </p>
-
-                      <div className="space-y-4">
-                        {resales.map((r) => (
-                          <div
-                            key={r.id}
-                            className="flex items-center justify-between gap-3 border-l-2 border-white/25 pl-3 text-sm"
-                          >
-                            <div className="flex flex-col gap-0.5">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="font-medium">
-                                  {r.ticketTypeName ?? resalesFallbackLabel}
-                                </span>
-                                {r.seller && (
-                                  <span className="text-xs text-white/60">
-                                    {t("byLabel", locale)}{" "}
-                                    {r.seller.username
-                                      ? `@${r.seller.username}`
-                                      : r.seller.fullName ?? t("oryaUserLabel", locale)}
-                                  </span>
-                                )}
-                              </div>
-                              <span className="text-xs text-white/65">
-                                {t("resalePriceLabel", locale)}{" "}
-                                <span className="font-semibold text-white">
-                                  {formatCurrency(r.price, r.currency, locale)}
-                                </span>
-                              </span>
-                            </div>
-
-                            <Link
-                              href={`/resale/${r.id}`}
-                              className={`${CTA_PRIMARY} px-3 py-1.5 text-xs active:scale-95`}
-                            >
-                              {resalesCtaLabel}
-                            </Link>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
               ) : (
-                <p className="mt-4 text-sm text-white/76">{eventEndedCopy}</p>
+                <p className="mt-4 text-sm text-white/76">
+                  {isCancelledEvent
+                    ? "Este evento foi cancelado e já não aceita compras ou inscrições."
+                    : eventEndedCopy}
+                </p>
               )}
             </section>
           </aside>

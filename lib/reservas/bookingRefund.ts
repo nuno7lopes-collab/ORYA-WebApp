@@ -7,8 +7,9 @@ import {
 } from "@/domain/finance/gateway/stripeGateway";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { appendEventLog } from "@/domain/eventLog/append";
-import { SourceType } from "@prisma/client";
+import { RefundCasePolicyCause, RefundCaseStatus, SourceType } from "@prisma/client";
 import { requiresOrganizationStripe } from "@/domain/finance/payoutModePolicy";
+import { requestUnifiedRefundCase } from "@/lib/refunds/unifiedRefundCase";
 
 type RefundBookingParams = {
   bookingId: number;
@@ -27,6 +28,53 @@ const toAmountCents = (value: number | null | undefined) => {
   const parsed = Math.round(value as number);
   return parsed > 0 ? parsed : null;
 };
+
+async function syncLegacyBookingRefundCase(params: {
+  bookingId: number;
+  paymentIntentId: string;
+  reason: string;
+  idempotencyKey: string;
+  refundAmountCents: number;
+  stripeRefundId: string;
+}) {
+  try {
+    const refundCase = await requestUnifiedRefundCase({
+      policyCause: RefundCasePolicyCause.BOOKING_ORG_CANCEL,
+      paymentIntentId: params.paymentIntentId,
+      sourceType: SourceType.BOOKING,
+      sourceId: String(params.bookingId),
+      reasonCode: params.reason,
+      idempotencyKey: params.idempotencyKey,
+      overrideRefundCents: params.refundAmountCents,
+      queue: false,
+      auditPayload: {
+        route: "lib/reservas/bookingRefund",
+        legacyAdapter: true,
+      },
+    });
+
+    if (!refundCase) return;
+    const shouldUpdate =
+      refundCase.status !== RefundCaseStatus.SUCCEEDED ||
+      refundCase.stripeRefundId !== params.stripeRefundId ||
+      refundCase.paymentIntentId !== params.paymentIntentId;
+    if (!shouldUpdate) return;
+
+    await prisma.refundCase.update({
+      where: { id: refundCase.id },
+      data: {
+        status: RefundCaseStatus.SUCCEEDED,
+        stripeRefundId: params.stripeRefundId,
+        paymentIntentId: params.paymentIntentId,
+        lastError: null,
+      },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes("PAYMENT_NOT_FOUND")) return;
+    console.warn("[reservas/refund] refund case sync skipped", err);
+  }
+}
 
 export async function refundBookingPayment(params: RefundBookingParams) {
   const booking = await prisma.booking.findUnique({
@@ -107,6 +155,9 @@ export async function refundBookingPayment(params: RefundBookingParams) {
 
   if (!refundAmountCents) return null;
   const requiresStripeForRefund = requiresOrganizationStripe(org.orgType);
+  const connectRefundOptions = requiresStripeForRefund
+    ? { reverseTransfer: true, refundApplicationFee: true }
+    : {};
 
   try {
     const refund = await createRefund(
@@ -114,7 +165,12 @@ export async function refundBookingPayment(params: RefundBookingParams) {
         payment_intent: params.paymentIntentId,
         amount: refundAmountCents,
       },
-      { idempotencyKey, org, requireStripe: requiresStripeForRefund },
+      {
+        idempotencyKey,
+        org,
+        requireStripe: requiresStripeForRefund,
+        ...connectRefundOptions,
+      },
     );
 
     await prisma.$transaction(async (tx) => {
@@ -151,6 +207,15 @@ export async function refundBookingPayment(params: RefundBookingParams) {
         },
         tx,
       );
+    });
+
+    await syncLegacyBookingRefundCase({
+      bookingId: params.bookingId,
+      paymentIntentId: params.paymentIntentId,
+      reason: params.reason,
+      idempotencyKey,
+      refundAmountCents,
+      stripeRefundId: refund.id,
     });
 
     return refund;

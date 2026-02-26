@@ -176,27 +176,18 @@ async function _POST(
 
     if ("error" in txResult) return txResult.error;
 
-    try {
-      await runOrganizationBookingCancellationPostActions({
-        prisma,
-        result: txResult.result,
-      });
-    } catch (error) {
-      if (error instanceof Error && error.message === "BOOKING_REFUND_FAILED") {
-        return fail(
-          502,
-          "BOOKING_REFUND_FAILED",
-          "Reserva cancelada, mas o reembolso falhou.",
-          true,
-        );
-      }
-      throw error;
-    }
+    const postActions = await runOrganizationBookingCancellationPostActions({
+      prisma,
+      result: txResult.result,
+    });
 
     return respondOk(ctx, {
       booking: { id: txResult.result.booking.id, status: txResult.result.booking.status },
       alreadyCancelled: txResult.result.already,
       snapshotTimezone: txResult.result.snapshotTimezone,
+      refundCaseId: postActions.refundCaseId,
+      refundStatus: postActions.refundStatus,
+      splitRefundCases: postActions.splitRefundCases,
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
@@ -217,9 +208,6 @@ async function _POST(
       }
       if (err.message === "BOOKING_NOT_FOUND") {
         return fail(404, "BOOKING_NOT_FOUND", "Reserva não encontrada.");
-      }
-      if (err.message === "BOOKING_REFUND_FAILED") {
-        return fail(502, "BOOKING_REFUND_FAILED", "Reserva cancelada, mas o reembolso falhou.", true);
       }
     }
     console.error("POST /api/org/[orgId]/reservas/[id]/cancel error:", err);

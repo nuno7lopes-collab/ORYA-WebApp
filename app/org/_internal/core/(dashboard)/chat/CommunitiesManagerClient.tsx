@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
+import { EventCoverCropModal } from "@/app/components/forms/EventCoverCropModal";
 import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/org/_internal/core/dashboardUi";
 import { ORYA_ORG_ID_HEADER } from "@/lib/http/headers";
 import {
@@ -281,6 +282,57 @@ function CommunityFormModal(props: {
 }) {
   const [state, setState] = useState<FormState>(props.initial);
   const [error, setError] = useState<string | null>(null);
+  const [uploadingCover, setUploadingCover] = useState(false);
+  const [showCoverCropModal, setShowCoverCropModal] = useState(false);
+  const [coverCropFile, setCoverCropFile] = useState<File | null>(null);
+  const coverInputRef = useRef<HTMLInputElement | null>(null);
+
+  const uploadCoverFile = async (file: File) => {
+    const organizationId = resolveActiveOrganizationId();
+    if (!organizationId) {
+      setError("Não foi possível identificar a organização ativa para o upload da capa.");
+      return;
+    }
+
+    setUploadingCover(true);
+    setError(null);
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const res = await fetch(`/api/upload?scope=event-cover&organizationId=${organizationId}`, {
+        method: "POST",
+        body: formData,
+      });
+      const json = (await res.json().catch(() => null)) as { url?: string; error?: string } | null;
+      if (!res.ok || !json?.url) {
+        throw new Error(json?.error || "Falha no upload da capa.");
+      }
+      setState((prev) => ({ ...prev, coverImageUrl: json.url ?? "" }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha no upload da capa.");
+    } finally {
+      setUploadingCover(false);
+    }
+  };
+
+  const handleCoverUpload = (file: File | null) => {
+    if (!file) return;
+    setError(null);
+    setCoverCropFile(file);
+    setShowCoverCropModal(true);
+  };
+
+  const handleCoverCropCancel = () => {
+    setShowCoverCropModal(false);
+    setCoverCropFile(null);
+  };
+
+  const handleCoverCropConfirm = async (file: File) => {
+    setShowCoverCropModal(false);
+    setCoverCropFile(null);
+    await uploadCoverFile(file);
+  };
 
   const handleSubmit = async () => {
     const normalizedTitle = state.title.trim();
@@ -325,109 +377,153 @@ function CommunityFormModal(props: {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <div className="w-full max-w-xl rounded-2xl border border-white/15 bg-[#090d17] p-5 text-white shadow-[0_24px_80px_rgba(0,0,0,0.6)]">
-        <h3 className="text-lg font-semibold">{props.title}</h3>
-        <div className="mt-4 grid gap-3">
-          <label className="grid gap-1 text-sm">
-            <span className="text-white/70">Título</span>
-            <input
-              value={state.title}
-              onChange={(e) => setState((prev) => ({ ...prev, title: e.target.value }))}
-              className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-cyan-300"
-              placeholder="Ex.: Comunidade Intermédio"
-              maxLength={120}
-            />
-            <span className="text-[11px] text-white/45">{state.title.trim().length}/120</span>
-          </label>
-
-          <label className="grid gap-1 text-sm">
-            <span className="text-white/70">Descrição</span>
-            <textarea
-              value={state.description}
-              onChange={(e) => setState((prev) => ({ ...prev, description: e.target.value }))}
-              className="min-h-[80px] rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-cyan-300"
-              placeholder="Descrição opcional"
-              maxLength={1000}
-            />
-            <span className="text-[11px] text-white/45">{state.description.trim().length}/1000</span>
-          </label>
-
-          <label className="grid gap-1 text-sm">
-            <span className="text-white/70">URL da capa (opcional)</span>
-            <input
-              value={state.coverImageUrl}
-              onChange={(e) => setState((prev) => ({ ...prev, coverImageUrl: e.target.value }))}
-              className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-cyan-300"
-              placeholder="https://..."
-            />
-          </label>
-
-          <div className="grid gap-3 sm:grid-cols-2">
+    <>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+        <div className="w-full max-w-xl rounded-2xl border border-white/15 bg-[#090d17] p-5 text-white shadow-[0_24px_80px_rgba(0,0,0,0.6)]">
+          <h3 className="text-lg font-semibold">{props.title}</h3>
+          <div className="mt-4 grid gap-3">
             <label className="grid gap-1 text-sm">
-              <span className="text-white/70">Política de fala</span>
-              <select
-                value={state.talkPolicy}
-                onChange={(e) =>
-                  setState((prev) => ({
-                    ...prev,
-                    talkPolicy: e.target.value as FormState["talkPolicy"],
-                  }))
-                }
+              <span className="text-white/70">Título</span>
+              <input
+                value={state.title}
+                onChange={(e) => setState((prev) => ({ ...prev, title: e.target.value }))}
                 className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-cyan-300"
-              >
-                {COMMUNITY_TALK_POLICY_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+                placeholder="Ex.: Comunidade Intermédio"
+                maxLength={120}
+              />
+              <span className="text-[11px] text-white/45">{state.title.trim().length}/120</span>
             </label>
 
             <label className="grid gap-1 text-sm">
-              <span className="text-white/70">Acesso</span>
-              <select
-                value={state.accessMode}
-                onChange={(e) =>
-                  setState((prev) => ({
-                    ...prev,
-                    accessMode: e.target.value as FormState["accessMode"],
-                  }))
-                }
-                className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-cyan-300"
-              >
-                {COMMUNITY_ACCESS_MODE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+              <span className="text-white/70">Descrição</span>
+              <textarea
+                value={state.description}
+                onChange={(e) => setState((prev) => ({ ...prev, description: e.target.value }))}
+                className="min-h-[80px] rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-cyan-300"
+                placeholder="Descrição opcional"
+                maxLength={1000}
+              />
+              <span className="text-[11px] text-white/45">{state.description.trim().length}/1000</span>
             </label>
-          </div>
 
-          {error ? <p className="text-sm text-red-300">{error}</p> : null}
+            <div className="grid gap-2 text-sm">
+              <span className="text-white/70">Foto da capa (opcional)</span>
+              <div className="rounded-xl border border-white/15 bg-black/25 p-2">
+                <div
+                  className="h-24 rounded-lg bg-cover bg-center"
+                  style={
+                    state.coverImageUrl
+                      ? {
+                          backgroundImage: `linear-gradient(180deg, rgba(7,9,17,0.15), rgba(7,9,17,0.6)), url(${state.coverImageUrl})`,
+                        }
+                      : {
+                          backgroundImage:
+                            "linear-gradient(135deg, rgba(34,211,238,0.24), rgba(59,130,246,0.18) 42%, rgba(2,6,23,0.95))",
+                        }
+                  }
+                />
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => coverInputRef.current?.click()}
+                    disabled={uploadingCover || props.pending}
+                    className={`${CTA_SECONDARY} text-xs disabled:opacity-60`}
+                  >
+                    {uploadingCover ? "A carregar..." : state.coverImageUrl ? "Trocar capa" : "Carregar capa"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setState((prev) => ({ ...prev, coverImageUrl: "" }))}
+                    disabled={!state.coverImageUrl || uploadingCover || props.pending}
+                    className={`${CTA_SECONDARY} text-xs disabled:opacity-60`}
+                  >
+                    Remover
+                  </button>
+                  <input
+                    ref={coverInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => handleCoverUpload(e.target.files?.[0] ?? null)}
+                  />
+                </div>
+              </div>
+            </div>
 
-          <div className="mt-2 flex items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={props.onClose}
-              disabled={props.pending}
-              className={`${CTA_SECONDARY} text-sm disabled:opacity-60`}
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={props.pending}
-              className={`${CTA_PRIMARY} text-sm disabled:opacity-60`}
-            >
-              {props.pending ? "A guardar..." : props.submitLabel}
-            </button>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="grid gap-1 text-sm">
+                <span className="text-white/70">Política de fala</span>
+                <select
+                  value={state.talkPolicy}
+                  onChange={(e) =>
+                    setState((prev) => ({
+                      ...prev,
+                      talkPolicy: e.target.value as FormState["talkPolicy"],
+                    }))
+                  }
+                  className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-cyan-300"
+                >
+                  {COMMUNITY_TALK_POLICY_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="grid gap-1 text-sm">
+                <span className="text-white/70">Acesso</span>
+                <select
+                  value={state.accessMode}
+                  onChange={(e) =>
+                    setState((prev) => ({
+                      ...prev,
+                      accessMode: e.target.value as FormState["accessMode"],
+                    }))
+                  }
+                  className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-cyan-300"
+                >
+                  {COMMUNITY_ACCESS_MODE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            {error ? <p className="text-sm text-red-300">{error}</p> : null}
+
+            <div className="mt-2 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={props.onClose}
+                disabled={props.pending}
+                className={`${CTA_SECONDARY} text-sm disabled:opacity-60`}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={props.pending || uploadingCover}
+                className={`${CTA_PRIMARY} text-sm disabled:opacity-60`}
+              >
+                {props.pending ? "A guardar..." : props.submitLabel}
+              </button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+      <EventCoverCropModal
+        open={showCoverCropModal}
+        file={coverCropFile}
+        onCancel={handleCoverCropCancel}
+        onConfirm={(file) => {
+          void handleCoverCropConfirm(file);
+        }}
+      />
+    </>
   );
 }
 
