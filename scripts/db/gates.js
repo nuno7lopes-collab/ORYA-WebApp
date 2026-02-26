@@ -115,7 +115,11 @@ function runCapture(cmd, args) {
   if (legacyIntent > 1) process.exit(1);
 
   if (await run("npm", ["run", "gate:reservas-seed-integrity"])) process.exit(1);
-  if (await run("npm", ["run", "gate:data-integrity"])) process.exit(1);
+  if (!isOffline) {
+    if (await run("npm", ["run", "gate:data-integrity"])) process.exit(1);
+  } else {
+    console.log("[db:gates] offline mode: skipping gate:data-integrity (requires DB connection)");
+  }
 
   const tests = ["tests/finance", "tests/outbox"];
   if (await run("npx", ["vitest", "run", ...tests])) process.exit(1);
