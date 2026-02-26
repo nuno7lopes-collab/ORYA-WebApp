@@ -10,7 +10,7 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { normalizeEmail } from "@/lib/utils/email";
 import { updateBooking } from "@/domain/bookings/commands";
 import { buildBookingConfirmationSnapshot, BOOKING_CONFIRMATION_SNAPSHOT_VERSION } from "@/lib/reservas/confirmationSnapshot";
-import { requestBookingRefundCase } from "@/lib/reservas/refundCase";
+import { refundBookingPayment } from "@/lib/refunds/unifiedRefund";
 import { ensurePaymentIntent, isFinanceConnectNotReadyError } from "@/domain/finance/paymentIntent";
 import { computePricing } from "@/lib/pricing";
 import { computeCardPlatformFeeCents, computeCombinedFees } from "@/lib/fees";
@@ -515,35 +515,23 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       actorUserId: user.id,
     });
 
-    let refundCaseId: string | null = null;
-    let refundStatus: string | null = null;
     if (priceDeltaCents < 0 && booking.paymentIntentId) {
       try {
-        const refundCase = await requestBookingRefundCase({
+        await refundBookingPayment({
           bookingId: booking.id,
           paymentIntentId: booking.paymentIntentId,
           reason: "BOOKING_RESCHEDULE",
           amountCents: Math.abs(priceDeltaCents),
-          requestedBy: user.id,
-          idempotencyKey: `refund_case:BOOKING:${booking.id}:RESCHEDULE:${request.id}`,
-          auditPayload: {
-            route: "me/reservas/reschedule/respond",
-            requestId: request.id,
-          },
         });
-        refundCaseId = refundCase?.id ?? null;
-        refundStatus = refundCase?.status ?? null;
       } catch (refundErr) {
-        console.error("[reservas/reschedule/respond] refund case failed", refundErr);
-        refundStatus = "MANUAL_REVIEW";
+        console.error("[reservas/reschedule/respond] refund failed", refundErr);
+        return fail(502, "BOOKING_REFUND_FAILED", "Reagendamento feito, mas o reembolso falhou.", { requestId: request.id });
       }
     }
 
     return respondOk(ctx, {
       request: { id: result.request.id, status: result.request.status },
       booking: { id: result.updated.id, startsAt: result.updated.startsAt },
-      refundCaseId,
-      refundStatus,
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {

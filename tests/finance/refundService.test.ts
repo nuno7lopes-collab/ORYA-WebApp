@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { refundPurchase } from "@/lib/refunds/refundService";
+import { refundPurchase } from "@/lib/refunds/unifiedRefund";
 import { prisma } from "@/lib/prisma";
 import { RefundReason } from "@prisma/client";
 

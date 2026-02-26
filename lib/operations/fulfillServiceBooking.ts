@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { retrieveCharge } from "@/domain/finance/gateway/stripeGateway";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { confirmPendingBooking } from "@/lib/reservas/confirmBooking";
-import { requestBookingRefundCase } from "@/lib/reservas/refundCase";
+import { refundBookingPayment } from "@/lib/refunds/unifiedRefund";
 import { notifyOrganizationBookingChangeResponse } from "@/lib/reservas/bookingChangeNotifications";
 import {
   BookingSplitShareAttemptFailureClass,
@@ -98,29 +98,6 @@ function buildOwnerKey(params: { ownerIdentityId?: string | null }) {
     throw new Error("OWNER_IDENTITY_REQUIRED");
   }
   return `identity:${params.ownerIdentityId}`;
-}
-
-async function requestOrganizationBookingRefundCase(params: {
-  bookingId: number;
-  paymentIntentId: string;
-  amountCents?: number | null;
-  reasonCode: string;
-  idempotencyKey?: string | null;
-  auditFlow: string;
-}) {
-  return requestBookingRefundCase({
-    bookingId: params.bookingId,
-    paymentIntentId: params.paymentIntentId,
-    reason: "ORG_CANCEL",
-    amountCents: params.amountCents ?? null,
-    reasonCode: params.reasonCode,
-    idempotencyKey: params.idempotencyKey ?? null,
-    auditPayload: {
-      route: "operations/fulfillServiceBooking",
-      flow: params.auditFlow,
-      canonicalRefundCase: true,
-    },
-  });
 }
 
 async function resolveStripeFee(intent: Stripe.PaymentIntent) {
@@ -390,13 +367,12 @@ async function fulfillSplitParticipantIntent(intent: Stripe.PaymentIntent): Prom
 
   if (lateRefundPlan) {
     try {
-      await requestOrganizationBookingRefundCase({
+      await refundBookingPayment({
         bookingId: lateRefundPlan.bookingId,
         paymentIntentId: lateRefundPlan.paymentIntentId,
-        reasonCode: "LATE_SPLIT_PAYMENT_AFTER_SETTLE",
+        reason: "LATE_SPLIT_PAYMENT_AFTER_SETTLE",
         amountCents: lateRefundPlan.amountCents,
-        idempotencyKey: `refund_case:BOOKING_SPLIT_LATE:${lateRefundPlan.participantId}:${lateRefundPlan.paymentIntentId}`,
-        auditFlow: "late_split_refund",
+        idempotencyKey: `refund:BOOKING_SPLIT_LATE:${lateRefundPlan.participantId}:${lateRefundPlan.paymentIntentId}`,
       });
       emitSplitRuntimeMetric("split_late_refund_count", {
         result: "success",
@@ -695,13 +671,11 @@ async function fulfillBookingChangeIntent(intent: Stripe.PaymentIntent): Promise
 
   if (result.bookingId && intent.id) {
     try {
-      await requestOrganizationBookingRefundCase({
+      await refundBookingPayment({
         bookingId: result.bookingId,
         paymentIntentId: intent.id,
-        reasonCode: `BOOKING_CHANGE_${result.status}`,
+        reason: `BOOKING_CHANGE_${result.status}`,
         amountCents: amountCents > 0 ? amountCents : undefined,
-        idempotencyKey: `refund_case:BOOKING_CHANGE:${result.bookingId}:${intent.id}:${result.status}`,
-        auditFlow: "booking_change_fallback",
       });
     } catch (err) {
       logError("fulfill_booking_change.refund_failed", err, { bookingId: result.bookingId, paymentIntentId: intent.id });
@@ -1179,12 +1153,10 @@ export async function fulfillServiceBookingIntent(
       ].includes(code)
     ) {
       if (intent.id) {
-        await requestOrganizationBookingRefundCase({
+        await refundBookingPayment({
           bookingId,
           paymentIntentId: intent.id,
-          reasonCode: `CONFIRM_${code}`,
-          idempotencyKey: `refund_case:BOOKING_CONFIRM:${bookingId}:${intent.id}:${code}`,
-          auditFlow: "confirm_failure_fallback",
+          reason: `CONFIRM_${code}`,
         });
       }
       return true;

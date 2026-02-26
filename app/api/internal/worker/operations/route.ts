@@ -10,9 +10,9 @@ import { retrieveCharge, retrievePaymentIntent } from "@/domain/finance/gateway/
 import { ensurePaymentIntent } from "@/domain/finance/paymentIntent";
 import { handleRefund } from "@/app/api/stripe/webhook/route";
 import { OperationType } from "../types";
-import { executeUnifiedRefundCase, requestUnifiedRefundCase } from "@/lib/refunds/unifiedRefundCase";
+import { refundPurchase } from "@/lib/refunds/unifiedRefund";
 import { appendChargebackLedgerEntries, appendDisputeFeeReversal } from "@/domain/finance/ledgerAdjustments";
-import { BookingSplitOffsessionAttemptStatus, PaymentEventSource, PaymentStatus, RefundReason, EntitlementType, EntitlementStatus, Prisma, NotificationType, SourceType, PadelRegistrationStatus, CheckinResultCode, ProcessorFeesStatus, RefundCasePolicyCause, RefundCaseStatus } from "@prisma/client";
+import { BookingSplitOffsessionAttemptStatus, PaymentEventSource, PaymentStatus, RefundReason, EntitlementType, EntitlementStatus, Prisma, NotificationType, SourceType, PadelRegistrationStatus, CheckinResultCode, ProcessorFeesStatus } from "@prisma/client";
 import { FulfillPayload } from "@/lib/operations/types";
 import { performPaymentFulfillment } from "@/lib/operations/performPaymentFulfillment";
 import { markSaleDisputed } from "@/domain/finance/disputes";
@@ -82,7 +82,7 @@ const QUICK_RETRY_DELAYS_MS = (process.env.OPERATIONS_QUICK_RETRY_MS || "5000,15
   .filter((value) => Number.isFinite(value) && value > 0);
 const MAX_BACKOFF_MS = Number(process.env.OPERATIONS_MAX_BACKOFF_MS || String(60 * 60 * 1000));
 const PRIORITY_TYPES_DEFAULT =
-  "PROCESS_STRIPE_EVENT,FULFILL_PAYMENT,OUTBOX_EVENT,UPSERT_LEDGER_FROM_PI,UPSERT_LEDGER_FROM_PI_FREE,PROCESS_REFUND_UNIFIED,PROCESS_REFUND_SINGLE,MARK_DISPUTE";
+  "PROCESS_STRIPE_EVENT,FULFILL_PAYMENT,OUTBOX_EVENT,UPSERT_LEDGER_FROM_PI,UPSERT_LEDGER_FROM_PI_FREE,PROCESS_REFUND_UNIFIED,MARK_DISPUTE";
 const PRIORITY_TYPES = new Set(
   (process.env.OPERATIONS_PRIORITY_TYPES || PRIORITY_TYPES_DEFAULT)
     .split(",")
@@ -90,13 +90,6 @@ const PRIORITY_TYPES = new Set(
     .filter(Boolean),
 );
 const AGENDA_ARBITRATION_COMP_MAX_ATTEMPTS = 3;
-const REFUND_CASE_ACTIVE_STATUSES: RefundCaseStatus[] = [
-  RefundCaseStatus.REQUESTED,
-  RefundCaseStatus.WAITING_PROCESSOR_FEE,
-  RefundCaseStatus.QUEUED,
-  RefundCaseStatus.PROCESSING,
-  RefundCaseStatus.RETRYING,
-];
 
 function shouldSkipOperationsTransaction() {
   if (process.env.OPERATIONS_SKIP_TX === "true") return true;
@@ -250,71 +243,6 @@ function computeBackoffMs(backlogCount: number, oldestAgeMs: number | null) {
   if (backlogCount === 0) return 5000;
   if ((oldestAgeMs ?? 0) >= 5000 || backlogCount >= 50) return 500;
   return 1000;
-}
-
-function resolveRefundCaseIdFromPayload(payload: OperationRecord["payload"]): string | null {
-  if (!payload || typeof payload !== "object") return null;
-  const maybeRefundCaseId = (payload as Record<string, unknown>).refundCaseId;
-  if (typeof maybeRefundCaseId !== "string") return null;
-  const normalized = maybeRefundCaseId.trim();
-  return normalized.length > 0 ? normalized : null;
-}
-
-async function resolveRefundCaseIdForOperation(op: OperationRecord) {
-  const payloadRefundCaseId = resolveRefundCaseIdFromPayload(op.payload);
-  if (payloadRefundCaseId) return payloadRefundCaseId;
-
-  const payload = (op.payload ?? {}) as Record<string, unknown>;
-  const paymentId =
-    op.purchaseId ??
-    (typeof payload.paymentId === "string"
-      ? payload.paymentId
-      : typeof payload.purchaseId === "string"
-        ? payload.purchaseId
-        : null);
-  const paymentIntentId =
-    op.paymentIntentId ??
-    (typeof payload.paymentIntentId === "string" ? payload.paymentIntentId : null);
-
-  if (!paymentId && !paymentIntentId) return null;
-
-  const whereOr: Prisma.RefundCaseWhereInput[] = [];
-  if (paymentId) whereOr.push({ paymentId });
-  if (paymentIntentId) whereOr.push({ paymentIntentId });
-  if (!whereOr.length) return null;
-
-  const refundCase = await prisma.refundCase.findFirst({
-    where: {
-      OR: whereOr,
-      status: { in: REFUND_CASE_ACTIVE_STATUSES },
-    },
-    orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
-    select: { id: true },
-  });
-
-  return refundCase?.id ?? null;
-}
-
-async function markRefundCaseManualReviewOnDeadLetter(params: {
-  op: OperationRecord;
-  message: string;
-}) {
-  const refundCaseId = await resolveRefundCaseIdForOperation(params.op);
-  if (!refundCaseId) return;
-
-  await prisma.refundCase.updateMany({
-    where: {
-      id: refundCaseId,
-      status: {
-        notIn: [RefundCaseStatus.SUCCEEDED, RefundCaseStatus.FAILED_FINAL],
-      },
-    },
-    data: {
-      status: RefundCaseStatus.MANUAL_REVIEW,
-      lastError: params.message,
-      nextRetryAt: null,
-    },
-  });
 }
 
 function buildOwnerKey(params: { ownerIdentityId?: string | null }) {
@@ -985,13 +913,7 @@ async function processClaimGuestPurchase(op: OperationRecord) {
   const userEmail = typeof payload.userEmail === "string" ? payload.userEmail : null;
 
   if (!purchaseId || !userId || !userEmail) {
-    logWarn("operations.claim_guest_purchase.invalid_payload", {
-      operationId: op.id,
-      purchaseId: purchaseId ?? null,
-      userId: userId ?? null,
-      hasUserEmail: Boolean(userEmail),
-    });
-    return;
+    throw new Error("CLAIM_GUEST_PURCHASE missing purchaseId/userId/userEmail");
   }
 
   const normalizedEmail = normalizeEmail(userEmail);
@@ -1383,23 +1305,6 @@ export async function runOperationsBatch() {
           },
         });
         if (isDead) {
-          if (
-            op.operationType === "PROCESS_REFUND_UNIFIED" ||
-            op.operationType === "PROCESS_REFUND_SINGLE"
-          ) {
-            try {
-              await markRefundCaseManualReviewOnDeadLetter({
-                op,
-                message,
-              });
-            } catch (markErr) {
-              logWarn("operations.dead_letter_refund_case_mark_failed", {
-                operationId: op.id,
-                operationType: op.operationType,
-                error: markErr instanceof Error ? markErr.message : String(markErr),
-              });
-            }
-          }
           logWarn("operations.dead_lettered", {
             operationId: op.id,
             operationType: op.operationType,
@@ -1492,8 +1397,6 @@ async function processOperation(op: OperationRecord) {
     case "UPSERT_LEDGER_FROM_PI_FREE":
       return processUpsertLedger(op);
     case "PROCESS_REFUND_UNIFIED":
-      return processRefundUnified(op);
-    case "PROCESS_REFUND_SINGLE":
       return processRefundSingle(op);
     case "MARK_DISPUTE":
       return processMarkDispute(op);
@@ -1638,20 +1541,6 @@ async function processOperation(op: OperationRecord) {
               eventType,
               payload: eventPayload as any,
             }),
-        });
-      }
-      if (eventType === "organization.created") {
-        return runOutboxHandler({
-          eventType,
-          outboxEventId,
-          handler: async () => ({ ok: true }),
-        });
-      }
-      if (eventType === "org.context.changed") {
-        return runOutboxHandler({
-          eventType,
-          outboxEventId,
-          handler: async () => ({ ok: true }),
         });
       }
       throw new Error(`OUTBOX_EVENT_UNSUPPORTED_TYPE:${eventType}`);
@@ -1802,57 +1691,6 @@ function extractDisputeFeeCents(stripeEventObject: Record<string, any> | null) {
   return Number.isFinite(feeRaw) ? Math.abs(feeRaw) : null;
 }
 
-function isMissingPaymentIntentError(err: unknown) {
-  const anyErr = err as { code?: string; statusCode?: number; message?: string };
-  if (anyErr?.code === "resource_missing" || anyErr?.statusCode === 404) return true;
-  if (!(err instanceof Error)) return false;
-  return err.message.toLowerCase().includes("no such payment_intent");
-}
-
-function isNonRetryableUpsertLedgerError(err: unknown) {
-  if (!(err instanceof Error)) return false;
-  const message = err.message.toUpperCase();
-  if (message.includes("POLICY_VERSION_REQUIRED")) return true;
-  if (message.includes("EVENT NOT FOUND")) return true;
-  if (message.includes("OWNER_IDENTITY_REQUIRED")) return true;
-  if (message.includes("TICKETS_OWNER_EXCLUSIVE_CHK")) return true;
-  return false;
-}
-
-async function markPaymentAndEventsAsFailed(params: {
-  purchaseId?: string | null;
-  paymentIntentId?: string | null;
-  errorMessage: string;
-}) {
-  const now = new Date();
-  const purchaseId = params.purchaseId?.trim() || null;
-  const paymentIntentId = params.paymentIntentId?.trim() || null;
-
-  if (purchaseId) {
-    await prisma.payment.updateMany({
-      where: { id: purchaseId },
-      data: {
-        status: PaymentStatus.FAILED,
-        updatedAt: now,
-      },
-    });
-  }
-
-  const ors: Array<Prisma.PaymentEventWhereInput> = [];
-  if (purchaseId) ors.push({ purchaseId });
-  if (paymentIntentId) ors.push({ stripePaymentIntentId: paymentIntentId });
-  if (!ors.length) return;
-
-  await paymentEventRepo(prisma).updateMany({
-    where: { OR: ors },
-    data: {
-      status: "ERROR",
-      errorMessage: params.errorMessage,
-      updatedAt: now,
-    },
-  });
-}
-
 async function processFulfillPayment(op: OperationRecord) {
   const payload = (op.payload ?? {}) as Partial<FulfillPayload>;
   const purchaseId =
@@ -1872,29 +1710,10 @@ async function processFulfillPayment(op: OperationRecord) {
     });
   }
 
-  let intent: Stripe.PaymentIntent;
-  try {
-    intent =
-      typeof payload.rawMetadata === "object"
-        ? await retrievePaymentIntent(piId, { expand: ["latest_charge"] })
-        : await retrievePaymentIntent(piId, { expand: ["latest_charge"] });
-  } catch (err) {
-    if (isMissingPaymentIntentError(err)) {
-      const message = err instanceof Error ? err.message : String(err);
-      await markPaymentAndEventsAsFailed({
-        purchaseId,
-        paymentIntentId: piId,
-        errorMessage: message,
-      });
-      logWarn("operations.fulfill_payment.intent_missing", {
-        operationId: op.id,
-        paymentIntentId: piId,
-        purchaseId: purchaseId ?? null,
-      });
-      return;
-    }
-    throw err;
-  }
+  const intent =
+    typeof payload.rawMetadata === "object"
+      ? await retrievePaymentIntent(piId, { expand: ["latest_charge"] })
+      : await retrievePaymentIntent(piId, { expand: ["latest_charge"] });
 
   try {
     const fulfillment = await performPaymentFulfillment(
@@ -1937,35 +1756,14 @@ async function processUpsertLedger(op: OperationRecord) {
         : null);
 
   if (!purchaseId || !eventId) {
-    await markPaymentAndEventsAsFailed({
-      purchaseId,
-      errorMessage: "Missing purchaseId or eventId for UPSERT_LEDGER_FROM_PI",
-    });
-    logWarn("operations.upsert_ledger.invalid_payload", {
-      operationId: op.id,
-      purchaseId: purchaseId ?? null,
-      eventId: eventId ?? null,
-    });
-    return;
+    throw new Error("Missing purchaseId or eventId for UPSERT_LEDGER_FROM_PI");
   }
 
   const lines = Array.isArray(payload.lines)
     ? (payload.lines as Array<{ ticketTypeId: number; quantity: number; unitPriceCents: number; currency?: string }>)
     : [];
 
-  if (!lines.length) {
-    await markPaymentAndEventsAsFailed({
-      purchaseId,
-      errorMessage: "No lines to upsert ledger",
-    });
-    logWarn("operations.upsert_ledger.invalid_payload", {
-      operationId: op.id,
-      purchaseId,
-      eventId,
-      reason: "NO_LINES",
-    });
-    return;
-  }
+  if (!lines.length) throw new Error("No lines to upsert ledger");
 
   const currency = normalizeText(payload.currency)?.toUpperCase() ?? "EUR";
   const promoCodeId =
@@ -1991,16 +1789,7 @@ async function processUpsertLedger(op: OperationRecord) {
     resolvedOwnerIdentityId = identity.id;
   }
   if (!resolvedOwnerIdentityId) {
-    await markPaymentAndEventsAsFailed({
-      purchaseId,
-      errorMessage: "OWNER_IDENTITY_REQUIRED",
-    });
-    logWarn("operations.upsert_ledger.owner_identity_missing", {
-      operationId: op.id,
-      purchaseId,
-      eventId,
-    });
-    return;
+    throw new Error("OWNER_IDENTITY_REQUIRED");
   }
   const subtotalCents = Number(payload.subtotalCents ?? 0);
   const discountCents = Number(payload.discountCents ?? 0);
@@ -2019,23 +1808,11 @@ async function processUpsertLedger(op: OperationRecord) {
       ticketTypes: { select: { id: true, currency: true } },
     },
   });
-  if (!event) {
-    await markPaymentAndEventsAsFailed({
-      purchaseId,
-      errorMessage: "Event not found",
-    });
-    logWarn("operations.upsert_ledger.event_missing", {
-      operationId: op.id,
-      purchaseId,
-      eventId,
-    });
-    return;
-  }
+  if (!event) throw new Error("Event not found");
 
   const ticketTypeMap = new Map(event.ticketTypes.map((t) => [t.id, t]));
 
   const entitlementOwnerUserId = null;
-  const ticketOwnerUserId = resolvedOwnerIdentityId ? null : userId ?? null;
   const ownerKey = buildOwnerKey({
     ownerIdentityId: resolvedOwnerIdentityId,
   });
@@ -2044,8 +1821,7 @@ async function processUpsertLedger(op: OperationRecord) {
     0,
   );
 
-  try {
-    await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx) => {
     const saleSummary = await saleSummaryRepo(tx).upsert({
       where: { paymentIntentId: purchaseId },
       update: {
@@ -2166,7 +1942,7 @@ async function processUpsertLedger(op: OperationRecord) {
           const created = await tx.ticket.create({
             data: {
               userId: userId ?? null,
-              ownerUserId: ticketOwnerUserId,
+              ownerUserId: userId ?? null,
               ownerIdentityId: resolvedOwnerIdentityId ?? null,
               eventId: event.id,
               ticketTypeId: line.ticketTypeId,
@@ -2263,173 +2039,121 @@ async function processUpsertLedger(op: OperationRecord) {
         });
       }
     }
-    });
+  });
 
-    // Marcar PaymentEvent como OK (free flow)
-    await paymentEventRepo(prisma).updateMany({
-      where: {
-        OR: [
-          { stripePaymentIntentId: purchaseId },
-          { purchaseId },
-        ],
-      },
-      data: {
-        status: "OK",
-        source: PaymentEventSource.API,
-        purchaseId,
-        eventId: event.id,
-        userId,
-        updatedAt: new Date(),
-        errorMessage: null,
-      },
-    });
-  } catch (err) {
-    if (isNonRetryableUpsertLedgerError(err)) {
-      const message = err instanceof Error ? err.message : String(err);
-      await markPaymentAndEventsAsFailed({
-        purchaseId,
-        errorMessage: message,
-      });
-      logWarn("operations.upsert_ledger.non_retryable", {
-        operationId: op.id,
-        purchaseId,
-        eventId,
-        error: message,
-      });
-      return;
-    }
-    throw err;
-  }
+  // Marcar PaymentEvent como OK (free flow)
+  await paymentEventRepo(prisma).updateMany({
+    where: {
+      OR: [
+        { stripePaymentIntentId: purchaseId },
+        { purchaseId },
+      ],
+    },
+    data: {
+      status: "OK",
+      source: PaymentEventSource.API,
+      purchaseId,
+      eventId: event.id,
+      userId,
+      updatedAt: new Date(),
+      errorMessage: null,
+    },
+  });
 }
 
-const REFUND_POLICY_CAUSE_VALUES = new Set<RefundCasePolicyCause>(
-  Object.values(RefundCasePolicyCause),
-);
-
-function parseSourceTypeValue(value: unknown): SourceType | null {
-  if (typeof value !== "string") return null;
-  const normalized = value.trim().toUpperCase();
-  return (Object.values(SourceType) as string[]).includes(normalized)
-    ? (normalized as SourceType)
-    : null;
-}
-
-function parseRefundPolicyCause(value: unknown): RefundCasePolicyCause | null {
-  if (typeof value !== "string") return null;
-  const normalized = value.trim().toUpperCase() as RefundCasePolicyCause;
-  return REFUND_POLICY_CAUSE_VALUES.has(normalized) ? normalized : null;
-}
-
-function mapLegacyReasonToPolicyCause(params: {
-  reason: RefundReason;
-  sourceType: SourceType | null;
-}): RefundCasePolicyCause {
-  if (params.sourceType === SourceType.BOOKING) {
-    return RefundCasePolicyCause.BOOKING_ORG_CANCEL;
-  }
-  if (params.sourceType === SourceType.PADEL_REGISTRATION) {
-    return RefundCasePolicyCause.PADEL_SYSTEM_CANCEL;
-  }
-  if (params.sourceType === SourceType.STORE_ORDER) {
-    return RefundCasePolicyCause.STORE_ORG_CANCEL;
-  }
-  if (params.reason === "DELETED") return RefundCasePolicyCause.EVENT_DELETED;
-  if (params.reason === "DATE_CHANGED") return RefundCasePolicyCause.EVENT_DATE_CHANGED;
-  return RefundCasePolicyCause.EVENT_CANCELLED;
-}
-
-async function processRefundUnified(op: OperationRecord) {
+async function processRefundSingle(op: OperationRecord) {
   const payload = op.payload || {};
-  const existingRefundCaseId =
-    typeof payload.refundCaseId === "string" ? payload.refundCaseId.trim() : null;
-
-  if (existingRefundCaseId) {
-    return executeUnifiedRefundCase({ refundCaseId: existingRefundCaseId, operationId: op.id });
-  }
-
   const purchaseId =
     op.purchaseId ||
+    (typeof payload.purchaseId === "string" ? payload.purchaseId : null) ||
     (typeof payload.purchaseId === "string" ? payload.purchaseId : null);
+  const eventId =
+    op.eventId ??
+    (typeof payload.eventId === "number"
+      ? payload.eventId
+      : typeof payload.eventId === "string"
+        ? Number(payload.eventId)
+        : null);
   const paymentIntentId =
     op.paymentIntentId ||
     (typeof payload.paymentIntentId === "string" ? payload.paymentIntentId : null);
-  const sourceType = parseSourceTypeValue(payload.sourceType);
-  const sourceId =
-    typeof payload.sourceId === "string" || typeof payload.sourceId === "number"
-      ? String(payload.sourceId)
-      : null;
   const reasonRaw = typeof payload.reason === "string" ? payload.reason.toUpperCase() : null;
   const reason: RefundReason = (["CANCELLED", "DELETED", "DATE_CHANGED"] as string[]).includes(
     reasonRaw ?? "",
   )
     ? (reasonRaw as RefundReason)
     : "CANCELLED";
-  const policyCause =
-    parseRefundPolicyCause(payload.policyCause) ??
-    mapLegacyReasonToPolicyCause({ reason, sourceType });
-  const reasonCode = typeof payload.reasonCode === "string" ? payload.reasonCode : null;
-  const requestedBy = typeof payload.refundedBy === "string" ? payload.refundedBy : "system";
-  const idempotencyKey =
-    typeof payload.idempotencyKey === "string" ? payload.idempotencyKey : null;
+  const refundedBy = typeof payload.refundedBy === "string" ? payload.refundedBy : "system";
 
-  if (!purchaseId && !paymentIntentId) {
-    throw new Error("Missing paymentId/paymentIntentId for PROCESS_REFUND_UNIFIED");
+  if (!purchaseId || !eventId) {
+    throw new Error("Missing purchaseId or eventId for PROCESS_REFUND_UNIFIED");
   }
 
-  const refundCase = await requestUnifiedRefundCase({
-    policyCause,
-    paymentId: purchaseId,
+  const res = await refundPurchase({
     purchaseId,
     paymentIntentId,
-    sourceType,
-    sourceId,
-    requestedBy,
-    reasonCode,
-    idempotencyKey,
-    queue: false,
-    auditPayload: {
-      operationId: op.id,
-      legacyOperationType: op.operationType,
-      eventId:
-        op.eventId ??
-        (typeof payload.eventId === "number"
-          ? payload.eventId
-          : typeof payload.eventId === "string"
-            ? Number(payload.eventId)
-            : null),
-    },
+    eventId,
+    reason,
+    refundedBy,
+    auditPayload: { operationId: op.id },
   });
-  if (!refundCase) {
-    throw new Error("REFUND_CASE_NOT_CREATED");
+
+  if (!res) {
+    throw new Error("Refund not created (saleSummary missing or Stripe failure)");
   }
 
-  const result = await executeUnifiedRefundCase({
-    refundCaseId: refundCase.id,
-    operationId: op.id,
+  await paymentEventRepo(prisma).updateMany({
+    where: {
+      OR: [
+        purchaseId ? { purchaseId } : undefined,
+        paymentIntentId ? { stripePaymentIntentId: paymentIntentId } : undefined,
+      ].filter(Boolean) as any,
+    },
+    data: {
+      status: "REFUNDED",
+      errorMessage: null,
+      updatedAt: new Date(),
+    },
   });
 
-  if (op.pairingId && purchaseId && result && (result as any).status === "SUCCEEDED") {
+  await markEntitlementsStatusByPurchase(purchaseId, EntitlementStatus.REVOKED);
+  await prisma.ticket.updateMany({
+    where: {
+      OR: [{ purchaseId }, { stripePaymentIntentId: paymentIntentId ?? purchaseId }],
+    },
+    data: { status: "REFUNDED" },
+  });
+
+  const paymentId = await resolvePaymentIdForOperation({ purchaseId, paymentIntentId });
+  await publishPaymentStatusChanged({
+    paymentId,
+    status: PaymentStatus.REFUNDED,
+    causationId: String(op.id),
+    source: "operations.refund",
+  });
+
+  await markPadelRegistrationRefundedByPayment({
+    paymentId: paymentId ?? purchaseId,
+    reason,
+    correlationId: String(op.id),
+  });
+
+  await maybeSendRefundEmail({
+    purchaseId,
+    eventId,
+    reason,
+    amountRefundedBaseCents: res.baseAmountCents ?? null,
+  });
+
+  if (op.pairingId) {
     const notifyCtx = await resolveRefundNotificationContext(purchaseId);
-    const refundBaseCents =
-      refundCase.amountsBreakdown &&
-      typeof refundCase.amountsBreakdown === "object" &&
-      !Array.isArray(refundCase.amountsBreakdown) &&
-      typeof (refundCase.amountsBreakdown as Record<string, unknown>).refundCents === "number"
-        ? Number((refundCase.amountsBreakdown as Record<string, unknown>).refundCents)
-        : null;
     if (notifyCtx.userId) {
       await queuePairingRefund(op.pairingId, [notifyCtx.userId], {
-        refundBaseCents,
+        refundBaseCents: res.baseAmountCents ?? null,
         currency: notifyCtx.currency ?? "EUR",
       });
     }
   }
-
-  return result;
-}
-
-async function processRefundSingle(op: OperationRecord) {
-  return processRefundUnified(op);
 }
 
 async function resolveRefundRecipientEmail(purchaseId: string) {

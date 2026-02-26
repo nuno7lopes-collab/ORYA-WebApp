@@ -82,6 +82,7 @@ type NewTicketType = {
 type UpdateEventBody = {
   eventId?: number;
   archive?: boolean;
+  deleteDraft?: boolean;
   status?: string | null;
   title?: string | null;
   slug?: string | null;
@@ -443,6 +444,90 @@ async function _POST(req: NextRequest) {
       }
     }
 
+    const requestedStatusRaw =
+      typeof body.status === "string" ? body.status.trim().toUpperCase() : null;
+    const requestedStatus =
+      requestedStatusRaw &&
+      (Object.values(EventStatus) as string[]).includes(requestedStatusRaw)
+        ? (requestedStatusRaw as EventStatus)
+        : null;
+    if (requestedStatusRaw && !requestedStatus) {
+      return fail(400, "STATUS_INVALID");
+    }
+    if (body.archive === true) {
+      return fail(400, "ARCHIVE_REMOVED_USE_STATUS_OR_DELETE");
+    }
+
+    const shouldDeleteDraft = body.deleteDraft === true;
+    const hasTicketTypeUpdatesPayload =
+      Array.isArray(body.ticketTypeUpdates) && body.ticketTypeUpdates.length > 0;
+    const hasNewTicketTypesPayload =
+      Array.isArray(body.newTicketTypes) && body.newTicketTypes.length > 0;
+
+    if (event.status === EventStatus.CANCELLED) {
+      return fail(409, "EVENT_CANCELLED_TERMINAL");
+    }
+    if (requestedStatus && requestedStatus !== EventStatus.CANCELLED) {
+      return fail(400, "UNSUPPORTED_EVENT_STATUS_TRANSITION");
+    }
+    const shouldCancelEvent =
+      requestedStatus === EventStatus.CANCELLED &&
+      event.status !== EventStatus.CANCELLED;
+
+    const hasLifecycleAction = shouldDeleteDraft || shouldCancelEvent;
+    if (hasLifecycleAction) {
+      const hasOtherMutations =
+        body.title !== undefined ||
+        body.slug !== undefined ||
+        body.description !== undefined ||
+        body.startsAt !== undefined ||
+        body.endsAt !== undefined ||
+        body.addressId !== undefined ||
+        body.templateType !== undefined ||
+        body.interestTags !== undefined ||
+        body.isGratis !== undefined ||
+        body.pricingMode !== undefined ||
+        body.coverImageUrl !== undefined ||
+        body.payoutMode !== undefined ||
+        body.accessPolicy !== undefined ||
+        hasTicketTypeUpdatesPayload ||
+        hasNewTicketTypesPayload ||
+        (shouldDeleteDraft && requestedStatus !== null);
+      if (hasOtherMutations) {
+        return fail(
+          400,
+          shouldDeleteDraft
+            ? "DRAFT_DELETE_REQUIRES_EXCLUSIVE_ACTION"
+            : "CANCEL_STATUS_REQUIRES_EXCLUSIVE_ACTION",
+        );
+      }
+    }
+
+    if (shouldDeleteDraft) {
+      if (event.status !== EventStatus.DRAFT) {
+        return fail(409, "DRAFT_DELETE_ONLY");
+      }
+      const [paidSalesCount, ticketsCount, reservationsCount, entitlementsCount, registrationsCount] =
+        await Promise.all([
+          prisma.saleSummary.count({ where: { eventId, status: "PAID" } }),
+          prisma.ticket.count({ where: { eventId } }),
+          prisma.ticketReservation.count({ where: { eventId } }),
+          prisma.entitlement.count({ where: { eventId } }),
+          prisma.padelRegistration.count({ where: { eventId } }),
+        ]);
+      if (
+        paidSalesCount > 0 ||
+        ticketsCount > 0 ||
+        reservationsCount > 0 ||
+        entitlementsCount > 0 ||
+        registrationsCount > 0
+      ) {
+        return fail(409, "DRAFT_DELETE_BLOCKED_HAS_OPERATIONS");
+      }
+      await prisma.event.delete({ where: { id: eventId } });
+      return respondOk(ctx, { deleted: true }, { status: 200 });
+    }
+
     if (body.accessPolicy) {
       try {
         await createEventAccessPolicyVersion(event.id, body.accessPolicy);
@@ -461,8 +546,7 @@ async function _POST(req: NextRequest) {
     const hasNonEurTickets = event.ticketTypes.some(
       (t) => t.currency && t.currency.toUpperCase() !== "EUR",
     );
-    const hasNewTicketsPayload = Array.isArray(body.newTicketTypes) && body.newTicketTypes.length > 0;
-    if (hasNonEurTickets && hasNewTicketsPayload) {
+    if (hasNonEurTickets && hasNewTicketTypesPayload) {
       return fail(400, "CURRENCY_NOT_SUPPORTED");
     }
 
@@ -489,67 +573,7 @@ async function _POST(req: NextRequest) {
       return fail(400, "Seleciona uma morada normalizada.");
     }
 
-    const requestedStatusRaw = typeof body.status === "string" ? body.status.trim().toUpperCase() : null;
-    const requestedStatus =
-      requestedStatusRaw &&
-      (Object.values(EventStatus) as string[]).includes(requestedStatusRaw)
-        ? (requestedStatusRaw as EventStatus)
-        : null;
-    if (requestedStatusRaw && !requestedStatus) {
-      return fail(400, "STATUS_INVALID");
-    }
-    if (event.status === EventStatus.CANCELLED && body.archive !== true) {
-      return fail(409, "EVENT_CANCELLED_TERMINAL");
-    }
-    if (requestedStatus && requestedStatus !== EventStatus.CANCELLED) {
-      return fail(400, "UNSUPPORTED_EVENT_STATUS_TRANSITION");
-    }
-    if (requestedStatus === EventStatus.CANCELLED && event.status === EventStatus.CANCELLED) {
-      return fail(409, "EVENT_ALREADY_CANCELLED");
-    }
-    if (body.archive === true && requestedStatus === EventStatus.CANCELLED) {
-      return fail(400, "INVALID_STATUS_ACTION_COMBINATION");
-    }
-    const shouldCancelEvent = requestedStatus === EventStatus.CANCELLED && event.status !== EventStatus.CANCELLED;
-    if (shouldCancelEvent) {
-      const hasOtherMutations =
-        body.title !== undefined ||
-        body.slug !== undefined ||
-        body.description !== undefined ||
-        body.startsAt !== undefined ||
-        body.endsAt !== undefined ||
-        body.addressId !== undefined ||
-        body.templateType !== undefined ||
-        body.interestTags !== undefined ||
-        body.isGratis !== undefined ||
-        body.pricingMode !== undefined ||
-        body.coverImageUrl !== undefined ||
-        body.payoutMode !== undefined ||
-        body.accessPolicy !== undefined ||
-        (Array.isArray(body.ticketTypeUpdates) && body.ticketTypeUpdates.length > 0) ||
-        (Array.isArray(body.newTicketTypes) && body.newTicketTypes.length > 0);
-      if (hasOtherMutations) {
-        return fail(400, "CANCEL_STATUS_REQUIRES_EXCLUSIVE_ACTION");
-      }
-    }
-
     const dataUpdate: Partial<Prisma.EventUncheckedUpdateInput> = {};
-    if (body.archive === true) {
-      const now = new Date();
-      const isActiveStatus =
-        event.status === EventStatus.PUBLISHED || event.status === EventStatus.DATE_CHANGED;
-      const isActiveWindow =
-        event.startsAt.getTime() >= now.getTime() || (event.endsAt ? event.endsAt.getTime() >= now.getTime() : true);
-      if (isActiveStatus && isActiveWindow) {
-        return fail(409, "ACTIVE_EVENT_MUST_BE_CANCELLED");
-      }
-    }
-    if (body.archive === true) {
-      const archivedAt = new Date();
-      dataUpdate.isDeleted = true;
-      dataUpdate.deletedAt = archivedAt;
-      (dataUpdate as Record<string, unknown>).archivedAt = archivedAt;
-    }
     if (shouldCancelEvent) {
       dataUpdate.status = EventStatus.CANCELLED;
     }
@@ -713,8 +737,7 @@ async function _POST(req: NextRequest) {
       dataUpdate.startsAt !== undefined ||
       dataUpdate.endsAt !== undefined ||
       dataUpdate.status !== undefined ||
-      dataUpdate.interestTags !== undefined ||
-      dataUpdate.isDeleted !== undefined;
+      dataUpdate.interestTags !== undefined;
     const searchIndexRelevantUpdate = shouldEmitSearchIndexUpdate({
       agendaRelevantUpdate,
       hasNewTickets,
@@ -909,7 +932,7 @@ async function _POST(req: NextRequest) {
       }
     });
 
-    if (shouldCancelEvent && event.startsAt.getTime() > Date.now()) {
+    if (shouldCancelEvent) {
       const summaries = await prisma.saleSummary.findMany({
         where: { eventId, status: "PAID" },
         select: { purchaseId: true, paymentIntentId: true },

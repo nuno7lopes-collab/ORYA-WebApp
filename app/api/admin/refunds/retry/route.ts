@@ -7,7 +7,6 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { logError } from "@/lib/observability/logger";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
-import { RefundCaseStatus } from "@prisma/client";
 
 async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
@@ -39,13 +38,9 @@ async function _POST(req: NextRequest) {
 
     const op = await prisma.operation.findUnique({
       where: { id: operationId },
-      select: { id: true, operationType: true, payload: true },
+      select: { id: true, operationType: true },
     });
-    if (
-      !op ||
-      (op.operationType !== "PROCESS_REFUND_SINGLE" &&
-        op.operationType !== "PROCESS_REFUND_UNIFIED")
-    ) {
+    if (!op || op.operationType !== "PROCESS_REFUND_UNIFIED") {
       return respondError(
         ctx,
         { errorCode: "NOT_FOUND", message: "Operação não encontrada.", retryable: false },
@@ -63,20 +58,6 @@ async function _POST(req: NextRequest) {
         nextRetryAt: null,
       },
     });
-
-    const payload = op.payload as Record<string, unknown> | null;
-    const refundCaseId =
-      payload && typeof payload.refundCaseId === "string" ? payload.refundCaseId : null;
-    if (refundCaseId) {
-      await prisma.refundCase.updateMany({
-        where: { id: refundCaseId },
-        data: {
-          status: RefundCaseStatus.REQUESTED,
-          lastError: null,
-          nextRetryAt: new Date(),
-        },
-      });
-    }
 
     await auditAdminAction({
       action: "REFUND_RETRY",

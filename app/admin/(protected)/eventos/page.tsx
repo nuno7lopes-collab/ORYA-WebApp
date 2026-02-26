@@ -196,7 +196,7 @@ export default function AdminEventosPage() {
     }
   }
 
-  async function handleUpdateEventStatus(ev: AdminEventItem, nextStatus: "DRAFT" | "PUBLISHED" | "CANCELLED") {
+  async function handleUpdateEventStatus(ev: AdminEventItem, nextStatus: "PUBLISHED" | "CANCELLED") {
     if (ev.status === nextStatus) return;
     const confirmText =
       nextStatus === "CANCELLED"
@@ -404,7 +404,7 @@ export default function AdminEventosPage() {
                                 Ver público
                               </Link>
                             )}
-                            {ev.status !== "PUBLISHED" && (
+                            {ev.status === "DRAFT" && (
                               <button
                                 type="button"
                                 onClick={() => handleUpdateEventStatus(ev, "PUBLISHED")}
@@ -412,16 +412,6 @@ export default function AdminEventosPage() {
                                 className="admin-button-secondary px-3 py-1 text-[10px] disabled:opacity-60"
                               >
                                 {statusUpdatingIds.has(ev.id) ? "A atualizar..." : "Publicar"}
-                              </button>
-                            )}
-                            {ev.status !== "DRAFT" && (
-                              <button
-                                type="button"
-                                onClick={() => handleUpdateEventStatus(ev, "DRAFT")}
-                                disabled={statusUpdatingIds.has(ev.id)}
-                                className="admin-button-secondary px-3 py-1 text-[10px] disabled:opacity-60"
-                              >
-                                {statusUpdatingIds.has(ev.id) ? "A atualizar..." : "Rascunho"}
                               </button>
                             )}
                             {ev.status !== "CANCELLED" && (

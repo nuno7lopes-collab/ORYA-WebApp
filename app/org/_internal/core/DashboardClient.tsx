@@ -585,7 +585,7 @@ function OrganizacaoPageInner({
   const [eventView, setEventView] = useState<"list" | "grid">("grid");
   const [manageFiltersOpen, setManageFiltersOpen] = useState<"status" | "period" | "filters" | null>(null);
   const [eventActionLoading, setEventActionLoading] = useState<number | null>(null);
-  const [eventDialog, setEventDialog] = useState<{ mode: "archive" | "delete" | "cancel"; ev: EventItem } | null>(null);
+  const [eventDialog, setEventDialog] = useState<{ mode: "cancel" | "delete"; ev: EventItem } | null>(null);
   const [toolsModalOpen, setToolsModalOpen] = useState(false);
   const [moduleActivationLoading, setModuleActivationLoading] = useState<OrganizationModule | null>(null);
   const [moduleDeactivationLoading, setModuleDeactivationLoading] = useState<OrganizationModule | null>(null);
@@ -676,7 +676,10 @@ function OrganizacaoPageInner({
           ? (sectionParamRaw as MarketingSectionKey)
           : null;
 
-    if (statusParam && ["all", "active", "terminated", "draft"].includes(statusParam)) {
+    if (
+      statusParam &&
+      ["all", "active", "terminated", "draft"].includes(statusParam)
+    ) {
       setEventStatusFilter(statusParam as EventStatusFilter);
     }
     if (catParam) setEventCategoryFilter(catParam);
@@ -1383,7 +1386,7 @@ function OrganizacaoPageInner({
   );
 
   const archiveEvent = useCallback(
-    async (target: EventItem, mode: "archive" | "delete" | "cancel") => {
+    async (target: EventItem, mode: "cancel" | "delete") => {
       setEventActionLoading(target.id);
       setCtaError(null);
       setCtaSuccess(null);
@@ -1393,7 +1396,7 @@ function OrganizacaoPageInner({
         const payload =
           mode === "cancel"
             ? { eventId: target.id, status: "CANCELLED" }
-            : { eventId: target.id, archive: true };
+            : { eventId: target.id, deleteDraft: true };
         const res = await fetch(`${orgApiBase}/events/update`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1407,12 +1410,9 @@ function OrganizacaoPageInner({
           if (mode === "delete") {
             setCtaSuccess("Rascunho apagado.");
             trackEvent("event_draft_deleted", { eventId: target.id, status: target.status });
-          } else if (mode === "cancel") {
+          } else {
             setCtaSuccess(`${targetLabel} cancelado.`);
             trackEvent("event_cancelled", { eventId: target.id, status: target.status });
-          } else if (mode === "archive") {
-            setCtaSuccess(`${targetLabel} arquivado.`);
-            trackEvent("event_archived", { eventId: target.id, status: target.status });
           }
           setTimeout(() => setCtaSuccess(null), 3000);
         }
@@ -1656,6 +1656,7 @@ function OrganizacaoPageInner({
     let ongoing = 0;
     let finished = 0;
     eventsList.forEach((ev) => {
+      if (ev.status === "ARCHIVED") return;
       const startsAt = ev.startsAt ? new Date(ev.startsAt) : null;
       const endsAt = ev.endsAt ? new Date(ev.endsAt) : null;
       const isFinished = ev.status === "FINISHED" || (endsAt ? endsAt.getTime() < now.getTime() : false);
@@ -1806,7 +1807,7 @@ function OrganizacaoPageInner({
       const isFuture = startsAt ? startsAt.getTime() >= now.getTime() : false;
       const isOngoing = startsAt && endsAt ? startsAt.getTime() <= now.getTime() && now.getTime() <= endsAt.getTime() : false;
       const isTerminated = ev.status === "CANCELLED" || ev.status === "FINISHED" || isFinished;
-      const isActive = !isTerminated && (isFuture || isOngoing);
+      const isActive = !isTerminated && ev.status !== "DRAFT" && (isFuture || isOngoing);
 
       if (eventStatusFilter === "draft" && ev.status !== "DRAFT") return false;
       if (eventStatusFilter === "active" && !isActive) return false;
@@ -3770,7 +3771,7 @@ function OrganizacaoPageInner({
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setEventStatusFilter("active");
+                                    setEventStatusFilter("all");
                                     setEventCategoryFilter("all");
                                     setEventPartnerClubFilter("all");
                                     setSearchTerm("");
@@ -3876,7 +3877,7 @@ function OrganizacaoPageInner({
                               <button
                                 type="button"
                                 onClick={() => {
-                                  setEventStatusFilter("active");
+                                  setEventStatusFilter("all");
                                   setEventCategoryFilter("all");
                                   setEventPartnerClubFilter("all");
                                   setSearchTerm("");
@@ -3929,7 +3930,7 @@ function OrganizacaoPageInner({
                     {eventStatusFilter !== "active" && (
                       <button
                         type="button"
-                        onClick={() => setEventStatusFilter("active")}
+                        onClick={() => setEventStatusFilter("all")}
                         className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2.5 py-1 hover:border-white/40"
                       >
                         Estado: {statusLabelMap[eventStatusFilter]} ×
@@ -4067,7 +4068,7 @@ function OrganizacaoPageInner({
                   <button
                     type="button"
                     onClick={() => {
-                      setEventStatusFilter("active");
+                      setEventStatusFilter("all");
                       setEventCategoryFilter("all");
                       setTimeScope("all");
                       setEventPartnerClubFilter("all");
@@ -4142,13 +4143,10 @@ function OrganizacaoPageInner({
                                         : isFinished
                                           ? { label: "Concluído", classes: "border-purple-400/60 bg-purple-500/10 text-purple-100" }
                                           : { label: ev.status, classes: "border-white/20 bg-white/5 text-white/70" };
-                              const actionMode = ev.status === "DRAFT" ? "delete" : ev.status === "CANCELLED" || isFinished ? "archive" : "cancel";
-                              const actionLabel =
-                                actionMode === "delete"
-                                  ? "Apagar rascunho"
-                                  : actionMode === "archive"
-                                    ? "Arquivar"
-                                    : "Cancelar";
+                              const salesLabel = normalizedTemplate === "PADEL" ? "Inscrições" : "Bilhetes";
+                              const isTerminated = ev.status === "CANCELLED" || ev.status === "FINISHED" || isFinished;
+                              const actionMode: "cancel" | "delete" | null =
+                                ev.status === "DRAFT" ? "delete" : isTerminated ? null : "cancel";
 
                               return (
                                 <tr key={ev.id} className="hover:bg-white/10 transition duration-150">
@@ -4191,22 +4189,27 @@ function OrganizacaoPageInner({
                                         Operação
                                       </Link>
                                       <Link
+                                        href={`${eventRouteBase}/${ev.id}`}
+                                        className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
+                                      >
+                                        {salesLabel}
+                                      </Link>
+                                      <Link
                                         href={`/eventos/${ev.slug}`}
                                         className={cn(CTA_NEUTRAL, "px-3 py-1 text-[11px]")}
                                       >
                                         Página pública
                                       </Link>
-                                      <button
-                                        type="button"
-                                        disabled={eventActionLoading === ev.id}
-                                        onClick={() => setEventDialog({ mode: actionMode, ev })}
-                                        className={cn(
-                                          actionMode === "archive" ? CTA_SECONDARY : CTA_DANGER,
-                                          "px-3 py-1 text-[11px] disabled:opacity-60",
-                                        )}
-                                      >
-                                        {actionLabel}
-                                      </button>
+                                      {actionMode ? (
+                                        <button
+                                          type="button"
+                                          disabled={eventActionLoading === ev.id}
+                                          onClick={() => setEventDialog({ mode: actionMode, ev })}
+                                          className={cn(CTA_DANGER, "px-3 py-1 text-[11px] disabled:opacity-60")}
+                                        >
+                                          {actionMode === "delete" ? "Apagar rascunho" : "Cancelar"}
+                                        </button>
+                                      ) : null}
                                     </div>
                                   </td>
                                 </tr>
@@ -4245,22 +4248,17 @@ function OrganizacaoPageInner({
                           const statusBadge =
                             ev.status === "CANCELLED"
                               ? { label: "Cancelado", classes: "border-red-400/60 bg-red-500/10 text-red-100" }
-                              : ev.status === "DRAFT"
-                                ? { label: "Rascunho", classes: "border-white/20 bg-white/5 text-white/70" }
-                                : isOngoing
-                                  ? { label: "A decorrer", classes: "border-emerald-400/60 bg-emerald-500/10 text-emerald-100" }
-                                  : isFuture
-                                    ? { label: "Publicado", classes: "border-sky-400/60 bg-sky-500/10 text-sky-100" }
-                                    : isFinished
+                              : ev.status === "ARCHIVED"
+                                ? { label: "Arquivado", classes: "border-amber-400/60 bg-amber-500/10 text-amber-100" }
+                                : ev.status === "DRAFT"
+                                  ? { label: "Rascunho", classes: "border-white/20 bg-white/5 text-white/70" }
+                                  : isOngoing
+                                    ? { label: "A decorrer", classes: "border-emerald-400/60 bg-emerald-500/10 text-emerald-100" }
+                                    : isFuture
+                                      ? { label: "Publicado", classes: "border-sky-400/60 bg-sky-500/10 text-sky-100" }
+                                      : isFinished
                                       ? { label: "Concluído", classes: "border-purple-400/60 bg-purple-500/10 text-purple-100" }
                                       : { label: ev.status, classes: "border-white/20 bg-white/5 text-white/70" };
-                          const actionMode = ev.status === "DRAFT" ? "delete" : ev.status === "CANCELLED" || isFinished ? "archive" : "cancel";
-                          const actionLabel =
-                            actionMode === "delete"
-                              ? "Apagar rascunho"
-                              : actionMode === "archive"
-                                ? "Arquivar"
-                                : "Cancelar";
                           const coverSuggestions = getEventCoverSuggestionIds({
                             templateType: normalizedTemplate,
                             primaryModule: organization?.primaryModule ?? null,
@@ -4340,23 +4338,39 @@ function OrganizacaoPageInner({
                                   >
                                     Operação
                                   </Link>
+                                  {ev.status !== "ARCHIVED" && (
+                                    <Link
+                                      href={`${eventRouteBase}/${ev.id}`}
+                                      className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
+                                    >
+                                      Inscrições
+                                    </Link>
+                                  )}
                                   <Link
                                     href={`/eventos/${ev.slug}`}
                                     className={cn(CTA_NEUTRAL, "px-3 py-1 text-[11px]")}
                                   >
                                     Página pública
                                   </Link>
-                                  <button
-                                    type="button"
-                                    disabled={eventActionLoading === ev.id}
-                                    onClick={() => setEventDialog({ mode: actionMode, ev })}
-                                    className={cn(
-                                      actionMode === "archive" ? CTA_SECONDARY : CTA_DANGER,
-                                      "px-3 py-1 text-[11px] disabled:opacity-60",
-                                    )}
-                                  >
-                                    {actionLabel}
-                                  </button>
+                                  {ev.status === "ARCHIVED" ? (
+                                    <button
+                                      type="button"
+                                      disabled={eventActionLoading === ev.id}
+                                      onClick={() => setEventDialog({ mode: "unarchive", ev })}
+                                      className={cn(CTA_SUCCESS, "px-3 py-1 text-[11px] disabled:opacity-60")}
+                                    >
+                                      Reativar
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      disabled={eventActionLoading === ev.id}
+                                      onClick={() => setEventDialog({ mode: ev.status === "DRAFT" ? "delete" : "archive", ev })}
+                                      className={cn(CTA_DANGER, "px-3 py-1 text-[11px] disabled:opacity-60")}
+                                    >
+                                      {ev.status === "DRAFT" ? "Apagar rascunho" : "Arquivar"}
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -5833,35 +5847,32 @@ function OrganizacaoPageInner({
           title={
             eventDialog.mode === "delete"
               ? "Apagar rascunho?"
-              : eventDialog.mode === "cancel"
-                ? `Cancelar ${eventDialogLabel}?`
+              : eventDialog.mode === "unarchive"
+                ? `Reativar ${eventDialogLabel}?`
                 : `Arquivar ${eventDialogLabel}?`
           }
           description={
             eventDialog.mode === "delete"
               ? "Esta ação remove o rascunho e bilhetes associados."
-              : eventDialog.mode === "cancel"
-                ? `O ${eventDialogLabel} fica em estado final cancelado e deixa de aceitar novas compras.`
+              : eventDialog.mode === "unarchive"
+                ? `O ${eventDialogLabel} volta a aparecer nas listas e dashboards.`
                 : `O ${eventDialogLabel} deixa de estar visível para o público. Vendas e relatórios mantêm-se.`
           }
           consequences={
             eventDialog.mode === "delete"
               ? [`Podes criar outro ${eventDialogLabel} quando quiseres.`]
-              : eventDialog.mode === "cancel"
-                ? [
-                    "Cancelado é estado terminal e não pode voltar a ativo.",
-                    "Se o início ainda não ocorreu, o sistema agenda reembolsos integrais automaticamente.",
-                  ]
+              : eventDialog.mode === "unarchive"
+                ? ["Podes sempre voltar a arquivar mais tarde."]
                 : ["Sai de /descobrir e das listas do dashboard.", "Mantém histórico para relatórios/finanças."]
           }
           confirmLabel={
             eventDialog.mode === "delete"
               ? "Apagar rascunho"
-              : eventDialog.mode === "cancel"
-                ? `Cancelar ${eventDialogLabel}`
+              : eventDialog.mode === "unarchive"
+                ? `Reativar ${eventDialogLabel}`
                 : `Arquivar ${eventDialogLabel}`
           }
-          dangerLevel={eventDialog.mode === "archive" ? "medium" : "high"}
+          dangerLevel={eventDialog.mode === "delete" ? "high" : eventDialog.mode === "archive" ? "high" : "medium"}
           onConfirm={() => archiveEvent(eventDialog.ev, eventDialog.mode)}
           onClose={() => setEventDialog(null)}
         />

@@ -59,6 +59,23 @@ async function _POST(req: NextRequest) {
         { status: 400 }
       );
     }
+    const nextStatusRaw = status.trim().toUpperCase();
+    const nextStatus =
+      (Object.values(EventStatus) as string[]).includes(nextStatusRaw)
+        ? (nextStatusRaw as EventStatus)
+        : null;
+    if (!nextStatus) {
+      return jsonWrap(
+        { ok: false, error: "STATUS_INVALID" },
+        { status: 400 }
+      );
+    }
+    if (nextStatus !== EventStatus.PUBLISHED && nextStatus !== EventStatus.CANCELLED) {
+      return jsonWrap(
+        { ok: false, error: "UNSUPPORTED_EVENT_STATUS_TRANSITION" },
+        { status: 400 }
+      );
+    }
 
     // Construir o "where" dinamicamente: por id OU por slug
     let whereClause:
@@ -108,18 +125,17 @@ async function _POST(req: NextRequest) {
           { status: 404 }
         );
       }
-      if (existing.status !== "DRAFT" && status === "DRAFT") {
+      if (existing.status === EventStatus.CANCELLED) {
         return jsonWrap(
-          { ok: false, error: "INVALID_STATUS_TRANSITION" },
-          { status: 400 }
+          { ok: false, error: "EVENT_CANCELLED_TERMINAL" },
+          { status: 409 }
         );
       }
 
       const updated = await prisma.event.update({
         where: { id: existing.id },
         data: {
-          // Cast para EventStatus para corresponder ao enum do Prisma
-          status: status as EventStatus,
+          status: nextStatus,
         },
         select: {
           id: true,
@@ -150,9 +166,8 @@ async function _POST(req: NextRequest) {
         });
       }
 
-      const now = new Date();
       const shouldAutoRefund =
-        updated.status === "CANCELLED" && updated.startsAt && updated.startsAt.getTime() > now.getTime();
+        existing.status !== EventStatus.CANCELLED && updated.status === EventStatus.CANCELLED;
 
       if (shouldAutoRefund) {
         // Disparar refunds base-only para todas as compras deste evento (idempotente por dedupeKey)

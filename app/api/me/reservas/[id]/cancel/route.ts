@@ -4,7 +4,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { decideCancellation } from "@/lib/bookingCancellation";
-import { requestBookingRefundCase } from "@/lib/reservas/refundCase";
+import { refundBookingPayment } from "@/lib/refunds/unifiedRefund";
 import { cancelBooking } from "@/domain/bookings/commands";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
@@ -65,16 +65,12 @@ async function _POST(
     );
 
   const computeSplitRefundAmount = (params: {
-    pricingSnapshot: { total?: number; platformFee?: number; cardPlatformFee?: number } | null;
+    amountCents: number | null;
     stripeFeeCents: number;
   }) => {
-    const totalCents = params.pricingSnapshot?.total;
-    if (!Number.isFinite(totalCents)) return null;
-    const platformFeeCents = Math.max(0, Number(params.pricingSnapshot?.platformFee ?? 0));
-    const cardPlatformFeeCents = Math.max(0, Number(params.pricingSnapshot?.cardPlatformFee ?? 0));
-    const processorFeeCents = Math.max(0, params.stripeFeeCents);
-    const feesRetained = platformFeeCents + cardPlatformFeeCents + processorFeeCents;
-    return Math.max(0, Math.round((totalCents ?? 0) - feesRetained));
+    if (!Number.isFinite(params.amountCents)) return null;
+    const feesRetained = Math.max(0, params.stripeFeeCents);
+    return Math.max(0, Math.round((params.amountCents ?? 0) - feesRetained));
   };
 
   if (!bookingId) {
@@ -275,23 +271,22 @@ async function _POST(
 
     if ("error" in result) return result.error;
 
-    let refundCaseId: string | null = null;
-    let refundStatus: string | null = null;
     if (result.refundRequired && result.paymentIntentId) {
       try {
-        const refundCase = await requestBookingRefundCase({
+        await refundBookingPayment({
           bookingId: result.booking.id,
           paymentIntentId: result.paymentIntentId,
           reason: "CLIENT_CANCEL",
           amountCents: result.refundAmountCents,
-          requestedBy: user.id,
-          auditPayload: { route: "me/reservas/cancel" },
         });
-        refundCaseId = refundCase?.id ?? null;
-        refundStatus = refundCase?.status ?? null;
       } catch (refundErr) {
-        console.error("[reservas/cancel] refund case failed", refundErr);
-        refundStatus = "MANUAL_REVIEW";
+        console.error("[reservas/cancel] refund failed", refundErr);
+        return fail(
+          502,
+          "BOOKING_REFUND_FAILED",
+          "Reserva cancelada, mas o reembolso falhou.",
+          true,
+        );
       }
     }
 
@@ -318,11 +313,6 @@ async function _POST(
         ]),
       );
       const refundedParticipantIds: number[] = [];
-      const splitRefundCases: Array<{
-        participantId: number;
-        refundCaseId: string | null;
-        status: string;
-      }> = [];
 
       for (const refund of result.splitRefunds) {
         const payment = paymentByIntent.get(refund.paymentIntentId) ?? null;
@@ -332,42 +322,31 @@ async function _POST(
             paymentIntentId: refund.paymentIntentId,
           });
         }
-        const snapshot = payment?.pricingSnapshotJson as
-          | { total?: number; platformFee?: number; cardPlatformFee?: number }
-          | null;
+        const snapshot = payment?.pricingSnapshotJson as { total?: number } | null;
+        const amountCents = typeof snapshot?.total === "number" ? snapshot.total : null;
         const stripeFeeCents = payment?.processorFeesActual ?? 0;
         const refundAmountCents = computeSplitRefundAmount({
-          pricingSnapshot: snapshot,
+          amountCents,
           stripeFeeCents,
         });
 
         try {
-          const splitRefundCase = await requestBookingRefundCase({
+          await refundBookingPayment({
             bookingId: result.booking.id,
             paymentIntentId: refund.paymentIntentId,
             reason: "CLIENT_CANCEL",
             amountCents: refundAmountCents,
-            requestedBy: user.id,
-            idempotencyKey: `refund_case:BOOKING:${result.booking.id}:SPLIT:${refund.participantId}`,
-            auditPayload: {
-              route: "me/reservas/cancel",
-              participantId: refund.participantId,
-              split: true,
-            },
+            idempotencyKey: `refund:BOOKING:${result.booking.id}:SPLIT:${refund.participantId}`,
           });
           refundedParticipantIds.push(refund.participantId);
-          splitRefundCases.push({
-            participantId: refund.participantId,
-            refundCaseId: splitRefundCase?.id ?? null,
-            status: splitRefundCase?.status ?? "QUEUED",
-          });
         } catch (refundErr) {
-          console.error("[reservas/cancel] split refund case failed", refundErr);
-          splitRefundCases.push({
-            participantId: refund.participantId,
-            refundCaseId: null,
-            status: "MANUAL_REVIEW",
-          });
+          console.error("[reservas/cancel] split refund failed", refundErr);
+          return fail(
+            502,
+            "BOOKING_REFUND_FAILED",
+            "Reserva cancelada, mas o reembolso falhou.",
+            true,
+          );
         }
       }
 
@@ -376,12 +355,6 @@ async function _POST(
           where: { id: { in: refundedParticipantIds } },
           data: { status: "CANCELLED" },
         });
-      }
-
-      if (!refundStatus && splitRefundCases.length > 0) {
-        refundStatus = splitRefundCases.some((item) => item.status === "MANUAL_REVIEW")
-          ? "MANUAL_REVIEW"
-          : "QUEUED";
       }
     }
 
@@ -392,8 +365,6 @@ async function _POST(
       },
       alreadyCancelled: result.already,
       snapshotTimezone: result.snapshotTimezone,
-      refundCaseId,
-      refundStatus,
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {

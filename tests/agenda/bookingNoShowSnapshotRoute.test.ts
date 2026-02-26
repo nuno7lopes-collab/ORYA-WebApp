@@ -76,7 +76,7 @@ vi.mock("@/domain/bookings/commands", () => ({
   markNoShowBooking: (...args: any[]) => markNoShowBookingMock(...args),
 }));
 
-vi.mock("@/lib/reservas/bookingRefund", () => ({
+vi.mock("@/lib/refunds/unifiedRefund", () => ({
   refundBookingPayment: (...args: any[]) => refundBookingPaymentMock(...args),
 }));
 
