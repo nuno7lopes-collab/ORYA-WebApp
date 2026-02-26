@@ -73,6 +73,7 @@ Data de referencia: 2026-02-24
 | `scripts/generate_api_ui_orphan_burndown_plan.mjs` | `report:api-ui-burndown` | `ci,dev` |
 | `scripts/operational_scripts_allowlist_gate.mjs` | `gate:scripts-ops` | `ci,dev,local` |
 | `scripts/operational_scripts_catalog_gate.mjs` | `gate:scripts-catalog` | `ci,dev,local` |
+| `scripts/operational_data_integrity_gate.mjs` | `gate:data-integrity` | `dev,local` |
 | `scripts/reservas_seed_integrity_gate.ts` | `gate:reservas-seed-integrity` | `ci,dev,local` |
 | `scripts/smoke_reservas_hybrid.ts` | `smoke:reservas:hybrid` | `dev,local` |
 | `scripts/ssot_normative_gate.mjs` | `gate:ssot-normative` | `ci,dev` |
@@ -470,6 +471,13 @@ Data de referencia: 2026-02-24
 - Owner: `platform-architecture`
 - Comando npm oficial: `npm run gate:scripts-catalog`
 - Ambientes: `ci,dev,local`
+
+### operational-data-integrity-gate-mjs
+
+- Script: `scripts/operational_data_integrity_gate.mjs`
+- Owner: `platform-architecture`
+- Comando npm oficial: `npm run gate:data-integrity`
+- Ambientes: `dev,local`
 
 ### operations-loop-js
 

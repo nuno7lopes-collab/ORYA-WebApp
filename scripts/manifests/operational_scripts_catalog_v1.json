@@ -505,6 +505,17 @@
       "status": "active"
     },
     {
+      "script": "scripts/operational_data_integrity_gate.mjs",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#operational-data-integrity-gate-mjs",
+      "npmCommand": "gate:data-integrity",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
       "script": "scripts/operations-loop.js",
       "owner": "platform-runtime",
       "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#operations-loop-js",
