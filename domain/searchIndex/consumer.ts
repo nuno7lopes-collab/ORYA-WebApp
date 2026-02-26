@@ -1,8 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { SearchIndexVisibility, SourceType } from "@prisma/client";
-import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 import { normalizeAgendaSourceType } from "@/domain/sourceType";
 import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
+import { resolveTicketPricingSummary } from "@/domain/events/ticketPricing";
 
 const ALLOWLIST = new Set([
   "event.created",
@@ -54,7 +54,14 @@ async function upsertFromEvent(params: {
       ownerUserId: true,
       organizationId: true,
       organization: { select: { status: true, publicName: true } },
-      ticketTypes: { select: { price: true } },
+      ticketTypes: {
+        select: {
+          price: true,
+          status: true,
+          totalQuantity: true,
+          soldQuantity: true,
+        },
+      },
     },
   });
 
@@ -85,11 +92,10 @@ async function upsertFromEvent(params: {
       })
     : null;
 
-  const ticketPrices = event.ticketTypes
-    .map((t) => (typeof t.price === "number" ? t.price : null))
-    .filter((price): price is number => price !== null);
-  const isGratis = deriveIsFreeEvent({ pricingMode: event.pricingMode, ticketPrices });
-  const priceFromCents = isGratis ? 0 : ticketPrices.length > 0 ? Math.min(...ticketPrices) : null;
+  const { isGratis, priceFromCents } = resolveTicketPricingSummary({
+    pricingMode: event.pricingMode,
+    ticketTypes: event.ticketTypes,
+  });
 
   const visibility = resolveVisibility({
     status: event.status,

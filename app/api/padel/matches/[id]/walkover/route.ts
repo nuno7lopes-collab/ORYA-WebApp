@@ -7,7 +7,8 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { readNumericParam } from "@/lib/routeParams";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
-import { buildWalkoverSets, normalizePadelScoreRules } from "@/domain/padel/score";
+import { buildWalkoverSets } from "@/domain/padel/score";
+import { buildScoreRuleSummary, resolveEffectiveScoreRules } from "@/domain/padel/scoreRulesResolver";
 import { updatePadelMatch } from "@/domain/padel/matches/commands";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { listTournamentDirectorUserIds, resolveIncidentAuthority } from "@/domain/padel/incidentGovernance";
@@ -49,6 +50,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       winnerSide: true,
       winnerParticipantId: true,
       eventId: true,
+      categoryId: true,
       status: true,
       score: true,
       scoreSets: true,
@@ -182,9 +184,12 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     where: { eventId: match.eventId },
     select: { advancedSettings: true, ruleSetId: true, ruleSetVersionId: true },
   });
-  const scoreRules = normalizePadelScoreRules(
-    (config?.advancedSettings as Record<string, unknown> | null)?.scoreRules,
-  );
+  const effectiveRules = resolveEffectiveScoreRules(config?.advancedSettings, match.categoryId ?? null);
+  const scoreRuleSummary = buildScoreRuleSummary({
+    rules: effectiveRules.rules,
+    source: effectiveRules.source,
+    categoryId: effectiveRules.categoryId,
+  });
   const ruleSnapshot = {
     source:
       config?.ruleSetVersionId != null
@@ -194,6 +199,10 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
           : "DEFAULT",
     ruleSetId: config?.ruleSetId ?? null,
     ruleSetVersionId: config?.ruleSetVersionId ?? null,
+    scoreRuleSource: effectiveRules.source,
+    scoreRuleCategoryId: effectiveRules.source === "CATEGORY" ? effectiveRules.categoryId : null,
+    scoreRules: effectiveRules.rules,
+    scoreRuleSummary,
     capturedAt: new Date().toISOString(),
   };
   const nowIso = new Date().toISOString();
@@ -234,7 +243,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         winnerSide: winner,
         winnerParticipantId,
         score: persistedScore as Prisma.InputJsonValue,
-        scoreSets: buildWalkoverSets(winner, scoreRules ?? undefined),
+        scoreSets: buildWalkoverSets(winner, effectiveRules.rules),
       },
     });
     return updatedMatch;

@@ -7,6 +7,7 @@ import { isUnauthenticatedError } from "@/lib/security";
 import { ChatContextError } from "@/lib/chat/context";
 import { prisma } from "@/lib/prisma";
 import { requireManagedCommunity } from "@/app/api/messages/communities/_shared";
+import { listEffectiveOrganizationMembers } from "@/lib/organizationMembers";
 
 async function _GET(
   req: NextRequest,
@@ -26,7 +27,6 @@ async function _GET(
       select: {
         userId: true,
         role: true,
-        organizationId: true,
         joinedAt: true,
         leftAt: true,
         accessRevokedAt: true,
@@ -47,10 +47,16 @@ async function _GET(
       orderBy: [{ role: "asc" }, { joinedAt: "asc" }],
     });
 
+    const teamMemberships = await listEffectiveOrganizationMembers({
+      organizationId: community.organizationId,
+      userIds: members.map((member) => member.userId),
+    });
+    const teamMemberUserIds = new Set(teamMemberships.map((member) => member.userId));
+
     const items = members.map((member) => ({
       userId: member.userId,
       role: member.role,
-      isTeamMember: member.organizationId === community.organizationId,
+      isTeamMember: teamMemberUserIds.has(member.userId),
       joinedAt: member.joinedAt.toISOString(),
       leftAt: member.leftAt?.toISOString() ?? null,
       accessRevokedAt: member.accessRevokedAt?.toISOString() ?? null,

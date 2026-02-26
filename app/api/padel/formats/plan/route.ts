@@ -11,6 +11,7 @@ import { computePadelPlan } from "@/domain/padel/formatEngine/capacity";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { resolvePadelCourtSelection } from "@/domain/padel/courtSelection";
 import { dailyWindowsToIntervals, deriveEnvelopeFromDailyWindows, normalizePadelDailyWindows } from "@/lib/padel/scheduleWindows";
+import { parsePadelFormat } from "@/domain/padel/formatCatalog";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
@@ -54,6 +55,11 @@ async function _POST(req: NextRequest) {
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+  const hasFormatInput = Object.prototype.hasOwnProperty.call(body, "format");
+  const requestedFormat = hasFormatInput ? parsePadelFormat(body.format) : null;
+  if (hasFormatInput && !requestedFormat) {
+    return jsonWrap({ ok: false, error: "INVALID_FORMAT" }, { status: 400 });
+  }
 
   const eventIdRaw = parseNumber(body.eventId);
   const eventId =
@@ -200,6 +206,7 @@ async function _POST(req: NextRequest) {
   const courtIds = courtSelection.courtIds;
 
   let invalidCategoryId = false;
+  let invalidCategoryFormat = false;
   const categories = Array.isArray(body.categories)
     ? body.categories
         .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object")
@@ -224,17 +231,17 @@ async function _POST(req: NextRequest) {
               : profilesByCategory && profilesByCategory.global && typeof profilesByCategory.global === "object"
                 ? (profilesByCategory.global as Record<string, unknown>)
                 : null;
+          const formatRaw = typeof entry.format === "string" ? entry.format.trim() : "";
+          const parsedFormat = formatRaw ? parsePadelFormat(formatRaw) : null;
+          if (formatRaw && !parsedFormat) invalidCategoryFormat = true;
+          const fallbackFormat =
+            typeof profileForCategory?.format === "string" ? parsePadelFormat(profileForCategory.format) : null;
 
           return {
             categoryId,
             label: typeof entry.label === "string" ? entry.label : null,
             teams: Math.max(0, Math.floor(teamsRaw ?? 0)),
-            format:
-              typeof entry.format === "string"
-                ? entry.format
-                : typeof profileForCategory?.format === "string"
-                  ? profileForCategory.format
-                  : undefined,
+            format: parsedFormat ?? fallbackFormat ?? undefined,
             amMxMode:
               entry.amMxMode === "FIXED_PAIR" || entry.amMxMode === "INDIVIDUAL_ROTATION"
                 ? entry.amMxMode
@@ -260,7 +267,7 @@ async function _POST(req: NextRequest) {
           };
         })
     : undefined;
-  if (invalidCategoryId) {
+  if (invalidCategoryId || invalidCategoryFormat) {
     return jsonWrap({ ok: false, error: "INVALID_CATEGORIES" }, { status: 400 });
   }
 
@@ -279,13 +286,9 @@ async function _POST(req: NextRequest) {
       }, {})
     : undefined;
 
+  const formatFromEventDefaults = parsePadelFormat(eventDefaults?.format);
   const plan = computePadelPlan({
-    format:
-      typeof body.format === "string"
-        ? body.format
-        : eventDefaults?.format
-          ? eventDefaults.format
-          : "TODOS_CONTRA_TODOS",
+    format: requestedFormat ?? formatFromEventDefaults ?? "TODOS_CONTRA_TODOS",
     categories,
     teams: parseNumber(body.teams),
     windowStart,

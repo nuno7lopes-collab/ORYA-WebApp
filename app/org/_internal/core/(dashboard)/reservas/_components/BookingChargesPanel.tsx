@@ -26,11 +26,15 @@ function formatMoney(amountCents: number, currency: string) {
   try {
     return new Intl.NumberFormat("pt-PT", {
       style: "currency",
-      currency,
+      currency: (currency || "EUR").toUpperCase(),
       minimumFractionDigits: 2,
     }).format(amountCents / 100);
   } catch {
-    return `${(amountCents / 100).toFixed(2)} ${currency}`;
+    const numeric = new Intl.NumberFormat("pt-PT", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amountCents / 100);
+    return `${numeric} ${(currency || "EUR").toUpperCase()}`;
   }
 }
 

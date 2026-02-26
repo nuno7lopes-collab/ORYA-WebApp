@@ -1,6 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
+import { resolveTicketPricingSummary } from "@/domain/events/ticketPricing";
 
 export async function getTournamentStructure(tournamentId: number) {
   const tournament = await prisma.tournament.findUnique({
@@ -66,7 +66,14 @@ export async function getTournamentStructure(tournamentId: number) {
           slug: true,
           startsAt: true,
           pricingMode: true,
-          ticketTypes: { select: { price: true } },
+          ticketTypes: {
+            select: {
+              price: true,
+              status: true,
+              totalQuantity: true,
+              soldQuantity: true,
+            },
+          },
         },
       },
     },
@@ -76,10 +83,11 @@ export async function getTournamentStructure(tournamentId: number) {
 
   if (!tournament.event) return tournament;
 
-  const isGratis = deriveIsFreeEvent({
+  const pricing = resolveTicketPricingSummary({
     pricingMode: tournament.event.pricingMode ?? undefined,
-    ticketPrices: tournament.event.ticketTypes.map((t) => t.price ?? 0),
+    ticketTypes: tournament.event.ticketTypes,
   });
+  const isGratis = pricing.isGratis;
 
   return {
     ...tournament,

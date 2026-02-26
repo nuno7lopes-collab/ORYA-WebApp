@@ -5,6 +5,7 @@ import { getPaidSalesGate } from "@/lib/organizationPayments";
 import { resolveServicePartySizeRules } from "@/lib/reservas/servicePartySize";
 import { resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
 import { resolveBookingVerticalFromServiceKind } from "@/lib/reservas/bookingVertical";
+import { resolveAllowedServiceScopeIds } from "@/lib/reservas/serviceScopes";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 async function _GET(
@@ -55,8 +56,12 @@ async function _GET(
         locationMode: true,
         addressId: true,
         addressRef: { select: { formattedAddress: true, canonical: true } },
-        professionalLinks: { select: { professionalId: true } },
-        resourceLinks: { select: { resourceId: true } },
+        professionalLinks: {
+          select: { professionalId: true, professional: { select: { isActive: true } } },
+        },
+        resourceLinks: {
+          select: { resourceId: true, resource: { select: { isActive: true } } },
+        },
         policy: {
           select: {
             id: true,
@@ -181,10 +186,18 @@ async function _GET(
       serviceMode: service.assignmentMode ?? null,
       serviceKind: service.kind ?? null,
     });
+    const { allowedProfessionalIds, allowedResourceIds } = resolveAllowedServiceScopeIds({
+      professionalLinks: service.professionalLinks,
+      resourceLinks: service.resourceLinks,
+    });
 
     const [professionals, resources, courtConfig] = await Promise.all([
       prisma.reservationProfessional.findMany({
-        where: { organizationId: service.organization.id, isActive: true },
+        where: {
+          organizationId: service.organization.id,
+          isActive: true,
+          ...(allowedProfessionalIds ? { id: { in: allowedProfessionalIds } } : {}),
+        },
         orderBy: [{ priority: "asc" }, { id: "asc" }],
         select: {
           id: true,
@@ -200,6 +213,7 @@ async function _GET(
           organizationId: service.organization.id,
           isActive: true,
           ...(assignmentConfig.isCourtService ? { courtId: { not: null } } : {}),
+          ...(allowedResourceIds ? { id: { in: allowedResourceIds } } : {}),
         },
         orderBy: [{ priority: "asc" }, { id: "asc" }],
         select: {

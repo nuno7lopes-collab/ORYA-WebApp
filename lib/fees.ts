@@ -1,4 +1,7 @@
 import { FeeMode } from "@prisma/client";
+import { computePricing } from "@/lib/pricing";
+
+export const ORYA_CARD_PLATFORM_FEE_BPS = 100;
 
 type FeeModeInput = FeeMode;
 
@@ -20,6 +23,16 @@ export type CombinedFeesResult = {
   totalCents: number;
 };
 
+export function computeCardPlatformFeeCents(
+  amountCents: number,
+  feeBps = ORYA_CARD_PLATFORM_FEE_BPS,
+) {
+  const normalizedAmount = Math.max(0, Math.round(amountCents));
+  const normalizedFeeBps = Math.max(0, Math.round(feeBps));
+  if (normalizedAmount <= 0 || normalizedFeeBps <= 0) return 0;
+  return Math.max(0, Math.round((normalizedAmount * normalizedFeeBps) / 10_000));
+}
+
 /**
  * Calcula apenas a taxa ORYA (sem estimativas de fees do processador).
  * - feeMode = ADDED → total inclui a taxa ORYA.
@@ -36,43 +49,22 @@ export function computeCombinedFees(params: ComputeCombinedFeesParams): Combined
     platformFeeFixedCents,
   } = params;
 
-  const netSubtotal = Math.max(0, Math.round(amountCents) - Math.max(0, Math.round(discountCents)));
-  const feeMode = rawFeeMode;
-
-  const oryaFeeCents =
-    netSubtotal === 0
-      ? 0
-      : Math.max(0, Math.round((netSubtotal * Math.max(0, platformFeeBps)) / 10_000) + Math.max(0, platformFeeFixedCents));
-
-  if (netSubtotal === 0) {
-    return {
-      subtotalCents: netSubtotal,
-      feeMode,
-      oryaFeeCents,
-      combinedFeeCents: 0,
-      totalCents: 0,
-    };
-  }
-
-  if (feeMode === FeeMode.INCLUDED) {
-    const totalCents = netSubtotal;
-    const combinedFeeCents = Math.max(0, oryaFeeCents);
-    return {
-      subtotalCents: netSubtotal,
-      feeMode,
-      oryaFeeCents,
-      combinedFeeCents,
-      totalCents,
-    };
-  }
-
-  // ADDED: total = subtotal + taxa ORYA (sem estimativa de fees do processador).
-  const totalCents = Math.max(0, Math.round(netSubtotal + oryaFeeCents));
+  const pricing = computePricing(Math.round(amountCents), Math.round(discountCents), {
+    eventFeeMode: rawFeeMode,
+    platformDefaultFeeMode: rawFeeMode,
+    organizationPlatformFeeBps: platformFeeBps,
+    organizationPlatformFeeFixedCents: platformFeeFixedCents,
+    platformDefaultFeeBps: platformFeeBps,
+    platformDefaultFeeFixedCents: platformFeeFixedCents,
+  });
+  const subtotalCents = Math.max(0, pricing.subtotalCents - pricing.discountCents);
+  const oryaFeeCents = pricing.platformFeeCents;
   const combinedFeeCents = Math.max(0, oryaFeeCents);
+  const totalCents = pricing.totalCents;
 
   return {
-    subtotalCents: netSubtotal,
-    feeMode,
+    subtotalCents,
+    feeMode: pricing.feeMode,
     oryaFeeCents,
     combinedFeeCents,
     totalCents,

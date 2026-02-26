@@ -20,6 +20,7 @@ import {
 } from "@/lib/reservas/gridPolicy";
 import { resolveCourtDurationPrice } from "@/lib/reservas/serviceDurationPrices";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
+import { resolveAllowedServiceScopeIds } from "@/lib/reservas/serviceScopes";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function parseMonthParam(value: string | null) {
@@ -248,16 +249,10 @@ async function _GET(
       allowCustomDuration: false,
       presetDurations: bookingPolicy.allowedDurations,
     };
-    const allowedProfessionalIds = service.professionalLinks.length
-      ? service.professionalLinks
-          .filter((link) => link.professional?.isActive)
-          .map((link) => link.professionalId)
-      : null;
-    const allowedResourceIds = service.resourceLinks.length
-      ? service.resourceLinks
-          .filter((link) => link.resource?.isActive)
-          .map((link) => link.resourceId)
-      : null;
+    const { allowedProfessionalIds, allowedResourceIds } = resolveAllowedServiceScopeIds({
+      professionalLinks: service.professionalLinks,
+      resourceLinks: service.resourceLinks,
+    });
     const courtIdParam = req.nextUrl.searchParams.get("courtId");
     const requestedCourtId = parsePositiveInt(courtIdParam);
     if (courtIdParam != null && !requestedCourtId) {

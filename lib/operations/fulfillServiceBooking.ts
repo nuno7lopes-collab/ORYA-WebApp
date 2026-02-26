@@ -887,8 +887,10 @@ async function ensureConfirmationSnapshot(params: {
   }
 
   if (!booking.policyRef) {
-    await tx.bookingPolicyRef.create({
-      data: { bookingId: booking.id, policyId: resolvedPolicyId },
+    await tx.bookingPolicyRef.upsert({
+      where: { bookingId: booking.id },
+      update: {},
+      create: { bookingId: booking.id, policyId: resolvedPolicyId },
     });
   }
 

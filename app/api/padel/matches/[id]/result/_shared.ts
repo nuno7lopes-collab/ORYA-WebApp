@@ -14,7 +14,8 @@ import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { updatePadelMatch } from "@/domain/padel/matches/commands";
 import { asScoreObject, markPendingReviewExpired, normalizeResultWorkflowConfig } from "@/domain/padel/resultWorkflow";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
-import { normalizePadelScoreRules } from "@/domain/padel/score";
+import { type PadelScoreRules } from "@/domain/padel/score";
+import { buildScoreRuleSummary, resolveEffectiveScoreRules } from "@/domain/padel/scoreRulesResolver";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const ADMIN_ROLES = new Set<OrganizationMemberRole>(["OWNER", "CO_OWNER", "ADMIN"]);
@@ -58,11 +59,15 @@ export type ResultRouteContext = {
 };
 
 export type ResultScoreRulesContext = {
-  scoreRules: ReturnType<typeof normalizePadelScoreRules>;
+  scoreRules: PadelScoreRules;
   ruleSnapshot: {
     source: "VERSION" | "RULESET" | "DEFAULT";
     ruleSetId: number | null;
     ruleSetVersionId: number | null;
+    scoreRuleSource: "CATEGORY" | "GLOBAL" | "DEFAULT";
+    scoreRuleCategoryId: number | null;
+    scoreRules: PadelScoreRules;
+    scoreRuleSummary: ReturnType<typeof buildScoreRuleSummary>;
     capturedAt: string;
   };
 };
@@ -269,13 +274,22 @@ export function resolveClientRequestId(req: NextRequest, body: Record<string, un
   return parseClientRequestId(req, body);
 }
 
-export async function resolveResultScoreRulesContext(eventId: number): Promise<ResultScoreRulesContext> {
+export async function resolveResultScoreRulesContext(
+  eventId: number,
+  categoryId?: number | null,
+): Promise<ResultScoreRulesContext> {
   const config = await prisma.padelTournamentConfig.findUnique({
     where: { eventId },
     select: { advancedSettings: true, ruleSetId: true, ruleSetVersionId: true },
   });
+  const effectiveRules = resolveEffectiveScoreRules(config?.advancedSettings, categoryId ?? null);
+  const scoreRuleSummary = buildScoreRuleSummary({
+    rules: effectiveRules.rules,
+    source: effectiveRules.source,
+    categoryId: effectiveRules.categoryId,
+  });
   return {
-    scoreRules: normalizePadelScoreRules((config?.advancedSettings as Record<string, unknown> | null)?.scoreRules),
+    scoreRules: effectiveRules.rules,
     ruleSnapshot: {
       source:
         config?.ruleSetVersionId != null
@@ -285,6 +299,10 @@ export async function resolveResultScoreRulesContext(eventId: number): Promise<R
             : "DEFAULT",
       ruleSetId: config?.ruleSetId ?? null,
       ruleSetVersionId: config?.ruleSetVersionId ?? null,
+      scoreRuleSource: effectiveRules.source,
+      scoreRuleCategoryId: effectiveRules.source === "CATEGORY" ? effectiveRules.categoryId : null,
+      scoreRules: effectiveRules.rules,
+      scoreRuleSummary,
       capturedAt: new Date().toISOString(),
     },
   };

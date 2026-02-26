@@ -69,23 +69,23 @@ const mapChatPreviewError = (err: unknown, fallback: string) => {
   if (code === "CHAT_BLOCKED") return "Conversa bloqueada.";
   if (code === "BANNED") return "Acesso bloqueado a esta conversa.";
   if (code === "READ_ONLY") return "Conversa em modo leitura.";
-  if (code === "EVENT_NOT_OPEN") return "A conversa ainda nao esta aberta.";
-  if (code === "EVENT_NOT_FOUND") return "Conversa nao encontrada.";
-  if (code === "BOOKING_INACTIVE") return "Conversa indisponivel para esta reserva.";
-  if (code === "BOOKING_NOT_FOUND") return "Conversa nao encontrada.";
-  if (code === "INVALID_MESSAGE") return "Mensagem invalida.";
-  if (code === "MESSAGE_NOT_FOUND") return "Mensagem nao encontrada.";
-  if (code === "UNDO_EXPIRED") return "Ja nao e possivel anular esta mensagem.";
+  if (code === "EVENT_NOT_OPEN") return "A conversa ainda não está aberta.";
+  if (code === "EVENT_NOT_FOUND") return "Conversa não encontrada.";
+  if (code === "BOOKING_INACTIVE") return "Conversa indisponível para esta reserva.";
+  if (code === "BOOKING_NOT_FOUND") return "Conversa não encontrada.";
+  if (code === "INVALID_MESSAGE") return "Mensagem inválida.";
+  if (code === "MESSAGE_NOT_FOUND") return "Mensagem não encontrada.";
+  if (code === "UNDO_EXPIRED") return "Já não é possível anular esta mensagem.";
   if (code === "EMPTY_MESSAGE") return "Mensagem vazia.";
   if (code === "MESSAGE_TOO_LONG") return "Mensagem demasiado longa.";
-  if (code === "INVALID_REPLY") return "Resposta invalida.";
-  if (code === "INVALID_LEVEL") return "Configuracao invalida.";
-  if (code === "INVALID_MUTE") return "Configuracao invalida.";
-  if (code === "INVALID_PAYLOAD") return "Pedido invalido.";
+  if (code === "INVALID_REPLY") return "Resposta inválida.";
+  if (code === "INVALID_LEVEL") return "Configuração inválida.";
+  if (code === "INVALID_MUTE") return "Configuração inválida.";
+  if (code === "INVALID_PAYLOAD") return "Pedido inválido.";
   if (code === "DUPLICATE_MESSAGE") return "Mensagem duplicada.";
-  if (code === "MESSAGE_NOT_CREATED") return "Nao foi possivel criar a mensagem.";
-  if (code === "FORBIDDEN") return "Sem permissoes para esta acao.";
-  if (code === "UNAUTHENTICATED") return "Sessao expirada. Volta a autenticar-te.";
+  if (code === "MESSAGE_NOT_CREATED") return "Não foi possível criar a mensagem.";
+  if (code === "FORBIDDEN") return "Sem permissões para esta ação.";
+  if (code === "UNAUTHENTICATED") return "Sessão expirada. Volta a autenticar-te.";
   if (code === "RATE_LIMITED") return "Muitas tentativas. Tenta novamente em instantes.";
   return raw || fallback;
 };
@@ -1211,7 +1211,7 @@ export function useChatPreviewData() {
       }));
 
       if (isOfflineRef.current) {
-        const message = "Nao e possivel enviar mensagens offline.";
+        const message = "Não é possível enviar mensagens offline.";
         setSendError(message);
         setAttachmentsError(message);
         setPendingByConversation((prev) => ({
@@ -1246,7 +1246,7 @@ export function useChatPreviewData() {
           }),
         });
         if (!res?.message) {
-          throw new Error("Resposta invalida.");
+          throw new Error("Resposta inválida.");
         }
         setPendingByConversation((prev) => ({
           ...prev,

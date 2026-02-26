@@ -253,6 +253,22 @@ async function _POST(req: NextRequest) {
       : null;
   const splitDeadlineHours = FIXED_SPLIT_DEADLINE_HOURS;
   const hasEnabledFormats = Object.prototype.hasOwnProperty.call(body, "enabledFormats");
+  let invalidEnabledFormats = false;
+  if (hasEnabledFormats) {
+    if (!Array.isArray(body.enabledFormats)) {
+      invalidEnabledFormats = true;
+    } else {
+      for (const raw of body.enabledFormats) {
+        if (!parsePadelFormat(raw)) {
+          invalidEnabledFormats = true;
+          break;
+        }
+      }
+    }
+  }
+  if (invalidEnabledFormats) {
+    return jsonWrap({ ok: false, error: "INVALID_ENABLED_FORMATS" }, { status: 400 });
+  }
   const enabledFormats = hasEnabledFormats ? filterPadelFormats(body.enabledFormats) : null;
   const hasResultValidationMode = Object.prototype.hasOwnProperty.call(body, "resultValidationMode");
   const resultValidationMode =
@@ -719,6 +735,37 @@ async function _POST(req: NextRequest) {
       }
     }
   }
+  const hasScoreRulesByCategory = Object.prototype.hasOwnProperty.call(body, "scoreRulesByCategory");
+  let scoreRulesByCategoryPatch: Record<string, PadelScoreRules | null> | null | undefined = undefined;
+  if (hasScoreRulesByCategory) {
+    if (body.scoreRulesByCategory === null) {
+      scoreRulesByCategoryPatch = null;
+    } else if (
+      body.scoreRulesByCategory &&
+      typeof body.scoreRulesByCategory === "object" &&
+      !Array.isArray(body.scoreRulesByCategory)
+    ) {
+      const parsedPatch: Record<string, PadelScoreRules | null> = {};
+      for (const [rawCategoryId, rawRules] of Object.entries(body.scoreRulesByCategory as Record<string, unknown>)) {
+        const categoryId = parsePositiveInt(rawCategoryId);
+        if (categoryId == null) {
+          return jsonWrap({ ok: false, error: "INVALID_SCORE_RULES_BY_CATEGORY" }, { status: 400 });
+        }
+        if (rawRules === null) {
+          parsedPatch[String(categoryId)] = null;
+          continue;
+        }
+        const parsedRules = normalizePadelScoreRules(rawRules);
+        if (!parsedRules) {
+          return jsonWrap({ ok: false, error: "INVALID_SCORE_RULES_BY_CATEGORY" }, { status: 400 });
+        }
+        parsedPatch[String(categoryId)] = parsedRules;
+      }
+      scoreRulesByCategoryPatch = parsedPatch;
+    } else {
+      return jsonWrap({ ok: false, error: "INVALID_SCORE_RULES_BY_CATEGORY" }, { status: 400 });
+    }
+  }
 
   const hasFeaturedMatchId = Object.prototype.hasOwnProperty.call(body, "featuredMatchId");
   let featuredMatchId: number | null | undefined = undefined;
@@ -813,6 +860,18 @@ async function _POST(req: NextRequest) {
       return jsonWrap({ ok: false, error: "INVALID_DEFAULT_CATEGORY" }, { status: 400 });
     }
   }
+  if (hasRuleSetId && ruleSetId !== null) {
+    const scopedRuleSet = await prisma.padelRuleSet.findFirst({
+      where: {
+        id: ruleSetId,
+        organizationId: organization.id,
+      },
+      select: { id: true },
+    });
+    if (!scopedRuleSet) {
+      return jsonWrap({ ok: false, error: "INVALID_RULESET" }, { status: 400 });
+    }
+  }
 
   try {
     const config = await prisma.$transaction(async (tx) => {
@@ -851,6 +910,7 @@ async function _POST(req: NextRequest) {
         hasScoreRules ||
         hasIsInterclub ||
         hasTeamSize ||
+        hasScoreRulesByCategory ||
         hasFormatProfilesByCategory ||
         hasCapacityPolicy ||
         hasCategoryWeights ||
@@ -888,6 +948,41 @@ async function _POST(req: NextRequest) {
         throw new Error("FORMAT_NOT_SUPPORTED");
       }
 
+      const existingScoreRulesByCategoryRaw =
+        existing?.advancedSettings &&
+        typeof existing.advancedSettings === "object" &&
+        !Array.isArray(existing.advancedSettings)
+          ? (
+              (existing.advancedSettings as Record<string, unknown>)
+                .scoreRulesByCategory as Record<string, unknown> | undefined
+            )
+          : undefined;
+      const existingScoreRulesByCategory = existingScoreRulesByCategoryRaw
+        ? Object.entries(existingScoreRulesByCategoryRaw).reduce<Record<string, PadelScoreRules>>((acc, [key, value]) => {
+            const categoryId = parsePositiveInt(key);
+            if (categoryId == null) return acc;
+            const parsed = normalizePadelScoreRules(value);
+            if (!parsed) return acc;
+            acc[String(categoryId)] = parsed;
+            return acc;
+          }, {})
+        : {};
+      const resolvedScoreRulesByCategory = (() => {
+        if (scoreRulesByCategoryPatch === undefined) return undefined;
+        if (scoreRulesByCategoryPatch === null) return {};
+        const next: Record<string, PadelScoreRules> = {
+          ...existingScoreRulesByCategory,
+        };
+        Object.entries(scoreRulesByCategoryPatch).forEach(([key, value]) => {
+          if (value === null) {
+            delete next[key];
+            return;
+          }
+          next[key] = value;
+        });
+        return next;
+      })();
+
       const mergedAdvanced = {
         ...((existing?.advancedSettings as Record<string, unknown>) ?? {}),
         ...(groupsConfig ? { groupsConfig } : {}),
@@ -908,6 +1003,7 @@ async function _POST(req: NextRequest) {
         ...(templateId !== undefined ? { templateId } : {}),
         ...(tvMonitor !== undefined ? { tvMonitor } : {}),
         ...(scoreRules !== undefined ? { scoreRules } : {}),
+        ...(resolvedScoreRulesByCategory !== undefined ? { scoreRulesByCategory: resolvedScoreRulesByCategory } : {}),
         ...(featuredMatchId !== undefined ? { featuredMatchId } : {}),
         ...(goalLimits !== undefined ? { goalLimits } : {}),
         formatRequested: formatEffective,
@@ -915,7 +1011,15 @@ async function _POST(req: NextRequest) {
         generationVersion: "v1-groups-ko",
       };
 
-      const normalizedFormats = hasEnabledFormats ? enabledFormats ?? [] : undefined;
+      const normalizedFormats = hasEnabledFormats ? enabledFormats ?? [] : null;
+      const ensuredEnabledFormats = (() => {
+        const seed = normalizedFormats ?? existing?.enabledFormats ?? [];
+        const filtered = filterPadelFormats(seed);
+        if (!filtered.includes(formatEffective)) {
+          filtered.unshift(formatEffective);
+        }
+        return filtered;
+      })();
 
       const effectiveRuleSetId = hasRuleSetId ? ruleSetId ?? null : existing?.ruleSetId ?? null;
 
@@ -927,7 +1031,7 @@ async function _POST(req: NextRequest) {
         defaultCategoryId: hasDefaultCategoryId ? defaultCategoryId ?? undefined : existing?.defaultCategoryId ?? undefined,
         eligibilityType: hasEligibilityType ? eligibilityType || undefined : existing?.eligibilityType ?? undefined,
         splitDeadlineHours,
-        enabledFormats: normalizedFormats ?? existing?.enabledFormats ?? undefined,
+        enabledFormats: ensuredEnabledFormats,
         isInterclub: resolvedIsInterclub,
         teamSize: normalizedTeamSize ?? undefined,
         resultValidationMode:
@@ -946,7 +1050,7 @@ async function _POST(req: NextRequest) {
         ...(hasDefaultCategoryId ? { defaultCategoryId } : {}),
         ...(hasEligibilityType ? { eligibilityType: eligibilityType || undefined } : {}),
         splitDeadlineHours,
-        ...(hasEnabledFormats ? { enabledFormats: normalizedFormats ?? [] } : {}),
+        ...((hasEnabledFormats || hasFormat) ? { enabledFormats: ensuredEnabledFormats } : {}),
         ...((hasIsInterclub || hasTeamSize) ? { isInterclub: resolvedIsInterclub, teamSize: normalizedTeamSize ?? null } : {}),
         ...(hasResultValidationMode && resultValidationMode ? { resultValidationMode } : {}),
         ...(hasPendingConfirmationWindowMinutes

@@ -27,11 +27,11 @@ import { CTA_PRIMARY } from "@/app/org/_shared/dashboardUi";
 import { getTicketCopy } from "@/app/components/checkout/checkoutCopy";
 import { resolveEventLocation } from "@/lib/location/eventLocation";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
-import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
+import { resolveTicketPricingSummary } from "@/domain/events/ticketPricing";
 import { EventAccessMode } from "@prisma/client";
 import { resolveInviteTokenGrant } from "@/lib/invites/inviteTokens";
 import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
-import { resolveLocale, t } from "@/lib/i18n";
+import { formatCurrency, resolveLocale, t } from "@/lib/i18n";
 import CrmEngagementTracker from "@/app/components/crm/CrmEngagementTracker";
 import EventShareButton from "./EventShareButton";
 
@@ -147,6 +147,7 @@ type EventResale = {
   } | null;
   ticketTypeName?: string | null;
 };
+
 const EVENT_BG_MASK = `linear-gradient(
   to bottom,
   rgba(0,0,0,var(--event-bg-mask-alpha-1,1)) var(--event-bg-mask-stop-1,0%),
@@ -319,10 +320,11 @@ export default async function EventPage({
     }
     notFound();
   }
-  const isGratis = deriveIsFreeEvent({
+  const pricingSummary = resolveTicketPricingSummary({
     pricingMode: event.pricingMode ?? undefined,
-    ticketPrices: event.ticketTypes.map((t) => t.price ?? 0),
+    ticketTypes: event.ticketTypes,
   });
+  const isGratis = pricingSummary.isGratis;
   const visibleTicketTypes = event.ticketTypes;
   const accessPolicy = event.accessPolicies?.[0] ?? null;
   const accessMode = resolveEventAccessMode(accessPolicy, EventAccessMode.PUBLIC);
@@ -611,16 +613,24 @@ export default async function EventPage({
 
   const marketTickets = uiTickets.filter((ticket) => ticket.isVisible);
   const hiddenPrivateTickets = uiTickets.filter((ticket) => !ticket.isVisible);
-
-  const minTicketPrice =
-    marketTickets.length > 0
-      ? marketTickets.reduce(
-          (min, t) => (t.price < min ? t.price : min),
-          marketTickets[0].price,
+  const purchasableMarketTickets = marketTickets.filter(
+    (ticket) => ticket.status === "on_sale" || ticket.status === "upcoming",
+  );
+  const cheapestMarketTicket =
+    purchasableMarketTickets.length > 0
+      ? purchasableMarketTickets.reduce(
+          (min, ticket) => (ticket.price < min.price ? ticket : min),
+          purchasableMarketTickets[0],
         )
       : null;
 
+  const minTicketPrice = cheapestMarketTicket?.price ?? null;
+
   const displayPriceFrom = minTicketPrice;
+  const displayPriceCurrency =
+    cheapestMarketTicket?.currency ??
+    pricingSummary.priceCurrency ??
+    "EUR";
   const showPriceFrom = !isGratis && minTicketPrice !== null;
   const anyOnSale = marketTickets.some((t) => t.status === "on_sale");
   const anyUpcoming = marketTickets.some((t) => t.status === "upcoming");
@@ -671,10 +681,10 @@ export default async function EventPage({
         ? salesNotOpenDescription
         : allClosed
           ? salesClosedDescription
-          : isGratis
-            ? freeInfoDescription
-            : showPriceFrom && displayPriceFrom !== null
-              ? `${t("fromLabel", locale)} ${displayPriceFrom.toFixed(2)} €`
+            : isGratis
+              ? freeInfoDescription
+              : showPriceFrom && displayPriceFrom !== null
+              ? `${t("fromLabel", locale)} ${formatCurrency(Math.round(displayPriceFrom * 100), displayPriceCurrency, locale)}`
               : t("secureCheckoutHint", locale);
   const heroPrimaryChip = (() => {
     if (eventEnded) {
@@ -709,7 +719,7 @@ export default async function EventPage({
     }
     if (showPriceFrom) {
       return {
-        label: `${t("fromLabel", locale)} ${(displayPriceFrom ?? 0).toFixed(2)} €`,
+        label: `${t("fromLabel", locale)} ${formatCurrency(Math.round((displayPriceFrom ?? 0) * 100), displayPriceCurrency, locale)}`,
         tone: "border-[#7CFFEA]/45 bg-[#092033]/55 text-[#C9FFF7]",
       };
     }
@@ -1416,7 +1426,7 @@ export default async function EventPage({
                               <span className="text-xs text-white/65">
                                 {t("resalePriceLabel", locale)}{" "}
                                 <span className="font-semibold text-white">
-                                  {(r.price / 100).toFixed(2)} €
+                                  {formatCurrency(r.price, r.currency, locale)}
                                 </span>
                               </span>
                             </div>

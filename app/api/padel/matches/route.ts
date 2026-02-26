@@ -10,7 +10,8 @@ import { isValidScore } from "@/lib/padel/validation";
 import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { syncPadelCompetitiveCore } from "@/domain/padel/competitiveCoreSync";
-import { normalizePadelScoreRules, resolvePadelMatchStats } from "@/domain/padel/score";
+import { resolvePadelMatchStats } from "@/domain/padel/score";
+import { buildScoreRuleSummary, resolveEffectiveScoreRules } from "@/domain/padel/scoreRulesResolver";
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
 import { updatePadelMatch } from "@/domain/padel/matches/commands";
 import { isPadelOfficialPublicResult } from "@/domain/padel/publicResult";
@@ -408,6 +409,7 @@ async function _POST(req: NextRequest) {
     select: {
       id: true,
       eventId: true,
+      categoryId: true,
       status: true,
       score: true,
       scoreSets: true,
@@ -511,16 +513,27 @@ async function _POST(req: NextRequest) {
         select: { advancedSettings: true, ruleSetId: true, ruleSetVersionId: true },
       })
     : null;
-  const scoreRules = shouldApplyScoreRules
-    ? normalizePadelScoreRules((configForScore?.advancedSettings as Record<string, unknown> | null)?.scoreRules)
+  const effectiveScoreRules = shouldApplyScoreRules
+    ? resolveEffectiveScoreRules(configForScore?.advancedSettings, match.categoryId ?? null)
     : null;
-  const stats = resolvePadelMatchStats(rawSets, mergedScore, shouldApplyScoreRules ? scoreRules ?? undefined : undefined);
+  const stats = resolvePadelMatchStats(
+    rawSets,
+    mergedScore,
+    shouldApplyScoreRules ? effectiveScoreRules?.rules ?? undefined : undefined,
+  );
 
   if (Array.isArray(rawSets) && rawSets.length > 0 && isPadelOfficialStatus(nextStatus) && !stats) {
     return fail(ctx, 400, "INVALID_SCORE");
   }
 
   if (shouldApplyScoreRules) {
+    const scoreRuleSummary = effectiveScoreRules
+      ? buildScoreRuleSummary({
+          rules: effectiveScoreRules.rules,
+          source: effectiveScoreRules.source,
+          categoryId: effectiveScoreRules.categoryId,
+        })
+      : null;
     mergedScore = {
       ...mergedScore,
       ruleSnapshot: {
@@ -532,6 +545,11 @@ async function _POST(req: NextRequest) {
               : "DEFAULT",
         ruleSetId: configForScore?.ruleSetId ?? null,
         ruleSetVersionId: configForScore?.ruleSetVersionId ?? null,
+        scoreRuleSource: effectiveScoreRules?.source ?? "DEFAULT",
+        scoreRuleCategoryId:
+          effectiveScoreRules?.source === "CATEGORY" ? effectiveScoreRules.categoryId : null,
+        scoreRules: effectiveScoreRules?.rules ?? null,
+        scoreRuleSummary,
         capturedAt: new Date().toISOString(),
       },
     };

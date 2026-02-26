@@ -18,11 +18,13 @@ export function formatLocationLabel(event: PublicEventCard) {
 export function formatPriceLabel(event: PublicEventCard) {
   if (event.isGratis) return "Gratuito";
   if (event.priceFrom == null) return null;
-  const formatted = event.priceFrom.toLocaleString("pt-PT", {
+  const formatted = new Intl.NumberFormat("pt-PT", {
+    style: "currency",
+    currency: "EUR",
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  });
-  return `Desde ${formatted} EUR`;
+  }).format(event.priceFrom);
+  return `Desde ${formatted}`;
 }
 
 export function formatEventDayLabel(event: PublicEventCard) {

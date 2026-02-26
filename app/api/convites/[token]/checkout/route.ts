@@ -9,7 +9,11 @@ import { ensurePaymentIntent, isFinanceConnectNotReadyError } from "@/domain/fin
 import { computeFeePolicyVersion } from "@/domain/finance/checkout";
 import { getPlatformFees } from "@/lib/platformSettings";
 import { computePricing } from "@/lib/pricing";
-import { computeCombinedFees } from "@/lib/fees";
+import {
+  computeCardPlatformFeeCents,
+  computeCombinedFees,
+  ORYA_CARD_PLATFORM_FEE_BPS,
+} from "@/lib/fees";
 import {
   BookingSplitShareAttemptFailureClass,
   BookingSplitShareAttemptStatus,
@@ -21,7 +25,6 @@ import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organization
 import { getBookingState } from "@/lib/reservas/bookingState";
 import { BOOKING_SPLIT_CANONICAL_MODE, emitSplitRuntimeAlert } from "@/domain/bookings/splitGarantido";
 
-const ORYA_CARD_FEE_BPS = 100;
 const SHARE_ACTION_WINDOW_MS = Math.max(
   60_000,
   Number(process.env.BOOKING_SPLIT_SHARE_ACTION_WINDOW_MS || String(30 * 60 * 1000)),
@@ -258,7 +261,7 @@ async function _POST(
     });
     const cardPlatformFeeCents =
       paymentMethod === "card"
-        ? Math.max(0, Math.round((baseShareCents * ORYA_CARD_FEE_BPS) / 10_000))
+        ? computeCardPlatformFeeCents(baseShareCents)
         : 0;
     const totalCents = combinedFees.totalCents + cardPlatformFeeCents;
     const platformFeeCents = Math.min(pricing.platformFeeCents + cardPlatformFeeCents, totalCents);
@@ -398,7 +401,8 @@ async function _POST(
           shareCents: String(totalCents),
           platformFeeCents: String(platformFeeCents),
           cardPlatformFeeCents: String(cardPlatformFeeCents),
-          cardPlatformFeeBps: paymentMethod === "card" ? String(ORYA_CARD_FEE_BPS) : "0",
+          cardPlatformFeeBps:
+            paymentMethod === "card" ? String(ORYA_CARD_PLATFORM_FEE_BPS) : "0",
           feeMode: pricing.feeMode,
           grossAmountCents: String(totalCents),
           payoutAmountCents: String(payoutAmountCents),

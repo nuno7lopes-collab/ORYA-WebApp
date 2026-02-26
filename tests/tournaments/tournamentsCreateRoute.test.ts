@@ -214,6 +214,38 @@ describe("organization tournaments create route", () => {
     expect(eventCreateArg?.data?.coverImageUrl).toBe("https://cdn.example.com/covers/padel.jpg");
   });
 
+  it("persiste workflow live no create quando enviado no wizard", async () => {
+    const req = new NextRequest("http://localhost/api/org/12/tournaments/create", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(
+        buildBaseBody({
+          padel: {
+            format: "TODOS_CONTRA_TODOS",
+            clubId: 7,
+            courtIds: [101],
+            categoryIds: [501],
+            defaultCategoryId: 501,
+            categoryConfigs: [{ padelCategoryId: 501, capacityTeams: 12, pricePerPlayer: 0 }],
+            resultValidationMode: "IMMEDIATE_PENDING_THEN_OFFICIAL",
+            pendingConfirmationWindowMinutes: 25,
+            playerResultSubmissionEnabled: true,
+          },
+        }),
+      ),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(body.ok).toBe(true);
+    const upsertArg = tx.padelTournamentConfig.upsert.mock.calls[0]?.[0];
+    expect(upsertArg.create.resultValidationMode).toBe("IMMEDIATE_PENDING_THEN_OFFICIAL");
+    expect(upsertArg.create.pendingConfirmationWindowMinutes).toBe(25);
+    expect(upsertArg.create.playerResultSubmissionEnabled).toBe(true);
+  });
+
   it("deriva windowStart/windowEnd a partir de dailyWindows no create", async () => {
     const dailyWindows = [
       { date: "2026-03-01", startTime: "09:00", endTime: "13:00" },

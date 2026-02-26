@@ -40,6 +40,16 @@ type Response = {
   error?: string;
 };
 
+function formatMoney(cents: number, currency: string) {
+  const safeCurrency = (currency || "EUR").toUpperCase();
+  return new Intl.NumberFormat("pt-PT", {
+    style: "currency",
+    currency: safeCurrency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(cents / 100);
+}
+
 export default function ServicosPage() {
   const [items, setItems] = useState<ServiceItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -178,7 +188,7 @@ export default function ServicosPage() {
                 <div>
                   <h3 className="text-lg font-semibold text-white">{item.title}</h3>
                   <p className="text-[12px] text-white/65">
-                    {item.durationMinutes} min · {(item.unitPriceCents / 100).toFixed(2)} {item.currency}
+                    {item.durationMinutes} min · Preço: {formatMoney(item.unitPriceCents, item.currency)}
                   </p>
                 </div>
                 <span className="rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[11px] text-white/70">

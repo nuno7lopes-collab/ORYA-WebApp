@@ -48,6 +48,18 @@ describe("getUserFacingError", () => {
       "Sem ligação ao servidor. Verifica a internet e tenta novamente.",
     );
   });
+
+  it("maps community invite link codes to user copy", () => {
+    const invalid = new ApiError(404, "irrelevant", "INVITE_LINK_INVALID");
+    const expired = new ApiError(410, "irrelevant", "INVITE_LINK_EXPIRED");
+
+    expect(getUserFacingError(invalid, "fallback")).toBe(
+      "Este link de convite não é válido.",
+    );
+    expect(getUserFacingError(expired, "fallback")).toBe(
+      "Este link de convite expirou.",
+    );
+  });
 });
 
 describe("getStoreErrorMessage", () => {

@@ -25,6 +25,7 @@ type SearchEvent = {
   locationFormattedAddress: string | null;
   coverImageUrl: string | null;
   priceFrom: number | null;
+  priceCurrency?: string | null;
   isGratis: boolean;
 };
 
@@ -50,6 +51,14 @@ type SearchUser = {
 type SearchTab = "all" | "events" | "organizations" | "users";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
+
+const formatPriceFrom = (value: number, currency?: string | null) =>
+  new Intl.NumberFormat("pt-PT", {
+    style: "currency",
+    currency: (currency || "EUR").toUpperCase(),
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
 
 const isRootProfileHandle = (path?: string | null) => {
   if (!path || path === "/") return false;
@@ -349,6 +358,7 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
               location?: { formattedAddress?: string | null; city?: string | null };
               coverImageUrl?: string | null;
               priceFrom?: number | null;
+              priceCurrency?: string | null;
               isGratis?: boolean;
             }>)
           : [];
@@ -370,6 +380,10 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
             locationFormattedAddress: it.location?.formattedAddress ?? null,
             coverImageUrl: it.coverImageUrl ?? null,
             priceFrom: typeof it.priceFrom === "number" ? it.priceFrom : null,
+            priceCurrency:
+              typeof it.priceCurrency === "string" && it.priceCurrency.trim()
+                ? it.priceCurrency.trim().toUpperCase()
+                : "EUR",
             isGratis: Boolean(it.isGratis),
           })),
         );
@@ -887,7 +901,7 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
                                     {item.isGratis ? (
                                       <span>Grátis</span>
                                     ) : item.priceFrom !== null ? (
-                                      <span>Desde {item.priceFrom.toFixed(2)} €</span>
+                                      <span>Preço desde {formatPriceFrom(item.priceFrom, item.priceCurrency)}</span>
                                     ) : null}
                                     <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/85">
                                       Ver
@@ -1094,7 +1108,7 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
                                 {item.isGratis ? (
                                   <span>Grátis</span>
                                 ) : item.priceFrom !== null ? (
-                                  <span>Desde {item.priceFrom.toFixed(2)} €</span>
+                                  <span>Preço desde {formatPriceFrom(item.priceFrom, item.priceCurrency)}</span>
                                 ) : null}
                                 <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/85">
                                   Ver

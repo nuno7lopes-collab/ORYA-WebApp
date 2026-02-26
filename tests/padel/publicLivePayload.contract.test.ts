@@ -59,6 +59,7 @@ beforeEach(async () => {
             pairingA: "Ana S. / Bea C.",
             pairingB: "Carla L. / Diana P.",
             scoreLabel: "6-4",
+            scoreRuleSummary: { shortLabel: "Ponto de ouro", deuceMode: "GOLDEN_POINT" },
             elapsedSeconds: 420,
             isLiveClockRunning: true,
             stream: { isLive: true, url: "https://stream.example/live", provider: "yt", label: "Campo 1" },
@@ -73,6 +74,7 @@ beforeEach(async () => {
             pairingA: "Eva M. / Filipa R.",
             pairingB: "Gina F. / Helena T.",
             scoreLabel: "6-2, 6-3",
+            scoreRuleSummary: { shortLabel: "Vantagens", deuceMode: "ADVANTAGE" },
             elapsedSeconds: null,
             isLiveClockRunning: false,
             stream: null,
@@ -115,6 +117,7 @@ describe("GET /api/padel/public/live payload contract", () => {
     expect(matchLive.elapsedSeconds).toBe(420);
     expect(matchLive.isLiveClockRunning).toBe(true);
     expect(matchLive.stream).toMatchObject({ isLive: true, url: "https://stream.example/live" });
+    expect(matchLive.scoreRuleSummary).toMatchObject({ shortLabel: "Ponto de ouro", deuceMode: "GOLDEN_POINT" });
 
     expect(matchOfficial.elapsedSeconds).toBeNull();
     expect(matchOfficial.isLiveClockRunning).toBe(false);

@@ -7,6 +7,7 @@ import { isUnauthenticatedError } from "@/lib/security";
 import { ChatContextError } from "@/lib/chat/context";
 import { prisma } from "@/lib/prisma";
 import { publishChatEvent } from "@/lib/chat/redis";
+import { upsertCommunityConversationMember } from "@/lib/messages/communityMembership";
 import { requireManagedCommunity } from "@/app/api/messages/communities/_shared";
 
 async function _POST(
@@ -84,27 +85,10 @@ async function _POST(
           continue;
         }
 
-        await tx.chatConversationMember.upsert({
-          where: {
-            conversationId_userId: {
-              conversationId,
-              userId: request.requesterId,
-            },
-          },
-          update: {
-            role: "MEMBER",
-            organizationId: null,
-            leftAt: null,
-            accessRevokedAt: null,
-            bannedAt: null,
-            followGraceEndsAt: null,
-          },
-          create: {
-            conversationId,
-            userId: request.requesterId,
-            role: "MEMBER",
-            organizationId: null,
-          },
+        await upsertCommunityConversationMember({
+          tx,
+          conversationId,
+          userId: request.requesterId,
         });
 
         await tx.chatAccessGrant.update({

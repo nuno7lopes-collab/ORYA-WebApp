@@ -13,6 +13,8 @@ import { requireChatContext, ChatContextError } from "@/lib/chat/context";
 import { publishChatEvent } from "@/lib/chat/redis";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { hashCommunityInviteToken, isUserFollowingOrganization } from "@/lib/messages/communityAccess";
+import { upsertCommunityConversationMember } from "@/lib/messages/communityMembership";
+import { shouldEnforceMobileClientForResolve } from "@/lib/messages/resolvePolicy";
 import {
   enforceMobileClientRequest,
   getMessagesScope,
@@ -335,7 +337,12 @@ async function _POST(req: NextRequest) {
       return jsonWrap({ ok: false, error: "INVALID_CONTEXT" }, { status: 400 });
     }
 
-    if (scope === "b2c" || contextTypeRaw !== "ORG_CHANNEL") {
+    if (
+      shouldEnforceMobileClientForResolve({
+        scope,
+        contextTypeRaw,
+      })
+    ) {
       const mobileGate = enforceMobileClientRequest(req);
       if (mobileGate) return mobileGate;
     }
@@ -469,27 +476,10 @@ async function _POST(req: NextRequest) {
       }
 
       const joinConversation = async () => {
-        await prisma.chatConversationMember.upsert({
-          where: {
-            conversationId_userId: {
-              conversationId: community.conversationId,
-              userId: user.id,
-            },
-          },
-          update: {
-            role: "MEMBER",
-            organizationId: null,
-            leftAt: null,
-            accessRevokedAt: null,
-            bannedAt: null,
-            followGraceEndsAt: null,
-          },
-          create: {
-            conversationId: community.conversationId,
-            userId: user.id,
-            role: "MEMBER",
-            organizationId: null,
-          },
+        await upsertCommunityConversationMember({
+          tx: prisma,
+          conversationId: community.conversationId,
+          userId: user.id,
         });
 
         return jsonWrap({
@@ -629,49 +619,74 @@ async function _POST(req: NextRequest) {
             select: { id: true },
           });
           if (link) {
-            await prisma.chatAccessGrant.upsert({
-              where: {
-                sourceTable_sourceId: {
-                  sourceTable: "messages_resolve",
-                  sourceId: toDeterministicUuid(
-                    `community-invite-link:${community.conversationId}:user:${user.id}:link:${link.id}`,
-                  ),
+            const linkRedeemSourceId = toDeterministicUuid(
+              `community-invite-link:${link.id}:user:${user.id}`,
+            );
+            const now = new Date();
+
+            await prisma.$transaction(async (tx) => {
+              await tx.chatAccessGrant.upsert({
+                where: {
+                  sourceTable_sourceId: {
+                    sourceTable: "community_invite_link_redeem",
+                    sourceId: linkRedeemSourceId,
+                  },
                 },
-              },
-              create: {
-                kind: "COMMUNITY_INVITE",
-                status: "ACCEPTED",
-                contextType: "ORG_COMMUNITY",
-                contextId: community.conversationId,
+                create: {
+                  kind: "COMMUNITY_INVITE",
+                  status: "ACCEPTED",
+                  contextType: "ORG_COMMUNITY",
+                  contextId: community.conversationId,
+                  conversationId: community.conversationId,
+                  requesterId: null,
+                  targetUserId: user.id,
+                  organizationId: community.organizationId,
+                  targetOrganizationId: community.organizationId,
+                  title: community.title,
+                  sourceTable: "community_invite_link_redeem",
+                  sourceId: linkRedeemSourceId,
+                  acceptedAt: now,
+                  resolvedAt: now,
+                  metadata: {
+                    inviteLinkId: link.id,
+                    redeemedByUserId: user.id,
+                  } as Prisma.InputJsonValue,
+                },
+                update: {
+                  status: "ACCEPTED",
+                  contextType: "ORG_COMMUNITY",
+                  contextId: community.conversationId,
+                  conversationId: community.conversationId,
+                  requesterId: null,
+                  targetUserId: user.id,
+                  organizationId: community.organizationId,
+                  targetOrganizationId: community.organizationId,
+                  title: community.title,
+                  acceptedAt: now,
+                  resolvedAt: now,
+                  declinedAt: null,
+                  revokedAt: null,
+                  cancelledAt: null,
+                  updatedAt: now,
+                  metadata: {
+                    inviteLinkId: link.id,
+                    redeemedByUserId: user.id,
+                  } as Prisma.InputJsonValue,
+                },
+              });
+
+              await upsertCommunityConversationMember({
+                tx,
                 conversationId: community.conversationId,
-                requesterId: null,
-                targetUserId: user.id,
-                organizationId: community.organizationId,
-                targetOrganizationId: community.organizationId,
-                title: community.title,
-                sourceTable: "messages_resolve",
-                sourceId: toDeterministicUuid(
-                  `community-invite-link:${community.conversationId}:user:${user.id}:link:${link.id}`,
-                ),
-                acceptedAt: new Date(),
-                resolvedAt: new Date(),
-                metadata: {
-                  canonical: true,
-                  inviteLinkId: link.id,
-                } as Prisma.InputJsonValue,
-              },
-              update: {
-                status: "ACCEPTED",
-                acceptedAt: new Date(),
-                resolvedAt: new Date(),
-                declinedAt: null,
-                revokedAt: null,
-                cancelledAt: null,
-                updatedAt: new Date(),
-              },
+                userId: user.id,
+              });
             });
 
-            return joinConversation();
+            return jsonWrap({
+              ok: true,
+              contextType: "ORG_COMMUNITY",
+              conversationId: community.conversationId,
+            });
           }
         }
 

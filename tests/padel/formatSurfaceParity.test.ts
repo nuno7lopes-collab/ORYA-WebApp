@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { PADEL_FORMAT_CATALOG } from "@/domain/padel/formatCatalog";
 import { PADEL_FORMAT_ENGINE_REGISTRY } from "@/domain/padel/formatEngine/registry";
+import { PADEL_FORMAT_LABELS_PT, PADEL_FORMAT_OPTIONS_PT } from "@/domain/padel/formatPresentation";
 
 function readLocal(pathname: string) {
   return readFileSync(resolve(process.cwd(), pathname), "utf8");
@@ -20,11 +21,15 @@ describe("padel format surface parity", () => {
   it("exposes all supported formats in wizard and hub labels", () => {
     const wizardSource = readLocal("app/org/_internal/core/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx");
     const hubSource = readLocal("app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx");
+    const discoverFilterSource = readLocal("app/descobrir/_explorar/ExplorarContent.tsx");
+    const discoverCardsSource = readLocal("app/descobrir/_explorar/DiscoverCards.tsx");
 
-    for (const format of PADEL_FORMAT_CATALOG) {
-      expect(wizardSource).toContain(`"${format}"`);
-      expect(hubSource).toContain(`${format}:`);
-    }
+    expect(PADEL_FORMAT_OPTIONS_PT.map((option) => option.value)).toEqual(PADEL_FORMAT_CATALOG);
+    expect(new Set(Object.keys(PADEL_FORMAT_LABELS_PT))).toEqual(new Set(PADEL_FORMAT_CATALOG));
+    expect(wizardSource).toContain("PADEL_FORMAT_OPTIONS_PT");
+    expect(hubSource).toContain("PADEL_FORMAT_LABELS_PT");
+    expect(discoverFilterSource).toContain("PADEL_FORMAT_OPTIONS_PT");
+    expect(discoverCardsSource).toContain("toPadelFormatLabel");
     expect(wizardSource).toContain("plannerMode");
   });
 

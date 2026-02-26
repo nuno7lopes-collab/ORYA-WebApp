@@ -35,8 +35,8 @@ type ChatFilter = {
 
 const filterDefinitions: { id: ChatFilterId; label: string }[] = [
   { id: "all", label: "Todos" },
-  { id: "unread", label: "Nao lidas" },
-  { id: "mentions", label: "Mentions" },
+  { id: "unread", label: "Não lidas" },
+  { id: "mentions", label: "Menções" },
   { id: "groups", label: "Grupos" },
 ];
 
@@ -722,7 +722,7 @@ export default function ChatPreviewPage() {
       })
       .catch(() => {
         if (!isActive) return;
-        setMembersError("Nao foi possivel carregar membros.");
+        setMembersError("Não foi possível carregar membros.");
       })
       .finally(() => {
         if (isActive) {
@@ -1349,7 +1349,7 @@ export default function ChatPreviewPage() {
       await updateConversationNotifications({ conversationId: activeConversationId, level, mutedUntil });
       setIsHeaderMenuOpen(false);
     } catch {
-      setHeaderActionError("Nao foi possivel atualizar notificacoes.");
+      setHeaderActionError("Não foi possível atualizar notificações.");
     } finally {
       setHeaderActionLoading(false);
     }
@@ -1366,7 +1366,7 @@ export default function ChatPreviewPage() {
       );
       setIsHeaderMenuOpen(false);
     } catch {
-      setHeaderActionError(isBlocked ? "Nao foi possivel desbloquear." : "Nao foi possivel bloquear.");
+      setHeaderActionError(isBlocked ? "Não foi possível desbloquear." : "Não foi possível bloquear.");
     } finally {
       setHeaderActionLoading(false);
     }
@@ -1399,7 +1399,7 @@ export default function ChatPreviewPage() {
       await renameConversation({ conversationId: activeConversationId, title: trimmed });
       handleCloseRename();
     } catch {
-      setRenameError("Nao foi possivel atualizar o nome.");
+      setRenameError("Não foi possível atualizar o nome.");
     } finally {
       setIsRenaming(false);
     }
@@ -1430,7 +1430,7 @@ export default function ChatPreviewPage() {
       setEditingDraft("");
       handleCloseLeave();
     } catch {
-      setLeaveError("Nao foi possivel sair do grupo.");
+      setLeaveError("Não foi possível sair do grupo.");
     } finally {
       setIsLeaving(false);
     }
@@ -1476,7 +1476,7 @@ export default function ChatPreviewPage() {
         await createConversation({ type: "DIRECT", userId: selectedDirectMember });
         handleCloseCreate();
       } catch {
-        setCreateError("Nao foi possivel criar a conversa.");
+        setCreateError("Não foi possível criar a conversa.");
       } finally {
         setIsCreating(false);
       }
@@ -1501,7 +1501,7 @@ export default function ChatPreviewPage() {
       });
       handleCloseCreate();
     } catch {
-      setCreateError("Nao foi possivel criar o grupo.");
+      setCreateError("Não foi possível criar o grupo.");
     } finally {
       setIsCreating(false);
     }
@@ -1626,7 +1626,7 @@ export default function ChatPreviewPage() {
                             disabled={headerActionLoading || notifLevel === "MENTIONS_ONLY"}
                             className="flex w-full items-center gap-2 rounded-xl px-3 py-2 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
                           >
-                            So mencoes
+                            Só menções
                           </button>
                           <button
                             type="button"
@@ -1634,7 +1634,7 @@ export default function ChatPreviewPage() {
                             disabled={headerActionLoading || notifLevel === "OFF"}
                             className="flex w-full items-center gap-2 rounded-xl px-3 py-2 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
                           >
-                            Desligar notificacoes
+                            Desligar notificações
                           </button>
                           <div className="my-1 h-px bg-white/10" />
                           {isMuted ? (
@@ -2556,7 +2556,7 @@ export default function ChatPreviewPage() {
                           disabled={headerActionLoading}
                           className="w-full rounded-full border border-white/12 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white/80 transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          Silenciar notificacoes
+                          Silenciar notificações
                         </button>
                         <button
                           type="button"

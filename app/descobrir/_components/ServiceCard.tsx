@@ -2,10 +2,17 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import type { DiscoverServiceCard } from "@/app/descobrir/_lib/discoverFeed";
 
+const formatMoney = (cents: number, currency: string) =>
+  new Intl.NumberFormat("pt-PT", {
+    style: "currency",
+    currency: (currency || "EUR").toUpperCase(),
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(cents / 100);
+
 const formatServicePrice = (service: DiscoverServiceCard) => {
-  if (!service.unitPriceCents) return "Gratuito";
-  const value = (service.unitPriceCents / 100).toFixed(2);
-  return `${value} ${service.currency}`;
+  if (!service.unitPriceCents) return "Preço: Grátis";
+  return `Preço: ${formatMoney(service.unitPriceCents, service.currency)}`;
 };
 
 const formatServiceAddress = (service: DiscoverServiceCard) => {

@@ -12,6 +12,11 @@ import { resolvePadelRuleSetSnapshotForEvent } from "@/domain/padel/ruleSetSnaps
 import { isPadelOfficialStatus, normalizePadelMatchStatus } from "@/domain/padel/liveStatus";
 import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
 import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
+import {
+  buildScoreRuleSummary,
+  resolveEffectiveScoreRules,
+  type PadelScoreRuleSummary,
+} from "@/domain/padel/scoreRulesResolver";
 
 export type PadelLiveReadVisibility = "internal" | "public";
 
@@ -58,6 +63,7 @@ export type PadelLiveReadModel = {
       pairingA: string;
       pairingB: string;
       scoreLabel: string;
+      scoreRuleSummary: PadelScoreRuleSummary;
       elapsedSeconds: number | null;
       isLiveClockRunning: boolean;
       stream: MatchStreamMeta | null;
@@ -75,6 +81,7 @@ export type PadelLiveReadModel = {
       pairingA: string;
       pairingB: string;
       roundLabel: string | null;
+      scoreRuleSummary: PadelScoreRuleSummary;
       elapsedSeconds: number | null;
       isLiveClockRunning: boolean;
       stream: MatchStreamMeta | null;
@@ -90,6 +97,7 @@ export type PadelLiveReadModel = {
     pairingA: string;
     pairingB: string;
     scoreLabel: string;
+    scoreRuleSummary: PadelScoreRuleSummary;
     roundLabel: string | null;
     groupLabel: string | null;
     elapsedSeconds: number | null;
@@ -129,6 +137,7 @@ export type PadelLiveReadModel = {
         pairingA: string;
         pairingB: string;
         scoreLabel: string;
+        scoreRuleSummary: PadelScoreRuleSummary;
         elapsedSeconds: number | null;
         isLiveClockRunning: boolean;
         stream: MatchStreamMeta | null;
@@ -499,6 +508,15 @@ export async function buildPadelLiveReadModel(params: BuildLiveReadModelParams):
     const pairingA = formatPairingLabel(match, "A", params.visibility);
     const pairingB = formatPairingLabel(match, "B", params.visibility);
     const scoreLabel = buildScoreLabel(match);
+    const effectiveScoreRules = resolveEffectiveScoreRules(
+      event.padelTournamentConfig?.advancedSettings,
+      categoryId,
+    );
+    const scoreRuleSummary = buildScoreRuleSummary({
+      rules: effectiveScoreRules.rules,
+      source: effectiveScoreRules.source,
+      categoryId: effectiveScoreRules.categoryId,
+    });
     const normalizedStatus = normalizePadelMatchStatus(match.status) ?? match.status;
     const runtimeFields = resolveMatchRuntimeFields({ match, startAt, normalizedStatus, now });
     if (startAt) {
@@ -527,6 +545,7 @@ export async function buildPadelLiveReadModel(params: BuildLiveReadModelParams):
         pairingA,
         pairingB,
         scoreLabel,
+        scoreRuleSummary,
         ...runtimeFields,
       });
     }
@@ -543,6 +562,7 @@ export async function buildPadelLiveReadModel(params: BuildLiveReadModelParams):
         pairingA,
         pairingB,
         scoreLabel,
+        scoreRuleSummary,
         roundLabel: match.roundLabel ?? null,
         groupLabel: match.groupLabel ?? null,
         ...runtimeFields,
@@ -586,6 +606,7 @@ export async function buildPadelLiveReadModel(params: BuildLiveReadModelParams):
         pairingA,
         pairingB,
         scoreLabel,
+        scoreRuleSummary,
         ...runtimeFields,
       });
     }
@@ -619,6 +640,7 @@ export async function buildPadelLiveReadModel(params: BuildLiveReadModelParams):
           pairingA,
           pairingB,
           roundLabel: match.roundLabel ?? null,
+          scoreRuleSummary,
           ...runtimeFields,
         });
       });

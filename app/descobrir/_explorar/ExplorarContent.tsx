@@ -10,6 +10,7 @@ import { trackEvent } from "@/lib/analytics";
 import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import MobileTopBar from "@/app/components/mobile/MobileTopBar";
+import { PADEL_FORMAT_OPTIONS_PT } from "@/domain/padel/formatPresentation";
 import {
   CalendarIcon,
   CloseIcon,
@@ -80,13 +81,7 @@ const WORLD_META: Record<
 
 const PADEL_FORMAT_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "all", label: "Todos os formatos" },
-  { value: "TODOS_CONTRA_TODOS", label: "Todos contra todos" },
-  { value: "QUADRO_ELIMINATORIO", label: "Quadro eliminatório" },
-  { value: "GRUPOS_ELIMINATORIAS", label: "Grupos + eliminatórias" },
-  { value: "QUADRO_AB", label: "Quadro A/B" },
-  { value: "DUPLA_ELIMINACAO", label: "Dupla eliminação" },
-  { value: "NON_STOP", label: "Non-stop" },
-  { value: "CAMPEONATO_LIGA", label: "Campeonato/Liga" },
+  ...PADEL_FORMAT_OPTIONS_PT,
 ];
 
 const PADEL_ELIGIBILITY_OPTIONS: Array<{ value: string; label: string }> = [

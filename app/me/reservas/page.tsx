@@ -166,7 +166,12 @@ function formatHoldDeadline(pendingExpiresAt: string | null, createdAt: string) 
 }
 
 function formatMoney(cents: number, currency: string) {
-  return `${(cents / 100).toFixed(2)} ${currency}`;
+  return new Intl.NumberFormat("pt-PT", {
+    style: "currency",
+    currency: (currency || "EUR").toUpperCase(),
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(cents / 100);
 }
 
 function formatCentsInput(cents: number) {
@@ -1440,19 +1445,19 @@ export default function MinhasReservasPage() {
                         <p className="text-white/90">
                           Vais receber{" "}
                           <span className="font-semibold text-white">
-                            {(cancelPreview.refund.refundCents / 100).toFixed(2)} {cancelPreview.refund.currency}
+                            {formatMoney(cancelPreview.refund.refundCents, cancelPreview.refund.currency)}
                           </span>
                         </p>
                         <div className="grid gap-2 md:grid-cols-3 text-[12px] text-white/60">
                           <div>
-                            Total pago: {(cancelPreview.refund.totalCents / 100).toFixed(2)} {cancelPreview.refund.currency}
+                            Total pago: {formatMoney(cancelPreview.refund.totalCents, cancelPreview.refund.currency)}
                           </div>
                           <div>
                             Fees retidas:{" "}
-                            {((cancelPreview.refund.feesRetainedCents ?? 0) / 100).toFixed(2)} {cancelPreview.refund.currency}
+                            {formatMoney(cancelPreview.refund.feesRetainedCents ?? 0, cancelPreview.refund.currency)}
                           </div>
                           <div>
-                            Penalização: {(cancelPreview.refund.penaltyCents / 100).toFixed(2)} {cancelPreview.refund.currency}
+                            Penalização: {formatMoney(cancelPreview.refund.penaltyCents, cancelPreview.refund.currency)}
                           </div>
                         </div>
                         <p className="text-[12px] text-white/50">

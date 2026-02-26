@@ -22,6 +22,7 @@ export type ExploreItem = {
   coverImageUrl: string | null;
   isGratis: boolean;
   priceFrom: number | null;
+  priceCurrency?: string | null;
   categories: string[];
   hostName: string | null;
   hostUsername: string | null;
@@ -82,6 +83,7 @@ export type PadelTournamentItem = {
   coverImageUrl: string | null;
   locationFormattedAddress: string | null;
   priceFrom: number | null;
+  priceCurrency?: string | null;
   organizationName: string | null;
   format: string | null;
   eligibility: string | null;

@@ -53,6 +53,26 @@ describe("POST /api/padel/formats/plan validação de IDs", () => {
     windowEnd: "2026-04-01T14:00:00.000Z",
   };
 
+  it("rejeita format inválido no payload", async () => {
+    const req = new NextRequest("http://localhost/api/padel/formats/plan", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ...baseBody,
+        format: "FORMATO_XYZ",
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode ?? body.error).toBe("INVALID_FORMAT");
+    expect(resolvePadelCourtSelection).not.toHaveBeenCalled();
+    expect(computePadelPlan).not.toHaveBeenCalled();
+  });
+
   it("rejeita courtIds com decimal", async () => {
     const req = new NextRequest("http://localhost/api/padel/formats/plan", {
       method: "POST",
@@ -98,6 +118,26 @@ describe("POST /api/padel/formats/plan validação de IDs", () => {
       body: JSON.stringify({
         ...baseBody,
         categories: [{ categoryId: 3.7, teams: 8 }],
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode ?? body.error).toBe("INVALID_CATEGORIES");
+    expect(resolvePadelCourtSelection).toHaveBeenCalledTimes(1);
+    expect(computePadelPlan).not.toHaveBeenCalled();
+  });
+
+  it("rejeita categories com format inválido", async () => {
+    const req = new NextRequest("http://localhost/api/padel/formats/plan", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ...baseBody,
+        categories: [{ categoryId: 3, teams: 8, format: "FORMATO_XYZ" }],
       }),
     });
 

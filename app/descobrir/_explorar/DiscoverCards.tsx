@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { defaultBlurDataURL } from "@/lib/image";
 import { getEventCoverUrl } from "@/lib/eventCover";
 import { formatEventLocationLabel } from "@/lib/location/eventLocation";
+import { toPadelFormatLabel } from "@/domain/padel/formatPresentation";
 import { PadelIcon, PuzzleIcon, TicketIcon } from "./WorldIcons";
 import type {
   ExploreItem,
@@ -27,6 +28,19 @@ const resolveCover = (
   seed: string | number,
   width = 720,
 ) => getEventCoverUrl(coverImageUrl, { seed, width, quality: 65, format: "webp" });
+
+function formatCurrencyAmount(amount: number, currency = "EUR") {
+  return new Intl.NumberFormat("pt-PT", {
+    style: "currency",
+    currency: (currency || "EUR").toUpperCase(),
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
+function formatCurrencyFromCents(cents: number, currency: string) {
+  return formatCurrencyAmount(cents / 100, currency);
+}
 
 function formatDateRange(start: string, end: string) {
   const startDate = new Date(start);
@@ -79,16 +93,7 @@ function formatPadelDate(start: string | null, end: string | null) {
 
 function formatPadelFormat(value: string | null) {
   if (!value) return null;
-  const labels: Record<string, string> = {
-    TODOS_CONTRA_TODOS: "Todos contra todos",
-    QUADRO_ELIMINATORIO: "Quadro eliminatório",
-    GRUPOS_ELIMINATORIAS: "Grupos + eliminatórias",
-    QUADRO_AB: "Quadro A/B",
-    DUPLA_ELIMINACAO: "Dupla eliminação",
-    NON_STOP: "Non-stop",
-    CAMPEONATO_LIGA: "Campeonato/Liga",
-  };
-  return labels[value] ?? value;
+  return toPadelFormatLabel(value) ?? value;
 }
 
 function formatPadelEligibility(value: string | null) {
@@ -142,7 +147,7 @@ function PriceBadge({ item }: { item: ExploreItem }) {
   if (item.priceFrom !== null) {
     return (
       <span className="rounded-full bg-white/5 px-2 py-0.5 border border-white/10">
-        Desde {item.priceFrom.toFixed(2)} €
+        Preço desde {formatCurrencyAmount(item.priceFrom, item.priceCurrency || "EUR")}
       </span>
     );
   }
@@ -344,7 +349,8 @@ type ServiceCardProps = {
 export function ServiceCard({ item, imagePriority }: ServiceCardProps) {
   const organizationName = item.organization.publicName || item.organization.businessName || "Organização";
   const availabilityLabel = formatServiceAvailability(item.nextAvailability);
-  const priceLabel = `${(item.unitPriceCents / 100).toFixed(2)} ${item.currency}`;
+  const priceLabel =
+    item.unitPriceCents > 0 ? formatCurrencyFromCents(item.unitPriceCents, item.currency) : "Grátis";
 
   return (
     <Link
@@ -403,7 +409,7 @@ export function ServiceCard({ item, imagePriority }: ServiceCardProps) {
 
         <div className="mt-2 flex items-center justify-between text-[11px]">
           <span className="px-2 py-0.5 rounded-full bg-black/75 border border-white/22 text-white font-medium">
-            {item.durationMinutes} min · {priceLabel}
+            {item.durationMinutes} min · Preço: {priceLabel}
           </span>
           <span className="text-white/70">{availabilityLabel}</span>
         </div>
@@ -421,7 +427,11 @@ export function PadelTournamentCard({ item, imagePriority }: PadelTournamentCard
   const dateLabel = formatPadelDate(item.startsAt, item.endsAt);
   const locationLabel = item.locationFormattedAddress || null;
   const priceLabel =
-    item.priceFrom == null ? null : item.priceFrom === 0 ? "Grátis" : `Desde ${item.priceFrom.toFixed(2)} €`;
+    item.priceFrom == null
+      ? null
+      : item.priceFrom === 0
+        ? "Grátis"
+        : `Preço desde ${formatCurrencyAmount(item.priceFrom, item.priceCurrency || "EUR")}`;
   const formatLabel = formatPadelFormat(item.format);
   const eligibilityLabel = formatPadelEligibility(item.eligibility);
 

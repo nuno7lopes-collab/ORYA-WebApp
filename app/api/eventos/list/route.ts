@@ -8,6 +8,7 @@ import { logError } from "@/lib/observability/logger";
 import { listRankedEvents } from "@/domain/ranking/listRankedEvents";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { EventStatus, Prisma } from "@prisma/client";
+import { resolveTicketPricingSummary } from "@/domain/events/ticketPricing";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const DEFAULT_PAGE_SIZE = 12;
@@ -254,7 +255,18 @@ async function _GET(req: NextRequest) {
         })(),
         orderBy: { startsAt: "asc" },
         take,
-        include: {
+        select: {
+          id: true,
+          slug: true,
+          title: true,
+          description: true,
+          startsAt: true,
+          endsAt: true,
+          addressId: true,
+          coverImageUrl: true,
+          templateType: true,
+          interestTags: true,
+          pricingMode: true,
           addressRef: {
             select: {
               formattedAddress: true,
@@ -285,16 +297,12 @@ async function _GET(req: NextRequest) {
       });
 
       const fallbackMapped: EventListItem[] = fallbackEvents.map((event) => {
-        const ticketPrices = event.ticketTypes.map((ticket) => ticket.price);
-        const priceFromCents =
-          ticketPrices.length > 0 ? Math.min(...ticketPrices) : null;
-        const priceFrom =
-          typeof priceFromCents === "number"
-            ? Math.max(0, priceFromCents) / 100
-            : null;
-        const hasPaid = ticketPrices.some((price) => price > 0);
-        const hasFree = ticketPrices.some((price) => price === 0);
-        const isGratis = hasFree && !hasPaid;
+        const pricingSummary = resolveTicketPricingSummary({
+          pricingMode: event.pricingMode ?? undefined,
+          ticketTypes: event.ticketTypes,
+        });
+        const isGratis = pricingSummary.isGratis;
+        const priceFrom = pricingSummary.priceFrom;
 
         const formattedAddress = event.addressRef?.formattedAddress ?? null;
 

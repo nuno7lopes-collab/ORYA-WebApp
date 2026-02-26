@@ -1,51 +1,52 @@
 import { padel_format } from "@prisma/client";
 import type { PadelFormatProfile } from "@/domain/padel/formatEngine/types";
+import { PADEL_FORMAT_LABELS_PT } from "@/domain/padel/formatPresentation";
 
 const profiles = {
   TODOS_CONTRA_TODOS: {
     format: padel_format.TODOS_CONTRA_TODOS,
-    label: "Todos contra todos",
+    label: PADEL_FORMAT_LABELS_PT.TODOS_CONTRA_TODOS,
     minTeams: 2,
   },
   CAMPEONATO_LIGA: {
     format: padel_format.CAMPEONATO_LIGA,
-    label: "Campeonato liga",
+    label: PADEL_FORMAT_LABELS_PT.CAMPEONATO_LIGA,
     minTeams: 2,
   },
   QUADRO_ELIMINATORIO: {
     format: padel_format.QUADRO_ELIMINATORIO,
-    label: "Quadro eliminatório",
+    label: PADEL_FORMAT_LABELS_PT.QUADRO_ELIMINATORIO,
     minTeams: 2,
     requiresKnockout: true,
   },
   QUADRO_AB: {
     format: padel_format.QUADRO_AB,
-    label: "Quadro A/B",
+    label: PADEL_FORMAT_LABELS_PT.QUADRO_AB,
     minTeams: 4,
     requiresKnockout: true,
   },
   DUPLA_ELIMINACAO: {
     format: padel_format.DUPLA_ELIMINACAO,
-    label: "Dupla eliminação",
+    label: PADEL_FORMAT_LABELS_PT.DUPLA_ELIMINACAO,
     minTeams: 4,
     requiresKnockout: true,
   },
   GRUPOS_ELIMINATORIAS: {
     format: padel_format.GRUPOS_ELIMINATORIAS,
-    label: "Grupos + eliminatórias",
+    label: PADEL_FORMAT_LABELS_PT.GRUPOS_ELIMINATORIAS,
     minTeams: 4,
     requiresKnockout: true,
   },
   NON_STOP: {
     format: padel_format.NON_STOP,
-    label: "Non-stop (King of Court)",
+    label: PADEL_FORMAT_LABELS_PT.NON_STOP,
     minTeams: 4,
     defaultNonStopMode: "ACTIVE_QUEUE",
     isTimed: true,
   },
   AMERICANO: {
     format: padel_format.AMERICANO,
-    label: "Americano",
+    label: PADEL_FORMAT_LABELS_PT.AMERICANO,
     minTeams: 2,
     defaultAmMxMode: "INDIVIDUAL_ROTATION",
     defaultAmMxProgressionMode: "ROUND_BY_ROUND",
@@ -53,7 +54,7 @@ const profiles = {
   },
   MEXICANO: {
     format: padel_format.MEXICANO,
-    label: "Mexicano",
+    label: PADEL_FORMAT_LABELS_PT.MEXICANO,
     minTeams: 2,
     defaultAmMxMode: "INDIVIDUAL_ROTATION",
     defaultAmMxProgressionMode: "ROUND_BY_ROUND",

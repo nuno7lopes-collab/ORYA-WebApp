@@ -139,7 +139,12 @@ type ClassSessionItem = {
 type LocationMode = "FIXED" | "CHOOSE_AT_BOOKING";
 
 function formatMoney(cents: number, currency: string) {
-  return `${(cents / 100).toFixed(2)} ${currency}`;
+  return new Intl.NumberFormat("pt-PT", {
+    style: "currency",
+    currency: (currency || "EUR").toUpperCase(),
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(cents / 100);
 }
 
 
@@ -860,7 +865,7 @@ export default function ServicoDetalhePage() {
         <h1 className="text-2xl font-semibold text-white">{service?.title || "Serviço"}</h1>
         <p className={DASHBOARD_MUTED}>
           {service
-            ? `${service.durationMinutes} min · ${formatMoney(service.unitPriceCents, service.currency)}`
+            ? `${service.durationMinutes} min · Preço: ${formatMoney(service.unitPriceCents, service.currency)}`
             : "A carregar detalhes..."}
         </p>
       </div>
@@ -1272,7 +1277,7 @@ export default function ServicoDetalhePage() {
                       {draft.label || pkg.label}
                     </p>
                     <p className="text-[12px] text-white/60">
-                      {draft.durationMinutes || pkg.durationMinutes} min ·{" "}
+                      {draft.durationMinutes || pkg.durationMinutes} min · Preço:{" "}
                       {draft.price
                         ? `${draft.price} ${service?.currency ?? "EUR"}`
                         : formatMoney(pkg.priceCents, service?.currency ?? "EUR")}
@@ -1505,7 +1510,7 @@ export default function ServicoDetalhePage() {
                       {draft.label || addon.label}
                     </p>
                     <p className="text-[12px] text-white/60">
-                      +{draft.deltaMinutes || addon.deltaMinutes} min ·{" "}
+                      +{draft.deltaMinutes || addon.deltaMinutes} min · Preço extra:{" "}
                       {draft.deltaPrice
                         ? `${draft.deltaPrice} ${service?.currency ?? "EUR"}`
                         : formatMoney(addon.deltaPriceCents, service?.currency ?? "EUR")}
@@ -1944,7 +1949,10 @@ export default function ServicoDetalhePage() {
                       {draft?.label || pack.label || "Pacote"} · {draft?.quantity ?? pack.quantity} unidades
                     </p>
                     <p className="text-[12px] text-white/60">
-                      {draft?.price ? `${draft.price} ${service?.currency ?? "EUR"}` : formatMoney(pack.packPriceCents, service?.currency ?? "EUR")}
+                      Preço:{" "}
+                      {draft?.price
+                        ? `${draft.price} ${service?.currency ?? "EUR"}`
+                        : formatMoney(pack.packPriceCents, service?.currency ?? "EUR")}
                       {pack.recommended ? " · Recomendado" : ""}
                     </p>
                   </div>

@@ -155,7 +155,7 @@ function buildTransaction(
       ]),
     },
     bookingPolicyRef: {
-      create: vi.fn(),
+      upsert: vi.fn(),
     },
     userActivity: {
       create: vi.fn(),

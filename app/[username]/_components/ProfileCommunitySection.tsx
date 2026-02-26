@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { formatCommunityAccessModeLabel } from "@/lib/messages/communityUi";
 
 export type ProfileCommunityItem = {
   conversationId: string;
@@ -16,35 +17,22 @@ type ProfileCommunitySectionProps = {
   isAuthenticated: boolean;
 };
 
-function accessModeLabel(mode: string) {
-  switch (mode) {
-    case "PUBLIC":
-      return "PUBLIC";
-    case "FOLLOWERS":
-      return "FOLLOWERS";
-    case "APPROVAL":
-      return "APPROVAL";
-    case "INVITE":
-      return "INVITE";
-    default:
-      return mode.toUpperCase();
-  }
-}
-
 function resolveCommunityErrorMessage(errorCode: string | null) {
   switch (errorCode) {
     case "FOLLOW_REQUIRED":
-      return "Precisas de seguir a organizacao para entrar nesta comunidade.";
+      return "Precisas de seguir a organização para entrar nesta comunidade.";
     case "INVITE_REQUIRED":
       return "Esta comunidade requer convite.";
     case "BANNED":
-      return "Nao tens acesso a esta comunidade.";
+      return "Não tens acesso a esta comunidade.";
     case "COMMUNITY_NOT_FOUND":
-      return "Comunidade indisponivel.";
+      return "Comunidade indisponível.";
     case "UNAUTHENTICATED":
-      return "Inicia sessao para continuar.";
+      return "Inicia sessão para continuar.";
+    case "MOBILE_APP_REQUIRED":
+      return "Continua na app ORYA no telemóvel.";
     default:
-      return "Nao foi possivel abrir a comunidade agora.";
+      return "Não foi possível abrir a comunidade agora.";
   }
 }
 
@@ -74,7 +62,7 @@ export default function ProfileCommunitySection({
     window.setTimeout(() => {
       setFeedbackByCommunity((prev) => ({
         ...prev,
-        [conversationId]: "Se a app nao abriu automaticamente, abre a ORYA manualmente no telemovel.",
+        [conversationId]: "Se a app não abriu automaticamente, abre a ORYA manualmente no telemóvel.",
       }));
     }, 1200);
   };
@@ -90,7 +78,7 @@ export default function ProfileCommunitySection({
     setPendingId(community.conversationId);
 
     try {
-      const response = await fetch("/api/messages/conversations/resolve", {
+      const response = await fetch("/api/messages/conversations/resolve?scope=b2c", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -126,7 +114,7 @@ export default function ProfileCommunitySection({
       if (payload.requiresApproval || payload.grantStatus === "PENDING") {
         setFeedbackByCommunity((prev) => ({
           ...prev,
-          [community.conversationId]: "Pedido enviado. A organizacao vai aprovar na app ORYA.",
+          [community.conversationId]: "Pedido enviado. A organização vai aprovar na app ORYA.",
         }));
         return;
       }
@@ -147,7 +135,7 @@ export default function ProfileCommunitySection({
       if (!isMobileDevice) {
         setFeedbackByCommunity((prev) => ({
           ...prev,
-          [community.conversationId]: "Continua na app ORYA no telemovel.",
+          [community.conversationId]: "Continua na app ORYA no telemóvel.",
         }));
         return;
       }
@@ -156,7 +144,7 @@ export default function ProfileCommunitySection({
     } catch {
       setFeedbackByCommunity((prev) => ({
         ...prev,
-        [community.conversationId]: "Nao foi possivel abrir a comunidade agora.",
+        [community.conversationId]: "Não foi possível abrir a comunidade agora.",
       }));
     } finally {
       setPendingId((current) => (current === community.conversationId ? null : current));
@@ -166,7 +154,7 @@ export default function ProfileCommunitySection({
   if (communities.length === 0) {
     return (
       <div className="rounded-2xl border border-white/18 bg-white/[0.04] p-4 text-[13px] text-white/84">
-        Sem comunidades publicas disponiveis.
+        Sem comunidades disponíveis.
       </div>
     );
   }
@@ -176,7 +164,7 @@ export default function ProfileCommunitySection({
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
         <div>
           <p className="text-[11px] uppercase tracking-[0.22em] text-white/82">Comunidade</p>
-          <h3 className="text-lg font-semibold text-white">Comunidades da organizacao</h3>
+          <h3 className="text-lg font-semibold text-white">Comunidades da organização</h3>
         </div>
         <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] text-white/78">
           {communities.length} {communities.length === 1 ? "comunidade" : "comunidades"}
@@ -185,7 +173,7 @@ export default function ProfileCommunitySection({
 
       {!isMobileDevice ? (
         <p className="rounded-xl border border-white/15 bg-white/[0.04] px-3 py-2 text-[12px] text-white/75">
-          No desktop, o acesso continua na app ORYA no telemovel.
+          No desktop, o acesso continua na app ORYA no telemóvel.
         </p>
       ) : null}
 
@@ -202,11 +190,11 @@ export default function ProfileCommunitySection({
                 <div>
                   <p className="text-sm font-semibold text-white">{community.title}</p>
                   <p className="mt-1 text-[12px] text-white/80">
-                    {community.description || "Comunidade oficial da organizacao."}
+                    {community.description || "Comunidade oficial da organização."}
                   </p>
                 </div>
                 <span className="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-white/80">
-                  {accessModeLabel(community.accessMode)}
+                  {formatCommunityAccessModeLabel(community.accessMode)}
                 </span>
               </div>
 

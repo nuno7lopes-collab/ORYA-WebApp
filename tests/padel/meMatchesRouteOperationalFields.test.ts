@@ -50,6 +50,11 @@ beforeEach(async () => {
         padelTournamentConfig: {
           playerResultSubmissionEnabled: true,
           resultValidationMode: "IMMEDIATE_PENDING_THEN_OFFICIAL",
+          advancedSettings: {
+            scoreRules: {
+              deuceMode: "GOLDEN_POINT",
+            },
+          },
         },
       },
       category: { id: 501, label: "M3" },
@@ -79,6 +84,11 @@ beforeEach(async () => {
         padelTournamentConfig: {
           playerResultSubmissionEnabled: true,
           resultValidationMode: "IMMEDIATE_PENDING_THEN_OFFICIAL",
+          advancedSettings: {
+            scoreRules: {
+              deuceMode: "GOLDEN_POINT",
+            },
+          },
         },
       },
       category: { id: 501, label: "M3" },
@@ -130,6 +140,10 @@ describe("GET /api/padel/me/matches", () => {
       requiresAttention: true,
       attentionReason: "SUBMIT_RESULT",
       isLiveNow: true,
+      scoreRuleSummary: {
+        deuceMode: "GOLDEN_POINT",
+        shortLabel: "Ponto de ouro",
+      },
     });
     expect(byId.get(102)).toMatchObject({
       status: "PENDING_CONFIRMATION",

@@ -10,6 +10,14 @@ type PromoCodeInputProps = {
   appliedPromoLabel?: string | null;
 };
 
+const formatEuro = (amount: number) =>
+  new Intl.NumberFormat("pt-PT", {
+    style: "currency",
+    currency: "EUR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+
 export default function PromoCodeInput({
   promoInput,
   onChange,
@@ -56,8 +64,8 @@ export default function PromoCodeInput({
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-100">
           <span>
             {appliedPromoLabel
-              ? `Desconto ${appliedPromoLabel}: -${appliedDiscount.toFixed(2)} €`
-              : `Desconto aplicado: -${appliedDiscount.toFixed(2)} €`}
+              ? `Desconto ${appliedPromoLabel}: -${formatEuro(appliedDiscount)}`
+              : `Desconto aplicado: -${formatEuro(appliedDiscount)}`}
           </span>
           <button
             type="button"

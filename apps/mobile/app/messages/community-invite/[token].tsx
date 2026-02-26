@@ -29,10 +29,14 @@ export default function CommunityInviteRedeemScreen() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [requiresAuth, setRequiresAuth] = useState(false);
 
   const runRedeem = async () => {
+    setRequiresAuth(false);
+
     if (!session?.access_token) {
       setError("Inicia sessão para entrares nesta comunidade.");
+      setRequiresAuth(true);
       setLoading(false);
       return;
     }
@@ -90,6 +94,24 @@ export default function CommunityInviteRedeemScreen() {
           ) : error ? (
             <View className="gap-3">
               <Text className="text-red-300 text-sm">{error}</Text>
+              {requiresAuth ? (
+                <Pressable
+                  onPress={() =>
+                    safePush(router, {
+                      pathname: "/auth",
+                      params: { next: `/messages/community-invite/${encodeURIComponent(token.trim())}` },
+                    })
+                  }
+                  className="rounded-2xl bg-white/90 px-4 py-3"
+                  style={{ minHeight: tokens.layout.touchTarget }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Iniciar sessão"
+                >
+                  <Text className="text-center text-sm font-semibold" style={{ color: "#0b101a" }}>
+                    Iniciar sessão
+                  </Text>
+                </Pressable>
+              ) : null}
               <Pressable
                 onPress={() => void runRedeem()}
                 className="rounded-2xl bg-white/90 px-4 py-3"

@@ -181,4 +181,104 @@ describe("POST /api/padel/tournaments/config ranking weights by category", () =>
     expect(body.config.advancedSettings.formatProfilesByCategory["12"].nonStopMode).toBe("ACTIVE_QUEUE");
     expect(body.config.advancedSettings.formatProfilesByCategory["12"].amMxProgressionMode).toBe("ROUND_BY_ROUND");
   });
+
+  it("persiste scoreRulesByCategory e rejeita payload inválido", async () => {
+    const existingConfig = buildConfig({
+      scoreRules: {
+        scoreMode: "SETS",
+        deuceMode: "ADVANTAGE",
+        setsToWin: 2,
+        maxSets: 3,
+        gamesToWinSet: 6,
+        tieBreakAt: 6,
+        tieBreakTo: 7,
+        allowSuperTieBreak: true,
+        superTieBreakTo: 10,
+        superTieBreakWinBy: 2,
+        superTieBreakOnlyDecider: true,
+        allowExtendedGames: false,
+        allowTimedDraw: true,
+      },
+    });
+    const persistedAdvancedSettings = {
+      scoreRules: existingConfig.advancedSettings.scoreRules,
+      scoreRulesByCategory: {
+        "12": {
+          scoreMode: "SETS",
+          deuceMode: "GOLDEN_POINT",
+          setsToWin: 2,
+          maxSets: 3,
+          gamesToWinSet: 6,
+          tieBreakAt: 6,
+          tieBreakTo: 7,
+          allowSuperTieBreak: true,
+          superTieBreakTo: 10,
+          superTieBreakWinBy: 2,
+          superTieBreakOnlyDecider: true,
+          allowExtendedGames: false,
+          allowTimedDraw: true,
+        },
+      },
+    };
+    const tx = {
+      padelTournamentConfig: {
+        findUnique: vi
+          .fn()
+          .mockResolvedValueOnce(existingConfig)
+          .mockResolvedValueOnce(buildConfig(persistedAdvancedSettings)),
+        upsert: vi.fn().mockResolvedValue({ id: 99, ruleSetId: null, ruleSetVersionId: null }),
+        update: vi.fn(),
+      },
+      padelRegistration: { count: vi.fn().mockResolvedValue(0) },
+    };
+    prisma.$transaction.mockImplementation(async (fn: any) => fn(tx));
+
+    const req = new NextRequest("http://localhost/api/padel/tournaments/config", {
+      method: "POST",
+      body: JSON.stringify({
+        eventId: 1001,
+        organizationId: 321,
+        format: "NON_STOP",
+        scoreRulesByCategory: {
+          12: {
+            deuceMode: "GOLDEN_POINT",
+            setsToWin: 2,
+            maxSets: 3,
+            gamesToWinSet: 6,
+            tieBreakAt: 6,
+            tieBreakTo: 7,
+            allowSuperTieBreak: true,
+            superTieBreakTo: 10,
+            superTieBreakWinBy: 2,
+            superTieBreakOnlyDecider: true,
+            allowExtendedGames: false,
+            allowTimedDraw: true,
+          },
+        },
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.config.advancedSettings.scoreRulesByCategory["12"].deuceMode).toBe("GOLDEN_POINT");
+
+    const invalidReq = new NextRequest("http://localhost/api/padel/tournaments/config", {
+      method: "POST",
+      body: JSON.stringify({
+        eventId: 1001,
+        organizationId: 321,
+        format: "NON_STOP",
+        scoreRulesByCategory: {
+          abc: { deuceMode: "GOLDEN_POINT" },
+        },
+      }),
+    });
+    const invalidRes = await POST(invalidReq);
+    const invalidBody = await invalidRes.json();
+    expect(invalidRes.status).toBe(400);
+    expect(invalidBody.errorCode ?? invalidBody.error).toBe("INVALID_SCORE_RULES_BY_CATEGORY");
+  });
 });

@@ -13,7 +13,7 @@ import { buildBookingConfirmationSnapshot, BOOKING_CONFIRMATION_SNAPSHOT_VERSION
 import { refundBookingPayment } from "@/lib/reservas/bookingRefund";
 import { ensurePaymentIntent, isFinanceConnectNotReadyError } from "@/domain/finance/paymentIntent";
 import { computePricing } from "@/lib/pricing";
-import { computeCombinedFees } from "@/lib/fees";
+import { computeCardPlatformFeeCents, computeCombinedFees } from "@/lib/fees";
 import { getPlatformFees } from "@/lib/platformSettings";
 import { computeFeePolicyVersion } from "@/domain/finance/checkout";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
@@ -21,8 +21,6 @@ import { notifyOrganizationBookingChangeResponse } from "@/lib/reservas/bookingC
 import { ProcessorFeesStatus, SourceType } from "@prisma/client";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 import { requiresOrganizationStripe } from "@/domain/finance/payoutModePolicy";
-
-const CARD_PLATFORM_FEE_BPS = 100;
 
 function parseId(value: string) {
   const parsed = Number(value);
@@ -242,7 +240,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       });
       const cardPlatformFeeCents =
         paymentMethod === "card"
-          ? Math.max(0, Math.round((priceDeltaCents * CARD_PLATFORM_FEE_BPS) / 10_000))
+          ? computeCardPlatformFeeCents(priceDeltaCents)
           : 0;
       const totalCents = combinedFees.totalCents + cardPlatformFeeCents;
       const platformFeeCents = Math.min(pricing.platformFeeCents + cardPlatformFeeCents, totalCents);

@@ -533,11 +533,11 @@ export async function autoGeneratePadelMatches({
     drawPolicy === "RANDOM_ONLY" || (drawPolicy === "RANDOM_WITH_OPTIONAL_SEEDS" && !shouldUseSeeds);
   const seedApplied = shouldUseSeeds;
   const amMxMode = categoryProfile?.amMxMode === "FIXED_PAIR" ? "FIXED_PAIR" : "INDIVIDUAL_ROTATION";
-  const amMxProgressionMode = categoryProfile?.amMxProgressionMode === "ROUND_BY_ROUND" ? "ROUND_BY_ROUND" : null;
+  const amMxProgressionMode = "ROUND_BY_ROUND" as const;
   const nonStopMode =
     categoryProfile?.nonStopMode === "ACTIVE_QUEUE" || categoryProfile?.nonStopMode === "HARD_CAP_WAITLIST"
       ? (categoryProfile.nonStopMode as "ACTIVE_QUEUE" | "HARD_CAP_WAITLIST")
-      : "HARD_CAP_WAITLIST";
+      : "ACTIVE_QUEUE";
 
   if (config) {
     const nextDrawPolicyByCategory = {

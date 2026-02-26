@@ -9,6 +9,7 @@ import { resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
 import { resolveServicePartySizeRules } from "@/lib/reservas/servicePartySize";
 import { resolveBookingGridPolicy } from "@/lib/reservas/gridPolicy";
 import { resolveBookingVerticalFromServiceKind } from "@/lib/reservas/bookingVertical";
+import { resolveAllowedServiceScopeIds } from "@/lib/reservas/serviceScopes";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { buildCacheKey, getCache, setCache } from "@/lib/geo/cache";
 import { PORTUGAL_CITIES } from "@/config/cities";
@@ -498,12 +499,10 @@ async function _GET(req: NextRequest) {
         partySizeStep: service.partySizeStep,
       });
       const minPartySize = partySizeRules.partySizeRequired ? partySizeRules.partySizeMin : null;
-      const allowedProfessionalIds = service.professionalLinks?.length
-        ? service.professionalLinks.filter((link) => link.professional?.isActive).map((link) => link.professionalId)
-        : null;
-      const allowedResourceIds = service.resourceLinks?.length
-        ? service.resourceLinks.filter((link) => link.resource?.isActive).map((link) => link.resourceId)
-        : null;
+      const { allowedProfessionalIds, allowedResourceIds } = resolveAllowedServiceScopeIds({
+        professionalLinks: service.professionalLinks ?? [],
+        resourceLinks: service.resourceLinks ?? [],
+      });
 
       const timezone = service.organization.timezone || "Europe/Lisbon";
       const orgProfessionalsAll = professionalsByOrg.get(orgId) ?? [];

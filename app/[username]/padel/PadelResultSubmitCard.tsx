@@ -80,11 +80,16 @@ export default function PadelResultSubmitCard({
   status,
   playerSubmissionEnabled,
   validationMode,
+  scoreRuleSummary,
 }: {
   matchId: number;
   status: MatchStatus;
   playerSubmissionEnabled: boolean;
   validationMode: "IMMEDIATE_OFFICIAL" | "IMMEDIATE_PENDING_THEN_OFFICIAL" | string;
+  scoreRuleSummary?: {
+    shortLabel?: string | null;
+    label?: string | null;
+  } | null;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -175,6 +180,7 @@ export default function PadelResultSubmitCard({
     <div className="mt-2 space-y-2 rounded-xl border border-white/12 bg-black/25 px-3 py-2 text-[11px] text-white/80">
       <p className="font-semibold text-white">Submissão de resultado (jogador)</p>
       <p className="text-white/65">{submissionHint}</p>
+      {scoreRuleSummary?.label ? <p className="text-white/60">Regra ativa: {scoreRuleSummary.label}</p> : null}
 
       {success && (
         <div className="rounded-lg border border-emerald-300/35 bg-emerald-500/10 px-2 py-1 text-emerald-100">

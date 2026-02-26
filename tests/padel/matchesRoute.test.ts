@@ -25,6 +25,21 @@ vi.mock("@/domain/padel/matches/commands", () => ({ updatePadelMatch }));
 vi.mock("@/lib/organizationAudit", () => ({ recordOrganizationAuditSafe }));
 vi.mock("@/lib/padel/validation", () => ({ isValidScore }));
 vi.mock("@/domain/padel/score", () => ({
+  DEFAULT_PADEL_SCORE_RULES: {
+    scoreMode: "SETS",
+    deuceMode: "ADVANTAGE",
+    setsToWin: 2,
+    maxSets: 3,
+    gamesToWinSet: 6,
+    tieBreakAt: 6,
+    tieBreakTo: 7,
+    allowSuperTieBreak: true,
+    superTieBreakTo: 10,
+    superTieBreakWinBy: 2,
+    superTieBreakOnlyDecider: true,
+    allowExtendedGames: false,
+    allowTimedDraw: true,
+  },
   normalizePadelScoreRules: (...args: any[]) => normalizePadelScoreRules(...args),
   resolvePadelMatchStats: (...args: any[]) => resolvePadelMatchStats(...args),
 }));

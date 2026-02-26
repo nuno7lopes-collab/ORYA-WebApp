@@ -153,7 +153,10 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     return jsonWrap({ ok: false, error: "SPECIAL_RESULT_REQUIRES_INCIDENT_ENDPOINT" }, { status: 409 });
   }
 
-  const { scoreRules, ruleSnapshot } = await resolveResultScoreRulesContext(context.match.eventId);
+  const { scoreRules, ruleSnapshot } = await resolveResultScoreRulesContext(
+    context.match.eventId,
+    context.match.categoryId,
+  );
   const scoreEvaluation = resolveLiveResultScore({
     incomingScore: {
       ...context.match.score,

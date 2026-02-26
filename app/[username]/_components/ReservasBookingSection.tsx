@@ -118,7 +118,12 @@ const toggleBaseClass =
   "rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] transition";
 
 function formatMoney(cents: number, currency: string) {
-  return `${(cents / 100).toFixed(2)} ${currency}`;
+  return new Intl.NumberFormat("pt-PT", {
+    style: "currency",
+    currency: (currency || "EUR").toUpperCase(),
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(cents / 100);
 }
 
 export default function ReservasBookingSection({
@@ -339,8 +344,8 @@ export default function ReservasBookingSection({
     const isSelected = service.id === selectedServiceId;
     const priceLabel =
       service.unitPriceCents > 0
-        ? formatMoney(service.unitPriceCents, service.currency)
-        : "Gratuito";
+        ? `Preço: ${formatMoney(service.unitPriceCents, service.currency)}`
+        : "Preço: Grátis";
     const vertical = resolveServiceVertical(service);
     const badgeLabel = vertical === "COURT" ? "Campo" : vertical === "CLASS" ? "Aula" : "Serviço";
     const categoryLabel = service.category?.label ?? service.categoryTag ?? null;

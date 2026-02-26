@@ -153,7 +153,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     );
   }
 
-  const { scoreRules } = await resolveResultScoreRulesContext(context.match.eventId);
+  const { scoreRules } = await resolveResultScoreRulesContext(context.match.eventId, context.match.categoryId);
   const scoreEvaluation = resolveLiveResultScore({
     incomingScore: transition.score as Record<string, unknown>,
     currentScoreSets: context.match.scoreSets,

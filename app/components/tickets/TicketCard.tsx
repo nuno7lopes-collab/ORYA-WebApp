@@ -39,7 +39,12 @@ function formatDate(dateStr?: string) {
 
 function formatPrice(amount: number, currency: string) {
   if (!Number.isFinite(amount)) return "";
-  return `${amount.toFixed(2)} ${currency || "EUR"}`;
+  return new Intl.NumberFormat("pt-PT", {
+    style: "currency",
+    currency: (currency || "EUR").toUpperCase(),
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
 }
 
 export function TicketCard(props: TicketCardProps) {

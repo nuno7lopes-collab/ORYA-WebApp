@@ -26,7 +26,6 @@ import { createNotification, shouldNotify } from "@/lib/notifications";
 import { OrganizationMemberRole, OrganizationRolePack } from "@prisma/client";
 import type { BookingStatus } from "@prisma/client";
 import { evaluateCandidate, type AgendaCandidate } from "@/domain/agenda/conflictEngine";
-import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -38,6 +37,12 @@ import {
   validateDurationAgainstPolicy,
   validateStartAtAgainstPolicy,
 } from "@/lib/reservas/gridPolicy";
+import { resolveAllowedServiceScopeIds } from "@/lib/reservas/serviceScopes";
+import {
+  agendaConflictResponse,
+  buildBookingConflictBlocks,
+  buildSessionConflictBlocks,
+} from "@/lib/reservas/agendaConflictHelpers";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -69,30 +74,6 @@ function getRequestMeta(req: NextRequest) {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
   const userAgent = req.headers.get("user-agent") ?? null;
   return { ip, userAgent };
-}
-
-function buildBlocks(
-  bookings: Array<{ startsAt: Date; durationMinutes: number; professionalId: number | null; resourceId: number | null }>,
-) {
-  return bookings.map((booking) => ({
-    start: booking.startsAt,
-    end: new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000),
-    professionalId: booking.professionalId,
-    resourceId: booking.resourceId,
-  }));
-}
-
-function buildSessionBlocks(sessions: Array<{ startsAt: Date; endsAt: Date; professionalId: number | null }>) {
-  return sessions.map((session) => ({
-    start: session.startsAt,
-    end: session.endsAt,
-    professionalId: session.professionalId,
-    resourceId: null,
-  }));
-}
-
-function agendaConflictResponse(decision?: Parameters<typeof buildAgendaConflictPayload>[0]["decision"]) {
-  return buildAgendaConflictPayload({ decision: decision ?? null, fallbackReason: "MISSING_EXISTING_DATA" });
 }
 
 async function _POST(
@@ -294,22 +275,10 @@ async function _POST(
       return fail(ctx, 400, partySizeValidation.errorCode, partySizeValidation.message);
     }
 
-    const allowedProfessionalIds = booking.service.professionalLinks.length
-      ? booking.service.professionalLinks
-          .filter((link) => link.professional?.isActive)
-          .map((link) => link.professionalId)
-      : null;
-    const allowedResourceIds = booking.service.resourceLinks.length
-      ? booking.service.resourceLinks
-          .filter((link) => link.resource?.isActive)
-          .map((link) => link.resourceId)
-      : null;
-    const allowedCourtIdsFromService = booking.service.resourceLinks.length
-      ? booking.service.resourceLinks
-          .filter((link) => link.resource?.isActive && (link.resource?.courtId ?? null) != null)
-          .map((link) => link.resource?.courtId)
-          .filter((value): value is number => typeof value === "number" && value > 0)
-      : null;
+    const { allowedProfessionalIds, allowedResourceIds } = resolveAllowedServiceScopeIds({
+      professionalLinks: booking.service.professionalLinks,
+      resourceLinks: booking.service.resourceLinks,
+    });
 
     let professionalId: number | null = booking.professionalId ?? null;
     let resourceId: number | null = booking.resourceId ?? null;
@@ -319,12 +288,11 @@ async function _POST(
       availabilityMode === "RESOURCE" ? "RESOURCE" : "PROFESSIONAL";
     let scopeIds: number[] = [];
     const resourceCourtById = new Map<number, number | null>();
-    const enforceServiceResourceLinks = !assignmentConfig.isCourtService;
     let professionalScopes: Array<{ id: number; priority: number }> = [];
     let resourceScopes: Array<{ id: number; capacity: number; priority: number; courtId: number | null }> = [];
 
     if (availabilityMode === "RESOURCE") {
-      if (enforceServiceResourceLinks && allowedResourceIds && allowedResourceIds.length === 0) {
+      if (allowedResourceIds && allowedResourceIds.length === 0) {
         return fail(ctx, 409, "RESOURCES_UNAVAILABLE", "Sem recursos disponíveis para este serviço.");
       }
       if (resourceId) {
@@ -339,15 +307,8 @@ async function _POST(
           if (!resource.courtId) {
             return fail(ctx, 409, "COURT_RESOURCE_INVALID", "Recurso sem ligação canónica a campo.");
           }
-          if (
-            allowedCourtIdsFromService &&
-            allowedCourtIdsFromService.length > 0 &&
-            !allowedCourtIdsFromService.includes(resource.courtId) &&
-            !(allowedResourceIds?.includes(resource.id) ?? false)
-          ) {
-            return fail(ctx, 404, "RESOURCE_INVALID", "Recurso inválido.");
-          }
-        } else if (enforceServiceResourceLinks && allowedResourceIds && !allowedResourceIds.includes(resource.id)) {
+        }
+        if (allowedResourceIds && !allowedResourceIds.includes(resource.id)) {
           return fail(ctx, 404, "RESOURCE_INVALID", "Recurso inválido.");
         }
         if (partySize != null && resource.capacity < partySize) {
@@ -364,7 +325,7 @@ async function _POST(
             isActive: true,
             ...(partySize != null ? { capacity: { gte: partySize } } : {}),
             ...(assignmentConfig.isCourtService ? { courtId: { not: null } } : {}),
-            ...(enforceServiceResourceLinks && allowedResourceIds ? { id: { in: allowedResourceIds } } : {}),
+            ...(allowedResourceIds ? { id: { in: allowedResourceIds } } : {}),
           },
           orderBy: [{ capacity: "asc" }, { priority: "asc" }, { id: "asc" }],
           select: { id: true, capacity: true, priority: true, courtId: true },
@@ -435,7 +396,7 @@ async function _POST(
       if (professionalScopes.length === 0) {
         return fail(ctx, 409, "PROFESSIONALS_UNAVAILABLE", "Sem profissionais disponíveis para este serviço.");
       }
-      if (enforceServiceResourceLinks && allowedResourceIds && allowedResourceIds.length === 0) {
+      if (allowedResourceIds && allowedResourceIds.length === 0) {
         return fail(ctx, 409, "RESOURCES_UNAVAILABLE", "Sem recursos disponíveis para este serviço.");
       }
       if (resourceId) {
@@ -448,15 +409,11 @@ async function _POST(
         }
         if (
           assignmentConfig.isCourtService &&
-          (!resource.courtId ||
-            (allowedCourtIdsFromService &&
-              allowedCourtIdsFromService.length > 0 &&
-              !allowedCourtIdsFromService.includes(resource.courtId) &&
-              !(allowedResourceIds?.includes(resource.id) ?? false)))
+          !resource.courtId
         ) {
           return fail(ctx, 404, "RESOURCE_INVALID", "Recurso inválido.");
         }
-        if (enforceServiceResourceLinks && allowedResourceIds && !allowedResourceIds.includes(resource.id)) {
+        if (allowedResourceIds && !allowedResourceIds.includes(resource.id)) {
           return fail(ctx, 404, "RESOURCE_INVALID", "Recurso inválido.");
         }
         if (partySize != null && resource.capacity < partySize) {
@@ -471,7 +428,7 @@ async function _POST(
             isActive: true,
             ...(partySize != null ? { capacity: { gte: partySize } } : {}),
             ...(assignmentConfig.isCourtService ? { courtId: { not: null } } : {}),
-            ...(enforceServiceResourceLinks && allowedResourceIds ? { id: { in: allowedResourceIds } } : {}),
+            ...(allowedResourceIds ? { id: { in: allowedResourceIds } } : {}),
           },
           orderBy: [{ capacity: "asc" }, { priority: "asc" }, { id: "asc" }],
           select: { id: true, capacity: true, priority: true, courtId: true },
@@ -589,7 +546,10 @@ async function _POST(
     const orgOverrides = overrides.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
     const schedulesByScope = groupByScope(schedules);
     const overridesByScope = groupByScope(overrides);
-    const blocks = [...buildBlocks(blockingBookings), ...buildSessionBlocks(classSessions)];
+    const blocks = [
+      ...buildBookingConflictBlocks(blockingBookings),
+      ...buildSessionConflictBlocks(classSessions),
+    ];
 
     const slotKey = startsAt.toISOString();
     let slotIsAvailable = false;

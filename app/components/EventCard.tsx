@@ -28,6 +28,15 @@ type Props = {
   event: EventForCard;
 };
 
+function formatCurrencyAmount(amount: number, currency = "EUR") {
+  return new Intl.NumberFormat("pt-PT", {
+    style: "currency",
+    currency: (currency || "EUR").toUpperCase(),
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
 function formatPrice(tickets: EventTicket[] | undefined, isGratis: boolean) {
   if (isGratis) return 'Grátis';
 
@@ -39,9 +48,9 @@ function formatPrice(tickets: EventTicket[] | undefined, isGratis: boolean) {
   const max = Math.max(...list.map(t => t.price));
 
   if (min === 0 && max === 0) return 'Grátis';
-  if (min === max) return `${min.toFixed(2)} €`;
+  if (min === max) return `Preço: ${formatCurrencyAmount(min)}`;
 
-  return `${min.toFixed(2)} – ${max.toFixed(2)} €`;
+  return `Preço: ${formatCurrencyAmount(min)} – ${formatCurrencyAmount(max)}`;
 }
 
 function formatDateRange(startDate: string, endDate: string, timezone: string) {

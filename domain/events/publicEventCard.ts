@@ -1,6 +1,6 @@
 import { EventPricingMode } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
-import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
+import { resolveTicketPricingSummary } from "@/domain/events/ticketPricing";
 
 export type PublicEventCard = {
   id: number;
@@ -23,6 +23,7 @@ export type PublicEventCard = {
   coverImageUrl: string | null;
   isGratis: boolean;
   priceFrom: number | null;
+  priceCurrency?: string | null;
   categories: string[];
   hostName: string | null;
   hostUsername: string | null;
@@ -217,27 +218,11 @@ export function toPublicEventCardWithPrice(params: {
   ownerProfile?: PublicEventOwnerProfile | null;
 }): PublicEventCardWithPrice {
   const { event, ownerProfile } = params;
-  const ticketPrices = Array.isArray(event.ticketTypes)
-    ? event.ticketTypes
-        .filter((ticket) => {
-          const status = (ticket.status ?? "").toUpperCase();
-          if (status && status !== "ON_SALE") return false;
-          const total = ticket.totalQuantity;
-          const sold = ticket.soldQuantity ?? 0;
-          if (typeof total === "number" && sold >= total) return false;
-          return true;
-        })
-        .map((t) => (typeof t.price === "number" ? Math.max(0, t.price) : null))
-        .filter((p): p is number => p !== null)
-    : [];
-
-  const isGratis = deriveIsFreeEvent({
-    pricingMode: (event.pricingMode as EventPricingMode | null | undefined) ?? undefined,
-    ticketPrices,
+  const { isGratis, priceFromCents, priceFrom, priceCurrency } = resolveTicketPricingSummary({
+    pricingMode:
+      (event.pricingMode as EventPricingMode | null | undefined) ?? undefined,
+    ticketTypes: event.ticketTypes ?? [],
   });
-  const priceFromCents =
-    isGratis ? 0 : ticketPrices.length > 0 ? Math.min(...ticketPrices) : null;
-  const priceFrom = priceFromCents !== null ? priceFromCents / 100 : null;
 
   const hostName =
     event.organization?.publicName ??
@@ -306,6 +291,7 @@ export function toPublicEventCardWithPrice(params: {
     coverImageUrl: event.coverImageUrl ?? null,
     isGratis,
     priceFrom,
+    priceCurrency,
     categories,
     hostName,
     hostUsername,
@@ -372,6 +358,7 @@ export function toPublicEventCardFromIndex(input: PublicEventCardIndexInput): Pu
     coverImageUrl: input.coverImageUrl ?? null,
     isGratis: input.isGratis,
     priceFrom,
+    priceCurrency: null,
     categories: resolveEventCategories(input.templateType),
     interestTags: Array.isArray(input.interestTags) ? input.interestTags : [],
     hostName: input.hostName ?? null,

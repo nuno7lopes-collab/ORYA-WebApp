@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
+import { resolveTicketPricingSummary } from "@/domain/events/ticketPricing";
 import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
 import type { EventCardDTO } from "@/lib/events";
 
@@ -36,7 +36,12 @@ const EVENT_SELECT = {
 } satisfies Prisma.EventSelect;
 
 type RawEvent = Prisma.EventGetPayload<{ select: typeof EVENT_SELECT }>;
-type TicketPriceRange = { min: number | null; max: number | null };
+type TicketPricingInput = {
+  price: number | null;
+  status: string | null;
+  totalQuantity: number | null;
+  soldQuantity: number | null;
+};
 
 const CURRENT_LIMIT = 8;
 const FALLBACK_LIMIT = 6;
@@ -82,17 +87,14 @@ function addDays(date: Date, days: number) {
   return next;
 }
 
-function mapDiscoverEvent(event: RawEvent, priceMap: Map<number, TicketPriceRange>): DiscoverEvent | null {
-  const priceRange = priceMap.get(event.id);
-  const minPrice = priceRange?.min ?? null;
-  const maxPrice = priceRange?.max ?? null;
-  const hasPriceRange = minPrice !== null;
-
-  const isGratis =
-    deriveIsFreeEvent({
-      pricingMode: event.pricingMode ?? undefined,
-      ticketPrices: hasPriceRange ? [minPrice, maxPrice ?? minPrice] : [],
-    });
+function mapDiscoverEvent(
+  event: RawEvent,
+  ticketMap: Map<number, TicketPricingInput[]>,
+): DiscoverEvent | null {
+  const pricing = resolveTicketPricingSummary({
+    pricingMode: event.pricingMode ?? undefined,
+    ticketTypes: ticketMap.get(event.id) ?? [],
+  });
 
   const canonical = (event.addressRef?.canonical as Record<string, unknown> | null) ?? null;
   const locationFormattedAddress =
@@ -108,8 +110,8 @@ function mapDiscoverEvent(event: RawEvent, priceMap: Map<number, TicketPriceRang
     startsAt: event.startsAt ?? null,
     endsAt: event.endsAt ?? null,
     locationFormattedAddress,
-    isGratis,
-    priceFrom: minPrice !== null ? minPrice / 100 : null,
+    isGratis: pricing.isGratis,
+    priceFrom: pricing.priceFrom,
     coverImageUrl: event.coverImageUrl ?? null,
   };
 
@@ -168,11 +170,13 @@ export function formatLocationLabel(event: DiscoverEvent) {
 export function formatPriceLabel(event: DiscoverEvent) {
   if (event.isGratis) return "Gratuito";
   if (event.priceFrom == null) return null;
-  const formatted = event.priceFrom.toLocaleString("pt-PT", {
+  const formatted = new Intl.NumberFormat("pt-PT", {
+    style: "currency",
+    currency: "EUR",
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  });
-  return `Desde ${formatted} EUR`;
+  }).format(event.priceFrom);
+  return `Desde ${formatted}`;
 }
 
 export function formatEventDayLabel(event: DiscoverEvent) {
@@ -252,14 +256,18 @@ export async function getDiscoverData(options?: {
   ]);
 
   const allEventIds = Array.from(new Set([...currentRaw, ...upcomingRaw].map((event) => event.id)));
-  const priceMap = await buildTicketPriceMap(allEventIds);
+  const ticketMap = await buildTicketPriceMap(allEventIds);
 
   const currentEvents = filterValidEvents(
-    currentRaw.map((event) => mapDiscoverEvent(event, priceMap)).filter((event): event is DiscoverEvent => Boolean(event)),
+    currentRaw
+      .map((event) => mapDiscoverEvent(event, ticketMap))
+      .filter((event): event is DiscoverEvent => Boolean(event)),
   );
 
   const upcomingEvents = filterValidEvents(
-    upcomingRaw.map((event) => mapDiscoverEvent(event, priceMap)).filter((event): event is DiscoverEvent => Boolean(event)),
+    upcomingRaw
+      .map((event) => mapDiscoverEvent(event, ticketMap))
+      .filter((event): event is DiscoverEvent => Boolean(event)),
   );
 
   const nearbyFiltered =
@@ -294,23 +302,31 @@ export async function getDiscoverData(options?: {
 }
 
 async function buildTicketPriceMap(eventIds: number[]) {
-  const priceMap = new Map<number, TicketPriceRange>();
-  if (eventIds.length === 0) return priceMap;
+  const ticketMap = new Map<number, TicketPricingInput[]>();
+  if (eventIds.length === 0) return ticketMap;
 
-  const rows = await prisma.ticketType.groupBy({
-    by: ["eventId"],
+  const rows = await prisma.ticketType.findMany({
     where: { eventId: { in: eventIds } },
-    _min: { price: true },
-    _max: { price: true },
+    select: {
+      eventId: true,
+      price: true,
+      status: true,
+      totalQuantity: true,
+      soldQuantity: true,
+    },
   });
 
   for (const row of rows) {
-    priceMap.set(row.eventId, {
-      min: row._min.price ?? null,
-      max: row._max.price ?? null,
+    const current = ticketMap.get(row.eventId) ?? [];
+    current.push({
+      price: row.price ?? null,
+      status: row.status ?? null,
+      totalQuantity: row.totalQuantity ?? null,
+      soldQuantity: row.soldQuantity ?? null,
     });
+    ticketMap.set(row.eventId, current);
   }
-  return priceMap;
+  return ticketMap;
 }
 function buildDiscoverWhere(tab?: DiscoverTab): Prisma.EventWhereInput {
   const organizationFilter: Prisma.OrganizationWhereInput = { status: "ACTIVE" };

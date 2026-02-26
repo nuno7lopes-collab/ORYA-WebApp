@@ -6,13 +6,13 @@ import { Prisma, PadelEligibilityType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
-import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 import { parsePadelFormat } from "@/domain/padel/formatCatalog";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
 import { PORTUGAL_CITIES } from "@/config/cities";
 import { logError } from "@/lib/observability/logger";
 import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
+import { resolveTicketPricingSummary } from "@/domain/events/ticketPricing";
 
 const DEFAULT_LIMIT = 12;
 
@@ -161,7 +161,16 @@ async function _GET(req: NextRequest) {
           select: { formattedAddress: true, canonical: true },
         },
         status: true,
-        ticketTypes: { select: { price: true, status: true } },
+        pricingMode: true,
+        ticketTypes: {
+          select: {
+            price: true,
+            currency: true,
+            status: true,
+            totalQuantity: true,
+            soldQuantity: true,
+          },
+        },
         organization: { select: { publicName: true, username: true } },
         padelTournamentConfig: {
           select: {
@@ -203,14 +212,10 @@ async function _GET(req: NextRequest) {
         competitionState: (event.padelTournamentConfig?.advancedSettings as any)?.competitionState ?? null,
         lifecycleStatus: event.padelTournamentConfig?.lifecycleStatus ?? null,
       });
-      const ticketPrices = event.ticketTypes
-        .map((t) => (typeof t.price === "number" ? t.price : null))
-        .filter((p): p is number => p !== null);
-
-      const isGratis = deriveIsFreeEvent({ ticketPrices });
-      const priceFromCents =
-        isGratis ? 0 : ticketPrices.length > 0 ? Math.min(...ticketPrices) : null;
-      const priceFrom = priceFromCents !== null ? priceFromCents / 100 : null;
+      const { isGratis, priceFromCents, priceFrom, priceCurrency } = resolveTicketPricingSummary({
+        pricingMode: event.pricingMode,
+        ticketTypes: event.ticketTypes,
+      });
 
       const levels = (event.padelCategoryLinks ?? [])
         .map((link) => link.category)
@@ -226,6 +231,7 @@ async function _GET(req: NextRequest) {
         locationFormattedAddress: event.addressRef?.formattedAddress ?? null,
         addressId: event.addressId ?? null,
         priceFrom,
+        priceCurrency: priceCurrency ?? "EUR",
         organizationName: event.organization?.publicName ?? event.organization?.username ?? null,
         format: event.padelTournamentConfig?.format ?? null,
         eligibility: event.padelTournamentConfig?.eligibilityType ?? null,

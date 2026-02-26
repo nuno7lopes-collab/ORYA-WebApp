@@ -32,6 +32,10 @@ type ScheduledMatchView = {
   pairingA: string;
   pairingB: string;
   scoreLabel: string;
+  scoreRuleSummary?: {
+    shortLabel?: string;
+    label?: string;
+  } | null;
   day: string;
 };
 
@@ -340,6 +344,9 @@ export default async function EventCalendarPage({ params, searchParams }: PagePr
                     <div key={`live-match-${match.id}`} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2">
                       <p className="text-sm font-semibold">{match.pairingA} vs {match.pairingB}</p>
                       <p className="text-[12px] text-white/70">{formatStatus(match.status)} · {match.scoreLabel}</p>
+                      {match.scoreRuleSummary?.shortLabel ? (
+                        <p className="text-[11px] text-white/55">{match.scoreRuleSummary.shortLabel}</p>
+                      ) : null}
                     </div>
                   ))}
                 </div>
@@ -506,6 +513,9 @@ export default async function EventCalendarPage({ params, searchParams }: PagePr
                           <p className="font-semibold">{match.pairingA} vs {match.pairingB}</p>
                           <p className="text-[12px] text-white/70">{formatDateTime(match.startAt, locale, live.event.timezone)} · {formatStatus(match.status)}</p>
                           <p className="text-[12px] text-white/70">{match.scoreLabel}</p>
+                          {match.scoreRuleSummary?.shortLabel ? (
+                            <p className="text-[11px] text-white/55">{match.scoreRuleSummary.shortLabel}</p>
+                          ) : null}
                         </div>
                       ))}
                     </div>
@@ -554,6 +564,9 @@ export default async function EventCalendarPage({ params, searchParams }: PagePr
                 <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">{match.roundLabel || "Eliminatória"}</p>
                 <p className="text-sm font-semibold mt-1">{match.pairingA} vs {match.pairingB}</p>
                 <p className="text-[12px] text-white/70">{formatDateTime(match.startAt, locale, live.event.timezone)} · {formatStatus(match.status)} · {match.scoreLabel}</p>
+                {match.scoreRuleSummary?.shortLabel ? (
+                  <p className="text-[11px] text-white/55">{match.scoreRuleSummary.shortLabel}</p>
+                ) : null}
               </div>
             ))}
           </div>
@@ -571,6 +584,9 @@ export default async function EventCalendarPage({ params, searchParams }: PagePr
                 <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">{item.courtLabel} · {item.roundLabel || item.groupLabel || "Jogo"}</p>
                 <p className="text-sm font-semibold">{item.pairingA} vs {item.pairingB}</p>
                 <p className="text-[12px] text-white/70">{formatDateTime(item.startAt, locale, live.event.timezone)} · {item.scoreLabel}</p>
+                {item.scoreRuleSummary?.shortLabel ? (
+                  <p className="text-[11px] text-white/55">{item.scoreRuleSummary.shortLabel}</p>
+                ) : null}
               </div>
             ))}
           </div>

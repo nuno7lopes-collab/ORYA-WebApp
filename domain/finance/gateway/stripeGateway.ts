@@ -109,8 +109,19 @@ export async function retrieveCharge(
   id: string,
   params?: Stripe.ChargeRetrieveParams,
 ) {
-  const stripe = getStripeClient();
-  return stripe.charges.retrieve(id, params as Stripe.ChargeRetrieveParams);
+  const primaryEnv = getStripeEnv();
+  const primary = getStripeClientForEnv(primaryEnv);
+  try {
+    return primary.charges.retrieve(id, params as Stripe.ChargeRetrieveParams);
+  } catch (err) {
+    if (!isNoSuchChargeError(err)) throw err;
+    const fallbackEnv: StripeRuntimeEnv = primaryEnv === "test" ? "prod" : "test";
+    const fallback = getStripeClientForEnv(fallbackEnv);
+    return fallback.charges.retrieve(
+      id,
+      params as Stripe.ChargeRetrieveParams,
+    );
+  }
 }
 
 export async function createRefund(
@@ -146,13 +157,24 @@ export async function createTransfer(
 }
 
 function isNoSuchPaymentIntentError(err: unknown) {
+  const anyErr = err as { message?: string; code?: string; statusCode?: number };
+  if (anyErr?.code === "resource_missing" || anyErr?.statusCode === 404) return true;
   if (!(err instanceof Error)) return false;
   return err.message.toLowerCase().includes("no such payment_intent");
 }
 
 function isNoSuchStripeEventError(err: unknown) {
+  const anyErr = err as { message?: string; code?: string; statusCode?: number };
+  if (anyErr?.code === "resource_missing" || anyErr?.statusCode === 404) return true;
   if (!(err instanceof Error)) return false;
   return err.message.toLowerCase().includes("no such event");
+}
+
+function isNoSuchChargeError(err: unknown) {
+  const anyErr = err as { message?: string; code?: string; statusCode?: number };
+  if (anyErr?.code === "resource_missing" || anyErr?.statusCode === 404) return true;
+  if (!(err instanceof Error)) return false;
+  return err.message.toLowerCase().includes("no such charge");
 }
 
 export function constructStripeWebhookEvent(

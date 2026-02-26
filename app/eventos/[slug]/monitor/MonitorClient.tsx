@@ -17,6 +17,10 @@ type LiveResponse = {
       pairingA: string;
       pairingB: string;
       scoreLabel: string;
+      scoreRuleSummary?: {
+        shortLabel?: string;
+        label?: string;
+      } | null;
       roundLabel: string | null;
       startAt: string | null;
     }>;
@@ -27,6 +31,10 @@ type LiveResponse = {
     pairingA: string;
     pairingB: string;
     scoreLabel: string;
+    scoreRuleSummary?: {
+      shortLabel?: string;
+      label?: string;
+    } | null;
     roundLabel: string | null;
     courtLabel: string;
     startAt: string | null;
@@ -41,6 +49,10 @@ type LiveResponse = {
         pairingA: string;
         pairingB: string;
         scoreLabel: string;
+        scoreRuleSummary?: {
+          shortLabel?: string;
+          label?: string;
+        } | null;
         startAt: string;
       }>;
     }>;
@@ -109,6 +121,7 @@ export default function MonitorClient({ slug }: { slug: string }) {
         pairingA: featuredLiveMatch.pairingA,
         pairingB: featuredLiveMatch.pairingB,
         scoreLabel: featuredLiveMatch.scoreLabel,
+        scoreRuleSummary: featuredLiveMatch.scoreRuleSummary,
         roundLabel: featuredLiveMatch.roundLabel,
       }
     : featuredResult
@@ -118,6 +131,7 @@ export default function MonitorClient({ slug }: { slug: string }) {
           pairingA: featuredResult.pairingA,
           pairingB: featuredResult.pairingB,
           scoreLabel: featuredResult.scoreLabel,
+          scoreRuleSummary: featuredResult.scoreRuleSummary,
           roundLabel: featuredResult.roundLabel,
         }
       : null;
@@ -198,6 +212,9 @@ export default function MonitorClient({ slug }: { slug: string }) {
                   <p className="text-4xl md:text-5xl font-semibold leading-tight">{featured.pairingB}</p>
                 </div>
                 <p className="text-5xl md:text-6xl font-black text-cyan-200">{featured.scoreLabel}</p>
+                {featured.scoreRuleSummary?.shortLabel ? (
+                  <p className="text-[12px] text-cyan-100/85">{featured.scoreRuleSummary.shortLabel}</p>
+                ) : null}
               </>
             )}
           </article>
@@ -229,6 +246,9 @@ export default function MonitorClient({ slug }: { slug: string }) {
                     {formatMatchTime(match.startAt, data?.event?.timezone)} · {match.courtLabel} · {formatStatus(match.status)}
                   </p>
                   <p className="text-[12px] text-white/60">{match.scoreLabel}</p>
+                  {match.scoreRuleSummary?.shortLabel ? (
+                    <p className="text-[11px] text-white/55">{match.scoreRuleSummary.shortLabel}</p>
+                  ) : null}
                 </div>
               ))}
             </div>

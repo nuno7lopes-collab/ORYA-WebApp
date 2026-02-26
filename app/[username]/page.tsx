@@ -28,8 +28,8 @@ import {
 } from "@/lib/publicOrganizationProfile";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { getUserIdentityIds } from "@/lib/ownership/identity";
-import { OrganizationFormStatus, type Prisma } from "@prisma/client";
-import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
+import { ChatCommunityAccessMode, OrganizationFormStatus, type Prisma } from "@prisma/client";
+import { resolveTicketPricingSummary } from "@/domain/events/ticketPricing";
 import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
 import { resolveBookingVerticalFromServiceKind } from "@/lib/reservas/bookingVertical";
 import ReservasBookingSection from "@/app/[username]/_components/ReservasBookingSection";
@@ -49,6 +49,12 @@ import CrmEngagementTracker from "@/app/components/crm/CrmEngagementTracker";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
+const PROFILE_DISCOVERABLE_COMMUNITY_ACCESS_MODES: ChatCommunityAccessMode[] = [
+  ChatCommunityAccessMode.PUBLIC,
+  ChatCommunityAccessMode.FOLLOWERS,
+  ChatCommunityAccessMode.APPROVAL,
+];
 
 type PageProps = {
   params: { username: string } | Promise<{ username: string }>;
@@ -492,7 +498,15 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
           timezone: true,
           templateType: true,
           coverImageUrl: true,
-          ticketTypes: { select: { price: true } },
+          pricingMode: true,
+          ticketTypes: {
+            select: {
+              price: true,
+              status: true,
+              totalQuantity: true,
+              soldQuantity: true,
+            },
+          },
         },
       }),
       prisma.organization_follows.count({
@@ -717,8 +731,11 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     ]);
 
     const orgEvents: OrganizationEvent[] = events.map((event) => {
-      const ticketPrices = event.ticketTypes?.map((t) => t.price ?? 0) ?? [];
-      const isGratis = deriveIsFreeEvent({ ticketPrices });
+      const pricing = resolveTicketPricingSummary({
+        pricingMode: event.pricingMode ?? undefined,
+        ticketTypes: event.ticketTypes,
+      });
+      const isGratis = pricing.isGratis;
       return {
         id: event.id,
         slug: event.slug,
@@ -861,7 +878,10 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     });
     const showFormsSection = hasInscricoes && publicForms.length > 0;
     const activeCommunityCount = await prisma.chatCommunity.count({
-      where: { organizationId: organizationProfile.id },
+      where: {
+        organizationId: organizationProfile.id,
+        accessMode: { in: PROFILE_DISCOVERABLE_COMMUNITY_ACCESS_MODES },
+      },
     });
     const showCommunitySection = activeCommunityCount > 0;
     const reservasHubClubMode = services.some((service) =>
@@ -1028,7 +1048,10 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
       shouldLoadCommunityItems
         ? prisma.chatCommunity
             .findMany({
-              where: { organizationId: organizationProfile.id },
+              where: {
+                organizationId: organizationProfile.id,
+                accessMode: { in: PROFILE_DISCOVERABLE_COMMUNITY_ACCESS_MODES },
+              },
               orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
               select: {
                 conversationId: true,

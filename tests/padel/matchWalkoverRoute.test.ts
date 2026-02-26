@@ -26,6 +26,21 @@ vi.mock("@/lib/organizationContext", () => ({ getActiveOrganizationForUser }));
 vi.mock("@/lib/organizationMemberAccess", () => ({ ensureMemberModuleAccess }));
 vi.mock("@/domain/padel/pairingPolicy", () => ({ canMarkWalkover }));
 vi.mock("@/domain/padel/score", () => ({
+  DEFAULT_PADEL_SCORE_RULES: {
+    scoreMode: "SETS",
+    deuceMode: "ADVANTAGE",
+    setsToWin: 2,
+    maxSets: 3,
+    gamesToWinSet: 6,
+    tieBreakAt: 6,
+    tieBreakTo: 7,
+    allowSuperTieBreak: true,
+    superTieBreakTo: 10,
+    superTieBreakWinBy: 2,
+    superTieBreakOnlyDecider: true,
+    allowExtendedGames: false,
+    allowTimedDraw: true,
+  },
   buildWalkoverSets: (...args: any[]) => buildWalkoverSets(...args),
   normalizePadelScoreRules: (...args: any[]) => normalizePadelScoreRules(...args),
 }));

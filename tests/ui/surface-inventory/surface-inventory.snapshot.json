@@ -69,6 +69,7 @@
     "app/me/reservas/page.tsx",
     "app/me/settings/page.tsx",
     "app/me/wallet/[id]/page.tsx",
+    "app/messages/community-invite/[token]/page.tsx",
     "app/onboarding/padel/page.tsx",
     "app/onboarding/perfil/page.tsx",
     "app/org-hub/create/page.tsx",
@@ -408,6 +409,7 @@
       "app/legal/termos/page.tsx",
       "app/logo/page.tsx",
       "app/loja/seguimento/page.tsx",
+      "app/messages/community-invite/[token]/page.tsx",
       "app/org-hub/create/page.tsx",
       "app/org-hub/groups/[groupId]/governance/page.tsx",
       "app/org-hub/groups/[groupId]/page.tsx",
@@ -462,12 +464,12 @@
     ]
   },
   "counts": {
-    "webTotal": 200,
+    "webTotal": 201,
     "mobileTotal": 45,
     "org": 78,
     "admin": 17,
     "user": 20,
-    "public": 53,
+    "public": 54,
     "legacyCompat": 32
   }
 }

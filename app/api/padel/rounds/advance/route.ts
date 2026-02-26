@@ -609,6 +609,8 @@ async function _POST(req: NextRequest) {
   const formatOverride =
     categoryProfile && typeof categoryProfile.format === "string" ? parsePadelFormat(categoryProfile.format) : null;
   const formatEffective = formatOverride ?? event.padelTournamentConfig.format;
+  const amMxModeEffective = categoryProfile?.amMxMode === "FIXED_PAIR" ? "FIXED_PAIR" : "INDIVIDUAL_ROTATION";
+  const amMxProgressionModeEffective = "ROUND_BY_ROUND" as const;
 
   const createdMatches: Array<{
     data: Prisma.EventMatchSlotCreateInput;
@@ -636,7 +638,7 @@ async function _POST(req: NextRequest) {
       runtimeRaw.mode === "ACTIVE_QUEUE" || runtimeRaw.mode === "HARD_CAP_WAITLIST"
         ? (runtimeRaw.mode as "ACTIVE_QUEUE" | "HARD_CAP_WAITLIST")
         : null;
-    const nonStopMode = runtimeNonStopMode ?? profileNonStopMode ?? "HARD_CAP_WAITLIST";
+    const nonStopMode = runtimeNonStopMode ?? profileNonStopMode ?? "ACTIVE_QUEUE";
 
     const currentRound = Math.max(1, parseNumber(runtimeRaw.round) ?? 1);
     const roundsTotal = Math.max(currentRound, parseNumber(runtimeRaw.roundsTotal) ?? currentRound);
@@ -784,8 +786,8 @@ async function _POST(req: NextRequest) {
     };
   } else if (
     (formatEffective === padel_format.AMERICANO || formatEffective === padel_format.MEXICANO) &&
-    (categoryProfile?.amMxMode === "FIXED_PAIR" ? "FIXED_PAIR" : "INDIVIDUAL_ROTATION") === "INDIVIDUAL_ROTATION" &&
-    categoryProfile?.amMxProgressionMode === "ROUND_BY_ROUND"
+    amMxModeEffective === "INDIVIDUAL_ROTATION" &&
+    amMxProgressionModeEffective === "ROUND_BY_ROUND"
   ) {
     const amMxRuntimeByCategory =
       advanced.amMxRuntimeByCategory && typeof advanced.amMxRuntimeByCategory === "object"

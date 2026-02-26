@@ -21,6 +21,14 @@ type Wave = {
   padelCategoryLinkId?: number | null;
 };
 
+const formatEuroAmount = (value: number) =>
+  new Intl.NumberFormat("pt-PT", {
+    style: "currency",
+    currency: "EUR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+
 export default function Step1Bilhete() {
   const router = useRouter();
   const { dados, irParaPasso, fecharCheckout, atualizarDados } = useCheckout();
@@ -582,7 +590,7 @@ export default function Step1Bilhete() {
           >
             <p className="text-sm font-semibold">Inscrição individual</p>
             <p className="text-[11px] text-white/65 mt-1">1 lugar. Entrar em matchmaking.</p>
-            <p className="mt-3 text-lg font-semibold">{basePrice.toFixed(2)} €</p>
+            <p className="mt-3 text-lg font-semibold">{formatEuroAmount(basePrice)}</p>
             <p className="mt-3 text-[11px] text-white/70">
               Pagas só a tua parte e ficas em procura de parceiro.
             </p>
@@ -606,7 +614,7 @@ export default function Step1Bilhete() {
           >
             <p className="text-sm font-semibold">Dupla · já tenho parceiro</p>
             <p className="text-[11px] text-white/65 mt-1">1 lugar pago. O parceiro paga o dele.</p>
-            <p className="mt-3 text-lg font-semibold">{basePrice.toFixed(2)} €</p>
+            <p className="mt-3 text-lg font-semibold">{formatEuroAmount(basePrice)}</p>
           </button>
 
           <button
@@ -627,7 +635,7 @@ export default function Step1Bilhete() {
           >
             <p className="text-sm font-semibold">Dupla · pagar os dois lugares</p>
             <p className="text-[11px] text-white/65 mt-1">2 lugares pagos já garantidos.</p>
-            <p className="mt-3 text-lg font-semibold">{(basePrice * 2).toFixed(2)} €</p>
+            <p className="mt-3 text-lg font-semibold">{formatEuroAmount(basePrice * 2)}</p>
           </button>
         </div>
 
@@ -839,7 +847,7 @@ export default function Step1Bilhete() {
                   <p className="text-sm font-semibold">{wave.name}</p>
                   <p className="text-[11px] text-white/50">
                     {typeof wave.price === "number"
-                      ? `${wave.price.toFixed(2)} €`
+                      ? formatEuroAmount(wave.price)
                       : "Preço indisponível"}
                   </p>
                 </div>
@@ -918,7 +926,7 @@ export default function Step1Bilhete() {
         <p className="text-[12px] text-white/70">
           Total:{" "}
           <span className="font-semibold text-white text-base">
-            {total.toFixed(2)} €
+            {formatEuroAmount(total)}
           </span>
         </p>
         <button

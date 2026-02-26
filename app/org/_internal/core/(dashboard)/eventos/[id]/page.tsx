@@ -15,6 +15,7 @@ import { getEventCoverSuggestionIds, getEventCoverUrl } from "@/lib/eventCover";
 import { cn } from "@/lib/utils";
 import { getEventLocationDisplay } from "@/lib/location/eventLocation";
 import { TOURNAMENT_LIFECYCLE_LABELS, TOURNAMENT_LIFECYCLE_ORDER } from "@/domain/padel/tournamentLifecycle";
+import { toPadelFormatLabel } from "@/domain/padel/formatPresentation";
 import { appendOrganizationIdToHref, buildOrgHref } from "@/lib/organizationIdUtils";
 
 type PageProps = {
@@ -329,28 +330,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
     `${(cents / 100).toFixed(2)} €`.replace(".", ",");
   const formatLabel = (value?: string | null) => {
     if (!value) return "Formato não definido";
-    switch (value) {
-      case "TODOS_CONTRA_TODOS":
-        return "Todos contra todos";
-      case "GRUPOS_ELIMINATORIAS":
-        return "Grupos + eliminatórias";
-      case "QUADRO_ELIMINATORIO":
-        return "Quadro eliminatório";
-      case "CAMPEONATO_LIGA":
-        return "Campeonato/Liga";
-      case "QUADRO_AB":
-        return "Quadro A/B";
-      case "DUPLA_ELIMINACAO":
-        return "Dupla eliminação";
-      case "NON_STOP":
-        return "Non-stop";
-      case "AMERICANO":
-        return "Americano";
-      case "MEXICANO":
-        return "Mexicano";
-      default:
-        return value;
-    }
+    return toPadelFormatLabel(value) ?? value;
   };
 
   const startDateFormatted = formatDateTime(event.startsAt);

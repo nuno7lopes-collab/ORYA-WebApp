@@ -4,13 +4,22 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { formatDateTime, resolveLocale, t } from "@/lib/i18n";
 import useSWR from "swr";
-import { DEFAULT_PADEL_SCORE_RULES, type PadelScoreRules } from "@/domain/padel/score";
+import { DEFAULT_PADEL_SCORE_RULES, normalizePadelScoreRules, type PadelScoreRules } from "@/domain/padel/score";
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
 import { OryaDateTimeField } from "@/components/ui/datetime";
 import { EventCoverLibraryPicker } from "@/app/org/_internal/core/(dashboard)/eventos/_components/EventCoverLibraryPicker";
 import { TournamentFormSurface } from "@/app/org/_internal/core/(dashboard)/padel/_components/TournamentFormSurface";
+import { parsePadelFormat } from "@/domain/padel/formatCatalog";
+import { toPadelFormatLabel } from "@/domain/padel/formatPresentation";
+import {
+  PADEL_DEUCE_MODE_OPTIONS,
+  PADEL_SCORE_RULE_PRESETS,
+  buildScoreRulesFromPreset,
+  resolveScoreRulesPresetId,
+} from "@/domain/padel/scorePresets";
+import { buildScoreRuleSummary, resolveEffectiveScoreRules } from "@/domain/padel/scoreRulesResolver";
 
 type Pairing = {
   id: number;
@@ -148,67 +157,6 @@ const doesMatchPassLiveOpsFilter = (match: Match, filter: LiveOpsFilter) => {
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
-type ScoreRulesPreset = {
-  id: "STANDARD" | "STANDARD_SUPER" | "SINGLE_SET" | "NO_VALIDATION";
-  label: string;
-  description: string;
-  rules: PadelScoreRules | null;
-};
-
-const withScoreOverrides = (overrides: Partial<PadelScoreRules>) => ({
-  ...DEFAULT_PADEL_SCORE_RULES,
-  ...overrides,
-});
-
-const SCORE_RULE_PRESETS: ScoreRulesPreset[] = [
-  {
-    id: "STANDARD",
-    label: "Standard",
-    description: "Melhor de 3 · 6 jogos · TB 6-6 · Sem super TB",
-    rules: withScoreOverrides({ allowSuperTieBreak: false }),
-  },
-  {
-    id: "STANDARD_SUPER",
-    label: "Standard + Super TB",
-    description: "Melhor de 3 · Permite 3º set super tie-break (10)",
-    rules: withScoreOverrides({ allowSuperTieBreak: true }),
-  },
-  {
-    id: "SINGLE_SET",
-    label: "Jogo único",
-    description: "1 set a 6 · TB 6-6",
-    rules: withScoreOverrides({ setsToWin: 1, maxSets: 1, allowSuperTieBreak: false }),
-  },
-  {
-    id: "NO_VALIDATION",
-    label: "Sem validação",
-    description: "Aceita qualquer score (sem validação automática)",
-    rules: null,
-  },
-];
-
-const SCORE_RULE_KEYS: Array<keyof PadelScoreRules> = [
-  "setsToWin",
-  "maxSets",
-  "gamesToWinSet",
-  "tieBreakAt",
-  "tieBreakTo",
-  "allowSuperTieBreak",
-  "superTieBreakTo",
-  "superTieBreakWinBy",
-  "superTieBreakOnlyDecider",
-  "allowExtendedGames",
-];
-
-const scoreRulesEqual = (a: PadelScoreRules, b: PadelScoreRules) =>
-  SCORE_RULE_KEYS.every((key) => a[key] === b[key]);
-
-const resolveScoreRulesPresetId = (rules: PadelScoreRules | null) => {
-  if (!rules) return "NO_VALIDATION";
-  const match = SCORE_RULE_PRESETS.find((preset) => preset.rules && scoreRulesEqual(preset.rules, rules));
-  return match?.id ?? "CUSTOM";
-};
-
 function nameFromSlots(pairing: Pairing | null | undefined, locale: string) {
   if (!pairing) return "—";
   const names = pairing.slots
@@ -324,6 +272,7 @@ const PADEL_FORMAT_PROFILE_OPTIONS = [
   "AMERICANO",
   "MEXICANO",
 ] as const;
+const DEFAULT_PADEL_FORMAT_FALLBACK = "TODOS_CONTRA_TODOS" as const;
 
 const isAmMxFormatValue = (format: string | null | undefined) => format === "AMERICANO" || format === "MEXICANO";
 const isNonStopFormatValue = (format: string | null | undefined) => format === "NON_STOP";
@@ -619,12 +568,33 @@ export default function PadelTournamentTabs({
   const koManualAt = typeof advanced.koManualAt === "string" ? advanced.koManualAt : null;
   const competitionState = typeof advanced.competitionState === "string" ? advanced.competitionState : null;
   const seedRanks = (advanced.seedRanks as Record<string, number> | undefined) ?? {};
-  const scoreRules = (advanced.scoreRules as PadelScoreRules | null | undefined) ?? null;
+  const scoreRulesByCategoryRaw =
+    advanced.scoreRulesByCategory && typeof advanced.scoreRulesByCategory === "object"
+      ? (advanced.scoreRulesByCategory as Record<string, unknown>)
+      : {};
+  const scoreRulesByCategory = useMemo(
+    () =>
+      Object.entries(scoreRulesByCategoryRaw).reduce<Record<string, PadelScoreRules>>((acc, [key, value]) => {
+        const normalized = normalizePadelScoreRules(value);
+        if (!normalized) return acc;
+        acc[String(key)] = normalized;
+        return acc;
+      }, {}),
+    [scoreRulesByCategoryRaw],
+  );
+  const selectedScoreRulesOverride = selectedCategoryId ? scoreRulesByCategory[String(selectedCategoryId)] ?? null : null;
+  const effectiveScoreRules = resolveEffectiveScoreRules(advanced, selectedCategoryId ?? null);
+  const effectiveScoreRuleSummary = buildScoreRuleSummary({
+    rules: effectiveScoreRules.rules,
+    source: effectiveScoreRules.source,
+    categoryId: effectiveScoreRules.categoryId,
+  });
+  const scoreRules = effectiveScoreRules.rules;
   const scoreRulesPreset = useMemo(() => resolveScoreRulesPresetId(scoreRules), [scoreRules]);
   const activeScorePreset =
     scoreRulesPreset === "CUSTOM"
       ? null
-      : SCORE_RULE_PRESETS.find((preset) => preset.id === scoreRulesPreset) ?? null;
+      : PADEL_SCORE_RULE_PRESETS.find((preset) => preset.id === scoreRulesPreset) ?? null;
   const resultValidationMode =
     configRes?.config?.resultValidationMode === "IMMEDIATE_PENDING_THEN_OFFICIAL"
       ? "IMMEDIATE_PENDING_THEN_OFFICIAL"
@@ -668,9 +638,11 @@ export default function PadelTournamentTabs({
     },
     [formatProfilesByCategory, globalCategoryProfile],
   );
-  const generationFormatBase = formatRequested || formatEffective || configRes?.config?.format || "GRUPOS_ELIMINATORIAS";
-  const generationFormat =
-    typeof selectedCategoryProfile?.format === "string" ? selectedCategoryProfile.format : generationFormatBase;
+  const generationFormatBaseRaw =
+    formatRequested || formatEffective || configRes?.config?.format || DEFAULT_PADEL_FORMAT_FALLBACK;
+  const generationFormatBase = parsePadelFormat(generationFormatBaseRaw) ?? DEFAULT_PADEL_FORMAT_FALLBACK;
+  const generationFormatProfile = parsePadelFormat(selectedCategoryProfile?.format);
+  const generationFormat = generationFormatProfile ?? generationFormatBase;
   const selectedAmMxMode = selectedCategoryProfile?.amMxMode === "FIXED_PAIR" ? "FIXED_PAIR" : "INDIVIDUAL_ROTATION";
   const selectedNonStopMode =
     selectedCategoryProfile?.nonStopMode === "HARD_CAP_WAITLIST" ? "HARD_CAP_WAITLIST" : "ACTIVE_QUEUE";
@@ -1134,7 +1106,7 @@ export default function PadelTournamentTabs({
   const getScoreMode = (m: Match): "SETS" | "TIMED_GAMES" => {
     const score = (m.score || {}) as Record<string, unknown>;
     if (score.mode === "TIMED_GAMES") return "TIMED_GAMES";
-    if (scoreRules?.scoreMode === "TIMED_GAMES") return "TIMED_GAMES";
+    if (scoreRules.scoreMode === "TIMED_GAMES") return "TIMED_GAMES";
     if (isNonStopFormat || isAmMxFormat) return "TIMED_GAMES";
     return "SETS";
   };
@@ -1204,7 +1176,7 @@ export default function PadelTournamentTabs({
       });
       return next;
     });
-  }, [isAmMxFormat, isNonStopFormat, matches, scoreRules?.scoreMode]);
+  }, [isAmMxFormat, isNonStopFormat, matches, scoreRules.scoreMode]);
 
   useEffect(() => {
     const existingIds = new Set(matches.map((match) => match.id));
@@ -1268,28 +1240,7 @@ export default function PadelTournamentTabs({
 
   const formatLabel = (value?: string | null) => {
     if (!value) return "";
-    switch (value) {
-      case "TODOS_CONTRA_TODOS":
-        return "Todos contra todos";
-      case "QUADRO_ELIMINATORIO":
-        return "Quadro eliminatório";
-      case "GRUPOS_ELIMINATORIAS":
-        return "Grupos + eliminatórias";
-      case "CAMPEONATO_LIGA":
-        return "Campeonato/Liga";
-      case "QUADRO_AB":
-        return "Quadro A/B";
-      case "DUPLA_ELIMINACAO":
-        return "Dupla eliminação";
-      case "NON_STOP":
-        return "Non-stop";
-      case "AMERICANO":
-        return "Americano";
-      case "MEXICANO":
-        return "Mexicano";
-      default:
-        return value;
-    }
+    return toPadelFormatLabel(value) ?? value;
   };
 
   const formatRoundLabel = (value: string) => {
@@ -1503,7 +1454,7 @@ export default function PadelTournamentTabs({
     }>,
   ) {
     const organizationId = configRes?.config?.organizationId;
-    const format = formatRequested || formatEffective || "GRUPOS_ELIMINATORIAS";
+    const format = generationFormatBase;
     if (!organizationId || !eventId) return;
     setConfigMessage(null);
     const res = await fetch(`/api/padel/tournaments/config`, {
@@ -1529,13 +1480,46 @@ export default function PadelTournamentTabs({
     }
   }
 
-  async function saveScoreRules(presetId: string) {
+  async function saveScoreRules(nextRules: PadelScoreRules, scope: "selected" | "global" = "selected") {
     const organizationId = configRes?.config?.organizationId;
-    const format = formatRequested || formatEffective || "GRUPOS_ELIMINATORIAS";
+    const format = generationFormatBase;
     if (!organizationId || !eventId) return;
-    if (presetId === "CUSTOM") return;
-    const preset = SCORE_RULE_PRESETS.find((item) => item.id === presetId);
-    if (!preset) return;
+    const shouldUseCategoryScope = scope === "selected" && selectedCategoryId !== null;
+    setConfigMessage(null);
+    const payload = shouldUseCategoryScope
+      ? {
+          organizationId,
+          eventId,
+          format,
+          scoreRulesByCategory: {
+            [String(selectedCategoryId)]: nextRules,
+          },
+        }
+      : {
+          organizationId,
+          eventId,
+          format,
+          scoreRules: nextRules,
+        };
+    const res = await fetch(`/api/padel/tournaments/config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      setConfigMessage("Regras de score guardadas.");
+      mutateConfig();
+      setTimeout(() => setConfigMessage(null), 2000);
+    } else {
+      setConfigMessage("Erro ao guardar regras de score.");
+      setTimeout(() => setConfigMessage(null), 2500);
+    }
+  }
+
+  async function clearCategoryScoreRulesOverride() {
+    const organizationId = configRes?.config?.organizationId;
+    const format = generationFormatBase;
+    if (!organizationId || !eventId || selectedCategoryId == null) return;
     setConfigMessage(null);
     const res = await fetch(`/api/padel/tournaments/config`, {
       method: "POST",
@@ -1544,15 +1528,17 @@ export default function PadelTournamentTabs({
         organizationId,
         eventId,
         format,
-        scoreRules: preset.rules,
+        scoreRulesByCategory: {
+          [String(selectedCategoryId)]: null,
+        },
       }),
     });
     if (res.ok) {
-      setConfigMessage("Regras de score guardadas.");
+      setConfigMessage("Override de score removido da categoria.");
       mutateConfig();
       setTimeout(() => setConfigMessage(null), 2000);
     } else {
-      setConfigMessage("Erro ao guardar regras de score.");
+      setConfigMessage("Erro ao remover override de score.");
       setTimeout(() => setConfigMessage(null), 2500);
     }
   }
@@ -1565,7 +1551,7 @@ export default function PadelTournamentTabs({
     }>,
   ) {
     const organizationId = configRes?.config?.organizationId;
-    const format = formatRequested || formatEffective || "GRUPOS_ELIMINATORIAS";
+    const format = generationFormatBase;
     if (!organizationId || !eventId) return;
     setConfigMessage(null);
     const res = await fetch(`/api/padel/tournaments/config`, {
@@ -1596,10 +1582,10 @@ export default function PadelTournamentTabs({
       nonStopMode: "ACTIVE_QUEUE" | "HARD_CAP_WAITLIST";
       nonStopRounds: number | null;
     }>,
-    _scope: "selected" | "global" = "selected",
+    scope: "selected" | "global" = "selected",
   ) {
     const organizationId = configRes?.config?.organizationId;
-    const format = formatRequested || formatEffective || "GRUPOS_ELIMINATORIAS";
+    const format = generationFormatBase;
     if (!organizationId || !eventId) return;
     if (!isAdminRole) {
       setConfigMessage("Sem permissões para editar perfil de formato.");
@@ -1607,7 +1593,8 @@ export default function PadelTournamentTabs({
       return;
     }
 
-    const targetKey = "global";
+    const targetKey =
+      scope === "global" || selectedCategoryId === null ? "global" : String(selectedCategoryId);
     const nextProfiles = Object.entries(formatProfilesByCategory).reduce<Record<string, Record<string, unknown>>>(
       (acc, [key, value]) => {
         if (!value || typeof value !== "object" || Array.isArray(value)) return acc;
@@ -1698,7 +1685,7 @@ export default function PadelTournamentTabs({
       body: JSON.stringify({
         organizationId,
         eventId,
-        format: "GRUPOS_ELIMINATORIAS",
+        format: generationFormatBase,
         templateId: template.id,
         groups: {
           mode: "AUTO",
@@ -1969,7 +1956,7 @@ export default function PadelTournamentTabs({
 
   async function saveTvMonitorSettings() {
     const organizationId = configRes?.config?.organizationId;
-    const format = formatRequested || formatEffective || "GRUPOS_ELIMINATORIAS";
+    const format = generationFormatBase;
     if (!organizationId || !eventId) return;
     setConfigMessage(null);
     const sponsors = tvSponsors
@@ -2001,7 +1988,7 @@ export default function PadelTournamentTabs({
 
   async function toggleWaitlist(next: boolean) {
     const organizationId = configRes?.config?.organizationId;
-    const format = formatRequested || formatEffective || "GRUPOS_ELIMINATORIAS";
+    const format = generationFormatBase;
     if (!organizationId || !eventId) return;
     setConfigMessage(null);
     const res = await fetch(`/api/padel/tournaments/config`, {
@@ -2169,7 +2156,7 @@ export default function PadelTournamentTabs({
 
   async function saveRegistrationWindow(payload: { start?: string | null; end?: string | null }) {
     const organizationId = configRes?.config?.organizationId;
-    const format = formatRequested || formatEffective || "GRUPOS_ELIMINATORIAS";
+    const format = generationFormatBase;
     if (!organizationId || !eventId) return;
     setConfigMessage(null);
     const start = payload.start ?? null;
@@ -2206,7 +2193,7 @@ export default function PadelTournamentTabs({
 
   async function savePolicy(update: { allowSecondCategory?: boolean | null; maxEntriesTotal?: number | null }) {
     const organizationId = configRes?.config?.organizationId;
-    const format = formatRequested || formatEffective || "GRUPOS_ELIMINATORIAS";
+    const format = generationFormatBase;
     if (!organizationId || !eventId) return;
     setConfigMessage(null);
     const res = await fetch(`/api/padel/tournaments/config`, {
@@ -2231,7 +2218,7 @@ export default function PadelTournamentTabs({
 
   async function saveCompetitionState(next: string) {
     const organizationId = configRes?.config?.organizationId;
-    const format = formatRequested || formatEffective || "GRUPOS_ELIMINATORIAS";
+    const format = generationFormatBase;
     if (!organizationId || !eventId) return;
     setConfigMessage(null);
     const res = await fetch(`/api/padel/tournaments/config`, {
@@ -2256,7 +2243,7 @@ export default function PadelTournamentTabs({
 
   async function saveRuleSetId(nextId: number | null) {
     const organizationId = configRes?.config?.organizationId;
-    const format = formatRequested || formatEffective || "GRUPOS_ELIMINATORIAS";
+    const format = generationFormatBase;
     if (!organizationId || !eventId) return;
     setConfigMessage(null);
     const res = await fetch(`/api/padel/tournaments/config`, {
@@ -2281,7 +2268,7 @@ export default function PadelTournamentTabs({
 
   async function saveSeedRank(pairingId: number, value: number | null) {
     const organizationId = configRes?.config?.organizationId;
-    const format = formatRequested || formatEffective || "GRUPOS_ELIMINATORIAS";
+    const format = generationFormatBase;
     if (!organizationId || !eventId) return;
     setConfigMessage(null);
     const next = { ...seedRanks };
@@ -3173,10 +3160,10 @@ export default function PadelTournamentTabs({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Perfil por formato</p>
-            <p className="text-[12px] text-white/70">Configuração global do torneio (sem overrides por categoria).</p>
+            <p className="text-[12px] text-white/70">Configuração por scope (global ou categoria selecionada).</p>
           </div>
           <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-[10px] text-white/75">
-            Global
+            {selectedCategoryLabel}
           </span>
         </div>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -3217,7 +3204,7 @@ export default function PadelTournamentTabs({
               <label className="flex flex-col gap-1">
                 <span className="text-[11px] text-white/60">Progressão</span>
                 <select
-                  value={amMxProgressionMode === "ROUND_BY_ROUND" ? "ROUND_BY_ROUND" : "ROUND_BY_ROUND"}
+                  value="ROUND_BY_ROUND"
                   disabled={!isAdminRole}
                   onChange={() => saveFormatProfileConfig({ amMxProgressionMode: "ROUND_BY_ROUND" }, "selected")}
                   className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px] disabled:opacity-60"
@@ -3271,7 +3258,7 @@ export default function PadelTournamentTabs({
           )}
         </div>
       <div className="rounded-lg border border-white/10 bg-black/20 px-2 py-2 text-[11px] text-white/65">
-          Perfil único por torneio. Alterações aplicam-se a todas as categorias.
+          {selectedCategoryId ? "Override ativo nesta categoria." : "Perfil global aplicado por defeito às categorias."}
         </div>
       </div>
       {categoryOptions.length > 1 && (
@@ -3438,6 +3425,9 @@ export default function PadelTournamentTabs({
               </span>
               <span className="rounded-full border border-white/20 bg-black/30 px-2 py-1 text-white/80">
                 Calendário: {matches.length > 0 ? `${scheduleCoverage}%` : "sem jogos"}
+              </span>
+              <span className="rounded-full border border-white/20 bg-black/30 px-2 py-1 text-white/80">
+                Regra ativa: {effectiveScoreRuleSummary.shortLabel}
               </span>
             </div>
           </div>
@@ -3659,28 +3649,60 @@ export default function PadelTournamentTabs({
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Regras de score</p>
-                <p className="text-[12px] text-white/70">Validação de sets e tie-breaks.</p>
+                <p className="text-[12px] text-white/70">Global por defeito + override opcional por categoria.</p>
               </div>
+              <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-[10px] text-white/75">
+                {selectedCategoryId
+                  ? selectedScoreRulesOverride
+                    ? "Override categoria"
+                    : "Fallback global"
+                  : "Global"}
+              </span>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
               <select
                 value={scoreRulesPreset}
-                onChange={(e) => saveScoreRules(e.target.value)}
+                onChange={(e) => {
+                  const presetId = e.target.value as typeof scoreRulesPreset;
+                  const nextRules = buildScoreRulesFromPreset(presetId, scoreRules, scoreRules.deuceMode);
+                  saveScoreRules(nextRules, "selected");
+                }}
                 className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px]"
               >
-                {SCORE_RULE_PRESETS.map((preset) => (
+                {PADEL_SCORE_RULE_PRESETS.map((preset) => (
                   <option key={`score-rules-${preset.id}`} value={preset.id}>
                     {preset.label}
                   </option>
                 ))}
-                {scoreRulesPreset === "CUSTOM" && (
-                  <option value="CUSTOM">Custom</option>
-                )}
+                {scoreRulesPreset === "CUSTOM" && <option value="CUSTOM">Custom</option>}
+              </select>
+              <select
+                value={scoreRules.deuceMode}
+                onChange={(e) => {
+                  const deuceMode = e.target.value === "GOLDEN_POINT" ? "GOLDEN_POINT" : "ADVANTAGE";
+                  const nextRules = buildScoreRulesFromPreset(scoreRulesPreset, scoreRules, deuceMode);
+                  saveScoreRules(nextRules, "selected");
+                }}
+                className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px]"
+              >
+                {PADEL_DEUCE_MODE_OPTIONS.map((option) => (
+                  <option key={`deuce-${option.value}`} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
             </div>
-            {activeScorePreset?.description && (
-              <p className="text-[11px] text-white/70">{activeScorePreset.description}</p>
-            )}
-            {scoreRulesPreset === "CUSTOM" && (
-              <p className="text-[11px] text-white/70">Preset custom ativo.</p>
+            {activeScorePreset?.description && <p className="text-[11px] text-white/70">{activeScorePreset.description}</p>}
+            {scoreRulesPreset === "CUSTOM" && <p className="text-[11px] text-white/70">Preset custom ativo.</p>}
+            <p className="text-[11px] text-white/65">Regra ativa: {effectiveScoreRuleSummary.label}.</p>
+            {selectedCategoryId && selectedScoreRulesOverride && (
+              <button
+                type="button"
+                onClick={clearCategoryScoreRulesOverride}
+                className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+              >
+                Repor para regra global
+              </button>
             )}
           </div>
           <div className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/80 space-y-2">

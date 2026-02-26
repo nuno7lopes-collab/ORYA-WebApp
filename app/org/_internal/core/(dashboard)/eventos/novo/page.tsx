@@ -29,6 +29,7 @@ import { FilterChip } from "@/app/components/mobile/MobileFilters";
 import InterestIcon from "@/app/components/interests/InterestIcon";
 import { AddressCombobox } from "@/components/ui/address-combobox";
 import { OryaDateTimeField } from "@/components/ui/datetime";
+import { PADEL_FORMAT_OPTIONS_PT } from "@/domain/padel/formatPresentation";
 
 type TicketTypeRow = {
   name: string;
@@ -951,17 +952,7 @@ export function NewOrganizationEventPage({
   const labelClass =
     "text-[10px] font-semibold uppercase tracking-[0.14em] text-white/55 flex items-center gap-1";
   const errorTextClass = "flex items-center gap-2 text-[12px] font-semibold text-pink-200 min-h-[18px]";
-  const padelFormatOptions = [
-    { value: "TODOS_CONTRA_TODOS", label: "Todos vs todos" },
-    { value: "QUADRO_ELIMINATORIO", label: "Eliminatório" },
-    { value: "GRUPOS_ELIMINATORIAS", label: "Grupos + KO" },
-    { value: "QUADRO_AB", label: "Quadro A/B" },
-    { value: "DUPLA_ELIMINACAO", label: "Dupla eliminação" },
-    { value: "NON_STOP", label: "Non-stop" },
-    { value: "CAMPEONATO_LIGA", label: "Campeonato/Liga" },
-    { value: "AMERICANO", label: "Americano" },
-    { value: "MEXICANO", label: "Mexicano" },
-  ];
+  const padelFormatOptions = PADEL_FORMAT_OPTIONS_PT;
   const normalizeRegistrationValue = (value: string) => {
     if (!value) return null;
     const parsed = new Date(value);

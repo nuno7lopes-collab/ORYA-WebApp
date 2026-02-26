@@ -47,6 +47,7 @@ import {
 import { resolveCourtDurationPrice } from "@/lib/reservas/serviceDurationPrices";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { ensureReservasOperationalOpen } from "@/lib/reservas/operationalState";
+import { resolveAllowedServiceScopeIds } from "@/lib/reservas/serviceScopes";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -456,16 +457,10 @@ async function _POST(
     }
 
     const bookingAssignmentMode = assignmentConfig.assignmentMode;
-    const allowedProfessionalIds = service.professionalLinks.length
-      ? service.professionalLinks
-          .filter((link) => link.professional?.isActive)
-          .map((link) => link.professionalId)
-      : null;
-    const allowedResourceIds = service.resourceLinks.length
-      ? service.resourceLinks
-          .filter((link) => link.resource?.isActive)
-          .map((link) => link.resourceId)
-      : null;
+    const { allowedProfessionalIds, allowedResourceIds } = resolveAllowedServiceScopeIds({
+      professionalLinks: service.professionalLinks,
+      resourceLinks: service.resourceLinks,
+    });
     const professionalIdRaw = parsePositiveInt(payload?.professionalId);
     const partySizeRaw = parsePositiveInt(payload?.partySize);
     const courtIdRaw = parsePositiveInt(payload?.courtId);

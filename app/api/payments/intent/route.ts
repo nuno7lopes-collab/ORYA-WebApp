@@ -38,13 +38,17 @@ import { FeeMode } from "@prisma/client";
 import { paymentScenarioSchema, type PaymentScenario } from "@/lib/paymentScenario";
 import { computePromoDiscountCents } from "@/lib/promoMath";
 import { computePricing } from "@/lib/pricing";
-import { computeCombinedFees } from "@/lib/fees";
+import {
+  computeCardPlatformFeeCents,
+  computeCombinedFees,
+  ORYA_CARD_PLATFORM_FEE_BPS,
+} from "@/lib/fees";
 import { normalizeEmail } from "@/lib/utils/email";
 import { isValidPhone, normalizePhone, resolvePhoneNormalizationOptions } from "@/lib/phone";
 import { hasActiveEntitlementForEvent } from "@/lib/entitlements/accessChecks";
 import { getLatestPolicyForEvent } from "@/lib/checkin/accessPolicy";
 import { evaluateEventAccess } from "@/domain/access/evaluateAccess";
-import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
+import { resolveTicketPricingSummary } from "@/domain/events/ticketPricing";
 import { INACTIVE_REGISTRATION_STATUSES, mapRegistrationToPairingLifecycle, upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
 import {
   checkoutMetadataSchema,
@@ -65,7 +69,6 @@ import { paymentEventRepo } from "@/domain/finance/readModelConsumer";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
-const ORYA_CARD_FEE_BPS = 100;
 const INTENT_BUILD_FINGERPRINT = "INTENT_PATCH_v2";
 
 const pairingSlotSelect = {
@@ -874,7 +877,7 @@ async function handlePadelRegistrationIntent(req: NextRequest, body: Body) {
         discountCents: 0,
         platformFeeCents: pricing.platformFeeCents,
         cardPlatformFeeCents: 0,
-        cardPlatformFeeBps: ORYA_CARD_FEE_BPS,
+        cardPlatformFeeBps: ORYA_CARD_PLATFORM_FEE_BPS,
         totalCents: 0,
         currency,
         paymentMethod,
@@ -1019,7 +1022,7 @@ async function handlePadelRegistrationIntent(req: NextRequest, body: Body) {
       discountCents: 0,
       platformFeeCents: pricing.platformFeeCents,
       cardPlatformFeeCents: 0,
-      cardPlatformFeeBps: ORYA_CARD_FEE_BPS,
+      cardPlatformFeeBps: ORYA_CARD_PLATFORM_FEE_BPS,
       totalCents: pricing.totalCents,
       currency,
       paymentMethod,
@@ -1505,16 +1508,16 @@ async function _POST(req: NextRequest) {
       return intentError("TICKET_NOT_FOUND", "Um dos bilhetes não foi encontrado ou não pertence a este evento.", { httpStatus: 400 });
     }
 
-    const ticketPrices = ticketTypes.map((t) => Number(t.price ?? 0)).filter((n) => Number.isFinite(n));
     const pricingMode =
       typeof event.pricing_mode === "string" &&
       (Object.values(EventPricingMode) as string[]).includes(event.pricing_mode)
         ? (event.pricing_mode as EventPricingMode)
         : undefined;
-    const isFreeOnlyEvent = deriveIsFreeEvent({
+    const pricingSummary = resolveTicketPricingSummary({
       pricingMode,
-      ticketPrices,
+      ticketTypes,
     });
+    const isFreeOnlyEvent = pricingSummary.isGratis;
     const hasExistingFreeEntry =
       isFreeOnlyEvent && userId ? await hasExistingFreeEntryForUser({ eventId: event.id, userId }) : false;
 
@@ -1900,7 +1903,7 @@ async function _POST(req: NextRequest) {
     const platformFeeCents = pricing.platformFeeCents; // ORYA base (application_fee)
     const cardPlatformFeeCents =
       paymentMethod === "card"
-        ? Math.max(0, Math.round((amountAfterDiscountCents * ORYA_CARD_FEE_BPS) / 10_000))
+        ? computeCardPlatformFeeCents(amountAfterDiscountCents)
         : 0;
     const platformFeeTotalCents = platformFeeCents + cardPlatformFeeCents;
 
@@ -2475,7 +2478,7 @@ async function _POST(req: NextRequest) {
                   discountCents,
                   platformFeeCents: pricing.platformFeeCents,
                   cardPlatformFeeCents,
-                  cardPlatformFeeBps: ORYA_CARD_FEE_BPS,
+                  cardPlatformFeeBps: ORYA_CARD_PLATFORM_FEE_BPS,
                   totalCents: totalAmountInCents,
                   currency: currency.toUpperCase(),
                   paymentMethod,
@@ -2647,7 +2650,7 @@ async function _POST(req: NextRequest) {
               discountCents,
               platformFeeCents: pricing.platformFeeCents,
               cardPlatformFeeCents: 0,
-              cardPlatformFeeBps: ORYA_CARD_FEE_BPS,
+              cardPlatformFeeBps: ORYA_CARD_PLATFORM_FEE_BPS,
               totalCents: 0,
               currency: (ticketType.currency || "EUR").toUpperCase(),
               paymentMethod,
@@ -2697,7 +2700,7 @@ async function _POST(req: NextRequest) {
             discountCents,
             platformFeeCents: pricing.platformFeeCents,
             cardPlatformFeeCents: 0,
-            cardPlatformFeeBps: ORYA_CARD_FEE_BPS,
+            cardPlatformFeeBps: ORYA_CARD_PLATFORM_FEE_BPS,
             totalCents: 0,
             currency: (ticketType.currency || "EUR").toUpperCase(),
             paymentMethod,
@@ -2783,7 +2786,7 @@ async function _POST(req: NextRequest) {
           discountCents,
           platformFeeCents: pricing.platformFeeCents,
           cardPlatformFeeCents: 0,
-          cardPlatformFeeBps: ORYA_CARD_FEE_BPS,
+          cardPlatformFeeBps: ORYA_CARD_PLATFORM_FEE_BPS,
           totalCents: 0,
           currency: currency.toUpperCase(),
           paymentMethod,
@@ -2807,7 +2810,7 @@ async function _POST(req: NextRequest) {
       platformFeeFixedCents: String(pricing.feeFixedApplied),
       platformFeeCents: String(pricing.platformFeeCents),
       cardPlatformFeeCents: String(cardPlatformFeeCents),
-      cardPlatformFeeBps: String(ORYA_CARD_FEE_BPS),
+      cardPlatformFeeBps: String(ORYA_CARD_PLATFORM_FEE_BPS),
       platformFeeCombinedCents: String(platformFeeCombinedCents),
       grossAmountCents: String(totalAmountInCents),
       payoutAmountCents: String(payoutAmountCents),
@@ -2828,7 +2831,7 @@ async function _POST(req: NextRequest) {
         feeMode: pricing.feeMode,
         platformFeeCents: pricing.platformFeeCents,
         cardPlatformFeeCents,
-        cardPlatformFeeBps: ORYA_CARD_FEE_BPS,
+        cardPlatformFeeBps: ORYA_CARD_PLATFORM_FEE_BPS,
         paymentMethod,
         platformFeeCombinedCents,
         totalCents: totalAmountInCents,
@@ -2995,7 +2998,7 @@ async function _POST(req: NextRequest) {
         discountCents,
         platformFeeCents: pricing.platformFeeCents,
         cardPlatformFeeCents,
-        cardPlatformFeeBps: ORYA_CARD_FEE_BPS,
+        cardPlatformFeeBps: ORYA_CARD_PLATFORM_FEE_BPS,
         totalCents: totalAmountInCents,
         currency: currency.toUpperCase(),
         paymentMethod,

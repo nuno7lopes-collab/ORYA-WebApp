@@ -13,6 +13,16 @@ type PageProps = {
   params: { username: string; trainer: string } | Promise<{ username: string; trainer: string }>;
 };
 
+function formatMoney(cents: number, currency: string) {
+  const safeCurrency = (currency || "EUR").toUpperCase();
+  return new Intl.NumberFormat("pt-PT", {
+    style: "currency",
+    currency: safeCurrency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(cents / 100);
+}
+
 function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
@@ -171,7 +181,7 @@ export default async function TrainerProfilePage({ params }: PageProps) {
                   >
                     <p className="text-base font-semibold text-white">{service.title}</p>
                     <p className="text-[12px] text-white/60">
-                      {service.durationMinutes} min · {(service.unitPriceCents / 100).toFixed(2)} {service.currency}
+                      {service.durationMinutes} min · Preço: {formatMoney(service.unitPriceCents, service.currency)}
                     </p>
                     {service.description && (
                       <p className="mt-2 text-[12px] text-white/60 line-clamp-2">{service.description}</p>

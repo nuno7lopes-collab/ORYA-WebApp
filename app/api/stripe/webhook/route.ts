@@ -81,6 +81,18 @@ async function resolveOrganizationIdFromStripeEvent(
   const orgId = parseNumber(metadata.orgId);
   if (orgId) return orgId;
 
+  const stripeAccountId =
+    typeof event.account === "string" && event.account.trim() !== ""
+      ? event.account.trim()
+      : null;
+  if (stripeAccountId) {
+    const organization = await tx.organization.findFirst({
+      where: { stripeAccountId },
+      select: { id: true },
+    });
+    if (organization?.id) return organization.id;
+  }
+
   const paymentId = typeof metadata.paymentId === "string" && metadata.paymentId.trim() !== "" ? metadata.paymentId.trim() : null;
   if (paymentId) {
     const payment = await tx.payment.findUnique({ where: { id: paymentId }, select: { organizationId: true } });
@@ -276,7 +288,15 @@ async function _POST(req: NextRequest) {
     return respondPlainText(ctx, "WEBHOOK_PROCESSING_ERROR", { status: 500 });
   }
 
-  return jsonWrap({ ok: true, received: true }, { status: 200, ctx });
+  return jsonWrap(
+    {
+      ok: true,
+      status: "ACK",
+      stripeEventId: event.id,
+      received: true,
+    },
+    { status: 200, ctx },
+  );
 }
 
 export async function handleStripeEvent(event: Stripe.Event) {

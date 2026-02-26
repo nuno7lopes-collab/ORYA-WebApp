@@ -7,6 +7,14 @@ import useSWR from "swr";
 import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
 import type { Prisma } from "@prisma/client";
+import { PADEL_FORMAT_OPTIONS_PT } from "@/domain/padel/formatPresentation";
+import { DEFAULT_PADEL_SCORE_RULES, type PadelDeuceMode } from "@/domain/padel/score";
+import {
+  PADEL_DEUCE_MODE_OPTIONS,
+  PADEL_SCORE_RULE_PRESETS,
+  buildScoreRulesFromPreset,
+  type PadelScoreRulesPresetId,
+} from "@/domain/padel/scorePresets";
 import { CTA_PRIMARY } from "@/app/org/_internal/core/dashboardUi";
 import { OryaDateField, OryaDateTimeField, OryaTimeField } from "@/components/ui/datetime";
 import { EventCoverLibraryPicker } from "@/app/org/_internal/core/(dashboard)/eventos/_components/EventCoverLibraryPicker";
@@ -79,6 +87,9 @@ type CategoryDraft = {
   amMxProgressionMode?: "ROUND_BY_ROUND";
   nonStopMode?: "ACTIVE_QUEUE" | "HARD_CAP_WAITLIST";
   nonStopRounds?: string;
+  scoreRulesOverride?: boolean;
+  scoreRulesPresetId?: PadelScoreRulesPresetId;
+  deuceMode?: PadelDeuceMode;
 };
 
 type DailyWindowDraft = {
@@ -132,17 +143,7 @@ type WizardFormatProfile = {
   nonStopRounds?: number;
 };
 
-const PADEL_FORMATS = [
-  { value: "TODOS_CONTRA_TODOS", label: "Todos contra todos" },
-  { value: "GRUPOS_ELIMINATORIAS", label: "Grupos + eliminatórias" },
-  { value: "QUADRO_ELIMINATORIO", label: "Quadro eliminatório" },
-  { value: "QUADRO_AB", label: "Quadro A/B" },
-  { value: "DUPLA_ELIMINACAO", label: "Dupla eliminação" },
-  { value: "CAMPEONATO_LIGA", label: "Campeonato liga" },
-  { value: "NON_STOP", label: "Non-stop" },
-  { value: "AMERICANO", label: "Americano" },
-  { value: "MEXICANO", label: "Mexicano" },
-];
+const PADEL_FORMATS = [...PADEL_FORMAT_OPTIONS_PT];
 const PADEL_FORMAT_LABEL_BY_VALUE = Object.fromEntries(PADEL_FORMATS.map((item) => [item.value, item.label])) as Record<
   string,
   string
@@ -307,6 +308,13 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
   const [eligibility, setEligibility] = useState<string>("OPEN");
   const [waitlistEnabled, setWaitlistEnabled] = useState(true);
   const [ruleSetId, setRuleSetId] = useState<string>("");
+  const [globalScorePresetId, setGlobalScorePresetId] = useState<PadelScoreRulesPresetId>("STANDARD");
+  const [globalDeuceMode, setGlobalDeuceMode] = useState<PadelDeuceMode>(DEFAULT_PADEL_SCORE_RULES.deuceMode);
+  const [resultValidationMode, setResultValidationMode] = useState<
+    "IMMEDIATE_OFFICIAL" | "IMMEDIATE_PENDING_THEN_OFFICIAL"
+  >("IMMEDIATE_OFFICIAL");
+  const [pendingConfirmationWindowMinutes, setPendingConfirmationWindowMinutes] = useState("15");
+  const [playerResultSubmissionEnabled, setPlayerResultSubmissionEnabled] = useState(false);
   const [categoryDrafts, setCategoryDrafts] = useState<Record<number, CategoryDraft>>({});
   const [useAllCourts, setUseAllCourts] = useState(true);
   const [selectedCourtIds, setSelectedCourtIds] = useState<number[]>([]);
@@ -400,6 +408,9 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
             selected: false,
             price: "0",
             capacityTeams: "",
+            scoreRulesOverride: false,
+            scoreRulesPresetId: "STANDARD",
+            deuceMode: globalDeuceMode,
           };
           return;
         }
@@ -413,7 +424,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
       });
       return next;
     });
-  }, [categories]);
+  }, [categories, globalDeuceMode]);
 
   useEffect(() => {
     const organizationTimezone = organizationMe?.organization?.timezone?.trim();
@@ -490,6 +501,10 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
       totalLabel: `${hours}h${minutes > 0 ? ` ${minutes}m` : ""}`,
     };
   }, [dailyWindows.length, normalizedDailyWindows]);
+  const globalScoreRulesPreview = useMemo(
+    () => buildScoreRulesFromPreset(globalScorePresetId, DEFAULT_PADEL_SCORE_RULES, globalDeuceMode),
+    [globalDeuceMode, globalScorePresetId],
+  );
 
   const buildFormatProfile = useCallback(
     (
@@ -752,6 +767,9 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
         selected: false,
         price: "0",
         capacityTeams: "",
+        scoreRulesOverride: false,
+        scoreRulesPresetId: "STANDARD",
+        deuceMode: globalDeuceMode,
       };
       return {
         ...prev,
@@ -767,11 +785,20 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
     setCategoryDrafts((prev) => ({
       ...prev,
       [id]: {
-        ...(prev[id] ?? { selected: true, price: "0", capacityTeams: "" }),
+        ...(
+          prev[id] ?? {
+            selected: true,
+            price: "0",
+            capacityTeams: "",
+            scoreRulesOverride: false,
+            scoreRulesPresetId: "STANDARD",
+            deuceMode: globalDeuceMode,
+          }
+        ),
         ...patch,
       },
     }));
-  }, []);
+  }, [globalDeuceMode]);
 
   const toggleCourt = (courtId: number) => {
     setSelectedCourtIds((prev) => {
@@ -855,6 +882,12 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
       setError(`Define rondas válidas para NON_STOP em ${invalidNonStopCategory.label}.`);
       return;
     }
+    const pendingWindowRaw = asNumber(pendingConfirmationWindowMinutes);
+    if (!pendingWindowRaw || pendingWindowRaw <= 0) {
+      setError("Janela pendente inválida (1-240 minutos).");
+      return;
+    }
+    const pendingWindow = Math.max(1, Math.min(240, Math.floor(pendingWindowRaw)));
 
     const categoryConfigs = selectedCategories.map((cat) => {
       const draft = categoryDrafts[cat.id];
@@ -881,6 +914,18 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
     const primaryFormat = selectedCategories[0] ? resolveCategoryFormatProfile(selectedCategories[0].id).format : format;
     const allSelectedFormats = selectedCategories.map((category) => resolveCategoryFormatProfile(category.id).format);
     const allFormatsNonStop = allSelectedFormats.length > 0 && allSelectedFormats.every((value) => isNonStopFormat(value));
+    const globalScoreRules = buildScoreRulesFromPreset(globalScorePresetId, DEFAULT_PADEL_SCORE_RULES, globalDeuceMode);
+    const scoreRulesByCategory = selectedCategories.reduce<Record<string, ReturnType<typeof buildScoreRulesFromPreset>>>(
+      (acc, category) => {
+        const draft = categoryDrafts[category.id];
+        if (draft?.scoreRulesOverride !== true) return acc;
+        const presetId = draft.scoreRulesPresetId ?? "STANDARD";
+        const deuceMode = draft.deuceMode ?? globalDeuceMode;
+        acc[String(category.id)] = buildScoreRulesFromPreset(presetId, globalScoreRules, deuceMode);
+        return acc;
+      },
+      {},
+    );
     const baseFormatProfile = buildFormatProfile(format);
     const formatProfilesByCategory = selectedCategories.reduce<Record<string, WizardFormatProfile>>(
       (acc, category) => {
@@ -914,6 +959,9 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
         format: primaryFormat,
         eligibilityType: eligibility,
         ruleSetId: ruleSetId ? Number(ruleSetId) : null,
+        resultValidationMode,
+        pendingConfirmationWindowMinutes: pendingWindow,
+        playerResultSubmissionEnabled,
         isInterclub: false,
         teamSize: null,
         categoryConfigs,
@@ -923,6 +971,8 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
         padelV2Enabled: true,
         advancedSettings: {
           waitlistEnabled,
+          scoreRules: globalScoreRules,
+          scoreRulesByCategory,
           registrationStartsAt: toIsoFromLocalInput(registrationStartsAt),
           registrationEndsAt: toIsoFromLocalInput(registrationEndsAt),
           gameDurationMinutes: Number.isFinite(scheduleDuration) ? Math.max(1, Math.round(scheduleDuration)) : null,
@@ -1804,6 +1854,77 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
                           </label>
                         </div>
                       )}
+                      <div className="space-y-2 rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                        <label className="flex items-center gap-2 text-[12px] text-white/75">
+                          <input
+                            type="checkbox"
+                            checked={draft.scoreRulesOverride === true}
+                            onChange={(e) =>
+                              patchCategoryDraft(cat.id, {
+                                scoreRulesOverride: e.target.checked,
+                                scoreRulesPresetId: draft.scoreRulesPresetId ?? "STANDARD",
+                                deuceMode: draft.deuceMode ?? globalDeuceMode,
+                              })
+                            }
+                            className="h-4 w-4 rounded border-white/30 bg-black/40 text-[#22D3EE]"
+                          />
+                          Override de regras de score nesta categoria
+                        </label>
+                        {draft.scoreRulesOverride === true && (
+                          <div className="grid gap-2 md:grid-cols-2">
+                            <label className="space-y-1 text-[12px] text-white/70">
+                              <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">Preset score</span>
+                              <select
+                                value={draft.scoreRulesPresetId ?? "STANDARD"}
+                                onChange={(e) =>
+                                  patchCategoryDraft(cat.id, {
+                                    scoreRulesPresetId: (e.target.value as PadelScoreRulesPresetId) ?? "STANDARD",
+                                  })
+                                }
+                                className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                              >
+                                {PADEL_SCORE_RULE_PRESETS.map((preset) => (
+                                  <option key={`cat-score-preset-${cat.id}-${preset.id}`} value={preset.id}>
+                                    {preset.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="space-y-1 text-[12px] text-white/70">
+                              <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">Deuce</span>
+                              <select
+                                value={draft.deuceMode ?? globalDeuceMode}
+                                onChange={(e) =>
+                                  patchCategoryDraft(cat.id, {
+                                    deuceMode: e.target.value === "GOLDEN_POINT" ? "GOLDEN_POINT" : "ADVANTAGE",
+                                  })
+                                }
+                                className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                              >
+                                {PADEL_DEUCE_MODE_OPTIONS.map((option) => (
+                                  <option key={`cat-score-deuce-${cat.id}-${option.value}`} value={option.value}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
+                        )}
+                        <p className="text-[11px] text-white/60">
+                          Regra efetiva:{" "}
+                          {draft.scoreRulesOverride === true
+                            ? buildScoreRulesFromPreset(
+                                draft.scoreRulesPresetId ?? "STANDARD",
+                                globalScoreRulesPreview,
+                                draft.deuceMode ?? globalDeuceMode,
+                              ).deuceMode === "GOLDEN_POINT"
+                              ? "Ponto de ouro"
+                              : "Vantagens"
+                            : globalScoreRulesPreview.deuceMode === "GOLDEN_POINT"
+                              ? "Ponto de ouro (global)"
+                              : "Vantagens (global)"}
+                        </p>
+                      </div>
                     </div>
                   );
                 })}
@@ -1816,6 +1937,83 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
             <div className="space-y-1 border-b border-white/10 pb-3">
               <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Operação</p>
               <p className="text-sm text-white/75">Campos e equipa operacional.</p>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-2xl border border-white/10 bg-black/30 p-4 space-y-3">
+                <p className="text-[12px] uppercase tracking-[0.18em] text-white/60">Workflow live</p>
+                <label className="flex items-center gap-2 text-[12px] text-white/75">
+                  <input
+                    type="checkbox"
+                    checked={playerResultSubmissionEnabled}
+                    onChange={(e) => setPlayerResultSubmissionEnabled(e.target.checked)}
+                    className="h-4 w-4 rounded border-white/30 bg-black/40 text-[#22D3EE]"
+                  />
+                  Jogador pode submeter resultado
+                </label>
+                <label className="space-y-1 text-[12px] text-white/70">
+                  <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">Validação</span>
+                  <select
+                    value={resultValidationMode}
+                    onChange={(e) =>
+                      setResultValidationMode(
+                        e.target.value === "IMMEDIATE_PENDING_THEN_OFFICIAL"
+                          ? "IMMEDIATE_PENDING_THEN_OFFICIAL"
+                          : "IMMEDIATE_OFFICIAL",
+                      )
+                    }
+                    className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                  >
+                    <option value="IMMEDIATE_OFFICIAL">Staff oficial imediato</option>
+                    <option value="IMMEDIATE_PENDING_THEN_OFFICIAL">Staff pendente + confirmação</option>
+                  </select>
+                </label>
+                <label className="space-y-1 text-[12px] text-white/70">
+                  <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">Janela pendente (min)</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={240}
+                    value={pendingConfirmationWindowMinutes}
+                    onChange={(e) => setPendingConfirmationWindowMinutes(e.target.value)}
+                    className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                  />
+                </label>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-black/30 p-4 space-y-3">
+                <p className="text-[12px] uppercase tracking-[0.18em] text-white/60">Regras score (global)</p>
+                <label className="space-y-1 text-[12px] text-white/70">
+                  <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">Preset</span>
+                  <select
+                    value={globalScorePresetId}
+                    onChange={(e) => setGlobalScorePresetId((e.target.value as PadelScoreRulesPresetId) ?? "STANDARD")}
+                    className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                  >
+                    {PADEL_SCORE_RULE_PRESETS.map((preset) => (
+                      <option key={`global-score-preset-${preset.id}`} value={preset.id}>
+                        {preset.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-1 text-[12px] text-white/70">
+                  <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">Deuce</span>
+                  <select
+                    value={globalDeuceMode}
+                    onChange={(e) => setGlobalDeuceMode(e.target.value === "GOLDEN_POINT" ? "GOLDEN_POINT" : "ADVANTAGE")}
+                    className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                  >
+                    {PADEL_DEUCE_MODE_OPTIONS.map((option) => (
+                      <option key={`global-score-deuce-${option.value}`} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <p className="text-[11px] text-white/60">
+                  Regra global ativa: {globalScoreRulesPreview.deuceMode === "GOLDEN_POINT" ? "Ponto de ouro" : "Vantagens"}.
+                </p>
+              </div>
             </div>
 
             {selectedClub && courts.length > 0 && (

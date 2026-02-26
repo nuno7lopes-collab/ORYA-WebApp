@@ -26,6 +26,8 @@ import { buildOrgHref, buildOrgHubHref } from "@/lib/organizationIdUtils";
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
 import { lockBodyScroll } from "@/lib/dom/bodyScrollLock";
+import { parsePadelFormat } from "@/domain/padel/formatCatalog";
+import { PADEL_FORMAT_LABELS_PT } from "@/domain/padel/formatPresentation";
 import PartnershipsPageClient from "./parcerias/PartnershipsPageClient";
 import { ClubsManagementPanel } from "./clubs-v2/ClubsManagementPanel";
 import { CalendarControls } from "./calendar-v2/CalendarControls";
@@ -605,18 +607,9 @@ const CTA_PAD_PRIMARY_SM = `${CTA_PRIMARY} px-3 py-1.5 text-[12px] disabled:opac
 const CTA_PAD_SECONDARY_SM = `${CTA_SECONDARY} px-3 py-2 text-[12px]`;
 const MAIN_CATEGORY_LIMIT = 18;
 const OPERATION_MODE_STORAGE_KEY = "orya_padel_operation_mode";
-const PADEL_FORMAT_LABELS: Record<string, string> = {
-  TODOS_CONTRA_TODOS: "Todos contra todos",
-  GRUPOS_ELIMINATORIAS: "Grupos + eliminatórias",
-  QUADRO_ELIMINATORIO: "Quadro eliminatório",
-  QUADRO_AB: "Quadro A/B",
-  DUPLA_ELIMINACAO: "Dupla eliminação",
-  CAMPEONATO_LIGA: "Campeonato liga",
-  NON_STOP: "Non-stop",
-  AMERICANO: "Americano",
-  MEXICANO: "Mexicano",
-};
+const PADEL_FORMAT_LABELS: Record<string, string> = { ...PADEL_FORMAT_LABELS_PT };
 const PADEL_FORMAT_KEYS = Object.keys(PADEL_FORMAT_LABELS);
+const DEFAULT_PADEL_FORMAT_FALLBACK = "TODOS_CONTRA_TODOS" as const;
 const AM_MX_FORMAT_SET = new Set(["AMERICANO", "MEXICANO"]);
 const DEFAULT_NON_STOP_ROUNDS = 6;
 const SHOW_CLUB_STAFF_PANEL = false;
@@ -3544,15 +3537,14 @@ export default function PadelHubClient({
           ? tournamentFormatRaw
           : tournamentFormatRaw && PADEL_FORMAT_KEYS.includes(tournamentFormatRaw)
             ? tournamentFormatRaw
-            : "GRUPOS_ELIMINATORIAS";
-  const roundOpsFormatValue = PADEL_FORMAT_KEYS.includes(roundOpsFormatRaw) ? roundOpsFormatRaw : "GRUPOS_ELIMINATORIAS";
-  const roundOpsFormatLabel = PADEL_FORMAT_LABELS[roundOpsFormatRaw] ?? roundOpsFormatRaw;
-  const roundOpsIsAmMxFormat = AM_MX_FORMAT_SET.has(roundOpsFormatRaw);
-  const roundOpsIsNonStopFormat = roundOpsFormatRaw === "NON_STOP";
+            : DEFAULT_PADEL_FORMAT_FALLBACK;
+  const roundOpsFormatValue = parsePadelFormat(roundOpsFormatRaw) ?? DEFAULT_PADEL_FORMAT_FALLBACK;
+  const roundOpsFormatLabel = PADEL_FORMAT_LABELS[roundOpsFormatValue] ?? roundOpsFormatValue;
+  const roundOpsIsAmMxFormat = AM_MX_FORMAT_SET.has(roundOpsFormatValue);
+  const roundOpsIsNonStopFormat = roundOpsFormatValue === "NON_STOP";
   const selectedAmMxMode =
     selectedCategoryProfile?.amMxMode === "FIXED_PAIR" ? "FIXED_PAIR" : "INDIVIDUAL_ROTATION";
-  const selectedAmMxProgressionMode =
-    selectedCategoryProfile?.amMxProgressionMode === "ROUND_BY_ROUND" ? "ROUND_BY_ROUND" : "ROUND_BY_ROUND";
+  const selectedAmMxProgressionMode = "ROUND_BY_ROUND" as const;
   const selectedNonStopMode =
     selectedNonStopRuntime?.mode === "ACTIVE_QUEUE" || selectedNonStopRuntime?.mode === "HARD_CAP_WAITLIST"
       ? selectedNonStopRuntime.mode
@@ -5605,10 +5597,8 @@ export default function PadelHubClient({
       (resolvedCategoryId ? eventCategoryFormatById.get(resolvedCategoryId) : null) ??
       roundOpsFormatValue ??
       tournamentFormatRaw ??
-      "GRUPOS_ELIMINATORIAS";
-    const formatValue = PADEL_FORMAT_KEYS.includes(formatRaw)
-      ? formatRaw
-      : "GRUPOS_ELIMINATORIAS";
+      DEFAULT_PADEL_FORMAT_FALLBACK;
+    const formatValue = parsePadelFormat(formatRaw) ?? DEFAULT_PADEL_FORMAT_FALLBACK;
 
     const payload: Record<string, unknown> = {
       eventId,

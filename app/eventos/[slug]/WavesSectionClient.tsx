@@ -103,7 +103,11 @@ export default function WavesSectionClient({
         minimumFractionDigits: 2,
       }).format(price);
     } catch {
-      return `${price.toFixed(2)}€`;
+      const numeric = new Intl.NumberFormat(locale || "pt-PT", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(price);
+      return `${numeric} €`;
     }
   };
 

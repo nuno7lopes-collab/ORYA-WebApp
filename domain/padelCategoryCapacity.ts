@@ -54,7 +54,7 @@ export async function checkPadelCategoryCapacity(params: CapacityCheckParams): P
   const nonStopMode =
     categoryProfile?.nonStopMode === "ACTIVE_QUEUE" || categoryProfile?.nonStopMode === "HARD_CAP_WAITLIST"
       ? categoryProfile.nonStopMode
-      : "HARD_CAP_WAITLIST";
+      : "ACTIVE_QUEUE";
   if (effectiveFormat === padel_format.NON_STOP && nonStopMode === "HARD_CAP_WAITLIST") {
     const defaults =
       advanced.courtSelectionDefaults && typeof advanced.courtSelectionDefaults === "object"

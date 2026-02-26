@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computePadelMatchStats, DEFAULT_PADEL_SCORE_RULES } from "@/domain/padel/score";
+import { computePadelMatchStats, DEFAULT_PADEL_SCORE_RULES, normalizePadelScoreRules } from "@/domain/padel/score";
 
 describe("padel score rules", () => {
   it("accepts standard best-of-3 results", () => {
@@ -61,5 +61,15 @@ describe("padel score rules", () => {
       DEFAULT_PADEL_SCORE_RULES,
     );
     expect(stats).toBeNull();
+  });
+
+  it("normaliza deuceMode GOLDEN_POINT", () => {
+    const rules = normalizePadelScoreRules({ deuceMode: "GOLDEN_POINT" });
+    expect(rules?.deuceMode).toBe("GOLDEN_POINT");
+  });
+
+  it("faz fallback de deuceMode inválido para ADVANTAGE", () => {
+    const rules = normalizePadelScoreRules({ deuceMode: "INVALID" });
+    expect(rules?.deuceMode).toBe("ADVANTAGE");
   });
 });

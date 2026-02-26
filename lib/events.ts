@@ -1,6 +1,6 @@
 // lib/events.ts
 import type { Event, TicketType } from "@prisma/client";
-import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
+import { resolveTicketPricingSummary } from "@/domain/events/ticketPricing";
 import type { Prisma } from "@prisma/client";
 
 type EventLike = {
@@ -102,22 +102,30 @@ export function mapEventToCardDTO(
     return null;
   }
 
-  let priceFrom: number | null = null;
-  const ticketPrices = event.ticketTypes
-    ? event.ticketTypes
-        .filter((tt): tt is { price: number } => Boolean(tt) && typeof tt?.price === "number")
-        .map((tt) => tt.price)
-    : [];
-
-  if (ticketPrices.length > 0) {
-    priceFrom = Math.min(...ticketPrices);
-  }
-
-  const isGratis =
-    deriveIsFreeEvent({
-      pricingMode: event.pricingMode ?? undefined,
-      ticketPrices,
-    });
+  const pricing = resolveTicketPricingSummary({
+    pricingMode: event.pricingMode ?? undefined,
+    ticketTypes: (event.ticketTypes ?? []).reduce<
+      Array<{
+        price: number | null;
+        currency: string | null;
+        status: string | null;
+        totalQuantity: number | null;
+        soldQuantity: number | null;
+      }>
+    >((acc, ticket) => {
+      if (!ticket) return acc;
+      acc.push({
+        price: typeof ticket.price === "number" ? ticket.price : null,
+        currency: typeof ticket.currency === "string" ? ticket.currency : null,
+        status: typeof ticket.status === "string" ? ticket.status : null,
+        totalQuantity:
+          typeof ticket.totalQuantity === "number" ? ticket.totalQuantity : null,
+        soldQuantity:
+          typeof ticket.soldQuantity === "number" ? ticket.soldQuantity : null,
+      });
+      return acc;
+    }, []),
+  });
 
   const canonicalRaw = event.addressRef?.canonical ?? null;
   const canonical =
@@ -138,8 +146,8 @@ export function mapEventToCardDTO(
     startsAt: event.startsAt ?? null,
     endsAt: event.endsAt ?? null,
     locationFormattedAddress,
-    isGratis,
-    priceFrom: priceFrom !== null ? priceFrom / 100 : null,
+    isGratis: pricing.isGratis,
+    priceFrom: pricing.priceFrom,
     coverImageUrl: event.coverImageUrl ?? null,
   };
 }

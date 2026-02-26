@@ -106,7 +106,7 @@ export default async function OrganizationChatPage({
           <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Chat interno</p>
           <h1 className="text-2xl font-semibold">Ferramenta desativada</h1>
           <p className="text-sm text-white/70">
-            Ativa a ferramenta nas ferramentas da organizacao para comecares a usar o chat interno.
+            Ativa a ferramenta nas ferramentas da organização para começares a usar o chat interno.
           </p>
           <Link
             href={buildOrgHref(organization.id, "/overview", { section: "ferramentas" })}

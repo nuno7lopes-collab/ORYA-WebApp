@@ -28,7 +28,13 @@ type ServiceItem = {
   isActive: boolean;
 };
 
-const formatPrice = (cents: number, currency: string) => `${(cents / 100).toFixed(2)} ${currency}`;
+const formatPrice = (cents: number, currency: string) =>
+  new Intl.NumberFormat("pt-PT", {
+    style: "currency",
+    currency: (currency || "EUR").toUpperCase(),
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(cents / 100);
 
 export default function ReservasServicosPage() {
   const params = useParams();
@@ -91,7 +97,7 @@ export default function ReservasServicosPage() {
                 <p className="text-[12px] font-semibold text-white">{service.title}</p>
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] text-white/50">
-                    {service.durationMinutes} min · {formatPrice(service.unitPriceCents, service.currency)}
+                    {service.durationMinutes} min · Preço: {formatPrice(service.unitPriceCents, service.currency)}
                   </span>
                   <span
                     className={cn(

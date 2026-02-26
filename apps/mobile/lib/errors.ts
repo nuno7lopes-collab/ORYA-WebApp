@@ -19,6 +19,10 @@ const BUSINESS_ERROR_COPY: Record<string, string> = {
     "Pagamentos indisponíveis neste momento. Tenta novamente mais tarde.",
   STRIPE_KEY_MODE_MISMATCH:
     "Configuração de pagamentos inconsistente entre app e servidor. Fecha e volta a abrir a app.",
+  INVITE_LINK_INVALID: "Este link de convite não é válido.",
+  INVITE_LINK_EXPIRED: "Este link de convite expirou.",
+  INVITE_LINK_REVOKED: "Este link de convite foi revogado.",
+  INVITE_MODE_DISABLED: "Este convite já não está ativo.",
   UNAUTHENTICATED: "Inicia sessão para continuar.",
   CHAT_BLOCKED: "Esta conversa está bloqueada.",
   BANNED: "Acesso bloqueado a esta conversa.",

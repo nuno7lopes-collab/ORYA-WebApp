@@ -217,8 +217,30 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       return fail(400, "Validade final anterior à inicial.");
     }
 
-    const professionalId = typeof payload?.professionalId === "number" ? payload.professionalId : null;
-    const courtId = typeof payload?.courtId === "number" ? payload.courtId : null;
+    const hasProfessionalIdInput = Object.prototype.hasOwnProperty.call(payload ?? {}, "professionalId");
+    const hasCourtIdInput = Object.prototype.hasOwnProperty.call(payload ?? {}, "courtId");
+    let professionalId: number | null = null;
+    let courtId: number | null = null;
+
+    if (hasProfessionalIdInput) {
+      if (payload?.professionalId == null || payload?.professionalId === "") {
+        professionalId = null;
+      } else if (typeof payload?.professionalId === "number" && Number.isFinite(payload.professionalId) && payload.professionalId > 0) {
+        professionalId = Math.trunc(payload.professionalId);
+      } else {
+        return fail(400, "Profissional inválido.");
+      }
+    }
+
+    if (hasCourtIdInput) {
+      if (payload?.courtId == null || payload?.courtId === "") {
+        courtId = null;
+      } else if (typeof payload?.courtId === "number" && Number.isFinite(payload.courtId) && payload.courtId > 0) {
+        courtId = Math.trunc(payload.courtId);
+      } else {
+        return fail(400, "Campo inválido.");
+      }
+    }
 
     if (professionalId) {
       const professional = await prisma.reservationProfessional.findFirst({
@@ -236,51 +258,55 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       if (!court) return fail(404, "Campo inválido.");
     }
 
-    const series = await prisma.classSeries.create({
-      data: {
-        organizationId: organization.id,
-        serviceId: service.id,
-        courtId: courtId ?? null,
-        professionalId: professionalId ?? null,
-        dayOfWeek,
-        startMinute,
-        durationMinutes,
-        capacity,
-        validFrom,
-        validUntil,
-        isActive,
-      },
-    });
-
-    if (isActive) {
-      const sessions = buildClassSessionsForSeries({
-        timezone,
-        dayOfWeek,
-        startMinute,
-        durationMinutes,
-        validFrom,
-        validUntil,
-        limitYears: 2,
-        startFromToday: true,
+    const series = await prisma.$transaction(async (tx) => {
+      const createdSeries = await tx.classSeries.create({
+        data: {
+          organizationId: organization.id,
+          serviceId: service.id,
+          courtId: courtId ?? null,
+          professionalId: professionalId ?? null,
+          dayOfWeek,
+          startMinute,
+          durationMinutes,
+          capacity,
+          validFrom,
+          validUntil,
+          isActive,
+        },
       });
 
-      if (sessions.length > 0) {
-        await prisma.classSession.createMany({
-          data: sessions.map((session) => ({
-            seriesId: series.id,
-            organizationId: organization.id,
-            serviceId: service.id,
-            courtId: courtId ?? null,
-            professionalId: professionalId ?? null,
-            startsAt: session.startsAt,
-            endsAt: session.endsAt,
-            capacity,
-            status: "SCHEDULED",
-          })),
-          skipDuplicates: true,
+      if (isActive) {
+        const sessions = buildClassSessionsForSeries({
+          timezone,
+          dayOfWeek,
+          startMinute,
+          durationMinutes,
+          validFrom,
+          validUntil,
+          limitYears: 2,
+          startFromToday: true,
         });
+
+        if (sessions.length > 0) {
+          await tx.classSession.createMany({
+            data: sessions.map((session) => ({
+              seriesId: createdSeries.id,
+              organizationId: organization.id,
+              serviceId: service.id,
+              courtId: courtId ?? null,
+              professionalId: professionalId ?? null,
+              startsAt: session.startsAt,
+              endsAt: session.endsAt,
+              capacity,
+              status: "SCHEDULED",
+            })),
+            skipDuplicates: true,
+          });
+        }
       }
-    }
+
+      return createdSeries;
+    });
 
     return respondOk(ctx, { series });
   } catch (err) {

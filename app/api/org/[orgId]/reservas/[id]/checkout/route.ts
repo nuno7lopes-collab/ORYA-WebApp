@@ -15,7 +15,14 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveRequiredOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { ensureReservasOperationalOpen } from "@/lib/reservas/operationalState";
-import { OrganizationMemberRole, PaymentStatus, ProcessorFeesStatus, SourceType } from "@prisma/client";
+import { ensureStaffCanAccessBooking } from "@/lib/reservas/staffBookingAccess";
+import {
+  OrganizationMemberRole,
+  OrganizationRolePack,
+  PaymentStatus,
+  ProcessorFeesStatus,
+  SourceType,
+} from "@prisma/client";
 import { cancelBooking, updateBooking } from "@/domain/bookings/commands";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
@@ -102,12 +109,12 @@ async function _POST(
       return fail("RESERVA_INVALIDA", "Reserva inválida.", 404);
     }
 
-    const { organization } = await getActiveOrganizationForUser(profile.id, {
+    const { organization, membership } = await getActiveOrganizationForUser(profile.id, {
       organizationId: requestOrganizationId,
       roles: [...ROLE_ALLOWLIST],
     });
 
-    if (!organization) {
+    if (!organization || !membership) {
       return fail("FORBIDDEN", "Sem permissões.", 403);
     }
 
@@ -126,6 +133,20 @@ async function _POST(
         false,
         reservasAccess,
       );
+    }
+    const staffAccess = await ensureStaffCanAccessBooking({
+      organizationId: organization.id,
+      userId: profile.id,
+      role: membership.role,
+      isCoach: membership.rolePack === OrganizationRolePack.COACH,
+      booking: {
+        professionalId: booking.professionalId,
+        resourceId: booking.resourceId,
+        courtId: booking.courtId,
+      },
+    });
+    if (!staffAccess.ok) {
+      return fail(staffAccess.errorCode, staffAccess.message, staffAccess.status);
     }
     if (!booking.service.isActive) {
       return fail("SERVICO_INATIVO", "Serviço inativo.", 409);
@@ -278,6 +299,15 @@ async function _POST(
         currency,
         paymentMethod,
       });
+      if (freeCheckout.bookingStatus !== "CONFIRMED") {
+        return fail(
+          "FREE_CHECKOUT_CONFIRMATION_FAILED",
+          "Não foi possível confirmar a reserva gratuita. Tenta outro horário.",
+          409,
+          true,
+          { bookingStatus: freeCheckout.bookingStatus ?? null },
+        );
+      }
       return respondOk(ctx, {
         paymentIntentId: freeCheckout.paymentIntentId,
         purchaseId: freeCheckout.purchaseId,

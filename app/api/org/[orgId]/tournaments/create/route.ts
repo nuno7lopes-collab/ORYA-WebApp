@@ -8,7 +8,8 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { FIXED_SPLIT_DEADLINE_HOURS } from "@/domain/padelDeadlines";
-import { DEFAULT_PADEL_SCORE_RULES } from "@/domain/padel/score";
+import { DEFAULT_PADEL_SCORE_RULES, normalizePadelScoreRules } from "@/domain/padel/score";
+import { sanitizeScoreRulesByCategory } from "@/domain/padel/scoreRulesResolver";
 import { ensurePadelRuleSetVersion } from "@/domain/padel/ruleSetSnapshot";
 import { parsePadelFormat } from "@/domain/padel/formatCatalog";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
@@ -36,6 +37,7 @@ import {
   EventTemplateType,
   OrganizationModule,
   PadelEligibilityType,
+  PadelResultValidationMode,
   PadelTournamentRole,
   Prisma,
   SourceType,
@@ -60,7 +62,7 @@ type CreateTournamentPadelInput = {
   staffIds?: number[];
   format?: string;
   eligibilityType?: string | null;
-  ruleSetId?: number | null;
+  ruleSetId?: number | string | null;
   isInterclub?: boolean | null;
   teamSize?: number | string | null;
   categoryIds?: number[];
@@ -68,6 +70,9 @@ type CreateTournamentPadelInput = {
   categoryConfigs?: CreateTournamentCategoryConfigInput[];
   advancedSettings?: unknown;
   partnerClubIds?: number[];
+  resultValidationMode?: string | null;
+  pendingConfirmationWindowMinutes?: number | string | null;
+  playerResultSubmissionEnabled?: boolean | null;
 };
 
 type CreateTournamentBody = {
@@ -417,8 +422,71 @@ async function _POST(req: NextRequest) {
     const isInterclub = padelInput?.isInterclub === true;
     const teamSizeRaw = parsePositiveInt(padelInput?.teamSize);
     const teamSize = isInterclub && teamSizeRaw && teamSizeRaw >= 2 ? teamSizeRaw : null;
+    const hasRuleSetIdInput = Object.prototype.hasOwnProperty.call(padelInput ?? {}, "ruleSetId");
+    const shouldClearRuleSet =
+      padelInput?.ruleSetId === null ||
+      (typeof padelInput?.ruleSetId === "string" && padelInput.ruleSetId.trim() === "");
+    const requestedRuleSetId = hasRuleSetIdInput && !shouldClearRuleSet ? parsePositiveInt(padelInput?.ruleSetId) : null;
+    if (hasRuleSetIdInput && !shouldClearRuleSet && requestedRuleSetId == null) {
+      return fail(400, "INVALID_RULESET", "INVALID_RULESET", false);
+    }
     if (isInterclub && !teamSize) {
       return fail(400, "TEAM_SIZE_REQUIRED", "TEAM_SIZE_REQUIRED", false);
+    }
+
+    const hasResultValidationModeInput = Object.prototype.hasOwnProperty.call(
+      padelInput ?? {},
+      "resultValidationMode",
+    );
+    const requestedResultValidationMode =
+      hasResultValidationModeInput &&
+      typeof padelInput?.resultValidationMode === "string" &&
+      Object.values(PadelResultValidationMode).includes(
+        padelInput.resultValidationMode as PadelResultValidationMode,
+      )
+        ? (padelInput.resultValidationMode as PadelResultValidationMode)
+        : hasResultValidationModeInput
+          ? null
+          : undefined;
+    if (hasResultValidationModeInput && requestedResultValidationMode === null) {
+      return fail(400, "INVALID_RESULT_VALIDATION_MODE", "INVALID_RESULT_VALIDATION_MODE", false);
+    }
+    const hasPendingWindowInput = Object.prototype.hasOwnProperty.call(
+      padelInput ?? {},
+      "pendingConfirmationWindowMinutes",
+    );
+    const pendingWindowRaw =
+      typeof padelInput?.pendingConfirmationWindowMinutes === "number"
+        ? padelInput.pendingConfirmationWindowMinutes
+        : typeof padelInput?.pendingConfirmationWindowMinutes === "string"
+          ? Number(padelInput.pendingConfirmationWindowMinutes)
+          : NaN;
+    const requestedPendingConfirmationWindowMinutes =
+      hasPendingWindowInput && Number.isFinite(pendingWindowRaw) && pendingWindowRaw > 0
+        ? Math.max(1, Math.min(240, Math.floor(pendingWindowRaw)))
+        : hasPendingWindowInput
+          ? null
+          : undefined;
+    if (hasPendingWindowInput && requestedPendingConfirmationWindowMinutes === null) {
+      return fail(400, "INVALID_PENDING_CONFIRMATION_WINDOW", "INVALID_PENDING_CONFIRMATION_WINDOW", false);
+    }
+    const hasPlayerSubmissionInput = Object.prototype.hasOwnProperty.call(
+      padelInput ?? {},
+      "playerResultSubmissionEnabled",
+    );
+    const requestedPlayerResultSubmissionEnabled =
+      hasPlayerSubmissionInput && typeof padelInput?.playerResultSubmissionEnabled === "boolean"
+        ? padelInput.playerResultSubmissionEnabled
+        : hasPlayerSubmissionInput
+          ? null
+          : undefined;
+    if (hasPlayerSubmissionInput && requestedPlayerResultSubmissionEnabled === null) {
+      return fail(
+        400,
+        "INVALID_PLAYER_RESULT_SUBMISSION_ENABLED",
+        "INVALID_PLAYER_RESULT_SUBMISSION_ENABLED",
+        false,
+      );
     }
 
     const advancedSettings =
@@ -620,6 +688,18 @@ async function _POST(req: NextRequest) {
     if (requestedDefaultCategoryId && !defaultCategoryId) {
       return fail(400, "CATEGORIES_INVALID", "CATEGORIES_INVALID", false);
     }
+    if (requestedRuleSetId) {
+      const scopedRuleSet = await prisma.padelRuleSet.findFirst({
+        where: {
+          id: requestedRuleSetId,
+          organizationId: organization.id,
+        },
+        select: { id: true },
+      });
+      if (!scopedRuleSet) {
+        return fail(400, "INVALID_RULESET", "INVALID_RULESET", false);
+      }
+    }
 
     if (partnerClubIds.length > 0) {
       const activePartners = await prisma.padelClub.findMany({
@@ -711,9 +791,9 @@ async function _POST(req: NextRequest) {
       if (!Object.prototype.hasOwnProperty.call(advancedSettingsBase, "competitionState")) {
         advancedSettingsBase.competitionState = "DEVELOPMENT";
       }
-      if (!Object.prototype.hasOwnProperty.call(advancedSettingsBase, "scoreRules")) {
-        advancedSettingsBase.scoreRules = DEFAULT_PADEL_SCORE_RULES;
-      }
+      const normalizedGlobalScoreRules = normalizePadelScoreRules(advancedSettingsBase.scoreRules);
+      advancedSettingsBase.scoreRules = normalizedGlobalScoreRules ?? DEFAULT_PADEL_SCORE_RULES;
+      advancedSettingsBase.scoreRulesByCategory = sanitizeScoreRulesByCategory(advancedSettingsBase.scoreRulesByCategory);
 
       const config = await tx.padelTournamentConfig.upsert({
         where: { eventId: event.id },
@@ -724,12 +804,15 @@ async function _POST(req: NextRequest) {
           partnerClubIds,
           numberOfCourts: computedCourts,
           format: requestedPadelFormat,
-          ruleSetId: parsePositiveInt(padelInput?.ruleSetId) ?? undefined,
+          ruleSetId: requestedRuleSetId ?? undefined,
           defaultCategoryId: defaultCategoryId ?? undefined,
           eligibilityType: padelEligibilityType,
           splitDeadlineHours: FIXED_SPLIT_DEADLINE_HOURS,
           isInterclub,
           teamSize: isInterclub ? teamSize ?? undefined : null,
+          resultValidationMode: requestedResultValidationMode ?? PadelResultValidationMode.IMMEDIATE_OFFICIAL,
+          pendingConfirmationWindowMinutes: requestedPendingConfirmationWindowMinutes ?? 15,
+          playerResultSubmissionEnabled: requestedPlayerResultSubmissionEnabled ?? false,
           padelV2Enabled: true,
           advancedSettings: {
             ...advancedSettingsBase,
@@ -744,12 +827,15 @@ async function _POST(req: NextRequest) {
           partnerClubIds,
           numberOfCourts: computedCourts,
           format: requestedPadelFormat,
-          ruleSetId: parsePositiveInt(padelInput?.ruleSetId) ?? undefined,
+          ruleSetId: requestedRuleSetId ?? undefined,
           defaultCategoryId: defaultCategoryId ?? undefined,
           eligibilityType: padelEligibilityType,
           splitDeadlineHours: FIXED_SPLIT_DEADLINE_HOURS,
           isInterclub,
           teamSize: isInterclub ? teamSize ?? undefined : null,
+          resultValidationMode: requestedResultValidationMode ?? PadelResultValidationMode.IMMEDIATE_OFFICIAL,
+          pendingConfirmationWindowMinutes: requestedPendingConfirmationWindowMinutes ?? 15,
+          playerResultSubmissionEnabled: requestedPlayerResultSubmissionEnabled ?? false,
           padelV2Enabled: true,
           advancedSettings: {
             ...advancedSettingsBase,

@@ -1,4 +1,5 @@
 export type PadelScoreMode = "SETS" | "TIMED_GAMES";
+export type PadelDeuceMode = "ADVANTAGE" | "GOLDEN_POINT";
 
 export type PadelSetScore = { teamA: number; teamB: number };
 
@@ -18,6 +19,7 @@ export type PadelMatchStats = {
 
 export type PadelScoreRules = {
   scoreMode: PadelScoreMode;
+  deuceMode: PadelDeuceMode;
   setsToWin: number;
   maxSets: number;
   gamesToWinSet: number;
@@ -33,6 +35,7 @@ export type PadelScoreRules = {
 
 export const DEFAULT_PADEL_SCORE_RULES: PadelScoreRules = {
   scoreMode: "SETS",
+  deuceMode: "ADVANTAGE",
   setsToWin: 2,
   maxSets: 3,
   gamesToWinSet: 6,
@@ -77,6 +80,8 @@ export function normalizePadelScoreRules(raw: unknown): PadelScoreRules | null {
   const input = raw as Record<string, unknown>;
   const scoreModeRaw = typeof input.scoreMode === "string" ? input.scoreMode.trim().toUpperCase() : "";
   const scoreMode: PadelScoreMode = scoreModeRaw === "TIMED_GAMES" ? "TIMED_GAMES" : "SETS";
+  const deuceModeRaw = typeof input.deuceMode === "string" ? input.deuceMode.trim().toUpperCase() : "";
+  const deuceMode: PadelDeuceMode = deuceModeRaw === "GOLDEN_POINT" ? "GOLDEN_POINT" : "ADVANTAGE";
 
   const setsToWin = clampInt(input.setsToWin, DEFAULT_PADEL_SCORE_RULES.setsToWin, 1, 5);
   const maxSetsFallback = Math.max(DEFAULT_PADEL_SCORE_RULES.maxSets, setsToWin * 2 - 1);
@@ -115,6 +120,7 @@ export function normalizePadelScoreRules(raw: unknown): PadelScoreRules | null {
 
   return {
     scoreMode,
+    deuceMode,
     setsToWin,
     maxSets,
     gamesToWinSet,

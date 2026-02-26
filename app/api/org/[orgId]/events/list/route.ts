@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
-import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
+import { resolveTicketPricingSummary } from "@/domain/events/ticketPricing";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { EventTemplateType, OrganizationModule, Prisma, TicketStatus } from "@prisma/client";
@@ -129,6 +129,7 @@ async function _GET(req: NextRequest) {
         status: true,
         templateType: true,
         coverImageUrl: true,
+        pricingMode: true,
         padelTournamentConfig: {
           select: { padelClubId: true, partnerClubIds: true, advancedSettings: true },
         },
@@ -136,7 +137,12 @@ async function _GET(req: NextRequest) {
           select: { id: true },
         },
         ticketTypes: {
-          select: { price: true },
+          select: {
+            price: true,
+            status: true,
+            totalQuantity: true,
+            soldQuantity: true,
+          },
         },
       },
       take: limit,
@@ -268,8 +274,11 @@ async function _GET(req: NextRequest) {
     padelClubs.forEach((c) => padelClubMap.set(c.id, c.name || `Clube ${c.id}`));
 
     const items = events.map((event) => {
-      const ticketPrices = event.ticketTypes?.map((t) => t.price ?? 0) ?? [];
-      const isGratis = deriveIsFreeEvent({ ticketPrices });
+      const pricing = resolveTicketPricingSummary({
+        pricingMode: event.pricingMode ?? undefined,
+        ticketTypes: event.ticketTypes,
+      });
+      const isGratis = pricing.isGratis;
       const partnerClubIds = (event.padelTournamentConfig?.partnerClubIds ?? []) as number[];
       return {
         id: event.id,

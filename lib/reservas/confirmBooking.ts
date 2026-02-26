@@ -788,8 +788,10 @@ export async function confirmPendingBooking({
   });
 
   if (!booking.policyRef) {
-    await tx.bookingPolicyRef.create({
-      data: { bookingId: booking.id, policyId: snapshotPolicyId },
+    await tx.bookingPolicyRef.upsert({
+      where: { bookingId: booking.id },
+      update: {},
+      create: { bookingId: booking.id, policyId: snapshotPolicyId },
     });
   }
 

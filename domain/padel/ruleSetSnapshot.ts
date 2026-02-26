@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
+import { PADEL_FORMAT_CATALOG } from "@/domain/padel/formatCatalog";
 
 export type PadelRuleSetSnapshot = {
   source: "VERSION" | "RULESET" | "DEFAULT";
@@ -20,7 +21,7 @@ const DEFAULT_SNAPSHOT: PadelRuleSetSnapshot = {
   name: "Regras padrão",
   tieBreakRules: {},
   pointsTable: {},
-  enabledFormats: ["TODOS_CONTRA_TODOS", "QUADRO_ELIMINATORIO"],
+  enabledFormats: [...PADEL_FORMAT_CATALOG],
   season: null,
   year: null,
 };
@@ -63,7 +64,7 @@ export async function ensurePadelRuleSetVersion(params: {
       name: ruleSet.name,
       tieBreakRules: ruleSet.tieBreakRules ?? {},
       pointsTable: ruleSet.pointsTable ?? {},
-      enabledFormats: ruleSet.enabledFormats ?? ["TODOS_CONTRA_TODOS", "QUADRO_ELIMINATORIO"],
+      enabledFormats: ruleSet.enabledFormats ?? [...PADEL_FORMAT_CATALOG],
       season: ruleSet.season ?? null,
       year: ruleSet.year ?? null,
       createdByUserId: actorUserId ?? null,
@@ -99,7 +100,7 @@ export async function getPadelRuleSetSnapshot(params: {
         name: version.name,
         tieBreakRules: version.tieBreakRules ?? {},
         pointsTable: version.pointsTable ?? {},
-        enabledFormats: version.enabledFormats ?? ["TODOS_CONTRA_TODOS", "QUADRO_ELIMINATORIO"],
+        enabledFormats: version.enabledFormats ?? [...PADEL_FORMAT_CATALOG],
         season: version.season ?? null,
         year: version.year ?? null,
       };
@@ -127,7 +128,7 @@ export async function getPadelRuleSetSnapshot(params: {
         name: ruleSet.name,
         tieBreakRules: ruleSet.tieBreakRules ?? {},
         pointsTable: ruleSet.pointsTable ?? {},
-        enabledFormats: ruleSet.enabledFormats ?? ["TODOS_CONTRA_TODOS", "QUADRO_ELIMINATORIO"],
+        enabledFormats: ruleSet.enabledFormats ?? [...PADEL_FORMAT_CATALOG],
         season: ruleSet.season ?? null,
         year: ruleSet.year ?? null,
       };

@@ -206,7 +206,12 @@ function resolveBookingApiErrorMessage(
 }
 
 function formatMoney(cents: number, currency: string) {
-  return `${(cents / 100).toFixed(2)} ${currency}`;
+  return new Intl.NumberFormat("pt-PT", {
+    style: "currency",
+    currency: (currency || "EUR").toUpperCase(),
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(cents / 100);
 }
 
 function formatLocalISODate(date: Date) {
@@ -1532,7 +1537,8 @@ export default function ReservasBookingClient({
           >
             <p className="text-sm font-semibold text-white">Sem pacote</p>
             <p className="mt-1 text-[12px] text-white/60">
-              {selectedService.durationMinutes} min · {formatMoney(selectedService.unitPriceCents, selectedService.currency)}
+              {selectedService.durationMinutes} min · Preço:{" "}
+              {formatMoney(selectedService.unitPriceCents, selectedService.currency)}
             </p>
           </button>
           {packageOptions.map((pkg) => {
@@ -1553,7 +1559,7 @@ export default function ReservasBookingClient({
                   )}
                 </div>
                 <p className="mt-1 text-[12px] text-white/60">
-                  {pkg.durationMinutes} min · {formatMoney(pkg.priceCents, selectedService.currency)}
+                  {pkg.durationMinutes} min · Preço: {formatMoney(pkg.priceCents, selectedService.currency)}
                 </p>
                 {pkg.description && (
                   <p className="mt-1 text-[11px] text-white/55 line-clamp-2">{pkg.description}</p>
@@ -1575,7 +1581,7 @@ export default function ReservasBookingClient({
           </div>
           {addonsDeltaCents > 0 || addonsDeltaMinutes > 0 ? (
             <span className="text-[11px] text-white/60">
-              +{addonsDeltaMinutes} min · +{formatMoney(addonsDeltaCents, selectedService.currency)}
+              +{addonsDeltaMinutes} min · Preço extra: +{formatMoney(addonsDeltaCents, selectedService.currency)}
             </span>
           ) : (
             <span className="text-[11px] text-white/50">Opcional</span>
@@ -1769,7 +1775,8 @@ export default function ReservasBookingClient({
                               <div>
                                 <p className="text-sm font-semibold text-white">{service.title}</p>
                                 <p className="text-[12px] text-white/70">
-                                  {service.durationMinutes} min · {formatMoney(service.unitPriceCents, service.currency)}
+                                  {service.durationMinutes} min · Preço:{" "}
+                                  {formatMoney(service.unitPriceCents, service.currency)}
                                 </p>
                               </div>
                               {isActive && (
@@ -2354,7 +2361,7 @@ export default function ReservasBookingClient({
                       </p>
                       {selectedService ? (
                         <p className="mt-1 text-[12px] text-white/60">
-                          {effectiveDurationMinutes} min ·{" "}
+                          {effectiveDurationMinutes} min · Preço:{" "}
                           {formatMoney(effectiveBaseCents, selectedService.currency)}
                         </p>
                       ) : (

@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { resolvePadelMatchStats } from "@/domain/padel/score";
+import { buildScoreRuleSummary, resolveEffectiveScoreRules } from "@/domain/padel/scoreRulesResolver";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const DEFAULT_LIMIT = 50;
@@ -286,6 +287,7 @@ async function _GET(req: NextRequest) {
             select: {
               playerResultSubmissionEnabled: true,
               resultValidationMode: true,
+              advancedSettings: true,
             },
           },
         },
@@ -324,6 +326,15 @@ async function _GET(req: NextRequest) {
         ? pendingConfirmationExpiresAtDate.getTime() - now.getTime()
         : null;
     const playerSubmissionEnabled = match.event?.padelTournamentConfig?.playerResultSubmissionEnabled === true;
+    const effectiveScoreRules = resolveEffectiveScoreRules(
+      match.event?.padelTournamentConfig?.advancedSettings,
+      match.categoryId ?? null,
+    );
+    const scoreRuleSummary = buildScoreRuleSummary({
+      rules: effectiveScoreRules.rules,
+      source: effectiveScoreRules.source,
+      categoryId: effectiveScoreRules.categoryId,
+    });
     const playerCanSubmitResult =
       playerSubmissionEnabled &&
       !(rawStatus && FINAL_STATUSES.has(rawStatus)) &&
@@ -355,6 +366,7 @@ async function _GET(req: NextRequest) {
       }),
       playerCanSubmitResult,
       playerSubmissionEnabled,
+      scoreRuleSummary,
       resultValidationMode:
         match.event?.padelTournamentConfig?.resultValidationMode === "IMMEDIATE_PENDING_THEN_OFFICIAL"
           ? "IMMEDIATE_PENDING_THEN_OFFICIAL"

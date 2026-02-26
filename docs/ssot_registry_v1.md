@@ -1,6 +1,6 @@
 # ORYA SSOT Registry
 
-Atualizado: 2026-02-23
+Atualizado: 2026-02-26
 
 ## 00 Authority
 
@@ -21,7 +21,7 @@ Atualizado: 2026-02-23
 ### 00.3 Escopo (NORMATIVO)
 - Inclui invariantes globais, decisões fechadas, contratos C-G e C01..C18, tenancy, segurança, observabilidade, cut-line e produção.
 - Todos os módulos (app, repo, server, jobs, DB) devem conformar-se a este SSOT.
-- Planeamento, backlog e itens “a fazer” vivem em `docs/planning_registry_v1.md` (**NÃO-NORMATIVO**).
+- Este documento não inclui backlog/roadmap de produto; contém apenas regra normativa e decisões.
 
 ### 00.4 Ambiente & DB Única (NORMATIVO)
 - ORYA opera com **uma única DB** quando `SINGLE_DB_MODE=1`.
@@ -76,7 +76,7 @@ Atualizado: 2026-02-23
 - Decisões FECHADO históricas sem metadados completos não bloqueiam este ciclo, desde que:
   - constem no ledger de transição abaixo; e
   - não sejam alteradas sem receber metadados completos.
-- `docs/planning_registry_v1.md` pode manter contexto e backlog, mas nunca é pré‑requisito de validade normativa.
+- Contexto operacional não normativo não é pré‑requisito de validade normativa.
 
 #### 00.6.1 Ledger de transição (forward-only)
 | decisionId | owner | approvedAt | scope | status | rationale | migrationImpact |
@@ -94,17 +94,31 @@ Atualizado: 2026-02-23
 | SSOT-2026-02-21-RESERVAS-AULAS-TORNEIOS-HARDCUT | Nuno | 2026-02-21 | Fecho canónico de reservas de campos, aulas, torneios e serviços associados | FECHADO | eliminar ambiguidade de produto e execução, com regras únicas para grid, duração, modelação, conflitos, calendário e cutover | hard-cut sem feature flags; migrações forward-only; `CLASS_SESSION` canónico na agenda; validação server-side de grid por organização; sync 1:1 treinador-profissional obrigatório |
 | SSOT-2026-02-22-COURT-DURATION-CATALOG-PRICING | Nuno | 2026-02-22 | Política de duração e preço por duração em reservas de campos (web+mobile+API) | FECHADO | remover ambiguidade final de pricing/duração em campos e garantir paridade operacional | catálogo fixo `30/60/90/120` com subset ativo por organização; preço por duração em `ServiceDurationPrice`; `allowCustomDuration=true` inválido para campos; `ServicePackage` deixa de ser fonte de preço em booking público de `COURT` |
 | SSOT-2026-02-23-LEGACY-HARDCUT-404 | Nuno | 2026-02-23 | hard-cut final de legacy/tombstones | FECHADO | eliminar compatibilidade residual e consolidar semântica de inexistência | rotas legacy removidas fisicamente devolvem `404`; edge fail-closed em `404`; `410` reservado apenas para estados de negócio legítimos (ex.: expirado) |
+| SSOT-2026-02-26-SINGLE-DOC-GOVERNANCE | Nuno | 2026-02-26 | SSOT como documento único de decisão/revisão normativa | FECHADO | consolidar o SSOT como único cérebro normativo e eliminar ruído não normativo do corpo | secção 103 removida; referências internas de fonte removidas do corpo; secção 104 fica vazia quando não há pendências |
 ---
 
+### 00.6.2 Workflow de Decisão do Owner (NORMATIVO)
+- Este SSOT é o único local de proposta, revisão e fecho de decisões.
+- Estados permitidos por decisão: `PROPOSTA_OWNER | EM_REVISAO_OWNER | FECHADO | REJEITADO`.
+- Uma decisão só pode passar a `FECHADO` quando tiver, no mínimo:
+  - `decisionId`, `owner`, `scope`, `rationale`, `migrationImpact`, `reviewChecklist`, `approvedAt`.
+- Qualquer alteração com impacto funcional deve registar explicitamente:
+  - impacto de produto/UI;
+  - impacto de API/contrato;
+  - impacto de dados/migração;
+  - gates/testes executados e resultado.
+- Sem checklist completa, a decisão mantém-se em `EM_REVISAO_OWNER` e não é normativa.
+
+### 00.6.3 Ponto de Revisão Operacional (Owner)
+- O quadro operacional de revisão fica em `104) Quadro de Decisão do Owner` no fim deste SSOT.
+- Não existe backlog normativo fora deste documento.
 
 ## 00.7 Organização Canónica (12 Grupos)
 - Estado: **FECHADO**.
-- Fonte de reconstrução: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md`.
-- Hash fonte (SHA-256): `a97773f4b85d780c20f89a81fe772fd1725d6e91a96ae86d2539630c3604d68e`.
-- Mapping: `docs/ssot_canonical_groups_mapping_v1.json` (SHA-256: `e1ea184bc82774b89ce4878b17e72314a356ee6bcc7195f371179889267b3bb7`).
-- Integridade: `4170/4170` linhas cobertas.
-- IDs normativos mapeados: `139` (blocos extraídos: `138`).
-- Gerado em: `2026-02-14T22:22:01.474Z`.
+- Fonte de reconstrução: `secção 99 deste SSOT`.
+- Mapping canónico: `secção 99 deste SSOT` (tabela `ID de Origem -> ID Canónico`).
+- Integridade interna: `142/142` IDs mapeados no próprio SSOT.
+- Gerado em: `2026-02-26T15:07:19Z` (reconciliação interna).
 
 ### 00.7.1 Ordem Canónica
 - G01: Governação SSOT e Invariantes (`22` itens)
@@ -122,7 +136,7 @@ Atualizado: 2026-02-23
 
 ### 00.8 Autossuficiência do SSOT (NORMATIVO)
 - O SSOT deve ser lido como documento autossuficiente de regra e decisão final.
-- Referências a outros ficheiros existem apenas para rastreabilidade editorial/auditoria.
+- Decisões, revisão e fecho vivem neste documento; referências externas são apenas históricas.
 - Nenhum contrato normativo depende da leitura de outro documento para ser válido.
 - Em conflito entre SSOT e documento auxiliar, prevalece sempre o SSOT.
 
@@ -285,7 +299,6 @@ Esta secção define os invariantes imutáveis da plataforma ORYA.
 Estas regras DEVEM ser cumpridas em todos os momentos. Qualquer implementação
 que viole um ou mais invariantes é considerada incorreta, mesmo que funcional.
 
-
 ## G01) Governação SSOT e Invariantes
 
 ### Escopo estrutural
@@ -295,7 +308,6 @@ que viole um ou mais invariantes é considerada incorreta, mesmo que funcional.
 ### Blocos normativos (conteúdo integral, ordem estável)
 
 #### G01.001 (origem: I01)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:88`.
 
 ### I01 — Fonte Única de Verdade (SSOT)
 Cada domínio tem exatamente uma fonte autoritativa de verdade:
@@ -309,9 +321,7 @@ tratados como autoritativos.
 
 ---
 
-
 #### G01.002 (origem: I02)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:100`.
 
 ### I02 — Ledger é Append-Only e Determinístico
 Registos `LedgerEntry` são imutáveis e append-only.
@@ -324,9 +334,7 @@ Qualquer correção é expressa por entries compensatórias, nunca por mutação
 
 ---
 
-
 #### G01.003 (origem: I03)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:111`.
 
 ### I03 — Payments são Máquinas de Estado, não Saldos
 `Payment` representa ciclo de vida e intenção, não a verdade monetária.
@@ -337,9 +345,7 @@ depois, sem mutar entries históricas.
 
 ---
 
-
 #### G01.004 (origem: I04)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:120`.
 
 ### I04 — Entitlement é a Prova Canónica de Acesso
 Um `Entitlement` é a única prova de que um utilizador (ou guest) tem acesso
@@ -350,9 +356,7 @@ são prova de acesso.
 
 ---
 
-
 #### G01.005 (origem: I05)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:129`.
 
 ### I05 — Contexto Explícito de Organização (Multi-Tenancy)
 Todos os dados de domínio DEVEM estar scoped a um `orgId` explícito, por:
@@ -364,9 +368,7 @@ explícito de organização.
 
 ---
 
-
 #### G01.006 (origem: I06)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:139`.
 
 ### I06 — Idempotência é Obrigatória para Operações com Side Effects
 Qualquer operação que:
@@ -379,9 +381,7 @@ DEVE ser idempotente e segura para retry.
 
 ---
 
-
 #### G01.007 (origem: I07)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:150`.
 
 ### I07 — Assíncrono é Explícito e Observável
 Todo o trabalho assíncrono DEVE:
@@ -393,9 +393,7 @@ Execução fire-and-forget é proibida.
 
 ---
 
-
 #### G01.008 (origem: I08)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:160`.
 
 ### I08 — Sistemas Externos Não São Confiáveis
 Sistemas externos (payment processors, providers de email, scanners,
@@ -409,9 +407,7 @@ contra a verdade interna.
 
 ---
 
-
 #### G01.009 (origem: I09)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:172`.
 
 ### I09 — Fail Closed em Autorização e Acesso
 Em caso de incerteza, falta de dados ou lag de reconciliação:
@@ -423,9 +419,7 @@ O sistema falha sempre em fail-closed, nunca em fail-open.
 
 ---
 
-
 #### G01.010 (origem: I10)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:182`.
 
 ### I10 — Decisões FECHADO São Vinculativas
 Qualquer secção ou regra marcada como FECHADO é final.
@@ -447,9 +441,7 @@ Any violation of these rules is considered a critical security defect.
 
 ---
 
-
 #### G01.015 (origem: C-G05)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:558`.
 
 ### C-G05 — Padrão de Envelope de Erro
 Todos os contratos DEVEM usar uma estrutura de erro consistente contendo:
@@ -565,9 +557,7 @@ Estas regras são obrigatórias e sobrepõem preferências locais de implementa�
 
 ---
 
-
 #### G01.011 (origem: C-G01)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:666`.
 
 ### C-G01 — Ownership Explícito de Contrato
 Todo contrato DEVE definir:
@@ -578,9 +568,7 @@ O owner é responsável por compatibilidade, versionamento e ciclo de vida.
 
 ---
 
-
 #### G01.012 (origem: C-G02)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:675`.
 
 ### C-G02 — Versionamento de Contrato
 Contratos usam versionamento semântico:
@@ -593,9 +581,7 @@ A versão é explícita e nunca inferida.
 
 ---
 
-
 #### G01.013 (origem: C-G03)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:686`.
 
 ### C-G03 — Compatibilidade Retroativa é Obrigatória
 Consumers DEVEM:
@@ -609,9 +595,7 @@ Producers NÃO PODEM:
 
 ---
 
-
 #### G01.014 (origem: C-G04)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:698`.
 
 ### C-G04 — Semântica de Idempotência
 Se um contrato aciona side effects, DEVE definir:
@@ -634,9 +618,7 @@ Erros sem classificação são proibidos.
 
 ---
 
-
 #### G01.016 (origem: C-G06)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:719`.
 
 ### C-G06 — Premissas de Tempo e Ordenação
 Contratos NÃO PODEM assumir:
@@ -649,9 +631,7 @@ ordenação ou lógica de reconciliação.
 
 ---
 
-
 #### G01.017 (origem: C-G07)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:730`.
 
 ### C-G07 — Obrigações de Observabilidade
 Cada contrato DEVE emitir:
@@ -663,9 +643,7 @@ Falha silenciosa é proibida.
 
 ---
 
-
 #### G01.018 (origem: C-G08)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:740`.
 
 ### C-G08 — Testes de Compatibilidade
 Qualquer alteração de contrato DEVE incluir:
@@ -675,9 +653,7 @@ Qualquer alteração de contrato DEVE incluir:
 
 ---
 
-
 #### G01.019 (origem: C-G09)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:748`.
 
 ### C-G09 — Documentação é Executável
 Cada contrato DEVE incluir:
@@ -689,9 +665,7 @@ Contratos ambíguos são considerados incompletos.
 
 ---
 
-
 #### G01.020 (origem: D00)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2347`.
 
 D00) Fora de scope (v1–v3): API pública (terceiros)
 	•	Não vamos expor API pública/SDK para terceiros nesta fase.
@@ -699,9 +673,7 @@ D00) Fora de scope (v1–v3): API pública (terceiros)
 		•	Qualquer “Public API” com chaves/SDK é **futuro**: fora de escopo nesta fase DEV, sem documentação externa, sem onboarding de parceiros, sem implementação/deploy até revisão normativa explícita.
 	•	Integrações externas só via exports e integrações pontuais configuráveis (Fase 2+), sem “public API” aberta.
 
-
 #### G01.021 (origem: D02)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2397`.
 
 D02) Owners (fontes de verdade) — semântica blindada
 	•	Ticketing / Sessions / Página pública base / Entitlements de acesso: Eventos
@@ -719,13 +691,9 @@ Regra: nenhum domínio duplica estado de outro owner. Integração só via contr
 
 **Regra de negócio (fundamental):** **só ORGANIZAÇÕES** podem ser donas de coisas que se vendem/operam (Eventos, Loja/Produtos, Serviços/Reservas). Utilizadores **nunca** “criam/vendem em nome próprio”; apenas atuam como membros de uma Organização no **Painel da Organização** (RBAC). No lado do utilizador, mesmo sendo dono/admin, vê a Organização apenas como público.
 
-
 #### G01.022 (origem: D09.02)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2873`.
 
 D09.02) UX Operacional Global (B2B)
-	•	Blueprint de UX global (Unified Search, Context Drawer, Command Palette, Ops mode e padrões visuais) é **não‑normativo** e vive em `docs/planning_registry_v1.md` (P7.2).
-
 
 ## G02) Segurança, Tenancy, Compliance e Legal
 
@@ -739,7 +707,6 @@ D09.02) UX Operacional Global (B2B)
 ### Blocos normativos (conteúdo integral, ordem estável)
 
 #### G02.001 (origem: T01)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:202`.
 
 ### T01 — Explicit Organization Scoping (MANDATORY)
 All domain entities MUST be scoped to an organization via:
@@ -751,9 +718,7 @@ exist without an organization context.
 
 ---
 
-
 #### G02.002 (origem: T02)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:212`.
 
 ### T02 — Query Enforcement
 All read and write queries MUST:
@@ -764,9 +729,7 @@ Queries without explicit organization scoping are forbidden.
 
 ---
 
-
 #### G02.003 (origem: T03)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:221`.
 
 ### T03 — Global Tables (Explicit Exceptions)
 Only the following categories MAY exist without `orgId`:
@@ -780,9 +743,7 @@ Global tables MUST:
 
 ---
 
-
 #### G02.004 (origem: T04)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:233`.
 
 ### T04 — Background Jobs & Async Processing
 All background jobs, workers, and outbox processors MUST:
@@ -794,9 +755,7 @@ organization at a time.
 
 ---
 
-
 #### G02.005 (origem: T05)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:243`.
 
 ### T05 — Webhooks & External Callbacks
 Inbound webhooks MUST:
@@ -808,9 +767,7 @@ Webhook handling without organization resolution is forbidden.
 
 ---
 
-
 #### G02.006 (origem: T06)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:253`.
 
 ### T06 — Authorization Is Org-Bound
 Authorization checks MUST always evaluate:
@@ -823,9 +780,7 @@ and documented as such.
 
 ---
 
-
 #### G02.007 (origem: T07)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:264`.
 
 ### T07 — Service Roles & Elevated Access
 Service roles MAY bypass user-level RBAC but MUST NOT bypass
@@ -838,9 +793,7 @@ All service-role access MUST:
 
 ---
 
-
 #### G02.008 (origem: T08)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:275`.
 
 ### T08 — Testing & Verification
 The platform MUST include automated tests that:
@@ -852,9 +805,7 @@ Tenancy enforcement MUST be continuously tested.
 
 ---
 
-
 #### G02.009 (origem: T09)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:285`.
 
 ### T09 — Failure Mode
 On any ambiguity or missing organization context:
@@ -1134,7 +1085,6 @@ Any new feature MUST be evaluated against this threat model.
 ### 03.1 Error Envelope Canónico
 
 #### G02.010 (origem: CAUTH.01)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2122`.
 
 CAUTH.01) Official Email Gate (organização) — **FECHADO**
 
@@ -1279,7 +1229,6 @@ Compatibilidade e migração legacy:
 - v2 corrige o contrato para manter ativo+pendente em superfícies separadas.
 - Pendentes legados devem ser reconciliados em modo fail-safe: restaurar ativo verificável quando possível; caso contrário, resolução manual auditada.
 
-
 ## G03) Identidade, Auth, Sessao/Cookies e Mobile Access
 
 ### Escopo estrutural
@@ -1290,7 +1239,6 @@ Compatibilidade e migração legacy:
 ### Blocos normativos (conteúdo integral, ordem estável)
 
 #### G03.001 (origem: C12)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:1955`.
 
 C12) Identity/Auth (SSOT + claim/merge) — **FECHADO**
 
@@ -1327,7 +1275,7 @@ Regras:
 	•	`ownerKey` canónico de escrita: `identity:<ownerIdentityId>`.
 	•	`ownerKey` legacy (`user:`/`email:`) fica restrito a compatibilidade de leitura temporária até hard-cut final.
 	•	Gestão de segredo HMAC: `email_hmac = HMAC(key_vN, emailNormalized)` com `keyVersion` e janela de rotação (`vN` + `vN-1`).
-	•	A regra canónica de merge/tombstone está integralmente definida neste SSOT; `docs/identity_merge_log_spec.md` é apenas referência de rastreabilidade técnica.
+	•	A regra canónica de merge/tombstone está integralmente definida neste SSOT; o artefacto legado `identity_merge_log_spec.md` fica apenas como histórico editorial.
 
 ---
 
@@ -1348,9 +1296,7 @@ Sem email verificado → claim bloqueado (fail‑closed).
 
 ---
 
-
 #### G03.002 (origem: CAUTH.02)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2232`.
 
 CAUTH.02) Public Auth API Contract Baseline (legacy auth spec migrated) — **FECHADO**
 
@@ -1407,7 +1353,7 @@ Regras:
 		•	Painel de observabilidade G03 por `errorCode` canónico é obrigatório.
 		•	Runbook único de incidente G03 (`auth outage`, `session drift`, `claim backlog`, `ws gate`) é obrigatório.
 		•	Release gate deve bloquear deploy se houver drift SSOT x runtime em `C12`, `CAUTH.02`, `DORG.08`.
-		•	No AuthModal, o comportamento de recuperação/CTAs acima é normativo; detalhe visual de UI (layout/estilo/cópia secundária) permanece não-normativo e pode evoluir em `docs/planning_registry_v1.md`.
+			•	No AuthModal, os comportamentos de recuperação/CTAs definidos acima são obrigatórios.
 
 ---
 
@@ -1429,9 +1375,7 @@ Definir baseline contratual dos endpoints públicos de autenticação, com anti-
 #### Failure Mode
 Em dúvida de autorização/origem/sessão: fail-closed, sem side effects irreversíveis.
 
-
 #### G03.005 (origem: DORG.08)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2320`.
 
 DORG.08) Username Registry — normalização e anti-spoof (FECHADO)
 	•	Normalização canónica obrigatória:
@@ -1445,9 +1389,7 @@ DORG.08) Username Registry — normalização e anti-spoof (FECHADO)
 		–	no MVP: charset permitido + bloquear mistura de scripts.
 	•	Qualquer escrita de username deve passar por `UsernameRegistry` (sem bypass direto em tabelas de profile/org).
 
-
 #### G03.006 (origem: DORG.09)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2332`.
 
 DORG.09) Perfil Mobile — UI/UX baseline (EM_REVIEW_SEPARADA)
 	•	Estado normativo: revisão UX separada (Q57/Q58); este bloco não bloqueia os contratos arquiteturais fechados.
@@ -1467,9 +1409,7 @@ DORG.09) Perfil Mobile — UI/UX baseline (EM_REVIEW_SEPARADA)
 	•	`Hero`, `Sobre`, `Galeria`, `FAQ`, `Contacto`, `PADEL oficial` e `Treinadores` não são blocos públicos renderizáveis.
 	•	`Loja` é condicional no perfil público: só aparece quando `status=ACTIVE`, `showOnProfile=true`, `checkoutEnabled=true`, `catalogLocked=false`, `paymentsReady=true` e existe `>=1` produto `PUBLIC`.
 
-
 #### G03.003 (origem: D01.02)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2380`.
 
 D01.02) Mensagens & Chat — decisões de produto (FECHADO)
 	•	Na UI web existe chat apenas em contexto de organização; não existem chats pessoais/web DMs fora do contexto da org.
@@ -1494,7 +1434,7 @@ D01.02) Mensagens & Chat — decisões de produto (FECHADO)
 			–	`ws.handshake.rejected.version_gate_count`;
 			–	`ws.socket.closed.revoked_token_count`.
 		•	Log estruturado obrigatório para handshake, decisão de authz, rejeição e revogação, com `correlationId`.
-		•	O contrato canónico de handshake/claims/namespacing está integralmente definido neste SSOT; `docs/ws_handshake_and_jwt_claims.md` é referência de rastreabilidade.
+			•	O contrato canónico de handshake/claims/namespacing está integralmente definido neste SSOT; o artefacto legado `ws_handshake_and_jwt_claims.md` fica apenas como histórico editorial.
 	•	Chat de reserva/serviço não é criado automaticamente; o canal nasce na primeira mensagem ou quando o utilizador abre explicitamente “falar com a organização”.
 	•	Chat interno da organização mantém modelo por canais.
 	•	Notificações: push por defeito com possibilidade de silenciar por conversa.
@@ -1508,9 +1448,7 @@ D01.02) Mensagens & Chat — decisões de produto (FECHADO)
 		–	mobile antiga -> `UPGRADE_REQUIRED`
 		–	mobile suportada -> `200`
 
-
 #### G03.004 (origem: D17)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3069`.
 
 D17) Integrações Apple — guardrails normativos (FECHADO)
 	•	Sign in with Apple é método suportado e obrigatório em iOS quando existirem logins de terceiros.
@@ -1521,8 +1459,6 @@ D17) Integrações Apple — guardrails normativos (FECHADO)
 	•	Offline signed QR permanece fora de v1.x e só pode entrar com payload assinado/versionado, rotação de chaves e revocation list sincronizada.
 	•	Address provider canónico continua em D11 (Apple Maps via Address Service).
 	•	Certificados/keys Apple vivem em AWS Secrets Manager com rotação e mínimo privilégio.
-	•	Detalhe de roadmap/fases Apple fica em `docs/planning_registry_v1.md` (P7.4).
-
 
 ## G04) Organizacoes, Multi-org, RBAC e Equipa
 
@@ -1533,7 +1469,6 @@ D17) Integrações Apple — guardrails normativos (FECHADO)
 ### Blocos normativos (conteúdo integral, ordem estável)
 
 #### G04.001 (origem: C13)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:1986`.
 
 C13) Org Context + RBAC (resolução e step‑up) — **FECHADO**
 
@@ -1560,9 +1495,7 @@ Ambiguidade de org → fail‑closed (403) + audit log.
 
 ---
 
-
 #### G04.006 (origem: DORG.01)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2285`.
 
 DORG.01) Membership de Organização — fonte única de verdade (FECHADO)
 	•	Fonte única canónica: `OrganizationGroupMember` + `OrganizationGroupMemberOrganizationOverride`.
@@ -1570,9 +1503,7 @@ DORG.01) Membership de Organização — fonte única de verdade (FECHADO)
 	•	Leituras/escritas de membership (listar, promover, remover, contar owners, resolver permissões) devem passar pelo modelo de grupo.
 	•	DB hygiene: tabela legacy `organization_members` removida por migração de cut-line.
 
-
 #### G04.007 (origem: DORG.03A)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2291`.
 
 DORG.03A) Ferramentas da Organização — fonte única + fail-closed (FECHADO)
 	•	Fonte única canónica de capacidade por ferramenta: `OrganizationModuleEntry.enabled=true`.
@@ -1601,9 +1532,7 @@ DORG.03A) Ferramentas da Organização — fonte única + fail-closed (FECHADO)
 			–	`MENSAGENS`: conversas internas abertas.
 		•	Ativacao de `RESERVAS` deve auto-provisionar disponibilidade base da organizacao (dias uteis 09:00-19:00) quando inexistente.
 
-
 #### G04.008 + G04.009 (origem: DORG.04A + DORG.05A)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2301`.
 
 DORG.04A + DORG.05A) Contexto de organização explícito e header canónico (FECHADO)
 	•	APIs org-scoped (`/api/org/:id/*`) aceitam `organizationId` apenas por path.
@@ -1611,18 +1540,14 @@ DORG.04A + DORG.05A) Contexto de organização explícito e header canónico (FE
 	•	Cookie não é fonte de verdade para mutações API (apenas fallback UI quando explicitamente permitido).
 	•	Header legado `x-org-id` está descontinuado; único header válido é `x-orya-org-id`.
 
-
 #### G04.010 (origem: DORG.06A)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2309`.
 
 DORG.06A) Notificações Stripe Status — dedupe por organização + estado (FECHADO)
 	•	Notificações `STRIPE_STATUS` usam dedupe key com fingerprint de estado:
 		–	`accountId`, `charges_enabled`, `payouts_enabled`, `requirements_due`.
 	•	Dedupe é por utilizador + organização + fingerprint; retries não podem gerar spam.
 
-
 #### G04.011 (origem: DORG.07A)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2314`.
 
 DORG.07A) Webhook Stripe Connect — fail-closed por mapeamento org (FECHADO)
 	•	`account.updated` só atualiza organização se o mapeamento for inequívoco.
@@ -1630,18 +1555,14 @@ DORG.07A) Webhook Stripe Connect — fail-closed por mapeamento org (FECHADO)
 	•	Atualização parcial/silenciosa é proibida; `update_count != 1` é erro operacional.
 	•	Webhook externo nunca é tratado como verdade sem reconciliação com estado interno.
 
-
 #### G04.002 (origem: D05)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2717`.
 
 D05) RBAC mínimo viável + Role Packs
 
 Introduzir já: CLUB_MANAGER, TOURNAMENT_DIRECTOR, FRONT_DESK, COACH, REFEREE
 Com mapa fixo para roles/scopes (Secção 11).
 
-
 #### G04.003 (origem: D05.01)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2722`.
 
 D05.01) Resolução de organização é determinística
 	•	Em B2B, organizationId vem da rota (/org/:orgId/...) como fonte primária.
@@ -1651,9 +1572,7 @@ D05.01) Resolução de organização é determinística
 	•	Alias legado web removido (hard-cut): `/organizacao/*` → `404 Not Found`.
 	•	Namespace legado API: `/api/organizacao/*` → `404 Not Found`.
 
-
 #### G04.004 (origem: D05.02)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2730`.
 
 D05.02) Step-up obrigatório em ações irreversíveis (FECHADO v1)
 	•	Exige reautenticação/2FA recente + `reasonCode` obrigatório para:
@@ -1663,9 +1582,7 @@ D05.02) Step-up obrigatório em ações irreversíveis (FECHADO v1)
 		–	exportação com PII.
 	•	Todas as ações acima geram `AuditLog` com before/after (payload minimizado RGPD).
 
-
 #### G04.005 (origem: D14)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3053`.
 
 D14) Multi-Organizações (empresa mãe → filiais)
 		•	OrganizationGroup (mãe) agrega Organizations (filiais)
@@ -1673,7 +1590,6 @@ D14) Multi-Organizações (empresa mãe → filiais)
 		•	A mãe atua como control plane administrativo apenas para governança de membership (entrada/saída de organizações do group).
 		•	Não existe autoridade operacional da mãe sobre agenda/reservas das filiais; sem hard blocks globais pela mãe.
 		•	Papéis da mãe não são auto-propagados para filiais; operação em filial exige papel local nessa organização.
-
 
 ## G05) Financas, Fees, Pricing, Payouts e Refunds
 
@@ -1684,7 +1600,6 @@ D14) Multi-Organizações (empresa mãe → filiais)
 ### Blocos normativos (conteúdo integral, ordem estável)
 
 #### G05.001 (origem: C02)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:880`.
 
 C02) Finanças ↔ Todos (checkout/refunds) — gateway único
 
@@ -1708,9 +1623,7 @@ Compatibilidade:
 	•	No domínio canónico, o shape é `orgId` + `customerIdentityId`.
 	•	Aliases legados em payload externo são proibidos (hard-cut).
 
-
 #### G05.002 (origem: C02.01)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:902`.
 
 C02.01) Eventos ↔ Finanças (convites) — resolução determinística
 • Objetivo: evitar UI/backend drift em convites e tornar o checkout por convite 100% contratual.
@@ -1718,9 +1631,7 @@ C02.01) Eventos ↔ Finanças (convites) — resolução determinística
 • Saída: { allowCheckout, constraints: { guestCheckoutAllowed, inviteIdentityMatch, ticketTypeScope? }, resolvedIdentity }
 • Regra: Eventos define a policy e Finanças valida/impõe as constraints no createCheckout.
 
-
 #### G05.003 (origem: C02.02)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:908`.
 
 C02.02) Checkout API Hard-Cut (sem adapters legacy) — **FECHADO**
 - Endpoints canónicos:
@@ -1846,7 +1757,6 @@ On uncertainty or partial failure:
 Entitlements são emitidos após `Payment=SUCCEEDED` e persistência do ledger base do pagamento; não dependem de `processorFeesStatus=FINAL`.
 
 #### G05.005 (origem: C10)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:1818`.
 
 C10) Stripe Webhooks ↔ Finanças (ingestão e reconciliação) — **FECHADO**
 Regras:
@@ -1929,9 +1839,7 @@ Org não resolvida → 200 (ACK) + DLQ + alerta; nenhum side‑effect.
 
 ---
 
-
 #### G05.006 (origem: C14)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2010`.
 
 C14) Payout Release + Risk Holds (ops) — **FECHADO**
 
@@ -1960,9 +1868,7 @@ Regras:
 
 ---
 
-
 #### G05.007 (origem: C15)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2037`.
 
 C15) Money & Rounding (pricing determinístico) — **FECHADO**
 
@@ -1991,9 +1897,7 @@ Regras:
 
 ---
 
-
 #### G05.004 (origem: C02.X01)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2271`.
 
 ### C02.X01 Addon — Stripe Onboarding (Standard)
 C02.X01) Stripe Onboarding (Standard) — **FECHADO**
@@ -2009,9 +1913,7 @@ C02.X01) Stripe Onboarding (Standard) — **FECHADO**
 
 4) Decisions Locked (não avançar sem isto)
 
-
 #### G05.008 (origem: D04)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2500`.
 
 D04) Finanças determinística (Stripe Connect + Fees ORYA) — decisão única
 
@@ -2028,9 +1930,7 @@ Princípios
 - Idempotência obrigatória em todas as operações: `idempotencyKey` por createCheckout/refund/reconcile.
 - “Pago” só existe quando `Payment.status == SUCCEEDED`.
 
-
 #### G05.009 (origem: D04.00)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2512`.
 
 D04.00) Stripe Connect — Account Type (FECHADO)
 - Para `orgType=EXTERNAL`, ORYA usa **Stripe Connect (Standard nesta fase)** como tipo de conta por defeito.
@@ -2039,9 +1939,7 @@ D04.00) Stripe Connect — Account Type (FECHADO)
 - A ORYA não cria nem gere contas Custom nesta fase.
 - Qualquer excepção (Express/Custom) só por decisão de produto + contrato (fora v1.x).
 
-
 #### G05.010 (origem: D04.00.01)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2518`.
 
 D04.00.01) Stripe Funds Flow (FECHADO)
 Objetivo: definir de forma única como o dinheiro flui e onde a ORYA consegue (ou não) aplicar “risk holds”.
@@ -2064,9 +1962,7 @@ Implicações (normativas):
 
 Regra: nenhum módulo assume “payout control” fora do que este flow permite.
 
-
 #### G05.011 (origem: D04.01)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2535`.
 
 D04.01 Política de Fee (Admin) (FECHADO)
 - Config por organização (default) + overrides por `sourceType` (e opcionalmente por `sourceId`).
@@ -2074,9 +1970,7 @@ D04.01 Política de Fee (Admin) (FECHADO)
 - `ABSORBED` é fora de scope v1 e exige decisão normativa futura para activação.
 - Qualquer alteração gera nova versão (`feePolicyVersion`), nunca edita retroativamente.
 
-
 #### G05.012 (origem: D04.02)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2541`.
 
 D04.02 PricingSnapshot (obrigatório) (FECHADO)
 - `pricingSnapshot` é gravado no momento do checkout e nunca muda.
@@ -2092,9 +1986,7 @@ D04.02 PricingSnapshot (obrigatório) (FECHADO)
 - **Proibição de estimativas:** campos do tipo `*Estimate*` são legados e **não** podem ser usados como verdade nem para decisões.  
   Só `processorFeesActual` (quando FINAL) e o Ledger são canónicos.
 
-
 #### G05.013 (origem: D04.03)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2555`.
 
 D04.03 Fee determinística + versionamento (obrigatório) (FECHADO)
 - Fee calculada em Finanças durante `createCheckout` e congelada no `Payment`.
@@ -2129,9 +2021,7 @@ D04.03 Fee determinística + versionamento (obrigatório) (FECHADO)
   - Refund/chargeback geram entries adicionais no mesmo `paymentId` (append-only); o `netToOrgFinal = SUM(entries.amountSigned)` continua verdadeiro após refund/chargeback.
 - Alterações no Admin não afectam pagamentos antigos.
 
-
 #### G05.014 (origem: D04.04)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2588`.
 
 D04.04 Ledger SSOT (imutável) + reconciliação (FECHADO)
 - `LedgerEntry` é append‑only (sem update/delete).
@@ -2150,9 +2040,7 @@ D04.04 Ledger SSOT (imutável) + reconciliação (FECHADO)
   - Append-only sempre: nunca editar entries antigas.
   - divergências geram `LedgerReconciliationIssue` (ver 12.4.x)
 
-
 #### G05.015 (origem: D04.05)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2605`.
 
 D04.05 SaleSummary (se existir) — read model derivado
 - Pode existir para performance/UX, mas:
@@ -2164,9 +2052,7 @@ D04.05 SaleSummary (se existir) — read model derivado
   - `SaleLine`: linhas por ticketType (`ticketTypeId`), `quantity`, `unitPrice`, `gross/net/platformFee` + snapshots de promo.
 - Owner: apenas o consumer de finanças (domain/finance read‑model consumer) escreve; resto é read‑only.
 
-
 #### G05.016 (origem: D04.06)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2615`.
 
 D04.06 FeeMode e pricing têm um resolvedor único (FECHADO)
 - `computePricing()` (Finanças) decide de forma determinística e versionada:
@@ -2176,9 +2062,7 @@ D04.06 FeeMode e pricing têm um resolvedor único (FECHADO)
   - override por `sourceId` (opcional)
 - Regra: nenhum módulo força feeMode “por fora”. Se Eventos quiserem “INCLUDED sempre”, isso é configurado como override por `sourceType=TICKET_ORDER` e fica escrito em policy versionada.
 
-
 #### G05.017 (origem: D04.07)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2623`.
 
 D04.07 Regras de FREE_CHECKOUT (FECHADO)
 - Um checkout é “free” se:
@@ -2188,9 +2072,7 @@ D04.07 Regras de FREE_CHECKOUT (FECHADO)
 - Bilhetes 0€ só existem por decisão explícita:
   - `Event.allowZeroPriceTickets` (default false) **ou** policy por TicketType (recomendado).
 
-
 #### G05.018 (origem: D04.07.01)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2631`.
 
 D04.07.01 Guardrails de FREE_CHECKOUT (FECHADO)
 - Anti‑abuso é **normativo** e vive em Finanças (não em Eventos):
@@ -2204,9 +2086,7 @@ D04.07.01 Guardrails de FREE_CHECKOUT (FECHADO)
   - FREE_CHECKOUT só é permitido se cumprir simultaneamente A1, A3 e D04.07.01.
   - Em conflito de limites, aplica-se sempre o limite mais restritivo.
 
-
 #### G05.019 (origem: D04.08)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2643`.
 
 D04.08 Deprecação de `Event.isFree` (anti‑desync) (FECHADO)
 Regra:
@@ -2222,9 +2102,7 @@ Implementação:
 - Se o campo ainda existir por compatibilidade, marcá-lo como deprecated e preenchê-lo apenas como read model.
 - Assert em Finanças: se `totalAmount > 0` então `scenario != FREE_CHECKOUT`.
 
-
 #### G05.020 (origem: D04.09)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2657`.
 
 D04.09 Refunds, cancelamentos e chargebacks (FECHADO)
 Cancelamento de evento:
@@ -2256,9 +2134,7 @@ Chargeback / dispute:
 - `dispute.won` → volta a `ACTIVE` (se não houver refund/chargeback aplicado).
 - `dispute.lost` → `CHARGEBACK_LOST` (estado final canónico).
 
-
 #### G05.021 (origem: D04.10)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2687`.
 
 D04.10) Revenda — state machine e atomicidade (FECHADO)
 - Estado canónico:
@@ -2290,9 +2166,7 @@ D04.10) Revenda — state machine e atomicidade (FECHADO)
 
 ⸻
 
-
 #### G05.022 (origem: D09)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2824`.
 
 D09) Merchant of Record + fiscalidade (decisão “top”)
 	•	MoR por defeito é a Organização (Connected Account)
@@ -2300,9 +2174,7 @@ D09) Merchant of Record + fiscalidade (decisão “top”)
 	•	ORYA cobra fee de plataforma e emite fatura B2B da fee à Organização (ou documento equivalente)
 	•	Excepção futura (enterprise): ORYA como MoR só por contrato/config explícita (fora v1.x)
 
-
 #### G05.023 (origem: D09.01)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2830`.
 
 D09.01) Faturação “não obrigatória” (posição v3) — sem risco para a ORYA
 
@@ -2318,7 +2190,7 @@ Regra:
 Config “Emissão de faturação” (OrganizationSettings):
 	•	Software externo (recomendado) — campo para “nome do software” + notas
 	•	Manual / fora da ORYA — checklist de responsabilidade + confirmação
-	•	Integrações opcionais PT são fora de escopo atual e só entram por decisão explícita no planning.
+	•	Integrações opcionais PT são fora de escopo atual e só entram por decisão explícita no SSOT.
 
 Objetivo:
 	•	ser tooling de gestão, não “motor de incumprimento”
@@ -2347,7 +2219,6 @@ Migração:
 Guardrail:
 	•	Architecture test falha se algum módulo importar/ler os campos legacy.
 
-
 ## G06) Eventos, Bilhetes, Acesso e Check-in
 
 ### Escopo estrutural
@@ -2357,7 +2228,6 @@ Guardrail:
 ### Blocos normativos (conteúdo integral, ordem estável)
 
 #### G06.001 (origem: C03)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:1030`.
 
 C03) Check-in ↔ Eventos/Reservas/Padel — via Entitlement unificado
 
@@ -2476,7 +2346,6 @@ On uncertainty or partial failure:
 Consumo é metadata (consumedAt), nunca estado.
 
 #### G06.002 (origem: D01)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2353`.
 
 D01) Evento base obrigatório para torneios
 
@@ -2484,9 +2353,7 @@ Todo torneio de Padel tem eventId obrigatório.
 	•	Eventos: tickets, SEO, página pública base, sessões, entitlements
 	•	Padel Torneios: competição, matches, bracket/standings, live ops
 
-
 #### G06.003 (origem: D01.01)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2359`.
 
 D01.01) Schedule de Evento — invariantes de tempo (FECHADO)
 	•	`endsAt` é **obrigatório** em toda a stack (criação, edição, ingestão, seed).  
@@ -2509,26 +2376,20 @@ D01.01) Schedule de Evento — invariantes de tempo (FECHADO)
 	•	Wallet: separação “Ativos/Histórico” **baseada em `endsAt`** (ou janela de check‑in).
 	•	Higiene legacy: migração one-shot corrige `endsAt` inválido e aplica constraint DB `endsAt > startsAt`.
 
-
 #### G06.004 (origem: D07)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2742`.
 
 D07) sourceType canónico (Finanças/ledger/check-in)
 
 Todos os checkouts e entitlements usam sourceType canónico e unificado (Secção 7).
 
-
 #### G06.005 (origem: D08)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2746`.
 
 D08) EventAccessPolicy (acesso + convites + identidade + claim entitlements) — definição final
 
 > **FECHADO (SSOT):** `EventAccessPolicy` é a única fonte de verdade para:
 > 1) modo de acesso (public/invite/unlisted), 2) checkout como convidado, 3) convites por token, 4) compatibilidade de identidade, e 5) check‑in (ver Secção 8).
 
-
 #### G06.006 (origem: D08.01)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2751`.
 
 D08.01) EventAccessPolicy é a única verdade de acesso (FECHADO)
 - Substitui qualquer combo de flags legacy (`public_access_mode`, `invite_only`, etc.).
@@ -2545,9 +2406,7 @@ D08.01) EventAccessPolicy é a única verdade de acesso (FECHADO)
   Para pessoas sem conta, usar convite por email.
 - **Sem fallback** entre campos. Migração/backfill obrigatório no write‑path (não na leitura).
 
-
 #### G06.007 (origem: D08.02)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2766`.
 
 D08.02) Convites por token (guest checkout) — versão final (FECHADO)
 
@@ -2588,13 +2447,9 @@ Regras fechadas
 - Segurança: token único + hash, sem PII no link; rate limit em rotas de QR.
 - Se falhar emissão do token, usar fallback seguro (`/`).
 
-UX operacional detalhada de convite/checkout guest é **não‑normativa** e vive em `docs/planning_registry_v1.md` (P7.1).
-
 ⸻
 
-
 #### G06.008 (origem: D08.03)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2809`.
 
 D08.03 Imutabilidade temporal (depois de haver vendas) (FECHADO)
 - `EventAccessPolicy` é versionada (`policyVersion`) e cada alteração cria **nova versão** (append‑only; sem editar retroativamente).
@@ -2611,7 +2466,6 @@ D08.03 Imutabilidade temporal (depois de haver vendas) (FECHADO)
   - `Entitlement.policyVersionApplied` passa a **obrigatório** para `sourceType=TICKET_ORDER|PADEL_REGISTRATION|BOOKING` quando associado a um evento.
   - Check-in valida por defeito contra `policyVersionApplied` armazenado no Entitlement. A policy corrente só pode relaxar regras ou adicionar métodos; nunca pode apertar constraints após emissão.
 
-
 ## G07) Reservas, Agenda e Calendario Operacional
 
 ### Escopo estrutural
@@ -2621,7 +2475,7 @@ D08.03 Imutabilidade temporal (depois de haver vendas) (FECHADO)
 ### Blocos normativos (conteúdo integral, ordem estável)
 
 #### G07.001 (origem: C01)
-- Fonte: consolidação 2026-02-15 (`docs/calendario_motor_unico.md`, `docs/reservas.md`, `docs/arbitration_service_spec.md`).
+- Fonte: consolidação 2026-02-15 (`calendario_motor_unico.md`, `reservas.md`, `arbitration_service_spec.md`).
 
 C01) Reservas ↔ Padel (agenda e slots)
 
@@ -2756,7 +2610,6 @@ On uncertainty or partial failure:
 - Disputas cross-org deste contrato seguem arbitragem canónica por `resourceKey` (ver `G07.007`).
 
 #### G07.002 (origem: C07)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:1482`.
 
 C07) Address Service ↔ Todos (moradas e localizações)
 	•	criação/normalização de moradas passa pelo Address Service
@@ -2870,7 +2723,6 @@ On uncertainty or partial failure:
 Deduplicação por canonical+geo evita duplicados.
 
 #### G07.003 (origem: D03)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2413`.
 
 D03) Agenda Engine e conflitos (FECHADO)
 
@@ -2918,17 +2770,13 @@ Se o override mexer numa reserva de utilizador, existem duas vias válidas:
 - **pedido + aceitação** do cliente; ou
 - **cancelamento com reembolso total imediato** por decisão da organização.
 
-
 #### G07.004 (origem: D03.01)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2455`.
 
 D03.01 MatchSlot (Padel)
 MatchSlot bloqueia novas marcações no mesmo horário/campo.  
 Se já existir reserva/aula, MatchSlot **não** sobrepõe automaticamente; requer override explícito.
 
-
 #### G07.005 (origem: D03.02)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2459`.
 
 D03.02) Operação de Calendário do Clube/Reservas (FECHADO)
 			•	Calendário único de clube:
@@ -2973,9 +2821,7 @@ D03.02) Operação de Calendário do Clube/Reservas (FECHADO)
 			–	contrato público canónico de disponibilidade de serviço: `GET /api/servicos/:id/calendario`.
 			–	rotas legadas de disponibilidade (`GET /api/servicos/:id/slots` e `GET /api/servicos/:id/disponibilidade`) devolvem `404 Not Found`.
 
-
 #### G07.006 (origem: D11)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2933`.
 
 D11) Moradas — Address Service (SSOT) + Apple Maps como provider único
 
@@ -3042,10 +2888,8 @@ Proteções (obrigatório)
   - é proibido promover IP a coordenada/morada canónica.
 - Em conflito entre sinais Apple/IP, prevalece Apple.
 
-Detalhe de implementação/execução do Address Service é **não‑normativo** e vive em `docs/planning_registry_v1.md` (P7.3).
-
 #### G07.007 (origem: ARB.01)
-- Fonte: `docs/arbitration_service_spec.md` (consolidação normativa 2026-02-15).
+- Fonte: `arbitration_service_spec.md` (consolidação normativa 2026-02-15).
 
 ARB.01) Arbitration Service Cross-Org (FECHADO)
 
@@ -3082,7 +2926,6 @@ Regras canónicas:
 
 ⸻
 
-
 ## G08) Padel e Torneios
 
 ### Escopo estrutural
@@ -3092,7 +2935,6 @@ Regras canónicas:
 ### Blocos normativos (conteúdo integral, ordem estável)
 
 #### G08.001 (origem: C06)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:1366`.
 
 C06) Inscrições Padel vs Bilhetes (coexistência simples e eficaz)
 	•	inscrição Padel é competitiva (Padel)
@@ -3212,7 +3054,7 @@ On uncertainty or partial failure:
 Inscrição e bilhete permanecem entidades distintas; Entitlement é o acesso.
 
 #### G08.002 (origem: S01..S09)
-- Fonte: `docs/SPLIT_V2.md` + `docs/split_v2_ssot.md` (consolidação normativa 2026-02-15).
+- Fonte: `SPLIT_V2.md` + `split_v2_ssot.md` (consolidação normativa 2026-02-15).
 
 SPLIT_GARANTIDO (FECHADO)
 
@@ -3265,17 +3107,13 @@ Nota de precedência:
 	•	O texto histórico D12 (janela 48/24 para split Padel) fica revogado como norma ativa.
 	•	A norma ativa de split neste SSOT é o contrato `S01..S09` descrito neste bloco.
 
-
 #### G08.003 (origem: D12.05)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3038`.
 
 D12.05) Ops — Prisma env auto-load (FECHADO)
 	•	Prisma CLI deve ler variáveis automaticamente do `.env` (root), sem `set -a`, `source` ou inline envs.
 	•	Nota operacional: DATABASE_URL via pooler (6543) + DIRECT_URL direto (5432) e ambos com `sslmode=require`.
 
-
 #### G08.004 (origem: D18)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3079`.
 
 D18) Padel Tournament Core Unification (FECHADO)
 
@@ -3283,17 +3121,13 @@ Escopo v1.x (fechado):
 	•	Neste momento, a plataforma opera torneios apenas de Padel.
 	•	As regras abaixo são normativas e de aplicação obrigatória.
 
-
 #### G08.005 (origem: D18.01)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3085`.
 
 D18.01) Verdade única de jogo Padel (FECHADO)
 	•	Para eventos Padel, a verdade operacional de jogo é `EventMatchSlot`.
 	•	`TournamentMatch` não é write-model de operação de jogo Padel em v1.x.
 
-
 #### G08.006 (origem: D18.02)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3089`.
 
 D18.02) Agenda sem conflitos entre módulos (FECHADO)
 	•	Reservas, aulas, jogos e bloqueios partilham o mesmo motor de conflito.
@@ -3302,26 +3136,20 @@ D18.02) Agenda sem conflitos entre módulos (FECHADO)
 	•	Se qualquer claim falhar (conflito/validação), a operação deve fazer rollback total (sem estado parcial).
 	•	Write-path concorrente para o mesmo recurso/janela deve aplicar lock técnico obrigatório.
 
-
 #### G08.007 (origem: D18.03)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3096`.
 
 D18.03) Agendamento por `tournamentMatch` em Padel (FECHADO)
 	•	Em `templateType=PADEL`, alterações de horário/campo por write direto em `TournamentMatch` são proibidas.
 	•	Todo o agendamento de jogo Padel deve passar pelo fluxo canónico de agenda.
 	•	Implementação fora desta regra deve falhar fechado.
 
-
 #### G08.008 (origem: D18.04)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3101`.
 
 D18.04) C01 com enforcement obrigatório (FECHADO)
 	•	A regra "Padel nunca escreve no calendário diretamente" é obrigatória no write-path.
 	•	Se existir caminho paralelo sem validação de conflito, é bug arquitetural.
 
-
 #### G08.009 (origem: D18.05)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3105`.
 
 D18.05) sourceType e AgendaSourceType unificados (FECHADO)
 			•	Separação Finance/Agenda mantém-se obrigatória.
@@ -3331,26 +3159,20 @@ D18.05) sourceType e AgendaSourceType unificados (FECHADO)
 			•	`MATCH_SLOT` é `reasonCode` de bloqueio/contexto operacional e não um `AgendaSourceType` autónomo.
 			•	`EVENT` e `TOURNAMENT` podem existir para timeline/visibilidade, sem substituir ocupação real de recurso.
 
-
 #### G08.010 (origem: D18.06)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3112`.
 
 D18.06) Verdade transacional de inscrição Padel (FECHADO)
 	•	`PadelRegistration` é a única verdade transacional de inscrição Padel.
 	•	Estados canónicos de inscrição devem ser resolvidos a partir desta entidade.
 
-
 #### G08.011 (origem: D18.07)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3116`.
 
 D18.07) `TournamentEntry` em Padel é derivado (FECHADO)
 	•	Para Padel, `TournamentEntry` é read-model/projeção.
 	•	`TournamentEntry` não pode ser fonte primária de estado transacional.
 	•	Em superfícies Padel (ex.: live/acesso), elegibilidade de participante deve usar `PadelRegistration` + entitlement, não `TournamentEntry`.
 
-
 #### G08.012 (origem: D18.08)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3121`.
 
 D18.08) Perfil de jogador canónico (FECHADO)
 	•	`PadelPlayerProfile` é a fonte canónica única de perfil operacional para Padel (jogo, elegibilidade, pairing, agenda e live).
@@ -3360,9 +3182,7 @@ D18.08) Perfil de jogador canónico (FECHADO)
 	•	Escrita em fluxos Padel deve atualizar primeiro `PadelPlayerProfile`; sincronizações para CRM/outros módulos devem ser assíncronas e idempotentes.
 	•	Em conflito entre fontes, prevalece sempre `PadelPlayerProfile`.
 
-
 #### G08.013 (origem: D18.09)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3129`.
 
 D18.09) Papel operacional de staff unificado (FECHADO)
 	•	Autorização canónica (quem pode executar ação) é definida por RBAC organizacional (`OrganizationMemberRole` + `RolePack` + permissões de ferramenta/capability).
@@ -3376,18 +3196,14 @@ D18.09) Papel operacional de staff unificado (FECHADO)
 	•	Quando incidente/resolução é confirmado por `REFEREE`, a plataforma deve notificar automaticamente perfis `DIRETOR_PROVA` do torneio (trilho auditável).
 	•	Em rondas críticas KO (meias/final), confirmação operacional exige direção (`DIRETOR_PROVA` ou `Owner/Co-owner/Admin`).
 
-
 #### G08.014 (origem: D18.10)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3141`.
 
 D18.10) Interclub por equipas (FECHADO)
 	•	Quando `isInterclub=true`, geração e operação de jogos devem ser por equipas.
 	•	Motor baseado em pairing não é válido como motor principal em interclub.
 	•	Se o motor por equipas não estiver disponível, geração automática interclub deve ser bloqueada.
 
-
 #### G08.015 (origem: D18.11)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3146`.
 
 D18.11) Catálogo de formatos unificado (FECHADO)
 			•	Formatos de torneio devem seguir um catálogo canónico único, versionado.
@@ -3395,7 +3211,7 @@ D18.11) Catálogo de formatos unificado (FECHADO)
 			•	Listas locais duplicadas em rotas são proibidas; validação deve usar catálogo único de domínio.
 		•	Formato oficial canónico inclui: `TODOS_CONTRA_TODOS`, `GRUPOS_ELIMINATORIAS`, `QUADRO_ELIMINATORIO`, `QUADRO_AB`, `DUPLA_ELIMINACAO`, `CAMPEONATO_LIGA`, `NON_STOP`, `AMERICANO`, `MEXICANO`.
 		•	`QUADRO_AB` e `DUPLA_ELIMINACAO` são formatos avançados oficiais (não experimentais) no catálogo canónico.
-		•	`AMERICANO` e `MEXICANO` entram no catálogo canónico oficial e devem ser tratados como formatos de primeira classe no roadmap de produto.
+		•	`AMERICANO` e `MEXICANO` entram no catálogo canónico oficial e devem ser tratados como formatos de primeira classe.
 		•	Contrato operacional canónico `AMERICANO`: individual rotativo, ranking individual, com prioridade a combinações inéditas antes de repetição.
 		•	Contrato operacional canónico `MEXICANO`: individual com mecânica `sobe/desce` por ronda e recomposição automática de quartetos.
 		•	Em `AMERICANO`/`MEXICANO`, unidade de jogo oficial é por tempo (`default=20` min, configurável `15..22`) com fecho sincronizado de ronda.
@@ -3405,9 +3221,7 @@ D18.11) Catálogo de formatos unificado (FECHADO)
 			•	Quando torneio entra em `LOCKED`, formato e regras aplicadas ficam congelados até ao fim da operação.
 			•	Enquanto um formato oficial não estiver operacional numa superfície específica, o sistema deve falhar fechado com erro explícito (sem fallback silencioso para outro formato).
 
-
 #### G08.016 (origem: D18.12)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3162`.
 
 D18.12) Snapshot de regras por torneio/jogo (FECHADO)
 	•	Tie-break, pontuação e regras de resultado devem ter versão aplicada e auditável.
@@ -3419,9 +3233,7 @@ D18.12) Snapshot de regras por torneio/jogo (FECHADO)
 	•	Nos writes de resultado/disputa de match, o `score` deve transportar `ruleSnapshot` com `ruleSetId` e `ruleSetVersionId`.
 	•	Resolução de disputa exige `resolutionStatus` explícito (`CONFIRMED`, `CORRECTED`, `VOIDED`) e `confirmationSource`.
 
-
 #### G08.021 (origem: D18.17)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3172`.
 
 D18.17) Gate de direção operacional na publicação (FECHADO)
 	•	Um torneio Padel não pode transitar para `PUBLISHED` sem pelo menos 1 atribuição operacional `DIRETOR_PROVA` no torneio.
@@ -3430,9 +3242,7 @@ D18.17) Gate de direção operacional na publicação (FECHADO)
 	•	Override de parceria exige `reasonCode` obrigatório, trilho auditável e compensação determinística.
 	•	Sem slot alternativo de compensação, o caso deve entrar em `PENDING_COMPENSATION` com alerta operacional prioritário.
 
-
 #### G08.022 (origem: D18.18)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3179`.
 
 D18.18) Ranking global Padel com contrato matemático versionado (FECHADO)
 	•	O motor oficial de ranking é `Glicko-2` adaptado, com contrato matemático explícito e versionado.
@@ -3462,9 +3272,7 @@ D18.18) Ranking global Padel com contrato matemático versionado (FECHADO)
 		- constraint DB obrigatória em `(organization_id, user_id)` (tolerando `NULL` de `user_id` para perfis não vinculados);
 		- dedupe operacional prévio usa merge determinístico e preserva histórico competitivo.
 
-
 #### G08.017 (origem: D18.13)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3185`.
 
 D18.13) Live unificado (FECHADO)
 	•	Superfícies live (interna e pública) devem ler do mesmo modelo canónico de estado.
@@ -3547,25 +3355,19 @@ D18.13) Live unificado (FECHADO)
 		- `prod`: apenas endpoint admin protegido com step-up + auditoria;
 		- endpoint raw nunca pode ser consumido por UI pública/app.
 
-
 #### G08.018 (origem: D18.14)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3190`.
 
 D18.14) Pagamentos no gateway canónico (FECHADO)
 	•	Criação financeira deve convergir no domínio canónico de Finanças.
 	•	Pré-validações por módulo são permitidas; criação transacional financeira paralela não é norma.
 
-
 #### G08.019 (origem: D18.15)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3194`.
 
 D18.15) Check-in/Acesso mantém lock e versionamento (FECHADO)
 	•	Padrão de lock após venda/entitlement mantém-se obrigatório.
 	•	Qualquer evolução em agenda/torneios deve preservar guardrails equivalentes de imutabilidade temporal.
 
-
 #### G08.020 (origem: D18.16)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3198`.
 
 D18.16) Roadmap obrigatório em 3 ondas com gate técnico em dev (FECHADO)
 	•	Onda 1 — Higienização: remover bypasses e dupla verdade operacional.
@@ -3901,7 +3703,7 @@ Hard-cut de slugs legacy em `/org/:orgId/*`:
 
 10.1 Multi-Organizações & Group Governance (FECHADO v1)
 - O contrato normativo deste domínio está integralmente neste SSOT.
-- `docs/organizacoes_multiorg.md` é referência de rastreabilidade e histórico editorial.
+- `organizacoes_multiorg.md` é referência de rastreabilidade e histórico editorial.
 - Modelo canónico:
   - `Group` (mãe) é superfície de agregação read-only, com exceção de governança de membership.
   - `Group` tem owner explícito (`OrganizationGroup.ownerUserId`) e único.
@@ -4081,9 +3883,6 @@ OWNER, CO_OWNER, ADMIN, STAFF, PROMOTER
 	•	UI mostra claramente “estás na mãe” vs “estás na filial X”
 	•	auditoria separa por entidade e por âmbito
 
-11.5 Roadmap CHECKIN module
-	•	Conteúdo movido para `docs/planning_registry_v1.md` (bloco de roadmap/check-in, não-normativo).
-
 11.6 Auditoria organizacional
 - Auditoria de equipa deve apresentar sempre o autor real da ação quando `actorUserId` existir.
 - `Sistema` só é usado quando a ação não tem ator humano associado.
@@ -4152,7 +3951,7 @@ Outputs:
 	•	tabela de “drifts” + dashboard no Admin (14.1) com alerts e links.
 
 12.5 Activity Feed + Canal “Ops” (alertas automáticos)
-	•	O catálogo operacional de eventos do feed (playbooks/listas de monitorização) é **não‑normativo** e vive em `docs/planning_registry_v1.md` (P7.5).
+	•	O catálogo operacional de eventos do feed (playbooks/listas de monitorização) é **não‑normativo** e vive em `secção 104 deste SSOT` (P7.5).
 
 12.6 Guardrails de Arquitetura (obrigatório v1)
 	•	Architecture Tests
@@ -4194,7 +3993,7 @@ ADITAMENTO FECHADO (PROD_FUTURA): ranking mínimo e observabilidade para produç
   - keyword stuffing → downrank com `reasonCode=RANKING_SPAM_KEYWORDS`
   - org com `risk.flagged` → downrank com `reasonCode=RANKING_RISK_FLAGGED`
 
-Ranking Unificado v2 (personalização avançada) está fora do cut-line da abertura de produção e vive em `docs/planning_registry_v1.md` (planeamento não normativo).
+Ranking Unificado v2 (personalização avançada) está fora do escopo normativo da abertura de produção v1.
 
 ⸻
 
@@ -4248,7 +4047,6 @@ Classificação canónica:
 - `app/api/convites/[token]/checkout/route.ts`
 - `app/api/cobrancas/[token]/checkout/route.ts`
 - `app/api/servicos/[id]/checkout/route.ts`
-- `app/api/servicos/[id]/creditos/checkout/route.ts`
 - `app/api/org/[orgId]/reservas/[id]/checkout/route.ts`
 - `app/api/padel/pairings/[id]/checkout/route.ts`
 - `app/api/public/store/checkout/route.ts`
@@ -4290,7 +4088,6 @@ Dashboards without actionable thresholds are insufficient.
 
 ---
 
-
 ## G09) CRM, Notificacoes e Suporte
 
 ### Escopo estrutural
@@ -4299,7 +4096,6 @@ Dashboards without actionable thresholds are insufficient.
 ### Blocos normativos (conteúdo integral, ordem estável)
 
 #### G09.001 (origem: C04)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:1145`.
 
 C04) CRM ↔ Todos (timeline)
 
@@ -4412,7 +4208,6 @@ On uncertainty or partial failure:
 Ingestão é idempotente e tolera replays.
 
 #### G09.002 (origem: C05)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:1254`.
 
 C05) Notificações ↔ Todos
 
@@ -4528,7 +4323,6 @@ On uncertainty or partial failure:
 Envio real ocorre apenas via consumer idempotente.
 
 #### G09.003 (origem: C17)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2084`.
 
 C17) CRM Ingest + Dedupe (read‑model) — **FECHADO**
 
@@ -4549,14 +4343,11 @@ Regras:
 
 ---
 
-
 #### G09.004 (origem: D06)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2738`.
 
 D06) Notificações como serviço (com logs e opt-in)
 
 Templates, consentimento RGPD, logs de delivery, outbox e preferências.
-
 
 ## G10) Loja, Promocoes e Loyalty
 
@@ -4567,7 +4358,6 @@ Templates, consentimento RGPD, logs de delivery, outbox e preferências.
 ### Blocos normativos (conteúdo integral, ordem estável)
 
 #### G10.001 (origem: C08)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:1592`.
 
 C08) Loyalty ↔ CRM/Finanças/Promoções
 	•	pontos gerados por eventos (compra, presença, actividade)
@@ -4684,7 +4474,6 @@ On uncertainty or partial failure:
 Pontos não alteram ledger financeiro.
 
 #### G10.002 (origem: D09.03)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2876`.
 
 D09.03) Loja — bloco canónico FECHADO (3 pilares)
 - Pilar 1 — Disponibilidade resolvida (SSOT único):
@@ -4703,9 +4492,7 @@ D09.03) Loja — bloco canónico FECHADO (3 pilares)
   - `Store.shippingMode` global é legado/deprecado e não decide checkout;
   - digital goods ignoram shipping e usam acesso por entitlement + URL assinada expirada.
 
-
 #### G10.003 (origem: D13)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3042`.
 
 D13) Loyalty Points (pontos) — semi-normalizado + guardrails globais
 	•	sem wallet monetária nesta fase
@@ -4718,7 +4505,6 @@ D13) Loyalty Points (pontos) — semi-normalizado + guardrails globais
 		–	idempotencyKey: eventId (único por ledgerId+eventType)
 		–	guardrails globais: pontos/regra 1–5000; max/dia 20000; max/user 200000; custo reward 100–500000
 
-
 ## G11) Discovery, Search, Analytics e Ops Feed
 
 ### Escopo estrutural
@@ -4728,7 +4514,6 @@ D13) Loyalty Points (pontos) — semi-normalizado + guardrails globais
 ### Blocos normativos (conteúdo integral, ordem estável)
 
 #### G11.001 (origem: C09)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:1705`.
 
 C09) Activity Feed ↔ EventLog/Chat
 	•	consumer do EventLog transforma eventos seleccionados em:
@@ -4843,9 +4628,7 @@ On uncertainty or partial failure:
 #### Notes
 Consumer dedupe por eventId; replays não duplicam items.
 
-
 #### G11.002 (origem: C16)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2064`.
 
 C16) Search Index (read‑model derivado) — **FECHADO**
 
@@ -4867,24 +4650,19 @@ Regras:
 
 ---
 
-
 #### G11.003 (origem: D15)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3059`.
 
 D15) Macro + Micro Analytics (obrigatório)
 	•	dashboards financeiros e operacionais com drill-down por dimensões
 	•	sempre derivados do Ledger + dimensões (sem duplicar estado “financeiro” fora de Finanças)
 
-
 #### G11.004 (origem: D16)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3063`.
 
 D16) Ops Feed (Activity Feed) é first-class
 	•	eventos operacionais são publicados no EventBus e gravados no EventLog
 	•	um consumer gera Activity Feed + posts automáticos no canal “Ops” do chat interno
 
 ⸻
-
 
 ## G12) Infra, Jobs, Outbox, Observabilidade e Release Gates
 
@@ -4896,7 +4674,6 @@ D16) Ops Feed (Activity Feed) é first-class
 ### Blocos normativos (conteúdo integral, ordem estável)
 
 #### G12.001 (origem: C11)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:1899`.
 
 C11) EventLog + Outbox (schema canónico e versionamento) — **FECHADO**
 
@@ -4954,9 +4731,7 @@ EventLog é fonte para métricas e auditoria; payload com PII minimizado.
 
 ---
 
-
 #### G12.002 (origem: C18)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2103`.
 
 C18) Media/Uploads (SSOT de ficheiros) — **FECHADO**
 
@@ -4977,18 +4752,14 @@ Regras:
 
 ---
 
-
 #### G12.003 (origem: D10)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2892`.
 
 D10) Jobs/Queues + Outbox (motor enterprise sem overkill) — definição final
 
 > **FECHADO:** Tudo o que é assíncrono, re‑tentável, ou depende de webhooks externos passa por Jobs/Queues.  
 > A entrega de eventos internos é garantida por Outbox + idempotência (evita “eventos perdidos”).
 
-
 #### G12.004 (origem: D10.01)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2897`.
 
 D10.01 Jobs/Queues (obrigatório)
 - Sistema de jobs com:
@@ -5000,9 +4771,7 @@ D10.01 Jobs/Queues (obrigatório)
   - replays do EventLog, reminders (ex.: split payment T‑48/36/24), reconciliations
 - Estado efémero com TTL (holds, locks, rate‑limits) vive em Redis; DB guarda apenas estado final/auditável.
 
-
 #### G12.005 (origem: D10.02)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2907`.
 
 D10.02 Outbox (obrigatório)
 - Padrão:
@@ -5017,9 +4786,7 @@ D10.02 Outbox (obrigatório)
   - pelo menos uma vez (at‑least‑once) + consumidores idempotentes
   - sem “eventos perdidos” mesmo com crash entre write e publish
 
-
 #### G12.006 (origem: D10.03)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2920`.
 
 D10.03 EventBus na AWS — introdução faseada (sem overkill)
 Fase 1:
@@ -5034,9 +4801,7 @@ Fase 2/3 (fan‑out real / múltiplos serviços):
 
 ⸻
 
-
 #### G12.007 (origem: O01)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3801`.
 
 ### O01 — Alert Classification
 Alerts are classified as:
@@ -5045,9 +4810,7 @@ Alerts are classified as:
 
 ---
 
-
 #### G12.008 (origem: O02)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3808`.
 
 ### O02 — Core Domain SLIs & Thresholds
 
@@ -5079,9 +4842,7 @@ Alerts are classified as:
 
 ---
 
-
 #### G12.009 (origem: O03)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3838`.
 
 ### O03 — Logging & Correlation
 All logs MUST include:
@@ -5093,9 +4854,7 @@ Logs without correlation context are non-compliant.
 
 ---
 
-
 #### G12.010 (origem: O04)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3848`.
 
 ### O04 — Incident Readiness
 For each PAGER alert, the following MUST exist:
@@ -5125,7 +4884,7 @@ A) IN (obrigatório para v1.0)
 
 B) OUT (fora de escopo nesta fase DEV; não implementado/não deployado)
 	•	QR offline assinado (S2) e validação offline
-	•	Ranking Unificado v2 (personalização avançada; detalhes em `docs/planning_registry_v1.md`)
+	•	Ranking Unificado v2 (personalização avançada)
 	•	Automações CRM complexas e campanhas
 	•	Funcionalidades sociais não essenciais (comunidade)
 	•	Marketplace avançado e integrações enterprise
@@ -5248,9 +5007,7 @@ Como o DB está em Supabase na Fase 1, a estratégia de backup para produção �
 
 Apêndice A — Policy Defaults v1 (FECHADO)
 
-
 #### G12.011 (origem: A1)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3996`.
 
 A1) Rate Limits (segurança/anti‑abuso) — FECHADO
 - Login:
@@ -5268,9 +5025,7 @@ A1) Rate Limits (segurança/anti‑abuso) — FECHADO
   - 120 scans/min por deviceId (burst), média 60/min
   - 10 “denied” consecutivos → step‑up (re‑auth do staff) + throttle 5 min
 
-
 #### G12.012 (origem: A2)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:4012`.
 
 A2) TTLs e janelas — FECHADO
 - InviteToken TTL default: 7 dias (salvo override em EventAccessPolicy)
@@ -5279,9 +5034,7 @@ A2) TTLs e janelas — FECHADO
 - Username cooldown (rename): 15 dias (já definido; reafirmar FECHADO)
 - Retenção de “offline_pending_sync” (check‑in): 7 dias
 
-
 #### G12.013 (origem: A3)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:4019`.
 
 A3) FREE_CHECKOUT guardrails — FECHADO
 - Default max por Identity e por (eventId + ticketTypeId): 1
@@ -5291,9 +5044,7 @@ A3) FREE_CHECKOUT guardrails — FECHADO
   - padrão suspeito (múltiplos identities no mesmo device/IP)
 - Regra de precedência: FREE_CHECKOUT deve cumprir cumulativamente A1 + A3 + D04.07.01; em conflito, vence o limite mais restritivo.
 
-
 #### G12.014 (origem: A4)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:4027`.
 
 A4) SLIs/SLOs e Alert Thresholds — FECHADO
 - API (p95):
@@ -5308,9 +5059,7 @@ A4) SLIs/SLOs e Alert Thresholds — FECHADO
 - Webhooks Stripe:
   - eventos não reconciliados > 15 min → alerta
 
-
 #### G12.015 (origem: A5)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:4040`.
 
 A5) SLA Suporte e Trust & Safety — FECHADO
 - Pagamentos/Check‑in (P0): triagem ≤ 1h, mitigação ≤ 4h
@@ -5319,9 +5068,7 @@ A5) SLA Suporte e Trust & Safety — FECHADO
 - Comunicação incidentes:
   - P0/P1: status page + aviso às orgs afectadas em ≤ 2h
 
-
 #### G12.016 (origem: A6)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:4047`.
 
 A6) Retenção Operacional por classe (hot/warm) — FECHADO
 - Esta secção define apenas janelas operacionais de acesso/search/custo.
@@ -5332,9 +5079,7 @@ A6) Retenção Operacional por classe (hot/warm) — FECHADO
 - Read-models e caches financeiros: até 24 meses (arquivo legal segue 19.4.1)
 - PII não essencial em camadas operacionais: apagar/anonimizar após 24 meses de inactividade (salvo obrigação legal)
 
-
 #### G12.017 (origem: A7)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:4056`.
 
 A7) Risk Flags (resumo informativo, sem thresholds) — FECHADO
 - Esta secção é apenas resumo operacional de sinais.
@@ -5344,9 +5089,7 @@ A7) Risk Flags (resumo informativo, sem thresholds) — FECHADO
   - anomalia de vendas
   - abuso de check‑in/QR
 
-
 #### G12.018 (origem: A8)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:4064`.
 
 A8) Environment Baseline (prod + CI) — FECHADO
 Fonte normativa consolidada de envs críticos (origem: especificação legacy migrada):
@@ -5376,11 +5119,8 @@ Guardrails:
 - `*_PRIVATE_KEY_BASE64` MUST be single-line base64.
 - `SINGLE_DB_MODE=1` força runtime de DB para `APP_ENV=prod`.
 - Paid checkout sem publishable key deve falhar explicitamente com `CONFIG_STRIPE_KEY_MISSING`.
-- Snapshot operacional PROD/LOCAL e runbooks de custo ficam em `docs/planning_registry_v1.md` (não-normativo).
-
 
 #### G12.019 (origem: A9)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:4094`.
 
 A9) Cutover Guardrails (Store Big-Bang compatibility) — FECHADO
 Guardrails normativos mínimos para cutovers destrutivos de domínio:
@@ -5401,9 +5141,7 @@ Guardrails normativos mínimos para cutovers destrutivos de domínio:
   - pre-prod/prod: restore integral + redeploy da versão anterior + verificação de consistência pós-restore.
   - dev: rollback por branch/revert, sem dependência de backup operacional dedicado.
 
-
 #### G12.020 (origem: A10)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:4111`.
 
 A10) Roadmap Infra Supabase -> AWS (decisão de direção) — FECHADO
 - Fase 1:
@@ -5464,7 +5202,6 @@ expected execution order.
 ---
 
 ---
-
 
 ## 99) Índice ID de Origem -> ID Canónico
 | ID de Origem | ID Canónico | Grupo |
@@ -5637,19 +5374,7 @@ node scripts/v9_api_ui_baseline_gate.mjs
   - qualquer nova contradição normativa reabre o estado para `EM_VERIFICACAO_EXECUCAO`;
   - enquanto o estado se mantiver em `SEM_GAPS_NORMATIVOS`, o SSOT permanece como única autoridade ativa.
 
-## 103) Matriz Executável de Fecho (Documentos Decommissioned)
-| Documento de origem | Regra propagada no SSOT | Código canónico (backend/frontend) | Teste/Gate executado | Evidência |
-| --- | --- | --- | --- | --- |
-| `calendario_motor_unico.md` | Motor temporal canónico 5m | `lib/reservas/availability.ts`, `app/api/servicos/[id]/calendario/route.ts`, `app/api/servicos/[id]/reservar/route.ts`, `app/api/org/[orgId]/reservas/[id]/reschedule/route.ts` | `npm test`, `npm run gate:ui-ux` | Validação/cálculo de slots e write-paths em múltiplos de 5 |
-| `reservas.md` | Assignment por serviço e booking v1 alinhado | `lib/reservas/serviceAssignment.ts`, `app/api/org/[orgId]/servicos/route.ts`, `app/api/org/[orgId]/servicos/[id]/route.ts`, `app/[username]/_components/ReservasBookingClient.tsx` | `npm run typecheck`, `npm test` | Enum canónico aceite e propagado FE/BE |
-| `policies_organizacao_fechado.md` | DF-01/DF-02/DF-03 (`POST` gate email + campos + policy global) | `app/api/org/[orgId]/policies/route.ts`, `app/api/org/[orgId]/policies/[id]/route.ts`, `app/api/org/[orgId]/me/route.ts`, `app/org/_internal/core/(dashboard)/reservas/politicas/page.tsx` | `npm test`, `npm run gate:ui-ux` | `guestBookingAllowed` e `orgRescheduleWindowMinutes` em round-trip; `noShowFeeCents` lockado em `0` |
-| `dashboard_org_decisions.md` | Dashboard com `calendar` non-hideable e visibilidade UI-only | `lib/organizationDashboardTools.ts`, `app/api/org/[orgId]/dashboard/tools/visibility/route.ts` | `tests/org/dashboardToolIconsUnique.test.ts`, `npm test` | `NON_HIDEABLE_DASHBOARD_TOOL_IDS` inclui `calendar` |
-| `identidade_auth_historico_pre_fecho.md` | Histórico absorvido no contrato final de identidade/auth | `app/api/auth/logout/route.ts`, `app/api/org-hub/organizations/switch/route.ts`, `proxy.ts` | `npm test`, `SSOT_NORMATIVE_MODE=SSOT_ONLY SSOT_ENFORCE_SINGLE_DOC=1 npm run gate:ssot-normative` | Sem autoridade paralela remanescente fora do SSOT |
-| `identidade_auth_sessao_cookies_mobile_access.md` | Sessão/cookies/mobile access consolidados | `proxy.ts`, `app/api/auth/logout/route.ts`, `app/org/_internal/core/OrganizationTopBar.tsx`, `app/org/_internal/core/organizations/OrganizationsHubClient.tsx` | `npm test`, `npm run gate:ui-ux` | Escritas de `orya_organization` com política `Secure` por ambiente |
-| `organizacoes_multiorg.md` | Multi-org canónico no namespace `/org` e org context estável | `app/api/org-hub/organizations/switch/route.ts`, `lib/organizationIdUtils.ts`, `app/org/_internal/core/OrganizationTopBar.tsx` | `tests/orgContext/*.test.ts`, `tests/ops/orgCanonicalProxyAlias.test.ts` | Semântica de contexto org consistente FE/BE |
-| `SPLIT_V2.md` | Máquina técnica split v2 (`S01..S09`) | `domain/bookings/splitGarantido.ts`, `app/api/cron/bookings/split-garantido/route.ts`, `app/api/internal/worker/operations/route.ts` | `tests/bookings/splitGarantido.test.ts`, `tests/ops/splitGarantidoHardcutGuardrails.test.ts` | Transições runtime e rails monotónicos ativos |
-| `split_v2_ssot.md` | Estados canónicos split e mapeamento legado determinístico | `prisma/migrations/20260217140000_normative_assignment_split_v2_core/migration.sql`, `prisma/migrations/20260217202000_service_assignment_hybrid_promotion/migration.sql`, `prisma/schema.prisma` | `npm run db:deploy`, `npm test` | `COMPLETED/EXPIRED` migrados para `SETTLED/CHARGE_FAILED/DEBT_OPEN` |
-| `ws_handshake_and_jwt_claims.md` | Contrato WS/JWT consolidado no SSOT | `scripts/chat-ws-server.js`, `tests/ops/wsHandshakeRateLimitGuardrails.test.ts` | `npm test` | Guardrails WS/JWT mantidos sob contrato único |
-| `padel_live_implementacao.md` | Execução live padel alinhada à norma ativa | `app/api/padel/*`, `domain/padel/*` | `tests/padel/live*.test.ts`, `npm test` | Matriz live com cobertura de permissões, transições e notificações |
-| `padel_live_normativo.md` | Regras live padel consolidadas no SSOT | `domain/padel/*`, `app/api/padel/*` | `tests/padel/livePublicParity.test.ts`, `tests/padel/liveStateTransitionGuards.test.ts` | Paridade público/interno e guardas de estado validadas |
-| `padel.md` | Ranking padel fechado end-to-end (trigger automático + projeções + perfis) em G08.022 | `domain/padel/matches/commands.ts`, `domain/padel/outbox.ts`, `domain/padel/playerProfile.ts`, `app/api/padel/players/route.ts`, `app/api/padel/me/summary/route.ts`, `app/api/padel/rankings/route.ts`, `app/[username]/padel/page.tsx`, `app/me/page.tsx`, `app/api/internal/ops/padel/backfill/route.ts` | `tests/padel/matchResultCardsCommands.test.ts`, `tests/padel/internalBackfillRoute.test.ts`, `tests/outbox/padelOutbox.test.ts`, `npm run typecheck`, `npm test` | Rebuild de rating automático por mutação de resultado, contagem canónica (`OFFICIAL|WALKOVER|RETIRED`), ranking visível em Hub/perfil público/me e backfill auditável com cursor |
+## 104) Quadro de Decisão do Owner (Operacional)
+- Estado: `SEM_DECISOES_PENDENTES`.
+- Regra: quando existir decisão em `PROPOSTA_OWNER` ou `EM_REVISAO_OWNER`, deve ser registada aqui até transição para `FECHADO` no ledger `00.6.1`.
+- Sem entradas pendentes nesta data.

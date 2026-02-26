@@ -44,7 +44,7 @@ export default function OrderSummaryPanel({
         {discount > 0 ? (
           <div className="flex items-center justify-between text-emerald-200">
             <span>Desconto</span>
-            <span>-{discount.toFixed(2)} €</span>
+            <span>-{formatMoney(Math.round(discount * 100), currency)}</span>
           </div>
         ) : null}
       </div>

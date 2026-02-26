@@ -24,8 +24,9 @@ describe("reservas route access guardrails", () => {
     const participants = readLocal("app/api/org/[orgId]/reservas/[id]/participants/route.ts");
     const split = readLocal("app/api/org/[orgId]/reservas/[id]/split/route.ts");
     const charges = readLocal("app/api/org/[orgId]/reservas/[id]/charges/route.ts");
+    const checkout = readLocal("app/api/org/[orgId]/reservas/[id]/checkout/route.ts");
 
-    for (const content of [invites, participants, split, charges]) {
+    for (const content of [invites, participants, split, charges, checkout]) {
       expect(content).toContain("ensureStaffCanAccessBooking");
       expect(content).toContain("OrganizationRolePack.COACH");
     }

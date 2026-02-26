@@ -61,7 +61,12 @@ const formatTimeLabel = (date: Date, timezone: string) =>
   }).format(date);
 
 const formatCurrency = (amountCents: number, currency: string) =>
-  `${(amountCents / 100).toFixed(2)} ${currency}`;
+  new Intl.NumberFormat("pt-PT", {
+    style: "currency",
+    currency: (currency || "EUR").toUpperCase(),
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amountCents / 100);
 
 const formatCentsInput = (cents: number) => (cents / 100).toFixed(2);
 
@@ -2852,13 +2857,15 @@ export default function ReservasDashboardPage() {
                       <option value="">Seleciona um serviço</option>
                       {activeServices.map((service) => (
                         <option key={service.id} value={service.id}>
-                          {service.title} · {service.durationMinutes} min · {formatCurrency(service.unitPriceCents, service.currency)}
+                          {service.title} · {service.durationMinutes} min · Preço:{" "}
+                          {formatCurrency(service.unitPriceCents, service.currency)}
                         </option>
                       ))}
                     </select>
                     {selectedCreateService && (
                       <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/70">
-                        {selectedCreateService.durationMinutes} min · {formatCurrency(selectedCreateService.unitPriceCents, selectedCreateService.currency)}
+                        {selectedCreateService.durationMinutes} min · Preço:{" "}
+                        {formatCurrency(selectedCreateService.unitPriceCents, selectedCreateService.currency)}
                       </div>
                     )}
                   </>

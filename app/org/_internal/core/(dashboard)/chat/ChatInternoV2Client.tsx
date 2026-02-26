@@ -292,29 +292,29 @@ function mapChatErrorMessage(input: string | null | undefined) {
   if (code === "CHAT_BLOCKED") return "Conversa bloqueada.";
   if (code === "BANNED") return "Acesso bloqueado a esta conversa.";
   if (code === "READ_ONLY") return "Conversa em modo leitura.";
-  if (code === "EVENT_NOT_OPEN") return "A conversa ainda nao esta aberta.";
-  if (code === "EVENT_NOT_FOUND") return "Conversa nao encontrada.";
-  if (code === "BOOKING_INACTIVE") return "Conversa indisponivel para esta reserva.";
-  if (code === "BOOKING_NOT_FOUND") return "Conversa nao encontrada.";
-  if (code === "INVALID_MESSAGE") return "Mensagem invalida.";
-  if (code === "MESSAGE_NOT_FOUND") return "Mensagem nao encontrada.";
-  if (code === "UNDO_EXPIRED") return "Ja nao e possivel anular esta mensagem.";
+  if (code === "EVENT_NOT_OPEN") return "A conversa ainda não está aberta.";
+  if (code === "EVENT_NOT_FOUND") return "Conversa não encontrada.";
+  if (code === "BOOKING_INACTIVE") return "Conversa indisponível para esta reserva.";
+  if (code === "BOOKING_NOT_FOUND") return "Conversa não encontrada.";
+  if (code === "INVALID_MESSAGE") return "Mensagem inválida.";
+  if (code === "MESSAGE_NOT_FOUND") return "Mensagem não encontrada.";
+  if (code === "UNDO_EXPIRED") return "Já não é possível anular esta mensagem.";
   if (code === "EMPTY_MESSAGE") return "Mensagem vazia.";
   if (code === "MESSAGE_TOO_LONG") return "Mensagem demasiado longa.";
-  if (code === "INVALID_REPLY") return "Resposta invalida.";
-  if (code === "INVALID_LEVEL") return "Configuracao invalida.";
-  if (code === "INVALID_MUTE") return "Configuracao invalida.";
-  if (code === "INVALID_PAYLOAD") return "Pedido invalido.";
+  if (code === "INVALID_REPLY") return "Resposta inválida.";
+  if (code === "INVALID_LEVEL") return "Configuração inválida.";
+  if (code === "INVALID_MUTE") return "Configuração inválida.";
+  if (code === "INVALID_PAYLOAD") return "Pedido inválido.";
   if (code === "DUPLICATE_MESSAGE") return "Mensagem duplicada.";
-  if (code === "MESSAGE_NOT_CREATED") return "Nao foi possivel criar a mensagem.";
+  if (code === "MESSAGE_NOT_CREATED") return "Não foi possível criar a mensagem.";
   if (code === "ONLY_CHANNELS") return "O chat interno permite apenas canais.";
-  if (code === "INVALID_TITLE") return "Indica um titulo com pelo menos 2 caracteres.";
-  if (code === "NOT_IN_ORGANIZATION") return "So podes adicionar membros da organizacao.";
-  if (code === "FORBIDDEN") return "Sem permissoes para esta acao.";
-  if (code === "MODULE_DISABLED") return "A ferramenta de mensagens esta desativada.";
+  if (code === "INVALID_TITLE") return "Indica um título com pelo menos 2 caracteres.";
+  if (code === "NOT_IN_ORGANIZATION") return "Só podes adicionar membros da organização.";
+  if (code === "FORBIDDEN") return "Sem permissões para esta ação.";
+  if (code === "MODULE_DISABLED") return "A ferramenta de mensagens está desativada.";
   if (code === "RATE_LIMITED") return "Muitas tentativas. Tenta novamente em instantes.";
-  if (code === "ORG_CONTEXT_REQUIRED") return "Falta contexto da organizacao. Atualiza a pagina.";
-  if (code === "UNAUTHENTICATED") return "Sessao expirada. Volta a autenticar-te.";
+  if (code === "ORG_CONTEXT_REQUIRED") return "Falta contexto da organização. Atualiza a página.";
+  if (code === "UNAUTHENTICATED") return "Sessão expirada. Volta a autenticar-te.";
   if (code === "INTERNAL_ERROR") return "Erro interno. Tenta novamente.";
   return input?.trim() || "Erro inesperado.";
 }
@@ -1999,7 +1999,7 @@ export default function ChatInternoV2Client() {
   const handleCreateConversation = async () => {
     const title = channelTitle.trim();
     if (title.length < 2) {
-      setNewConversationError("Indica um titulo com pelo menos 2 caracteres.");
+      setNewConversationError("Indica um título com pelo menos 2 caracteres.");
       return;
     }
 
@@ -2023,7 +2023,7 @@ export default function ChatInternoV2Client() {
         sendWsMessage({ type: "conversation:sync" });
         setNewConversationNotice("Canal criado com sucesso.");
       } else if (res?.pending) {
-        setNewConversationNotice("Pedido de canal enviado para aprovacao.");
+        setNewConversationNotice("Pedido de canal enviado para aprovação.");
       } else {
         throw new Error("INTERNAL_ERROR");
       }
@@ -2193,7 +2193,7 @@ export default function ChatInternoV2Client() {
     }
     const names = typingUsers.map((userId) => {
       const member = members.find((item) => item.userId === userId);
-      return member?.profile.fullName ?? member?.profile.username ?? "Alguem";
+      return member?.profile.fullName ?? member?.profile.username ?? "Alguém";
     });
     if (names.length === 1) return `${names[0]} a escrever...`;
     if (names.length === 2) return `${names[0]} e ${names[1]} a escrever...`;
@@ -2202,14 +2202,14 @@ export default function ChatInternoV2Client() {
 
   const connectionLabel = useMemo(() => {
     if (isOffline) return "Offline";
-    if (wsError === "RATE_LIMITED") return "Limite de ligacao";
+    if (wsError === "RATE_LIMITED") return "Limite de ligação";
     if (wsError === "ORG_CONTEXT_REQUIRED") return "Sem contexto";
-    if (wsError === "NO_ORG") return "Sem organizacao";
-    if (wsError === "UNAUTHENTICATED") return "Sessao expirada";
+    if (wsError === "NO_ORG") return "Sem organização";
+    if (wsError === "UNAUTHENTICATED") return "Sessão expirada";
     if (wsError === "UNAUTHORIZED" || wsError === "FORBIDDEN") return "Sem acesso";
     if (wsError === "UPGRADE_REQUIRED" || wsError === "APP_VERSION_INVALID") return "Atualiza a app";
     if (wsError === "MOBILE_APP_REQUIRED") return "Requer app mobile";
-    if (wsError) return "Indisponivel";
+    if (wsError) return "Indisponível";
     if (wsStatus !== "open") return "A reconectar";
     return "";
   }, [isOffline, wsError, wsStatus]);

@@ -3,6 +3,12 @@
 import { useCallback, useMemo, useState } from "react";
 import useSWR from "swr";
 import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/org/_internal/core/dashboardUi";
+import {
+  COMMUNITY_ACCESS_MODE_OPTIONS,
+  COMMUNITY_TALK_POLICY_OPTIONS,
+  formatCommunityAccessModeLabel,
+  formatCommunityTalkPolicyLabel,
+} from "@/lib/messages/communityUi";
 
 type CommunityItem = {
   conversationId: string;
@@ -107,18 +113,6 @@ type ActivePanelState = {
 
 type MutePreset = "1h" | "24h" | "indefinido";
 
-const talkPolicyLabel: Record<CommunityItem["talkPolicy"], string> = {
-  EVERYONE: "Todos falam",
-  TEAM_ONLY: "So equipa fala",
-};
-
-const accessModeLabel: Record<CommunityItem["accessMode"], string> = {
-  PUBLIC: "Publica",
-  FOLLOWERS: "Seguidores",
-  APPROVAL: "Por aprovacao",
-  INVITE: "So convite",
-};
-
 const formDefaults: FormState = {
   title: "",
   description: "",
@@ -145,25 +139,32 @@ const invitePresetOptions: Array<{ value: "" | string; label: string }> = [
 ];
 
 const apiErrorLabels: Record<string, string> = {
-  FORBIDDEN: "Sem permissao para gerir comunidades.",
-  INVALID_TITLE: "O titulo deve ter pelo menos 2 caracteres.",
-  TITLE_TOO_LONG: "O titulo nao pode exceder 120 caracteres.",
-  DESCRIPTION_TOO_LONG: "A descricao nao pode exceder 1000 caracteres.",
-  INVALID_COVER_IMAGE_URL: "A capa tem de ser um URL http(s) valido.",
-  INVALID_POLICY: "Politica invalida.",
-  INVALID_ACCESS_MODE: "Modo de acesso invalido.",
-  INVALID_TALK_POLICY: "Politica de fala invalida.",
-  COMMUNITY_NOT_FOUND: "Comunidade nao encontrada.",
-  INVITE_LINK_INVALID: "Link de convite invalido.",
+  INVALID_CONVERSATION: "Conversa inválida.",
+  FORBIDDEN: "Sem permissão para gerir comunidades.",
+  INVALID_TITLE: "O título deve ter pelo menos 2 caracteres.",
+  TITLE_TOO_LONG: "O título não pode exceder 120 caracteres.",
+  DESCRIPTION_TOO_LONG: "A descrição não pode exceder 1000 caracteres.",
+  INVALID_COVER_IMAGE_URL: "A capa tem de ser um URL http(s) válido.",
+  INVALID_POLICY: "Política inválida.",
+  INVALID_ACCESS_MODE: "Modo de acesso inválido.",
+  INVALID_TALK_POLICY: "Política de fala inválida.",
+  COMMUNITY_NOT_FOUND: "Comunidade não encontrada.",
+  INVITE_LINK_INVALID: "Link de convite inválido.",
   INVITE_LINK_EXPIRED: "Link de convite expirado.",
   INVITE_LINK_REVOKED: "Link de convite revogado.",
-  INVITES_REQUIRE_INVITE_MODE: "Convites manuais so no modo INVITE.",
-  INVITE_LINKS_REQUIRE_INVITE_MODE: "Links de convite so no modo INVITE.",
-  INVALID_PRESET: "Preset de validade invalido.",
-  PARTICIPANT_NOT_FOUND: "Participante nao encontrado.",
-  LAST_ADMIN: "Nao podes remover o ultimo admin.",
+  INVITES_REQUIRE_INVITE_MODE: "Convites manuais só no modo INVITE.",
+  INVITE_LINKS_REQUIRE_INVITE_MODE: "Links de convite só no modo INVITE.",
+  INVALID_PRESET: "Preset de validade inválido.",
+  PARTICIPANT_NOT_FOUND: "Participante não encontrado.",
+  PARTICIPANT_NOT_ACTIVE: "Participante inativo.",
+  INVALID_MUTE_UNTIL: "Data de mute inválida.",
+  ADMIN_MUST_BE_TEAM_MEMBER: "Só membros da equipa podem ser promovidos a admin.",
+  NOT_ADMIN: "Este participante não é admin.",
+  LAST_ADMIN: "Não podes remover o último admin.",
   BANNED: "Utilizador banido nesta comunidade.",
-  INVALID_USERS: "Indica pelo menos um user id valido.",
+  INVALID_USERS: "Indica pelo menos um user id válido.",
+  INVALID_PARAMS: "Parâmetros inválidos.",
+  INVALID_ACTION: "Ação inválida.",
 };
 
 async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
@@ -260,17 +261,17 @@ function CommunityFormModal(props: {
     const normalizedCover = state.coverImageUrl.trim();
 
     if (!normalizedTitle || normalizedTitle.length < 2) {
-      setError("O titulo deve ter pelo menos 2 caracteres.");
+      setError("O título deve ter pelo menos 2 caracteres.");
       return;
     }
 
     if (normalizedTitle.length > 120) {
-      setError("O titulo nao pode exceder 120 caracteres.");
+      setError("O título não pode exceder 120 caracteres.");
       return;
     }
 
     if (normalizedDescription.length > 1000) {
-      setError("A descricao nao pode exceder 1000 caracteres.");
+      setError("A descrição não pode exceder 1000 caracteres.");
       return;
     }
 
@@ -278,11 +279,11 @@ function CommunityFormModal(props: {
       try {
         const parsed = new URL(normalizedCover);
         if (!["http:", "https:"].includes(parsed.protocol)) {
-          setError("A capa tem de ser um URL http(s) valido.");
+          setError("A capa tem de ser um URL http(s) válido.");
           return;
         }
       } catch {
-        setError("A capa tem de ser um URL valido.");
+        setError("A capa tem de ser um URL válido.");
         return;
       }
     }
@@ -302,24 +303,24 @@ function CommunityFormModal(props: {
         <h3 className="text-lg font-semibold">{props.title}</h3>
         <div className="mt-4 grid gap-3">
           <label className="grid gap-1 text-sm">
-            <span className="text-white/70">Titulo</span>
+            <span className="text-white/70">Título</span>
             <input
               value={state.title}
               onChange={(e) => setState((prev) => ({ ...prev, title: e.target.value }))}
               className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-cyan-300"
-              placeholder="Ex.: Comunidade Intermedio"
+              placeholder="Ex.: Comunidade Intermédio"
               maxLength={120}
             />
             <span className="text-[11px] text-white/45">{state.title.trim().length}/120</span>
           </label>
 
           <label className="grid gap-1 text-sm">
-            <span className="text-white/70">Descricao</span>
+            <span className="text-white/70">Descrição</span>
             <textarea
               value={state.description}
               onChange={(e) => setState((prev) => ({ ...prev, description: e.target.value }))}
               className="min-h-[80px] rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-cyan-300"
-              placeholder="Descricao opcional"
+              placeholder="Descrição opcional"
               maxLength={1000}
             />
             <span className="text-[11px] text-white/45">{state.description.trim().length}/1000</span>
@@ -337,7 +338,7 @@ function CommunityFormModal(props: {
 
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="grid gap-1 text-sm">
-              <span className="text-white/70">Politica de fala</span>
+              <span className="text-white/70">Política de fala</span>
               <select
                 value={state.talkPolicy}
                 onChange={(e) =>
@@ -348,8 +349,11 @@ function CommunityFormModal(props: {
                 }
                 className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-cyan-300"
               >
-                <option value="EVERYONE">Todos falam</option>
-                <option value="TEAM_ONLY">So equipa fala</option>
+                {COMMUNITY_TALK_POLICY_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
             </label>
 
@@ -365,10 +369,11 @@ function CommunityFormModal(props: {
                 }
                 className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-cyan-300"
               >
-                <option value="PUBLIC">Publica</option>
-                <option value="FOLLOWERS">Seguidores</option>
-                <option value="APPROVAL">Por aprovacao</option>
-                <option value="INVITE">So convite</option>
+                {COMMUNITY_ACCESS_MODE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
             </label>
           </div>
@@ -573,13 +578,12 @@ export default function CommunitiesManagerClient() {
     });
   };
 
-  const approveAll = async () => {
-    if (!selectedCommunityId) return;
+  const approveAllForCommunity = async (communityId: string) => {
     if (!confirmAction("Isto vai aprovar todos os pedidos pendentes desta comunidade. Continuar?")) return;
 
-    await runAction(`approve-all:${selectedCommunityId}`, async () => {
+    await runAction(`approve-all:${communityId}`, async () => {
       await apiRequest(
-        `/api/messages/communities/${encodeURIComponent(selectedCommunityId)}/requests/approve-all`,
+        `/api/messages/communities/${encodeURIComponent(communityId)}/requests/approve-all`,
         {
           method: "POST",
         },
@@ -587,6 +591,11 @@ export default function CommunitiesManagerClient() {
       await Promise.all([mutateRequests(), mutateCommunities()]);
       setFeedback({ tone: "success", message: "Pedidos aprovados em lote." });
     });
+  };
+
+  const approveAll = async () => {
+    if (!selectedCommunityId) return;
+    await approveAllForCommunity(selectedCommunityId);
   };
 
   const participantAction = async (params: {
@@ -698,7 +707,7 @@ export default function CommunitiesManagerClient() {
       setCopiedInviteLink(true);
       setFeedback({ tone: "success", message: "Link copiado." });
     } catch {
-      setFeedback({ tone: "error", message: "Nao foi possivel copiar automaticamente o link." });
+      setFeedback({ tone: "error", message: "Não foi possível copiar automaticamente o link." });
     }
   };
 
@@ -784,10 +793,10 @@ export default function CommunitiesManagerClient() {
                   <div className="h-28 rounded-t-2xl bg-cover bg-center" style={coverStyle}>
                     <div className="flex h-full items-end justify-between p-3">
                       <span className="rounded-full border border-white/25 bg-black/35 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/85">
-                        {talkPolicyLabel[community.talkPolicy]}
+                        {formatCommunityTalkPolicyLabel(community.talkPolicy)}
                       </span>
                       <span className="rounded-full border border-white/25 bg-black/35 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/85">
-                        {accessModeLabel[community.accessMode]}
+                        {formatCommunityAccessModeLabel(community.accessMode)}
                       </span>
                     </div>
                   </div>
@@ -796,7 +805,7 @@ export default function CommunitiesManagerClient() {
                     <div>
                       <h3 className="text-base font-semibold">{community.title}</h3>
                       <p className="mt-1 line-clamp-2 text-sm text-white/65">
-                        {community.description || "Sem descricao."}
+                        {community.description || "Sem descrição."}
                       </p>
                     </div>
 
@@ -843,17 +852,8 @@ export default function CommunitiesManagerClient() {
                           type="button"
                           disabled={pendingActionKey === approveAllKey}
                           onClick={async () => {
-                            setActivePanel({ communityId: community.conversationId, tab: "requests" });
-                            await runAction(approveAllKey, async () => {
-                              await apiRequest(
-                                `/api/messages/communities/${encodeURIComponent(community.conversationId)}/requests/approve-all`,
-                                {
-                                  method: "POST",
-                                },
-                              );
-                              await Promise.all([mutateCommunities(), mutateRequests()]);
-                              setFeedback({ tone: "success", message: "Pedidos aprovados em lote." });
-                            });
+                            openPanel(community.conversationId, "requests");
+                            await approveAllForCommunity(community.conversationId);
                           }}
                           className={`${CTA_PRIMARY} text-xs disabled:opacity-60`}
                         >
@@ -868,7 +868,7 @@ export default function CommunitiesManagerClient() {
 
             {!communities.length ? (
               <div className="col-span-full rounded-2xl border border-white/12 bg-white/5 p-4 text-sm text-white/70">
-                Ainda nao existem comunidades. Cria a primeira para comecar.
+                Ainda não existem comunidades. Cria a primeira para começar.
               </div>
             ) : null}
           </div>
@@ -880,7 +880,8 @@ export default function CommunitiesManagerClient() {
               <div>
                 <h3 className="text-base font-semibold">{selectedCommunity.title}</h3>
                 <p className="text-xs text-white/60">
-                  {talkPolicyLabel[selectedCommunity.talkPolicy]} · {accessModeLabel[selectedCommunity.accessMode]}
+                  {formatCommunityTalkPolicyLabel(selectedCommunity.talkPolicy)} ·{" "}
+                  {formatCommunityAccessModeLabel(selectedCommunity.accessMode)}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -1086,7 +1087,7 @@ export default function CommunitiesManagerClient() {
                               <p className="text-[11px] text-white/45">
                                 Entrou: {formatDateTime(participant.joinedAt)}
                                 {participant.followGraceEndsAt
-                                  ? ` · grace seguidores ate ${formatDateTime(participant.followGraceEndsAt)}`
+                                  ? ` · grace seguidores até ${formatDateTime(participant.followGraceEndsAt)}`
                                   : ""}
                               </p>
                             </div>
@@ -1117,7 +1118,7 @@ export default function CommunitiesManagerClient() {
                                       conversationId: selectedCommunity.conversationId,
                                       userId: participant.userId,
                                       action: "DEMOTE_ADMIN",
-                                      confirmText: "Confirmas que queres remover privilegios de admin?",
+                                      confirmText: "Confirmas que queres remover privilégios de admin?",
                                     })
                                   }
                                   className={`${CTA_SECONDARY} text-xs disabled:opacity-60`}
@@ -1232,7 +1233,7 @@ export default function CommunitiesManagerClient() {
                                     conversationId: selectedCommunity.conversationId,
                                     userId: participant.userId,
                                     action: "REMOVE",
-                                    confirmText: "Confirmas a remocao deste participante da comunidade?",
+                                    confirmText: "Confirmas a remoção deste participante da comunidade?",
                                   })
                                 }
                                 className={`${CTA_SECONDARY} text-xs disabled:opacity-60`}
@@ -1259,14 +1260,14 @@ export default function CommunitiesManagerClient() {
               <div className="space-y-4">
                 {selectedCommunity.accessMode !== "INVITE" ? (
                   <div className="rounded-xl border border-amber-300/30 bg-amber-500/10 p-3 text-sm text-amber-100">
-                    Esta comunidade nao esta no modo INVITE. Altera o modo de acesso para usar convites.
+                    Esta comunidade não está no modo INVITE. Altera o modo de acesso para usar convites.
                   </div>
                 ) : null}
 
                 <div className="rounded-xl border border-white/10 bg-white/5 p-3">
                   <h4 className="text-sm font-semibold">Convite manual</h4>
                   <p className="mt-1 text-xs text-white/60">
-                    Introduz user ids separados por virgula, espaco ou nova linha.
+                    Introduz user ids separados por vírgula, espaço ou nova linha.
                   </p>
 
                   <div className="mt-3 grid gap-2">
@@ -1319,7 +1320,7 @@ export default function CommunitiesManagerClient() {
                 <div className="rounded-xl border border-white/10 bg-white/5 p-3">
                   <h4 className="text-sm font-semibold">Link de convite</h4>
                   <p className="mt-1 text-xs text-white/60">
-                    Gerar novo link invalida o link anterior.
+                    Gerar novo link inválida o link anterior.
                   </p>
 
                   <div className="mt-3 flex flex-wrap items-center gap-2">

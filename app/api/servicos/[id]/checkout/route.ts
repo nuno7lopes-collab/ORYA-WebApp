@@ -12,7 +12,11 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { isUnauthenticatedError } from "@/lib/security";
 import { getPlatformFees } from "@/lib/platformSettings";
 import { computePricing } from "@/lib/pricing";
-import { computeCombinedFees } from "@/lib/fees";
+import {
+  computeCardPlatformFeeCents,
+  computeCombinedFees,
+  ORYA_CARD_PLATFORM_FEE_BPS,
+} from "@/lib/fees";
 import {
   ConsentStatus,
   ConsentType,
@@ -46,7 +50,6 @@ import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 const HOLD_MINUTES = 10;
-const ORYA_CARD_FEE_BPS = 100;
 
 function resolveStripeRuntimePayload(
   livemode: boolean | null | undefined,
@@ -386,7 +389,7 @@ async function _POST(
     });
     const cardPlatformFeeCents =
       paymentMethod === "card"
-        ? Math.max(0, Math.round((amountCents * ORYA_CARD_FEE_BPS) / 10_000))
+        ? computeCardPlatformFeeCents(amountCents)
         : 0;
     const totalCents = combinedFees.totalCents + cardPlatformFeeCents;
     const platformFeeCents = Math.min(
@@ -464,6 +467,15 @@ async function _POST(
         currency,
         paymentMethod,
       });
+      if (freeCheckout.bookingStatus !== "CONFIRMED") {
+        return fail(
+          "FREE_CHECKOUT_CONFIRMATION_FAILED",
+          "Não foi possível confirmar a reserva gratuita. Tenta outro horário.",
+          409,
+          true,
+          { bookingStatus: freeCheckout.bookingStatus ?? null },
+        );
+      }
       return respondOk(ctx, {
         paymentIntentId: freeCheckout.paymentIntentId,
         purchaseId: freeCheckout.purchaseId,
@@ -508,7 +520,7 @@ async function _POST(
           platformFeeCents: String(platformFeeCents),
           cardPlatformFeeCents: String(cardPlatformFeeCents),
           cardPlatformFeeBps:
-            paymentMethod === "card" ? String(ORYA_CARD_FEE_BPS) : "0",
+            paymentMethod === "card" ? String(ORYA_CARD_PLATFORM_FEE_BPS) : "0",
           feeMode: pricing.feeMode,
           grossAmountCents: String(totalCents),
           payoutAmountCents: String(payoutAmountCents),
@@ -595,7 +607,7 @@ async function _POST(
       amountCents: totalCents,
       currency,
       cardPlatformFeeCents,
-      cardPlatformFeeBps: paymentMethod === "card" ? ORYA_CARD_FEE_BPS : 0,
+      cardPlatformFeeBps: paymentMethod === "card" ? ORYA_CARD_PLATFORM_FEE_BPS : 0,
       paymentMethod,
       freeCheckout: false,
       status: "REQUIRES_ACTION",

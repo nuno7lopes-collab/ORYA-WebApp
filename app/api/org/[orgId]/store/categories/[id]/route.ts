@@ -6,7 +6,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureLojaModuleAccess } from "@/lib/loja/access";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
-import { OrganizationMemberRole } from "@prisma/client";
+import { OrganizationMemberRole, Prisma } from "@prisma/client";
 import { z } from "zod";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
@@ -158,6 +158,9 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "Nao autenticado.");
+    }
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return fail(409, "SLUG_CONFLICT");
     }
     console.error("PATCH /api/org/[orgId]/store/categories/[id] error:", err);
     return fail(500, "Erro ao atualizar categoria.");

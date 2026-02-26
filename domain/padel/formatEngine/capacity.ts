@@ -83,8 +83,7 @@ const resolveFormat = (raw: unknown, fallback: padel_format) => parsePadelFormat
 const resolveAmMxMode = (raw: unknown): PadelAmMxMode =>
   raw === "FIXED_PAIR" ? "FIXED_PAIR" : "INDIVIDUAL_ROTATION";
 
-const resolveAmMxProgressionMode = (raw: unknown): PadelAmMxProgressionMode =>
-  raw === "ROUND_BY_ROUND" ? "ROUND_BY_ROUND" : "ROUND_BY_ROUND";
+const resolveAmMxProgressionMode = (_raw: unknown): PadelAmMxProgressionMode => "ROUND_BY_ROUND";
 
 const resolveNonStopMode = (raw: unknown): PadelNonStopMode =>
   raw === "HARD_CAP_WAITLIST" ? "HARD_CAP_WAITLIST" : "ACTIVE_QUEUE";

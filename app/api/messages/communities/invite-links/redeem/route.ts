@@ -9,6 +9,7 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { prisma } from "@/lib/prisma";
 import { enforceB2CMobileOnly, getMessagesScope } from "@/app/api/messages/_scope";
 import { hashCommunityInviteToken } from "@/lib/messages/communityAccess";
+import { upsertCommunityConversationMember } from "@/lib/messages/communityMembership";
 import { toDeterministicUuid } from "@/app/api/messages/communities/_shared";
 
 async function _POST(req: NextRequest) {
@@ -78,27 +79,10 @@ async function _POST(req: NextRequest) {
 
     const now = new Date();
     await prisma.$transaction(async (tx) => {
-      await tx.chatConversationMember.upsert({
-        where: {
-          conversationId_userId: {
-            conversationId: link.conversationId,
-            userId: user.id,
-          },
-        },
-        update: {
-          role: "MEMBER",
-          organizationId: null,
-          leftAt: null,
-          accessRevokedAt: null,
-          bannedAt: null,
-          followGraceEndsAt: null,
-        },
-        create: {
-          conversationId: link.conversationId,
-          userId: user.id,
-          role: "MEMBER",
-          organizationId: null,
-        },
+      await upsertCommunityConversationMember({
+        tx,
+        conversationId: link.conversationId,
+        userId: user.id,
       });
 
       const sourceId = toDeterministicUuid(`community-invite-link:${link.id}:user:${user.id}`);

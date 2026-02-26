@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { OrganizationMemberRole, OrganizationModule } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationModule, padel_format } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
@@ -10,6 +10,7 @@ import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { parseOrganizationId, resolveOrganizationIdFromParams } from "@/lib/organizationId";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
+import { parsePadelFormat } from "@/domain/padel/formatCatalog";
 import {
   isValidPointsTable,
   isValidTieBreakRules,
@@ -18,6 +19,33 @@ import {
 } from "@/lib/padel/validation";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
+
+function parsePositiveInt(value: unknown): number | null {
+  if (typeof value === "number") return Number.isInteger(value) && value > 0 ? value : null;
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+  return null;
+}
+
+function parseEnabledFormats(value: unknown): { formats: padel_format[] | undefined; invalid: boolean } {
+  if (typeof value === "undefined") return { formats: undefined, invalid: false };
+  if (!Array.isArray(value)) return { formats: undefined, invalid: true };
+
+  const seen = new Set<padel_format>();
+  const formats: padel_format[] = [];
+  for (const item of value) {
+    const parsed = parsePadelFormat(item);
+    if (!parsed) return { formats: undefined, invalid: true };
+    if (seen.has(parsed)) continue;
+    seen.add(parsed);
+    formats.push(parsed);
+  }
+  return { formats, invalid: false };
+}
 
 async function _GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
@@ -82,14 +110,24 @@ async function _POST(req: NextRequest) {
   const name = typeof body.name === "string" ? body.name.trim() : "";
   const tieBreakRulesRaw = body.tieBreakRules as unknown;
   const pointsTableRaw = body.pointsTable as unknown;
-  const enabledFormats = Array.isArray(body.enabledFormats)
-    ? (body.enabledFormats as unknown[]).map((f) => String(f)).filter(Boolean)
-    : undefined;
+  const hasEnabledFormats = Object.prototype.hasOwnProperty.call(body, "enabledFormats");
+  const parsedEnabledFormats = parseEnabledFormats(body.enabledFormats);
+  const enabledFormats = parsedEnabledFormats.formats;
   const season = typeof body.season === "string" ? body.season.trim() : null;
   const year = typeof body.year === "number" ? body.year : null;
-  const id = typeof body.id === "number" ? body.id : null;
+  const hasIdInput = Object.prototype.hasOwnProperty.call(body, "id");
+  const idInput = hasIdInput ? body.id : undefined;
+  const shouldCreate =
+    !hasIdInput || idInput === null || (typeof idInput === "string" && idInput.trim() === "");
+  const id = shouldCreate ? null : parsePositiveInt(idInput);
 
   if (!name) return jsonWrap({ ok: false, error: "NAME_REQUIRED" }, { status: 400 });
+  if (!shouldCreate && id == null) {
+    return jsonWrap({ ok: false, error: "INVALID_RULESET_ID" }, { status: 400 });
+  }
+  if (parsedEnabledFormats.invalid) {
+    return jsonWrap({ ok: false, error: "INVALID_ENABLED_FORMATS" }, { status: 400 });
+  }
 
   if (!isValidTieBreakRules(tieBreakRulesRaw)) {
     return jsonWrap({ ok: false, error: "INVALID_TIE_BREAK_RULES" }, { status: 400 });
@@ -102,15 +140,24 @@ async function _POST(req: NextRequest) {
   const pointsTable = pointsTableRaw as PadelPointsTable;
 
   try {
+    if (id) {
+      const existing = await prisma.padelRuleSet.findFirst({
+        where: { id, organizationId: organization.id },
+        select: { id: true },
+      });
+      if (!existing) {
+        return jsonWrap({ ok: false, error: "RULESET_NOT_FOUND" }, { status: 404 });
+      }
+    }
+
     const ruleSet = id
       ? await prisma.padelRuleSet.update({
           where: { id },
           data: {
-            organizationId: organization.id,
             name,
             tieBreakRules,
             pointsTable,
-            enabledFormats: enabledFormats ?? undefined,
+            ...(hasEnabledFormats ? { enabledFormats: enabledFormats ?? [] } : {}),
             season: season || undefined,
             year: year || undefined,
           },
@@ -121,7 +168,7 @@ async function _POST(req: NextRequest) {
             name,
             tieBreakRules,
             pointsTable,
-            enabledFormats: enabledFormats ?? undefined,
+            ...(hasEnabledFormats ? { enabledFormats: enabledFormats ?? [] } : {}),
             season: season || undefined,
             year: year || undefined,
           },

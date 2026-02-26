@@ -47,8 +47,22 @@ const STATUS_META: Record<string, { label: string; tone: string }> = {
   CANCELLED: { label: "Cancelado", tone: "border-white/20 bg-white/5 text-white/70" },
 };
 
-const formatMoney = (cents: number, currency?: string | null) =>
-  `${(cents / 100).toFixed(2)} ${currency || "EUR"}`;
+const formatMoney = (cents: number, currency?: string | null) => {
+  try {
+    return new Intl.NumberFormat("pt-PT", {
+      style: "currency",
+      currency: (currency || "EUR").toUpperCase(),
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(cents / 100);
+  } catch {
+    const numeric = new Intl.NumberFormat("pt-PT", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(cents / 100);
+    return `${numeric} ${(currency || "EUR").toUpperCase()}`;
+  }
+};
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return "—";

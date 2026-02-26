@@ -66,23 +66,24 @@ async function _GET(req: NextRequest) {
     const isStaff = membership.role === OrganizationMemberRole.STAFF;
 
     if (isStaff) {
-      const existing = await prisma.reservationProfessional.findFirst({
-        where: { organizationId: organization.id, userId: profile.id },
-        select: { id: true },
-      });
-      if (!existing) {
-        const fallbackName = profile.fullName?.trim() || profile.username?.trim() || "Staff";
-        await prisma.reservationProfessional.create({
-          data: {
+      const fallbackName = profile.fullName?.trim() || profile.username?.trim() || "Staff";
+      await prisma.reservationProfessional.upsert({
+        where: {
+          organizationId_userId: {
             organizationId: organization.id,
             userId: profile.id,
-            name: fallbackName,
-            roleTitle: "Staff",
-            isActive: true,
-            priority: 0,
           },
-        });
-      }
+        },
+        update: {},
+        create: {
+          organizationId: organization.id,
+          userId: profile.id,
+          name: fallbackName,
+          roleTitle: "Staff",
+          isActive: true,
+          priority: 0,
+        },
+      });
     }
 
     const where = isStaff
@@ -172,14 +173,6 @@ async function _POST(req: NextRequest) {
       return fail(ctx, 400, "USER_NOT_IN_ORG", "Utilizador não pertence à organização.");
     }
 
-    const existing = await prisma.reservationProfessional.findFirst({
-      where: { organizationId: organization.id, userId: userIdRaw },
-      select: { id: true },
-    });
-    if (existing) {
-      return fail(ctx, 409, "PROFESSIONAL_EXISTS", "Profissional já existe para este utilizador.");
-    }
-
     const userProfile = await prisma.profile.findUnique({
       where: { id: userIdRaw },
       select: { fullName: true, username: true },
@@ -207,6 +200,9 @@ async function _POST(req: NextRequest) {
 
     return respondOk(ctx, { professional }, { status: 201 });
   } catch (err) {
+    if (typeof err === "object" && err != null && "code" in err && (err as { code?: string }).code === "P2002") {
+      return fail(ctx, 409, "PROFESSIONAL_EXISTS", "Profissional já existe para este utilizador.");
+    }
     if (isUnauthenticatedError(err)) {
       return fail(ctx, 401, "UNAUTHENTICATED", "Não autenticado.");
     }

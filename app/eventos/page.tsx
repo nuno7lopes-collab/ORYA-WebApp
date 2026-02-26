@@ -5,12 +5,12 @@ import { prisma } from "@/lib/prisma";
 import { CTA_PRIMARY } from "@/app/org/_shared/dashboardUi";
 import { getEventLocationDisplay } from "@/lib/location/eventLocation";
 import { getEventCoverUrl } from "@/lib/eventCover";
-import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
+import { resolveTicketPricingSummary } from "@/domain/events/ticketPricing";
 import { defaultBlurDataURL } from "@/lib/image";
 import { resolveOrganizationIdFromCookies } from "@/lib/organizationId";
 import { buildOrgHref, buildOrgHubHref } from "@/lib/organizationIdUtils";
 import { headers } from "next/headers";
-import { resolveLocale, t } from "@/lib/i18n";
+import { formatCurrency, resolveLocale, t } from "@/lib/i18n";
 import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +31,7 @@ type EventCard = {
   } | null;
   isGratis: boolean;
   priceFrom: number | null;
+  priceCurrency: string;
   coverImageUrl: string | null;
 };
 
@@ -47,6 +48,10 @@ function formatDate(date: Date | null | undefined, locale: string) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function formatPrice(value: number, currency: string, locale: string) {
+  return formatCurrency(Math.round(value * 100), currency || "EUR", locale);
 }
 
 async function loadEvents(query?: string): Promise<EventCard[]> {
@@ -79,6 +84,7 @@ async function loadEvents(query?: string): Promise<EventCard[]> {
       description: true,
       startsAt: true,
       endsAt: true,
+      pricingMode: true,
       addressId: true,
       addressRef: {
         select: {
@@ -90,15 +96,27 @@ async function loadEvents(query?: string): Promise<EventCard[]> {
       },
       coverImageUrl: true,
       ticketTypes: {
-        select: { price: true },
+        select: {
+          price: true,
+          currency: true,
+          status: true,
+          totalQuantity: true,
+          soldQuantity: true,
+        },
       },
     },
   });
 
   return events.map((ev) => {
-    const ticketPrices = ev.ticketTypes?.map((t) => t.price ?? 0) ?? [];
-    const priceFrom = ticketPrices.length > 0 ? Math.min(...ticketPrices) / 100 : null;
-    const isGratis = deriveIsFreeEvent({ ticketPrices });
+    const pricing = resolveTicketPricingSummary({
+      pricingMode: ev.pricingMode ?? undefined,
+      ticketTypes: ev.ticketTypes,
+    });
+    const fallbackCurrency =
+      ev.ticketTypes.find(
+        (ticket) => typeof ticket.currency === "string" && ticket.currency.trim().length > 0,
+      )?.currency ?? "EUR";
+    const priceCurrency = pricing.priceCurrency ?? fallbackCurrency;
 
     return {
       id: ev.id,
@@ -116,8 +134,9 @@ async function loadEvents(query?: string): Promise<EventCard[]> {
             longitude: ev.addressRef.longitude ?? null,
           }
         : null,
-      isGratis,
-      priceFrom,
+      isGratis: pricing.isGratis,
+      priceFrom: pricing.priceFrom,
+      priceCurrency,
       coverImageUrl: ev.coverImageUrl ?? null,
     };
   });
@@ -246,7 +265,9 @@ export default async function EventosFeedPage({ searchParams }: PageProps) {
                       {ev.priceFrom !== null && !ev.isGratis && (
                         <p className="text-[11px] text-white">
                           {t("eventCardFrom", locale)}{" "}
-                          <span className="font-semibold">{ev.priceFrom} € </span>
+                          <span className="font-semibold">
+                            {formatPrice(ev.priceFrom, ev.priceCurrency, locale)}
+                          </span>
                         </p>
                       )}
                     </div>

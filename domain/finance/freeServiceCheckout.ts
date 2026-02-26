@@ -45,20 +45,28 @@ function buildFreeIntent(params: FinalizeFreeServiceBookingParams): Stripe.Payme
 export async function finalizeFreeServiceBooking(params: FinalizeFreeServiceBookingParams): Promise<{
   purchaseId: string;
   paymentIntentId: string;
+  bookingStatus: string | null;
 }> {
   const freeIntent = buildFreeIntent(params);
   await fulfillServiceBookingIntent(freeIntent);
 
-  const payment = await prisma.payment.findFirst({
-    where: {
-      sourceType: SourceType.BOOKING,
-      sourceId: String(params.bookingId),
-    },
-    select: { id: true },
-  });
+  const [payment, booking] = await Promise.all([
+    prisma.payment.findFirst({
+      where: {
+        sourceType: SourceType.BOOKING,
+        sourceId: String(params.bookingId),
+      },
+      select: { id: true },
+    }),
+    prisma.booking.findUnique({
+      where: { id: params.bookingId },
+      select: { status: true },
+    }),
+  ]);
 
   return {
     purchaseId: payment?.id ?? `booking_${params.bookingId}_v1`,
     paymentIntentId: freeIntent.id,
+    bookingStatus: booking?.status ?? null,
   };
 }

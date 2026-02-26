@@ -175,11 +175,32 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
       return fail(400, "Validade final anterior à inicial.");
     }
 
-    const professionalId =
-      typeof payload?.professionalId === "number" ? payload.professionalId : series.professionalId ?? null;
-    const courtId = typeof payload?.courtId === "number" ? payload.courtId : series.courtId ?? null;
+    const hasProfessionalIdInput = Object.prototype.hasOwnProperty.call(payload ?? {}, "professionalId");
+    const hasCourtIdInput = Object.prototype.hasOwnProperty.call(payload ?? {}, "courtId");
+    let professionalId: number | null = series.professionalId ?? null;
+    let courtId: number | null = series.courtId ?? null;
 
-    if (payload?.professionalId !== undefined && professionalId) {
+    if (hasProfessionalIdInput) {
+      if (payload?.professionalId == null || payload?.professionalId === "") {
+        professionalId = null;
+      } else if (typeof payload?.professionalId === "number" && Number.isFinite(payload.professionalId) && payload.professionalId > 0) {
+        professionalId = Math.trunc(payload.professionalId);
+      } else {
+        return fail(400, "Profissional inválido.");
+      }
+    }
+
+    if (hasCourtIdInput) {
+      if (payload?.courtId == null || payload?.courtId === "") {
+        courtId = null;
+      } else if (typeof payload?.courtId === "number" && Number.isFinite(payload.courtId) && payload.courtId > 0) {
+        courtId = Math.trunc(payload.courtId);
+      } else {
+        return fail(400, "Campo inválido.");
+      }
+    }
+
+    if (professionalId != null) {
       const professional = await prisma.reservationProfessional.findFirst({
         where: { id: professionalId, organizationId: organization.id, isActive: true },
         select: { id: true },
@@ -187,7 +208,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
       if (!professional) return fail(404, "Profissional inválido.");
     }
 
-    if (payload?.courtId !== undefined && courtId) {
+    if (courtId != null) {
       const court = await prisma.padelClubCourt.findFirst({
         where: { id: courtId, club: { organizationId: organization.id }, deletedAt: null },
         select: { id: true },
@@ -198,88 +219,92 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     const isActive = typeof payload?.isActive === "boolean" ? payload.isActive : series.isActive;
     const now = new Date();
 
-    const updatedSeries = await prisma.classSeries.update({
-      where: { id: series.id },
-      data: {
+    const updatedSeries = await prisma.$transaction(async (tx) => {
+      const savedSeries = await tx.classSeries.update({
+        where: { id: series.id },
+        data: {
+          dayOfWeek,
+          startMinute,
+          durationMinutes,
+          capacity,
+          validFrom,
+          validUntil,
+          professionalId,
+          courtId,
+          isActive,
+        },
+      });
+
+      if (!isActive) {
+        await tx.classSession.updateMany({
+          where: { seriesId: series.id, startsAt: { gte: now }, status: "SCHEDULED" },
+          data: { status: "CANCELLED" },
+        });
+        return savedSeries;
+      }
+
+      const sessions = buildClassSessionsForSeries({
+        timezone,
         dayOfWeek,
         startMinute,
         durationMinutes,
-        capacity,
         validFrom,
         validUntil,
-        professionalId,
-        courtId,
-        isActive,
-      },
-    });
-
-    if (!isActive) {
-      await prisma.classSession.updateMany({
-        where: { seriesId: series.id, startsAt: { gte: now }, status: "SCHEDULED" },
-        data: { status: "CANCELLED" },
+        limitYears: 2,
+        startFromToday: true,
       });
-      return respondOk(ctx, { series: updatedSeries });
-    }
 
-    const sessions = buildClassSessionsForSeries({
-      timezone,
-      dayOfWeek,
-      startMinute,
-      durationMinutes,
-      validFrom,
-      validUntil,
-      limitYears: 2,
-      startFromToday: true,
-    });
+      const desiredMap = new Map<number, { startsAt: Date; endsAt: Date }>();
+      sessions.forEach((session) => {
+        desiredMap.set(session.startsAt.getTime(), session);
+      });
 
-    const desiredMap = new Map<number, { startsAt: Date; endsAt: Date }>();
-    sessions.forEach((session) => {
-      desiredMap.set(session.startsAt.getTime(), session);
-    });
+      const existing = await tx.classSession.findMany({
+        where: { seriesId: series.id, startsAt: { gte: now } },
+        select: { id: true, startsAt: true },
+      });
 
-    const existing = await prisma.classSession.findMany({
-      where: { seriesId: series.id, startsAt: { gte: now } },
-      select: { id: true, startsAt: true },
-    });
+      const existingTimes = new Set(existing.map((item) => item.startsAt.getTime()));
 
-    const existingTimes = new Set(existing.map((item) => item.startsAt.getTime()));
+      await Promise.all(
+        existing.map((session) => {
+          const desired = desiredMap.get(session.startsAt.getTime());
+          if (!desired) {
+            return tx.classSession.update({ where: { id: session.id }, data: { status: "CANCELLED" } });
+          }
+          return tx.classSession.update({
+            where: { id: session.id },
+            data: {
+              endsAt: desired.endsAt,
+              capacity,
+              courtId,
+              professionalId,
+              status: "SCHEDULED",
+            },
+          });
+        }),
+      );
 
-    await Promise.all(
-      existing.map((session) => {
-        const desired = desiredMap.get(session.startsAt.getTime());
-        if (!desired) {
-          return prisma.classSession.update({ where: { id: session.id }, data: { status: "CANCELLED" } });
-        }
-        return prisma.classSession.update({
-          where: { id: session.id },
-          data: {
-            endsAt: desired.endsAt,
-            capacity,
+      const newSessions = sessions.filter((session) => !existingTimes.has(session.startsAt.getTime()));
+      if (newSessions.length > 0) {
+        await tx.classSession.createMany({
+          data: newSessions.map((session) => ({
+            seriesId: series.id,
+            organizationId: organization.id,
+            serviceId: serviceId,
             courtId,
             professionalId,
+            startsAt: session.startsAt,
+            endsAt: session.endsAt,
+            capacity,
             status: "SCHEDULED",
-          },
+          })),
+          skipDuplicates: true,
         });
-      }),
-    );
+      }
 
-    const newSessions = sessions.filter((session) => !existingTimes.has(session.startsAt.getTime()));
-    if (newSessions.length > 0) {
-      await prisma.classSession.createMany({
-        data: newSessions.map((session) => ({
-          seriesId: series.id,
-          organizationId: organization.id,
-          serviceId: serviceId,
-          courtId,
-          professionalId,
-          startsAt: session.startsAt,
-          endsAt: session.endsAt,
-          capacity,
-          status: "SCHEDULED",
-        })),
-        skipDuplicates: true,
-      });
-    }
+      return savedSeries;
+    });
 
     return respondOk(ctx, { series: updatedSeries });
   } catch (err) {

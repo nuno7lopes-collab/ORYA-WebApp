@@ -27,7 +27,6 @@ import {
   SourceType,
 } from "@prisma/client";
 import { evaluateCandidate, type AgendaCandidate } from "@/domain/agenda/conflictEngine";
-import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
 import { createBooking } from "@/domain/bookings/commands";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
@@ -39,7 +38,14 @@ import {
   validateDurationAgainstPolicy,
   validateStartAtAgainstPolicy,
 } from "@/lib/reservas/gridPolicy";
+import { resolveCourtDurationPrice } from "@/lib/reservas/serviceDurationPrices";
 import { ensureReservasOperationalOpen } from "@/lib/reservas/operationalState";
+import { resolveAllowedServiceScopeIds } from "@/lib/reservas/serviceScopes";
+import {
+  agendaConflictResponse,
+  buildBookingConflictBlocks,
+  buildSessionConflictBlocks,
+} from "@/lib/reservas/agendaConflictHelpers";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -101,30 +107,6 @@ function resolveBookingChannel(params: {
   if (params.bookingLocationMode === ServiceLocationMode.FIXED) return "PRESENTIAL";
   if (params.bookingLocationMode === ServiceLocationMode.CHOOSE_AT_BOOKING) return "ONLINE";
   return "UNKNOWN";
-}
-
-function buildBlocks(
-  bookings: Array<{ startsAt: Date; durationMinutes: number; professionalId: number | null; resourceId: number | null }>,
-) {
-  return bookings.map((booking) => ({
-    start: booking.startsAt,
-    end: new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000),
-    professionalId: booking.professionalId,
-    resourceId: booking.resourceId,
-  }));
-}
-
-function buildSessionBlocks(sessions: Array<{ startsAt: Date; endsAt: Date; professionalId: number | null }>) {
-  return sessions.map((session) => ({
-    start: session.startsAt,
-    end: session.endsAt,
-    professionalId: session.professionalId,
-    resourceId: null,
-  }));
-}
-
-function agendaConflictResponse(decision?: Parameters<typeof buildAgendaConflictPayload>[0]["decision"]) {
-  return buildAgendaConflictPayload({ decision: decision ?? null, fallbackReason: "MISSING_EXISTING_DATA" });
 }
 
 async function _GET(req: NextRequest) {
@@ -535,6 +517,7 @@ async function _POST(req: NextRequest) {
     const resourceIdRaw = parsePositiveInt(payload?.resourceId);
     const courtIdRaw = parsePositiveInt(payload?.courtId);
     const partySizeRaw = parsePositiveInt(payload?.partySize);
+    const durationMinutesRaw = parsePositiveInt(payload?.durationMinutes);
 
     if (!Number.isFinite(serviceId)) {
       return fail(ctx, 400, "INVALID_SERVICE", "Serviço inválido.");
@@ -544,6 +527,9 @@ async function _POST(req: NextRequest) {
     }
     if (!startsAt || Number.isNaN(startsAt.getTime())) {
       return fail(ctx, 400, "INVALID_TIME", "Horário inválido.");
+    }
+    if (payload?.durationMinutes != null && !durationMinutesRaw) {
+      return fail(ctx, 400, "INVALID_DURATION", "Duração inválida.");
     }
 
     const clientProfile = await prisma.profile.findUnique({
@@ -600,6 +586,29 @@ async function _POST(req: NextRequest) {
     if (!Number.isFinite(service.durationMinutes) || service.durationMinutes <= 0) {
       return fail(ctx, 400, "SERVICE_DURATION_REQUIRED", "Duração do serviço inválida.");
     }
+    const assignmentConfig = resolveServiceAssignmentMode({
+      organizationMode: service.organization?.reservationAssignmentMode ?? null,
+      serviceMode: service.assignmentMode ?? null,
+      serviceKind: service.kind ?? null,
+    });
+    const requestedDurationMinutes = durationMinutesRaw ?? null;
+    if (requestedDurationMinutes != null && !assignmentConfig.isCourtService) {
+      return fail(ctx, 400, "INVALID_DURATION_OVERRIDE", "durationMinutes só é permitido para serviços COURT.");
+    }
+    let effectiveDurationMinutes = requestedDurationMinutes ?? service.durationMinutes;
+    let effectivePriceCents = service.unitPriceCents;
+    if (assignmentConfig.isCourtService) {
+      const durationPrice = await resolveCourtDurationPrice({
+        tx: prisma,
+        serviceId: service.id,
+        durationMinutes: effectiveDurationMinutes,
+      });
+      if (!durationPrice) {
+        return fail(ctx, 400, "DURATION_NOT_PRICED", "Duração sem preço configurado.");
+      }
+      effectiveDurationMinutes = durationPrice.durationMinutes;
+      effectivePriceCents = durationPrice.priceCents;
+    }
 
     const timezone = service.organization?.timezone || "Europe/Lisbon";
     const bookingPolicy = await getOrganizationBookingPolicy({
@@ -615,7 +624,7 @@ async function _POST(req: NextRequest) {
       return fail(ctx, 400, startValidation.errorCode, startValidation.message);
     }
     const durationValidation = validateDurationAgainstPolicy({
-      durationMinutes: service.durationMinutes,
+      durationMinutes: effectiveDurationMinutes,
       policy: bookingPolicy,
     });
     if (!durationValidation.ok) {
@@ -627,11 +636,6 @@ async function _POST(req: NextRequest) {
       return fail(ctx, 400, "TIME_PASSED", "Este horário já passou.");
     }
 
-    const assignmentConfig = resolveServiceAssignmentMode({
-      organizationMode: service.organization?.reservationAssignmentMode ?? null,
-      serviceMode: service.assignmentMode ?? null,
-      serviceKind: service.kind ?? null,
-    });
     const availabilityMode = assignmentConfig.availabilityMode;
     const bookingAssignmentMode = assignmentConfig.assignmentMode;
     const partySizeRules = resolveServicePartySizeRules({
@@ -642,16 +646,10 @@ async function _POST(req: NextRequest) {
       partySizeMax: service.partySizeMax,
       partySizeStep: service.partySizeStep,
     });
-    const allowedProfessionalIds = service.professionalLinks.length
-      ? service.professionalLinks
-          .filter((link) => link.professional?.isActive)
-          .map((link) => link.professionalId)
-      : null;
-    const allowedResourceIds = service.resourceLinks.length
-      ? service.resourceLinks
-          .filter((link) => link.resource?.isActive)
-          .map((link) => link.resourceId)
-      : null;
+    const { allowedProfessionalIds, allowedResourceIds } = resolveAllowedServiceScopeIds({
+      professionalLinks: service.professionalLinks,
+      resourceLinks: service.resourceLinks,
+    });
     let professionalId: number | null = null;
     let resourceId: number | null = null;
     let bookingCourtId: number | null = null;
@@ -946,7 +944,7 @@ async function _POST(req: NextRequest) {
       return fail(ctx, 409, "NO_AVAILABILITY", "Sem disponibilidade para este serviço.");
     }
 
-    const bookingEndsAt = new Date(startsAt.getTime() + service.durationMinutes * 60 * 1000);
+    const bookingEndsAt = new Date(startsAt.getTime() + effectiveDurationMinutes * 60 * 1000);
     const professionalScopeIds =
       availabilityMode === "HYBRID"
         ? professionalScopes.map((scope) => scope.id)
@@ -1035,7 +1033,10 @@ async function _POST(req: NextRequest) {
     const orgOverrides = overrides.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
     const schedulesByScope = groupByScope(schedules);
     const overridesByScope = groupByScope(overrides);
-    const blocks = [...buildBlocks(blockingBookings), ...buildSessionBlocks(classSessions)];
+    const blocks = [
+      ...buildBookingConflictBlocks(blockingBookings),
+      ...buildSessionConflictBlocks(classSessions),
+    ];
 
     const slotKey = startsAt.toISOString();
     let slotIsAvailable = false;
@@ -1046,7 +1047,7 @@ async function _POST(req: NextRequest) {
         rangeStart: dayStart,
         rangeEnd: dayEnd,
         timezone,
-        durationMinutes: service.durationMinutes,
+        durationMinutes: effectiveDurationMinutes,
         stepMinutes: bookingPolicy.gridMinutes,
         now,
         professionals: professionalScopes,
@@ -1083,7 +1084,7 @@ async function _POST(req: NextRequest) {
           rangeStart: dayStart,
           rangeEnd: dayEnd,
           timezone,
-          durationMinutes: service.durationMinutes,
+          durationMinutes: effectiveDurationMinutes,
           stepMinutes: bookingPolicy.gridMinutes,
           now,
           scopeType: scope.scopeType,
@@ -1313,8 +1314,8 @@ async function _POST(req: NextRequest) {
           organizationId: service.organizationId,
           userId,
           startsAt,
-          durationMinutes: service.durationMinutes,
-          price: service.unitPriceCents,
+          durationMinutes: effectiveDurationMinutes,
+          price: effectivePriceCents,
           currency: service.currency,
           status: "PENDING_CONFIRMATION",
           assignmentMode: bookingAssignmentMode,

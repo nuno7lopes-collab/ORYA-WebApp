@@ -31,6 +31,16 @@ type Props = {
   endDate?: Date;
 };
 
+const formatEuroValue = (value: number) =>
+  new Intl.NumberFormat("pt-PT", {
+    style: "currency",
+    currency: "EUR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+
+const formatEuroFromCents = (cents?: number) => formatEuroValue((cents ?? 0) / 100);
+
 /**
  * Gráfico de linha/área responsivo, sem overflow fora do card.
  * Usa viewBox normalizada (0..100) e preserveAspectRatio default para manter proporções dentro do container.
@@ -168,7 +178,7 @@ export function SalesLineChart({
   const lastLabel = (() => {
     if (!last) return "—";
     if (unit === "tickets") return `${last.value} bilhetes`;
-    return `${last.value.toFixed(2)} €`;
+    return formatEuroValue(last.value);
   })();
 
   const formatDate = (d: Date) =>
@@ -204,7 +214,7 @@ export function SalesLineChart({
 
   const activePoint = hoverIdx != null ? filled[hoverIdx] : filled[filled.length - 1];
   const activePos = hoverIdx != null ? positions[hoverIdx] : positions[positions.length - 1];
-  const toEuros = (cents?: number) => `${((cents ?? 0) / 100).toFixed(2)} €`;
+  const toEuros = (cents?: number) => formatEuroFromCents(cents);
 
   return (
     <div className={`relative w-full h-full overflow-hidden ${className ?? ""}`}>
@@ -273,7 +283,7 @@ export function SalesLineChart({
           }}
         >
           <div className="text-white font-semibold">
-            {formatDate(activePoint.date)} · {unit === "tickets" ? `${activePoint.value} bilhetes` : `${activePoint.value.toFixed(2)} €`}
+            {formatDate(activePoint.date)} · {unit === "tickets" ? `${activePoint.value} bilhetes` : formatEuroValue(activePoint.value)}
           </div>
           {unit !== "tickets" && (
             <div className="mt-1 space-y-0.5">

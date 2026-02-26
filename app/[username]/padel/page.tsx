@@ -6,6 +6,7 @@ import ProfileHeader from "@/app/components/profile/ProfileHeader";
 import { getProfileCoverUrl } from "@/lib/profileCover";
 import { getPadelOnboardingMissing, isPadelOnboardingComplete } from "@/domain/padelOnboarding";
 import { resolvePadelMatchStats } from "@/domain/padel/score";
+import { buildScoreRuleSummary, resolveEffectiveScoreRules } from "@/domain/padel/scoreRulesResolver";
 import PadelDisputeButton from "./PadelDisputeButton";
 import PadelResultSubmitCard from "./PadelResultSubmitCard";
 import { getUserFollowCounts, isUserFollowing } from "@/domain/social/follows";
@@ -510,6 +511,7 @@ export default async function PadelProfilePage({ params }: PageProps) {
 
   let padelMatches: Array<{
     id: number;
+    categoryId: number | null;
     status: string;
     roundLabel: string | null;
     groupLabel: string | null;
@@ -521,6 +523,7 @@ export default async function PadelProfilePage({ params }: PageProps) {
       slug: string;
       playerResultSubmissionEnabled: boolean;
       resultValidationMode: "IMMEDIATE_OFFICIAL" | "IMMEDIATE_PENDING_THEN_OFFICIAL" | null;
+      scoreRuleSummary: ReturnType<typeof buildScoreRuleSummary>;
     };
     pairingA: any;
     pairingB: any;
@@ -545,6 +548,7 @@ export default async function PadelProfilePage({ params }: PageProps) {
               select: {
                 playerResultSubmissionEnabled: true,
                 resultValidationMode: true,
+                advancedSettings: true,
               },
             },
           },
@@ -556,26 +560,38 @@ export default async function PadelProfilePage({ params }: PageProps) {
       take: 12,
     });
 
-    padelMatches = matchRows.map((match) => ({
-      id: match.id,
-      status: match.status,
-      roundLabel: match.roundLabel ?? null,
-      groupLabel: match.groupLabel ?? null,
-      startAt: match.startTime ?? match.plannedStartAt ?? match.actualStartAt ?? null,
-      scoreSets: Array.isArray(match.scoreSets) ? (match.scoreSets as Array<{ teamA: number; teamB: number }>) : null,
-      score: match.score && typeof match.score === "object" ? (match.score as Record<string, unknown>) : null,
-      event: {
-        title: match.event.title,
-        slug: match.event.slug,
-        playerResultSubmissionEnabled: match.event.padelTournamentConfig?.playerResultSubmissionEnabled === true,
-        resultValidationMode:
-          match.event.padelTournamentConfig?.resultValidationMode === "IMMEDIATE_PENDING_THEN_OFFICIAL"
-            ? "IMMEDIATE_PENDING_THEN_OFFICIAL"
-            : "IMMEDIATE_OFFICIAL",
-      },
-      pairingA: match.pairingA,
-      pairingB: match.pairingB,
-    }));
+    padelMatches = matchRows.map((match) => {
+      const effectiveRules = resolveEffectiveScoreRules(
+        match.event.padelTournamentConfig?.advancedSettings,
+        match.categoryId ?? null,
+      );
+      return {
+        id: match.id,
+        categoryId: match.categoryId ?? null,
+        status: match.status,
+        roundLabel: match.roundLabel ?? null,
+        groupLabel: match.groupLabel ?? null,
+        startAt: match.startTime ?? match.plannedStartAt ?? match.actualStartAt ?? null,
+        scoreSets: Array.isArray(match.scoreSets) ? (match.scoreSets as Array<{ teamA: number; teamB: number }>) : null,
+        score: match.score && typeof match.score === "object" ? (match.score as Record<string, unknown>) : null,
+        event: {
+          title: match.event.title,
+          slug: match.event.slug,
+          playerResultSubmissionEnabled: match.event.padelTournamentConfig?.playerResultSubmissionEnabled === true,
+          resultValidationMode:
+            match.event.padelTournamentConfig?.resultValidationMode === "IMMEDIATE_PENDING_THEN_OFFICIAL"
+              ? "IMMEDIATE_PENDING_THEN_OFFICIAL"
+              : "IMMEDIATE_OFFICIAL",
+          scoreRuleSummary: buildScoreRuleSummary({
+            rules: effectiveRules.rules,
+            source: effectiveRules.source,
+            categoryId: effectiveRules.categoryId,
+          }),
+        },
+        pairingA: match.pairingA,
+        pairingB: match.pairingB,
+      };
+    });
 
     const now = new Date();
     padelUpcoming = padelMatches
@@ -1387,6 +1403,7 @@ export default async function PadelProfilePage({ params }: PageProps) {
                           status={match.status}
                           playerSubmissionEnabled={match.event.playerResultSubmissionEnabled}
                           validationMode={match.event.resultValidationMode ?? "IMMEDIATE_OFFICIAL"}
+                          scoreRuleSummary={match.event.scoreRuleSummary}
                         />
                       )}
                     </div>
@@ -1441,6 +1458,7 @@ export default async function PadelProfilePage({ params }: PageProps) {
                             status={match.status}
                             playerSubmissionEnabled={match.event.playerResultSubmissionEnabled}
                             validationMode={match.event.resultValidationMode ?? "IMMEDIATE_OFFICIAL"}
+                            scoreRuleSummary={match.event.scoreRuleSummary}
                           />
                         )}
                         {isOwner && ["OFFICIAL", "WALKOVER", "RETIRED"].includes(match.status) && (
