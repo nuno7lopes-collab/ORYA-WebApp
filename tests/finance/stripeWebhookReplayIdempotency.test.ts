@@ -125,4 +125,39 @@ describe("POST /api/stripe/webhook idempotência", () => {
     expect(appendEventLog).toHaveBeenCalledTimes(2);
     expect(recordOutboxEvent).toHaveBeenCalledTimes(1);
   });
+
+  it("ignora replay do mesmo stripe event.id para flow STORE_ORDER", async () => {
+    constructStripeWebhookEvent.mockReturnValue({
+      id: "evt_replay_store_order",
+      type: "payment_intent.succeeded",
+      data: {
+        object: {
+          id: "pi_store_order_1",
+          metadata: {
+            orgId: "30",
+            purchaseId: "store_order_901",
+            sourceType: "STORE_ORDER",
+            sourceId: "901",
+            storeOrderId: "901",
+          },
+        },
+      },
+    });
+    appendEventLog
+      .mockResolvedValueOnce({ eventId: "log_store_1" })
+      .mockResolvedValueOnce(null);
+
+    const first = await POST(makeReq());
+    const firstBody = await first.json();
+    const second = await POST(makeReq());
+    const secondBody = await second.json();
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(firstBody.ok).toBe(true);
+    expect(secondBody.ok).toBe(true);
+
+    expect(appendEventLog).toHaveBeenCalledTimes(2);
+    expect(recordOutboxEvent).toHaveBeenCalledTimes(1);
+  });
 });
