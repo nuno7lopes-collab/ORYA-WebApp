@@ -170,10 +170,12 @@ async function _GET(req: NextRequest) {
             compareAtPriceCents: true;
             currency: true;
             requiresShipping: true;
+            stockPolicy: true;
+            stockQty: true;
             images: { select: { url: true; altText: true; isPrimary: true; sortOrder: true } };
           };
         };
-        variant: { select: { id: true; label: true; priceCents: true } };
+        variant: { select: { id: true; label: true; priceCents: true; stockQty: true } };
       };
     }>;
 
@@ -200,6 +202,8 @@ async function _GET(req: NextRequest) {
               compareAtPriceCents: true,
               currency: true,
               requiresShipping: true,
+              stockPolicy: true,
+              stockQty: true,
               images: {
                 select: { url: true, altText: true, isPrimary: true, sortOrder: true },
                 orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }],
@@ -207,7 +211,7 @@ async function _GET(req: NextRequest) {
             },
           },
           variant: {
-            select: { id: true, label: true, priceCents: true },
+            select: { id: true, label: true, priceCents: true, stockQty: true },
           },
         },
       });
@@ -235,6 +239,8 @@ async function _GET(req: NextRequest) {
               compareAtPriceCents: true,
               currency: true,
               requiresShipping: true,
+              stockPolicy: true,
+              stockQty: true,
               images: {
                 select: { url: true, altText: true, isPrimary: true, sortOrder: true },
                 orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }],
@@ -242,7 +248,7 @@ async function _GET(req: NextRequest) {
             },
           },
           variant: {
-            select: { id: true, label: true, priceCents: true },
+            select: { id: true, label: true, priceCents: true, stockQty: true },
           },
         },
       })) as CartItemRow[];

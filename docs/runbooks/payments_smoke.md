@@ -4,7 +4,7 @@
 Validar o contrato de hold de checkout (5 minutos), proteção de double-checkout e idempotência de replay de webhook.
 
 ## Gates obrigatórios
-1. Aplicar migrations pendentes (inclui `20260226190000_reservation_holds_audit`):
+1. Aplicar migrations pendentes (inclui `20260226190000_reservation_holds_audit` e `20260228001000_inventory_holds_audit`):
 ```bash
 npm run db:deploy
 ```

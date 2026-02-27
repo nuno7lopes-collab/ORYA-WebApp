@@ -27,6 +27,12 @@ import { getStripeEnv, tryGetStripePublishableKeyForEnv } from "@/lib/stripeKeys
 import { resolveStorePolicy } from "@/lib/store/policySettings";
 import { buildStorePolicySnapshot, STORE_POLICY_SNAPSHOT_VERSION } from "@/lib/store/policySnapshot";
 import { PaymentSubject } from "@/lib/payments/kernel";
+import { buildInventoryHoldFingerprint } from "@orya/shared";
+import { isInventoryHoldContractEnabled } from "@/lib/holds/config";
+import {
+  releaseInventoryHold,
+  verifyInventoryHoldOwnership,
+} from "@/lib/holds/inventoryHold";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const CART_SESSION_COOKIE = "orya_store_cart";
@@ -50,6 +56,8 @@ const checkoutSchema = z.object({
   purchaseId: z.string().trim().max(120).optional(),
   idempotencyKey: z.string().trim().max(120).optional(),
   promoCode: z.string().trim().max(60).optional().nullable(),
+  clientSessionId: z.string().trim().min(12).max(128).optional().nullable(),
+  inventoryHoldIds: z.array(z.string().trim().uuid()).max(64).optional(),
 });
 
 function parseStoreId(req: NextRequest) {
@@ -298,6 +306,15 @@ async function _POST(req: NextRequest) {
         nameSnapshot: string;
         skuSnapshot: string | null;
       }>;
+    };
+
+    type InventoryRequirement = {
+      subjectFingerprint: string;
+      subjectType: "STORE_PRODUCT" | "STORE_VARIANT";
+      productId: number;
+      variantId: number | null;
+      quantity: number;
+      maxStock: number;
     };
 
     const lineDrafts: LineDraft[] = [];
@@ -654,6 +671,97 @@ async function _POST(req: NextRequest) {
       throw new Error("STORE_ORG_NOT_FOUND");
     }
     const organizationId = organization.id;
+    const inventoryHoldContractEnabled = isInventoryHoldContractEnabled();
+    const inventoryClientSessionId = payload.clientSessionId?.trim() ?? "";
+    const providedInventoryHoldIds = Array.from(
+      new Set(
+        (payload.inventoryHoldIds ?? [])
+          .map((holdId) => holdId.trim())
+          .filter((holdId) => holdId.length > 0),
+      ),
+    );
+    const inventoryRequirements = new Map<string, InventoryRequirement>();
+    for (const [key, requestedQty] of requestedQtyMap.entries()) {
+      const [productIdRaw, variantRaw] = key.split(":");
+      const productId = Number(productIdRaw);
+      if (!Number.isFinite(productId)) continue;
+      const product = productMap.get(productId);
+      if (!product || product.stockPolicy !== StoreStockPolicy.TRACKED) continue;
+      const variantId =
+        variantRaw && variantRaw !== "base" && Number.isFinite(Number(variantRaw))
+          ? Number(variantRaw)
+          : null;
+      const variant = variantId ? variantMap.get(variantId) : null;
+      const maxStock = Math.max(
+        0,
+        variant ? Number(variant.stockQty ?? 0) : Number(product.stockQty ?? 0),
+      );
+      const subjectType = (variantId ? "STORE_VARIANT" : "STORE_PRODUCT") as
+        | "STORE_PRODUCT"
+        | "STORE_VARIANT";
+      const subjectFingerprint = buildInventoryHoldFingerprint({
+        orgId: organizationId,
+        subjectType,
+        storeId: store.id,
+        productId,
+        variantId,
+      });
+      inventoryRequirements.set(subjectFingerprint, {
+        subjectFingerprint,
+        subjectType,
+        productId,
+        variantId,
+        quantity: Math.max(1, Number(requestedQty ?? 1)),
+        maxStock,
+      });
+    }
+    const validatedInventoryHolds = new Map<
+      string,
+      { holdId: string; quantity: number; subjectFingerprint: string }
+    >();
+    if (inventoryHoldContractEnabled && inventoryRequirements.size > 0) {
+      if (!inventoryClientSessionId || providedInventoryHoldIds.length === 0) {
+        return fail(
+          "HOLD_REQUIRED",
+          "Este checkout requer hold de inventory ativo.",
+          409,
+        );
+      }
+      const totalByFingerprint = new Map<string, number>();
+      for (const holdId of providedInventoryHoldIds) {
+        const verified = await verifyInventoryHoldOwnership({
+          holdId,
+          clientSessionId: inventoryClientSessionId,
+          expectedOrgId: organizationId,
+        });
+        if (!verified.ok) {
+          return fail("SLOT_NOT_AVAILABLE", "Hold de inventory inválido.", 409);
+        }
+        const current = totalByFingerprint.get(verified.data.subjectFingerprint) ?? 0;
+        totalByFingerprint.set(
+          verified.data.subjectFingerprint,
+          current + verified.data.quantity,
+        );
+        validatedInventoryHolds.set(verified.data.holdId, {
+          holdId: verified.data.holdId,
+          quantity: verified.data.quantity,
+          subjectFingerprint: verified.data.subjectFingerprint,
+        });
+      }
+      for (const requirement of inventoryRequirements.values()) {
+        const covered = totalByFingerprint.get(requirement.subjectFingerprint) ?? 0;
+        if (covered < requirement.quantity) {
+          return fail(
+            "HOLD_REQUIRED",
+            "Hold de inventory insuficiente para os itens com stock limitado.",
+            409,
+          );
+        }
+      }
+    }
+    const requiredInventoryHoldIds = Array.from(validatedInventoryHolds.values())
+      .filter((entry) => inventoryRequirements.has(entry.subjectFingerprint))
+      .map((entry) => entry.holdId);
     const resolvedStorePolicy = resolveStorePolicy({
       settings: organization.settings ?? null,
       fallbackSupportEmail: organization.officialEmail ?? null,
@@ -888,6 +996,29 @@ async function _POST(req: NextRequest) {
           ...(providedPurchaseId ? {} : { purchaseId: freeCheckout.purchaseId }),
         },
       });
+      if (
+        inventoryHoldContractEnabled &&
+        inventoryClientSessionId &&
+        requiredInventoryHoldIds.length > 0
+      ) {
+        await Promise.all(
+          requiredInventoryHoldIds.map(async (holdId) => {
+            const released = await releaseInventoryHold({
+              holdId,
+              clientSessionId: inventoryClientSessionId,
+              consumed: true,
+              consumedByPaymentIntent: freeCheckout.paymentIntentId,
+            });
+            if (!released.ok) {
+              console.warn(
+                "[store.checkout] inventory hold consume failed for free checkout",
+                released.code,
+                holdId,
+              );
+            }
+          }),
+        );
+      }
 
       return respondOk(ctx, {
         orderId: order.id,
@@ -944,6 +1075,8 @@ async function _POST(req: NextRequest) {
           shippingCents: String(shippingCents),
           shippingMethodId: shippingMethodId ? String(shippingMethodId) : "",
           shippingZoneId: shippingZoneId ? String(shippingZoneId) : "",
+          inventoryHoldIds: requiredInventoryHoldIds.join(","),
+          inventoryClientSessionId: inventoryClientSessionId,
         },
         orgContext: {
           stripeAccountId: organization?.stripeAccountId ?? null,
@@ -975,6 +1108,27 @@ async function _POST(req: NextRequest) {
       ]);
       createdOrderId = null;
       lockedCartId = null;
+      if (
+        inventoryHoldContractEnabled &&
+        inventoryClientSessionId &&
+        requiredInventoryHoldIds.length > 0
+      ) {
+        await Promise.all(
+          requiredInventoryHoldIds.map(async (holdId) => {
+            const released = await releaseInventoryHold({
+              holdId,
+              clientSessionId: inventoryClientSessionId,
+            });
+            if (!released.ok) {
+              console.warn(
+                "[store.checkout] inventory hold release failed after PI error",
+                released.code,
+                holdId,
+              );
+            }
+          }),
+        );
+      }
       if (err instanceof Error && err.message === "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH") {
         return fail(
           "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH",

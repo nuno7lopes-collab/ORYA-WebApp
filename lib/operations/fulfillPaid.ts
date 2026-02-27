@@ -10,8 +10,12 @@ import { normalizeEmail } from "@/lib/utils/email";
 import { checkoutKey } from "@/lib/stripe/idempotency";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { paymentEventRepo, saleLineRepo, saleSummaryRepo } from "@/domain/finance/readModelConsumer";
-import { logError } from "@/lib/observability/logger";
+import { logError, logWarn } from "@/lib/observability/logger";
 import { ensureEmailIdentity, resolveIdentityForUser } from "@/lib/ownership/identity";
+import {
+  releaseInventoryHold,
+  verifyInventoryHoldOwnership,
+} from "@/lib/holds/inventoryHold";
 
 
 function buildOwnerKey(params: { ownerIdentityId?: string | null }) {
@@ -19,6 +23,14 @@ function buildOwnerKey(params: { ownerIdentityId?: string | null }) {
     throw new Error("OWNER_IDENTITY_REQUIRED");
   }
   return `identity:${params.ownerIdentityId}`;
+}
+
+function throwTicketSlotTaken(context: Record<string, unknown>) {
+  logWarn("payment_attempt.failed_slot_taken", {
+    sourceType: "TICKET_ORDER",
+    ...context,
+  });
+  throw new Error("SLOT_TAKEN");
 }
 
 type BreakdownLine = {
@@ -46,6 +58,20 @@ type IntentLike = {
  */
 export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: string): Promise<boolean> {
   const meta = intent.metadata ?? {};
+  const inventoryHoldIds = typeof meta.inventoryHoldIds === "string"
+    ? Array.from(
+        new Set(
+          meta.inventoryHoldIds
+            .split(",")
+            .map((value) => value.trim())
+            .filter((value) => value.length > 0),
+        ),
+      )
+    : [];
+  const inventoryClientSessionId =
+    typeof meta.inventoryClientSessionId === "string"
+      ? meta.inventoryClientSessionId.trim()
+      : "";
   const scenario = normalizePaymentScenario(typeof meta.paymentScenario === "string" ? meta.paymentScenario : null);
   // Deixar cenários especiais para handlers dedicados.
   if (scenario && ["GROUP_SPLIT", "GROUP_FULL", "GROUP_SPLIT_SECOND_CHARGE", "BOOKING_CHANGE"].includes(scenario)) {
@@ -207,8 +233,33 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
       typeMap.set(index, ticket);
       ticketsByType.set(ticket.ticketTypeId, typeMap);
     }
+    if (inventoryHoldIds.length > 0 && existingTickets.length === 0) {
+      if (!inventoryClientSessionId) {
+        throwTicketSlotTaken({
+          purchaseId,
+          eventId: event.id,
+          reason: "missing_inventory_client_session",
+        });
+      }
+      for (const holdId of inventoryHoldIds) {
+        const verified = await verifyInventoryHoldOwnership({
+          holdId,
+          clientSessionId: inventoryClientSessionId,
+          expectedOrgId: event.organizationId ?? undefined,
+        });
+        if (!verified.ok) {
+          throwTicketSlotTaken({
+            purchaseId,
+            eventId: event.id,
+            holdId,
+            reason: "hold_verification_failed",
+          });
+        }
+      }
+    }
 
     await saleLineRepo(tx).deleteMany({ where: { saleSummaryId: saleSummary.id } });
+    let createdTicketsTotal = 0;
     for (const line of breakdown.lines) {
       const saleLine = await saleLineRepo(tx).create({
         data: {
@@ -356,10 +407,31 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
       ticketsByType.set(line.ticketTypeId, typeTickets);
 
       if (createdCount > 0) {
+        createdTicketsTotal += createdCount;
         await tx.ticketType.update({
           where: { id: tt.id },
           data: { soldQuantity: { increment: createdCount } },
         });
+      }
+    }
+
+    if (inventoryHoldIds.length > 0 && createdTicketsTotal > 0) {
+      for (const holdId of inventoryHoldIds) {
+        const released = await releaseInventoryHold({
+          holdId,
+          allowWithoutOwnership: true,
+          consumed: true,
+          consumedByPaymentIntent: intent.id,
+          tx,
+        });
+        if (!released.ok) {
+          throwTicketSlotTaken({
+            purchaseId,
+            eventId: event.id,
+            holdId,
+            reason: "hold_consume_failed",
+          });
+        }
       }
     }
 

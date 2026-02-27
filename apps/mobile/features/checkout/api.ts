@@ -18,6 +18,8 @@ type CreateCheckoutInput = {
   idempotencyKey?: string | null;
   paymentScenario?: string;
   inviteToken?: string | null;
+  clientSessionId?: string | null;
+  inventoryHoldIds?: string[];
 };
 
 type CreatePairingCheckoutInput = {
@@ -100,6 +102,11 @@ export const createCheckoutIntent = async (
       purchaseId: input.purchaseId ?? undefined,
       idempotencyKey: input.idempotencyKey ?? undefined,
       inviteToken: input.inviteToken ?? undefined,
+      clientSessionId: input.clientSessionId ?? undefined,
+      inventoryHoldIds:
+        Array.isArray(input.inventoryHoldIds) && input.inventoryHoldIds.length > 0
+          ? input.inventoryHoldIds
+          : undefined,
     }),
   });
   return unwrapRawResponse<CheckoutIntentResponse>(response);

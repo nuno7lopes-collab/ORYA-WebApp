@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useNavigation } from "@react-navigation/native";
 import { initStripe, useStripe } from "@stripe/stripe-react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "../../../components/icons/Ionicons";
 import { LiquidBackground } from "../../../components/liquid/LiquidBackground";
 import { TopAppHeader } from "../../../components/navigation/TopAppHeader";
@@ -29,6 +30,32 @@ import {
   resolveStripeRuntimeKey,
   stripeModeLabel,
 } from "../../../lib/stripeRuntime";
+import { api } from "../../../lib/api";
+
+const INVENTORY_HOLD_STORAGE_KEY = "orya.inventory.hold.v1.mobile";
+
+type InventoryRequirement = {
+  productId: number;
+  variantId: number | null;
+  quantity: number;
+  subjectLabel: string;
+};
+
+type InventoryHoldEntry = {
+  holdId: string;
+  expiresAt: string;
+  subjectFingerprint: string;
+  productId: number;
+  variantId: number | null;
+  quantity: number;
+  subjectLabel: string;
+};
+
+type InventoryHoldSession = {
+  clientSessionId: string;
+  holds: InventoryHoldEntry[];
+  updatedAt: string;
+};
 
 const formatMoney = (cents: number | null | undefined, currency = "EUR") => {
   if (typeof cents !== "number" || !Number.isFinite(cents)) return "-";
@@ -49,6 +76,22 @@ const readCountryFromCanonical = (canonical?: Record<string, unknown> | null) =>
     if (typeof value === "string" && value.trim()) return value.trim().toUpperCase();
   }
   return null;
+};
+
+const createClientSessionId = () =>
+  `mobsess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
+
+const holdKey = (productId: number, variantId: number | null) =>
+  `${productId}:${variantId ?? "base"}`;
+
+const formatCountdown = (expiresAt: string) => {
+  const remaining = Math.max(
+    0,
+    Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000),
+  );
+  const minutes = Math.floor(remaining / 60);
+  const seconds = remaining % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 };
 
 export default function StoreCheckoutScreen() {
@@ -87,6 +130,8 @@ export default function StoreCheckoutScreen() {
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [inlineError, setInlineError] = useState<string | null>(null);
+  const [inventoryHoldSession, setInventoryHoldSession] = useState<InventoryHoldSession | null>(null);
+  const [holdCountdownLabel, setHoldCountdownLabel] = useState<string | null>(null);
 
   useEffect(() => {
     if (!prefill.data) return;
@@ -146,6 +191,247 @@ export default function StoreCheckoutScreen() {
     setSelectedShippingMethodId(defaultMethod?.id ?? null);
   }, [selectedShippingMethodId, shippingMethods.data?.methods]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const raw = await AsyncStorage.getItem(INVENTORY_HOLD_STORAGE_KEY);
+      if (cancelled || !raw) return;
+      try {
+        const parsed = JSON.parse(raw) as InventoryHoldSession;
+        if (!parsed?.clientSessionId || !Array.isArray(parsed.holds)) return;
+        setInventoryHoldSession(parsed);
+      } catch {
+        // ignore invalid session payload
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!inventoryHoldSession) return;
+    void AsyncStorage.setItem(
+      INVENTORY_HOLD_STORAGE_KEY,
+      JSON.stringify(inventoryHoldSession),
+    );
+  }, [inventoryHoldSession]);
+
+  useEffect(() => {
+    if (!inventoryHoldSession?.holds.length) {
+      setHoldCountdownLabel(null);
+      return;
+    }
+    const tick = () => {
+      const active = inventoryHoldSession.holds.filter((entry) => {
+        const expires = new Date(entry.expiresAt).getTime();
+        return Number.isFinite(expires) && expires > Date.now();
+      });
+      if (!active.length) {
+        setHoldCountdownLabel(null);
+        setInventoryHoldSession(null);
+        void AsyncStorage.removeItem(INVENTORY_HOLD_STORAGE_KEY);
+        return;
+      }
+      const nextExpiry = active
+        .map((entry) => entry.expiresAt)
+        .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())[0];
+      setHoldCountdownLabel(formatCountdown(nextExpiry));
+      if (active.length !== inventoryHoldSession.holds.length) {
+        setInventoryHoldSession({
+          ...inventoryHoldSession,
+          holds: active,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    };
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [inventoryHoldSession]);
+
+  useEffect(() => {
+    if (!inventoryHoldSession?.clientSessionId) return;
+    if (!inventoryHoldSession.holds.length) return;
+    const timer = setInterval(() => {
+      void (async () => {
+        const active = inventoryHoldSession.holds.filter((entry) => {
+          const expires = new Date(entry.expiresAt).getTime();
+          return Number.isFinite(expires) && expires > Date.now();
+        });
+        if (!active.length) return;
+        const refreshed = await Promise.all(
+          active.map(async (entry) => {
+            const response = await api.requestRaw<unknown>("/api/holds/inventory/ping", {
+              method: "POST",
+              body: JSON.stringify({
+                holdId: entry.holdId,
+                clientSessionId: inventoryHoldSession.clientSessionId,
+              }),
+            });
+            const payload = (response.data ?? {}) as {
+              expiresAt?: string;
+              data?: { expiresAt?: string };
+            };
+            const expiresAt = payload.data?.expiresAt ?? payload.expiresAt;
+            if (!response.ok || typeof expiresAt !== "string") return entry;
+            return { ...entry, expiresAt };
+          }),
+        );
+        const next: InventoryHoldSession = {
+          ...inventoryHoldSession,
+          holds: refreshed,
+          updatedAt: new Date().toISOString(),
+        };
+        setInventoryHoldSession(next);
+      })();
+    }, 45_000);
+    return () => clearInterval(timer);
+  }, [inventoryHoldSession]);
+
+  const inventoryRequirements = useMemo(() => {
+    const map = new Map<string, InventoryRequirement>();
+    const cartItems = cart.data?.cart.items ?? [];
+    const bundleItems = cart.data?.cart.bundles?.flatMap((bundle) => bundle.items) ?? [];
+    const register = (entry: {
+      productId: number;
+      variantId: number | null;
+      quantity: number;
+      subjectLabel: string;
+      stockPolicy: "NONE" | "TRACKED";
+    }) => {
+      if (entry.stockPolicy !== "TRACKED") return;
+      const key = holdKey(entry.productId, entry.variantId);
+      const current = map.get(key);
+      map.set(key, {
+        productId: entry.productId,
+        variantId: entry.variantId,
+        quantity: (current?.quantity ?? 0) + Math.max(1, entry.quantity),
+        subjectLabel: entry.subjectLabel,
+      });
+    };
+    for (const item of cartItems) {
+      register({
+        productId: item.productId,
+        variantId: item.variantId ?? null,
+        quantity: item.quantity,
+        subjectLabel: item.product.name,
+        stockPolicy: item.product.stockPolicy,
+      });
+    }
+    for (const item of bundleItems) {
+      register({
+        productId: item.productId,
+        variantId: item.variantId ?? null,
+        quantity: item.quantity,
+        subjectLabel: item.product.name,
+        stockPolicy: item.product.stockPolicy,
+      });
+    }
+    return Array.from(map.values());
+  }, [cart.data?.cart.bundles, cart.data?.cart.items]);
+
+  const activeInventoryHolds = useMemo(() => {
+    if (!inventoryHoldSession?.holds.length) return [] as InventoryHoldEntry[];
+    return inventoryHoldSession.holds.filter((entry) => {
+      const expires = new Date(entry.expiresAt).getTime();
+      return Number.isFinite(expires) && expires > Date.now();
+    });
+  }, [inventoryHoldSession]);
+
+  const holdsCoverCurrentCart = useMemo(() => {
+    if (!inventoryRequirements.length) return false;
+    const coverage = new Map<string, number>();
+    for (const hold of activeInventoryHolds) {
+      coverage.set(
+        holdKey(hold.productId, hold.variantId),
+        (coverage.get(holdKey(hold.productId, hold.variantId)) ?? 0) + hold.quantity,
+      );
+    }
+    return inventoryRequirements.every((requirement) => {
+      const key = holdKey(requirement.productId, requirement.variantId);
+      return (coverage.get(key) ?? 0) >= requirement.quantity;
+    });
+  }, [activeInventoryHolds, inventoryRequirements]);
+
+  const ensureInventoryHolds = async () => {
+    if (!inventoryRequirements.length) {
+      return { ok: true as const, clientSessionId: null, holdIds: [] as string[] };
+    }
+
+    if (inventoryHoldSession && activeInventoryHolds.length && holdsCoverCurrentCart) {
+      return {
+        ok: true as const,
+        clientSessionId: inventoryHoldSession.clientSessionId,
+        holdIds: activeInventoryHolds.map((entry) => entry.holdId),
+      };
+    }
+
+    const clientSessionId =
+      inventoryHoldSession?.clientSessionId ?? createClientSessionId();
+    const created: InventoryHoldEntry[] = [];
+    for (const requirement of inventoryRequirements) {
+      const response = await api.requestRaw<unknown>("/api/holds/inventory/create", {
+        method: "POST",
+        body: JSON.stringify({
+          storeId,
+          productId: requirement.productId,
+          variantId: requirement.variantId,
+          quantity: requirement.quantity,
+          clientSessionId,
+          metadata: { subjectLabel: requirement.subjectLabel },
+        }),
+      });
+      const payload = (response.data ?? {}) as {
+        holdId?: string;
+        expiresAt?: string;
+        subjectFingerprint?: string;
+        holdRequired?: boolean;
+        data?: { holdId?: string; expiresAt?: string; subjectFingerprint?: string; holdRequired?: boolean };
+        message?: string;
+        error?: string;
+      };
+      const data = payload.data ?? payload;
+      if (!response.ok) {
+        return {
+          ok: false as const,
+          message:
+            payload.message ||
+            payload.error ||
+            response.errorText ||
+            "Não foi possível reservar stock.",
+        };
+      }
+      if (data.holdRequired === false) continue;
+      if (!data.holdId || !data.expiresAt || !data.subjectFingerprint) {
+        return {
+          ok: false as const,
+          message: "Resposta inválida ao criar hold de inventory.",
+        };
+      }
+      created.push({
+        holdId: data.holdId,
+        expiresAt: data.expiresAt,
+        subjectFingerprint: data.subjectFingerprint,
+        productId: requirement.productId,
+        variantId: requirement.variantId,
+        quantity: requirement.quantity,
+        subjectLabel: requirement.subjectLabel,
+      });
+    }
+    const next: InventoryHoldSession = {
+      clientSessionId,
+      holds: created,
+      updatedAt: new Date().toISOString(),
+    };
+    setInventoryHoldSession(next);
+    return {
+      ok: true as const,
+      clientSessionId,
+      holdIds: created.map((entry) => entry.holdId),
+    };
+  };
+
   const canSubmit =
     Boolean(session?.user?.id) &&
     Boolean(storeId) &&
@@ -173,6 +459,11 @@ export default function StoreCheckoutScreen() {
     setInlineError(null);
 
     try {
+      const ensuredHolds = await ensureInventoryHolds();
+      if (!ensuredHolds.ok) {
+        setInlineError(ensuredHolds.message);
+        return;
+      }
       const result = await checkout.mutateAsync({
         storeId,
         payload: {
@@ -205,6 +496,8 @@ export default function StoreCheckoutScreen() {
               : null,
           shippingMethodId: totals.requiresShipping ? selectedShippingMethodId : null,
           notes: notes.trim() || null,
+          clientSessionId: ensuredHolds.clientSessionId,
+          inventoryHoldIds: ensuredHolds.holdIds,
         },
       });
 
@@ -477,6 +770,23 @@ export default function StoreCheckoutScreen() {
                   className="rounded-xl border border-white/15 bg-white/5 px-3 py-3 text-white text-sm"
                 />
               </View>
+              {inventoryRequirements.length > 0 && activeInventoryHolds.length > 0 && holdsCoverCurrentCart ? (
+                <View className="mt-3 rounded-xl border border-emerald-300/40 bg-emerald-500/15 px-3 py-3">
+                  <Text className="text-emerald-100 text-xs font-semibold">
+                    Stock reservado para checkout
+                  </Text>
+                  <Text className="mt-1 text-emerald-100/90 text-xs">
+                    Tempo restante: {holdCountdownLabel ?? "05:00"}
+                  </Text>
+                </View>
+              ) : null}
+              {inventoryRequirements.length > 0 && inventoryHoldSession && activeInventoryHolds.length === 0 ? (
+                <View className="mt-3 rounded-xl border border-amber-300/40 bg-amber-500/15 px-3 py-3">
+                  <Text className="text-amber-100 text-xs">
+                    O seu bloqueio expirou - o stock já não está reservado.
+                  </Text>
+                </View>
+              ) : null}
               {inlineError ? <Text className="mt-3 text-rose-200 text-xs">{inlineError}</Text> : null}
               <Pressable
                 onPress={handleCheckout}

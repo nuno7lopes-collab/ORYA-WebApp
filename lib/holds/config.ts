@@ -28,7 +28,23 @@ export function isPlatformHoldContractEnabled() {
   return true;
 }
 
+export function isInventoryHoldContractEnabled() {
+  const explicit = parseBoolean(process.env.FEATURE_INVENTORY_HOLDS);
+  if (explicit != null) return explicit;
+
+  if (
+    process.env.NODE_ENV === "test" ||
+    process.env.ORIGINAL_NODE_ENV === "test" ||
+    process.env.VITEST === "true" ||
+    typeof process.env.VITEST_WORKER_ID === "string"
+  ) {
+    return false;
+  }
+
+  if (process.env.APP_ENV === "prod") return false;
+  return true;
+}
+
 export function buildHoldRedisKey(orgId: number, subjectFingerprint: string) {
   return `hold:org:${orgId}:subject:${subjectFingerprint}`;
 }
-

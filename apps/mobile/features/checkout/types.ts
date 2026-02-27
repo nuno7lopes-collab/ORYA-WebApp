@@ -43,6 +43,15 @@ export type CheckoutDraftItem = {
   currency: string;
 };
 
+export type CheckoutInventoryHold = {
+  holdId: string;
+  ticketTypeId: number;
+  quantity: number;
+  subjectFingerprint: string;
+  expiresAt: string;
+  subjectLabel: string;
+};
+
 export type CheckoutDraft = {
   slug?: string;
   eventId?: number;
@@ -62,6 +71,9 @@ export type CheckoutDraft = {
   holdSubjectFingerprint?: string | null;
   holdSubjectLabel?: string | null;
   holdExpiresAt?: string | null;
+  inventoryClientSessionId?: string | null;
+  inventoryHolds?: CheckoutInventoryHold[] | null;
+  inventoryHoldExpiresAt?: string | null;
   sourceType?: string;
   paymentScenario?: string | null;
   pairingId?: number | null;

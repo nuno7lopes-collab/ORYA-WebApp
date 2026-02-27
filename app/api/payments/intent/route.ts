@@ -67,6 +67,12 @@ import { getStripeEnv, tryGetStripePublishableKeyForEnv } from "@/lib/stripeKeys
 import { paymentEventRepo } from "@/domain/finance/readModelConsumer";
 import { resolveInviteTokenGrant } from "@/lib/invites/inviteTokens";
 import { isEventCancelledStatus, isEventOperationalStatus } from "@/domain/events/lifecycle";
+import { buildInventoryHoldFingerprint } from "@orya/shared";
+import { isInventoryHoldContractEnabled } from "@/lib/holds/config";
+import {
+  releaseInventoryHold,
+  verifyInventoryHoldOwnership,
+} from "@/lib/holds/inventoryHold";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
@@ -1063,6 +1069,8 @@ type Body = {
   purchaseId?: string | null;
   idempotencyKey?: string | null;
   intentFingerprint?: string | null;
+  clientSessionId?: string | null;
+  inventoryHoldIds?: string[] | null;
   pairingId?: number | null;
   slotId?: number | null;
   ticketId?: string | number | null;
@@ -1158,6 +1166,18 @@ async function _POST(req: NextRequest) {
       paymentScenario: rawScenario,
       idempotencyKey: bodyIdemKey,
     } = body;
+    const inventoryHoldContractEnabled = isInventoryHoldContractEnabled();
+    const inventoryClientSessionId =
+      typeof body?.clientSessionId === "string" ? body.clientSessionId.trim() : "";
+    const inventoryHoldIds = Array.from(
+      new Set(
+        (Array.isArray(body?.inventoryHoldIds) ? body.inventoryHoldIds : [])
+          .map((holdId) =>
+            typeof holdId === "string" ? holdId.trim() : String(holdId ?? "").trim(),
+          )
+          .filter((holdId) => holdId.length > 0),
+      ),
+    );
     const paymentMethod = normalizePaymentMethod(body?.paymentMethod);
     const inviteToken =
       typeof (body as { inviteToken?: unknown })?.inviteToken === "string"
@@ -1558,6 +1578,11 @@ async function _POST(req: NextRequest) {
       currency: string;
       lineTotalCents: number;
     }[] = [];
+    const ticketInventoryRequirements = new Map<
+      string,
+      { ticketTypeId: number; quantity: number; subjectFingerprint: string }
+    >();
+    const requiredTicketInventoryHoldIds = new Set<string>();
 
     for (const item of items) {
       const ticketTypeId = Number(item.ticketId);
@@ -1616,11 +1641,124 @@ async function _POST(req: NextRequest) {
         lineTotalCents: lineTotal,
       });
 
+      if (
+        inventoryHoldContractEnabled &&
+        ticketType.totalQuantity !== null &&
+        ticketType.totalQuantity !== undefined
+      ) {
+        if (!event.organization_id) {
+          return intentError(
+            "EVENT_ORG_NOT_FOUND",
+            "Evento sem organização válida para checkout.",
+            {
+              httpStatus: 409,
+              status: "FAILED",
+              retryable: false,
+              nextAction: "NONE",
+            },
+          );
+        }
+        const subjectFingerprint = buildInventoryHoldFingerprint({
+          orgId: event.organization_id,
+          subjectType: "TICKET_TYPE",
+          eventId: event.id,
+          ticketTypeId,
+        });
+        const current = ticketInventoryRequirements.get(subjectFingerprint);
+        ticketInventoryRequirements.set(subjectFingerprint, {
+          ticketTypeId,
+          subjectFingerprint,
+          quantity: (current?.quantity ?? 0) + qty,
+        });
+      }
+
       amountInCents += lineTotal;
       totalQuantity += qty;
     }
 
+    if (
+      inventoryHoldContractEnabled &&
+      ticketInventoryRequirements.size > 0
+    ) {
+      if (!inventoryClientSessionId || inventoryHoldIds.length === 0) {
+        return intentError(
+          "HOLD_REQUIRED",
+          "Este checkout requer hold de inventory ativo.",
+          {
+            httpStatus: 409,
+            status: "FAILED",
+            retryable: false,
+            nextAction: "NONE",
+          },
+        );
+      }
+      const totalByFingerprint = new Map<string, number>();
+      for (const holdId of inventoryHoldIds) {
+        const verified = await verifyInventoryHoldOwnership({
+          holdId,
+          clientSessionId: inventoryClientSessionId,
+          expectedOrgId: event.organization_id ?? undefined,
+        });
+        if (!verified.ok) {
+          return intentError(
+            "SLOT_NOT_AVAILABLE",
+            "Hold de inventory inválido para este checkout.",
+            {
+              httpStatus: 409,
+              status: "FAILED",
+              retryable: false,
+              nextAction: "NONE",
+            },
+          );
+        }
+        const next =
+          (totalByFingerprint.get(verified.data.subjectFingerprint) ?? 0) +
+          verified.data.quantity;
+        totalByFingerprint.set(verified.data.subjectFingerprint, next);
+        if (ticketInventoryRequirements.has(verified.data.subjectFingerprint)) {
+          requiredTicketInventoryHoldIds.add(holdId);
+        }
+      }
+      for (const requirement of ticketInventoryRequirements.values()) {
+        const covered = totalByFingerprint.get(requirement.subjectFingerprint) ?? 0;
+        if (covered < requirement.quantity) {
+          return intentError(
+            "HOLD_REQUIRED",
+            "Hold de inventory insuficiente para a quantidade de bilhetes.",
+            {
+              httpStatus: 409,
+              status: "FAILED",
+              retryable: false,
+              nextAction: "NONE",
+            },
+          );
+        }
+      }
+    }
+
     const allLinesFree = lines.length > 0 && lines.every((line) => line.unitPriceCents === 0);
+    const consumeTicketInventoryHolds = async (consumedByPaymentIntent: string) => {
+      if (!inventoryHoldContractEnabled) return;
+      if (!inventoryClientSessionId) return;
+      const holdIds = Array.from(requiredTicketInventoryHoldIds);
+      if (holdIds.length === 0) return;
+      await Promise.all(
+        holdIds.map(async (holdId) => {
+          const released = await releaseInventoryHold({
+            holdId,
+            clientSessionId: inventoryClientSessionId,
+            consumed: true,
+            consumedByPaymentIntent,
+          });
+          if (!released.ok) {
+            logWarn("payments.intent.free_checkout.inventory_hold_consume_failed", {
+              holdId,
+              code: released.code,
+            });
+          }
+        }),
+      );
+    };
 
     if (!currency) {
       return intentError("CURRENCY_UNDETERMINED", "Moeda não determinada para o checkout.", { httpStatus: 400 });
@@ -2555,6 +2693,7 @@ async function _POST(req: NextRequest) {
           select: { id: true },
         });
         if (existingFreeTicket) {
+          await consumeTicketInventoryHolds(FREE_PLACEHOLDER_INTENT_ID);
           return jsonWrap({
             ok: true,
             code: "OK",
@@ -2604,6 +2743,7 @@ async function _POST(req: NextRequest) {
           idempotencyKey: clientIdempotencyKey ?? effectiveDedupeKey,
           payload: outboxPayload as Prisma.InputJsonObject,
         });
+        await consumeTicketInventoryHolds(FREE_PLACEHOLDER_INTENT_ID);
 
         return jsonWrap({
           ok: true,
@@ -2688,6 +2828,7 @@ async function _POST(req: NextRequest) {
         idempotencyKey: clientIdempotencyKey ?? effectiveDedupeKey,
         payload: outboxPayload as Prisma.InputJsonObject,
       });
+      await consumeTicketInventoryHolds(FREE_PLACEHOLDER_INTENT_ID);
 
       const createdTicketsCount = 0;
       return jsonWrap({
@@ -2751,6 +2892,8 @@ async function _POST(req: NextRequest) {
       promoCode: promoCodeId ? String(promoCodeId) : "",
       promoCodeRaw: promoCodeInput,
       totalQuantity: String(totalQuantity),
+      inventoryHoldIds: Array.from(requiredTicketInventoryHoldIds).join(","),
+      inventoryClientSessionId,
       breakdown: JSON.stringify({
         lines,
         subtotalCents: pricing.subtotalCents,

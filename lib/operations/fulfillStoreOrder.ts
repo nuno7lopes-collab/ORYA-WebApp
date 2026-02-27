@@ -10,6 +10,10 @@ import { logError, logWarn } from "@/lib/observability/logger";
 import { normalizeEmail } from "@/lib/utils/email";
 import { ensureEmailIdentity, resolveIdentityForUser } from "@/lib/ownership/identity";
 import { resolveStorePolicyWithSnapshot } from "@/lib/store/policySnapshot";
+import {
+  releaseInventoryHold,
+  verifyInventoryHoldOwnership,
+} from "@/lib/holds/inventoryHold";
 
 function parseId(value: unknown) {
   const parsed = Number(value);
@@ -25,10 +29,32 @@ function buildOwnerKey(params: { ownerIdentityId?: string | null }) {
   return `identity:${params.ownerIdentityId}`;
 }
 
+function throwStoreSlotTaken(context: Record<string, unknown>) {
+  logWarn("payment_attempt.failed_slot_taken", {
+    sourceType: "STORE_ORDER",
+    ...context,
+  });
+  throw new Error("SLOT_TAKEN");
+}
+
 export async function fulfillStoreOrderIntent(intent: Stripe.PaymentIntent): Promise<boolean> {
   const meta = intent.metadata ?? {};
   const orderId = parseId(meta.storeOrderId);
   if (!orderId) return false;
+  const inventoryHoldIds = typeof meta.inventoryHoldIds === "string"
+    ? Array.from(
+        new Set(
+          meta.inventoryHoldIds
+            .split(",")
+            .map((value) => value.trim())
+            .filter((value) => value.length > 0),
+        ),
+      )
+    : [];
+  const inventoryClientSessionId =
+    typeof meta.inventoryClientSessionId === "string"
+      ? meta.inventoryClientSessionId.trim()
+      : "";
 
   const order = await prisma.storeOrder.findUnique({
     where: { id: orderId },
@@ -176,6 +202,22 @@ export async function fulfillStoreOrderIntent(intent: Stripe.PaymentIntent): Pro
     }
 
     if (paymentApplied) {
+      if (inventoryHoldIds.length > 0) {
+        if (!inventoryClientSessionId) {
+          throwStoreSlotTaken({ orderId: order.id, reason: "missing_inventory_client_session" });
+        }
+        for (const holdId of inventoryHoldIds) {
+          const verified = await verifyInventoryHoldOwnership({
+            holdId,
+            clientSessionId: inventoryClientSessionId,
+            expectedOrgId: order.store.ownerOrganizationId,
+          });
+          if (!verified.ok) {
+            throwStoreSlotTaken({ orderId: order.id, holdId, reason: "hold_verification_failed" });
+          }
+        }
+      }
+
       for (const line of orderLines) {
         if (!line.productId || !line.product || line.product.stockPolicy !== StoreStockPolicy.TRACKED) continue;
         if (line.variantId) {
@@ -184,12 +226,13 @@ export async function fulfillStoreOrderIntent(intent: Stripe.PaymentIntent): Pro
             data: { stockQty: { decrement: line.quantity } },
           });
           if (updated.count === 0) {
-            logWarn("fulfill_store_order.stock_insufficient_variant", {
+            throwStoreSlotTaken({
               orderId: order.id,
               productId: line.productId,
               variantId: line.variantId,
+              requestedQty: line.quantity,
+              reason: "variant_stock_conflict",
             });
-            continue;
           }
           await tx.storeInventoryMovement.create({
             data: {
@@ -208,11 +251,12 @@ export async function fulfillStoreOrderIntent(intent: Stripe.PaymentIntent): Pro
           data: { stockQty: { decrement: line.quantity } },
         });
         if (updated.count === 0) {
-          logWarn("fulfill_store_order.stock_insufficient_product", {
+          throwStoreSlotTaken({
             orderId: order.id,
             productId: line.productId,
+            requestedQty: line.quantity,
+            reason: "product_stock_conflict",
           });
-          continue;
         }
         await tx.storeInventoryMovement.create({
           data: {
@@ -222,6 +266,25 @@ export async function fulfillStoreOrderIntent(intent: Stripe.PaymentIntent): Pro
             reason: `ORDER:${order.id}`,
           },
         });
+      }
+
+      if (inventoryHoldIds.length > 0) {
+        for (const holdId of inventoryHoldIds) {
+          const released = await releaseInventoryHold({
+            holdId,
+            allowWithoutOwnership: true,
+            consumed: true,
+            consumedByPaymentIntent: intent.id,
+            tx,
+          });
+          if (!released.ok) {
+            throwStoreSlotTaken({
+              orderId: order.id,
+              holdId,
+              reason: "hold_consume_failed",
+            });
+          }
+        }
       }
     }
 

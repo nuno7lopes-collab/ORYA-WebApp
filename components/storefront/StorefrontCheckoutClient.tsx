@@ -9,24 +9,42 @@ import type { GeoDetailsItem } from "@/lib/geo/types";
 
 type CartItem = {
   id: number;
+  productId: number;
+  variantId: number | null;
   quantity: number;
   unitPriceCents: number;
+  variant?: {
+    id: number;
+    label: string;
+    stockQty: number | null;
+  } | null;
   product: {
     id: number;
     name: string;
     requiresShipping: boolean;
+    stockPolicy?: string;
+    stockQty?: number | null;
   };
 };
 
 type BundleItem = {
   id: number;
+  productId: number;
+  variantId: number | null;
   quantity: number;
   perBundleQty: number;
   unitPriceCents: number;
+  variant?: {
+    id: number;
+    label: string;
+    stockQty: number | null;
+  } | null;
   product: {
     id: number;
     name: string;
     requiresShipping: boolean;
+    stockPolicy?: string;
+    stockQty?: number | null;
   };
 };
 
@@ -84,10 +102,104 @@ type CheckoutResponse = {
   error?: string;
 };
 
+type InventoryRequirement = {
+  productId: number;
+  variantId: number | null;
+  quantity: number;
+  subjectLabel: string;
+};
+
+type InventoryHoldEntry = {
+  holdId: string;
+  expiresAt: string;
+  subjectFingerprint: string;
+  quantity: number;
+  productId: number;
+  variantId: number | null;
+  subjectLabel: string;
+};
+
+type InventoryHoldSession = {
+  clientSessionId: string;
+  holds: InventoryHoldEntry[];
+  updatedAt: string;
+};
+
+const INVENTORY_HOLD_STORAGE_KEY = "orya.inventory.hold.v1";
+const HOLD_TTL_SECONDS = 5 * 60;
+
 const SHIPPING_COUNTRY = "PT";
 
 function formatMoney(cents: number, currency: string) {
   return new Intl.NumberFormat("pt-PT", { style: "currency", currency }).format(cents / 100);
+}
+
+function createClientSessionId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 14)}`;
+}
+
+function readInventoryHoldSession(): InventoryHoldSession | null {
+  if (typeof window === "undefined") return null;
+  const raw = window.sessionStorage.getItem(INVENTORY_HOLD_STORAGE_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<InventoryHoldSession>;
+    if (!parsed || typeof parsed !== "object") return null;
+    if (typeof parsed.clientSessionId !== "string" || !Array.isArray(parsed.holds)) {
+      return null;
+    }
+    const holds = parsed.holds
+      .filter((entry): entry is InventoryHoldEntry => {
+        if (!entry || typeof entry !== "object") return false;
+        const hold = entry as Partial<InventoryHoldEntry>;
+        return (
+          typeof hold.holdId === "string" &&
+          typeof hold.expiresAt === "string" &&
+          typeof hold.subjectFingerprint === "string" &&
+          typeof hold.quantity === "number" &&
+          typeof hold.productId === "number" &&
+          (typeof hold.variantId === "number" || hold.variantId === null) &&
+          typeof hold.subjectLabel === "string"
+        );
+      })
+      .map((entry) => ({
+        ...entry,
+        quantity: Math.max(1, Math.trunc(entry.quantity)),
+      }));
+    return {
+      clientSessionId: parsed.clientSessionId,
+      holds,
+      updatedAt:
+        typeof parsed.updatedAt === "string"
+          ? parsed.updatedAt
+          : new Date().toISOString(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeInventoryHoldSession(value: InventoryHoldSession | null) {
+  if (typeof window === "undefined") return;
+  if (!value) {
+    window.sessionStorage.removeItem(INVENTORY_HOLD_STORAGE_KEY);
+    return;
+  }
+  window.sessionStorage.setItem(INVENTORY_HOLD_STORAGE_KEY, JSON.stringify(value));
+}
+
+function formatHoldCountdown(targetIso: string) {
+  const remaining = Math.max(0, Math.trunc((new Date(targetIso).getTime() - Date.now()) / 1000));
+  const minutes = Math.floor(remaining / 60);
+  const seconds = remaining % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function holdKey(productId: number, variantId: number | null) {
+  return `${productId}:${variantId ?? "base"}`;
 }
 
 function PaymentForm({ onSuccess }: { onSuccess?: () => void }) {
@@ -162,6 +274,8 @@ export default function StorefrontCheckoutClient({
   const [promoInput, setPromoInput] = useState("");
   const [promoCode, setPromoCode] = useState<string | null>(null);
   const [promoError, setPromoError] = useState<string | null>(null);
+  const [inventoryHoldSession, setInventoryHoldSession] = useState<InventoryHoldSession | null>(null);
+  const [holdTick, setHoldTick] = useState(() => Date.now());
 
   const [customer, setCustomer] = useState({ name: "", email: "", phone: "" });
   const [shipping, setShipping] = useState({
@@ -213,12 +327,102 @@ export default function StorefrontCheckoutClient({
     return key ? loadStripe(key) : null;
   }, []);
 
+  useEffect(() => {
+    const persisted = readInventoryHoldSession();
+    if (!persisted) return;
+    setInventoryHoldSession(persisted);
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setHoldTick(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const requiresShipping = useMemo(
     () =>
       items.some((item) => item.product.requiresShipping) ||
       bundles.some((bundle) => bundle.items.some((item) => item.product.requiresShipping)),
     [items, bundles],
   );
+  const inventoryRequirements = useMemo(() => {
+    const map = new Map<string, InventoryRequirement>();
+    const register = (entry: {
+      productId: number;
+      variantId: number | null;
+      quantity: number;
+      subjectLabel: string;
+      stockPolicy?: string;
+    }) => {
+      if (entry.stockPolicy !== "TRACKED") return;
+      const key = holdKey(entry.productId, entry.variantId);
+      const current = map.get(key);
+      map.set(key, {
+        productId: entry.productId,
+        variantId: entry.variantId,
+        quantity: (current?.quantity ?? 0) + Math.max(1, entry.quantity),
+        subjectLabel: entry.subjectLabel,
+      });
+    };
+
+    for (const item of items) {
+      register({
+        productId: item.productId,
+        variantId: item.variantId ?? null,
+        quantity: item.quantity,
+        subjectLabel: item.product.name,
+        stockPolicy: item.product.stockPolicy,
+      });
+    }
+    for (const bundle of bundles) {
+      for (const item of bundle.items) {
+        register({
+          productId: item.productId,
+          variantId: item.variantId ?? null,
+          quantity: item.quantity,
+          subjectLabel: item.product.name,
+          stockPolicy: item.product.stockPolicy,
+        });
+      }
+    }
+    return Array.from(map.values());
+  }, [bundles, items]);
+
+  const activeInventoryHolds = useMemo(() => {
+    if (!inventoryHoldSession) return [] as InventoryHoldEntry[];
+    return inventoryHoldSession.holds.filter((entry) => {
+      const expires = new Date(entry.expiresAt).getTime();
+      return Number.isFinite(expires) && expires > holdTick;
+    });
+  }, [holdTick, inventoryHoldSession]);
+
+  const holdCoverage = useMemo(() => {
+    const coverage = new Map<string, number>();
+    for (const hold of activeInventoryHolds) {
+      const key = holdKey(hold.productId, hold.variantId);
+      coverage.set(key, (coverage.get(key) ?? 0) + hold.quantity);
+    }
+    return coverage;
+  }, [activeInventoryHolds]);
+
+  const holdsCoverCurrentCart = useMemo(() => {
+    if (inventoryRequirements.length === 0) return false;
+    return inventoryRequirements.every((requirement) => {
+      const key = holdKey(requirement.productId, requirement.variantId);
+      return (holdCoverage.get(key) ?? 0) >= requirement.quantity;
+    });
+  }, [holdCoverage, inventoryRequirements]);
+
+  const nextHoldExpiry = useMemo(() => {
+    if (!activeInventoryHolds.length) return null;
+    return activeInventoryHolds
+      .map((entry) => new Date(entry.expiresAt).getTime())
+      .filter((value) => Number.isFinite(value))
+      .sort((a, b) => a - b)[0] ?? null;
+  }, [activeInventoryHolds]);
+  const holdCountdown =
+    nextHoldExpiry && nextHoldExpiry > Date.now()
+      ? formatHoldCountdown(new Date(nextHoldExpiry).toISOString())
+      : null;
 
   const subtotalCents = useMemo(
     () =>
@@ -387,6 +591,170 @@ export default function StorefrontCheckoutClient({
     void loadShippingMethods(SHIPPING_COUNTRY);
   }, [requiresShipping, subtotalCents]);
 
+  useEffect(() => {
+    if (!inventoryHoldSession) return;
+    const active = inventoryHoldSession.holds.filter((entry) => {
+      const expires = new Date(entry.expiresAt).getTime();
+      return Number.isFinite(expires) && expires > Date.now();
+    });
+    if (active.length === inventoryHoldSession.holds.length) return;
+    if (active.length === 0) {
+      setInventoryHoldSession(null);
+      writeInventoryHoldSession(null);
+      return;
+    }
+    const next: InventoryHoldSession = {
+      ...inventoryHoldSession,
+      holds: active,
+      updatedAt: new Date().toISOString(),
+    };
+    setInventoryHoldSession(next);
+    writeInventoryHoldSession(next);
+  }, [holdTick, inventoryHoldSession]);
+
+  useEffect(() => {
+    if (!inventoryHoldSession?.clientSessionId) return;
+    if (!inventoryHoldSession.holds.length) return;
+    const interval = window.setInterval(() => {
+      void (async () => {
+        const active = inventoryHoldSession.holds.filter((entry) => {
+          const expires = new Date(entry.expiresAt).getTime();
+          return Number.isFinite(expires) && expires > Date.now();
+        });
+        if (!active.length) return;
+        const refreshed = await Promise.all(
+          active.map(async (entry) => {
+            const res = await fetch("/api/holds/inventory/ping", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                holdId: entry.holdId,
+                clientSessionId: inventoryHoldSession.clientSessionId,
+              }),
+            });
+            const payload = await res.json().catch(() => null);
+            if (!res.ok) return entry;
+            const expiresAt =
+              typeof payload?.data?.expiresAt === "string"
+                ? payload.data.expiresAt
+                : typeof payload?.expiresAt === "string"
+                  ? payload.expiresAt
+                  : entry.expiresAt;
+            return { ...entry, expiresAt };
+          }),
+        );
+        const next: InventoryHoldSession = {
+          ...inventoryHoldSession,
+          holds: refreshed,
+          updatedAt: new Date().toISOString(),
+        };
+        setInventoryHoldSession(next);
+        writeInventoryHoldSession(next);
+      })();
+    }, 45_000);
+    return () => window.clearInterval(interval);
+  }, [inventoryHoldSession]);
+
+  const releaseInventorySessionHolds = async (session: InventoryHoldSession | null) => {
+    if (!session?.clientSessionId || !session.holds.length) return;
+    await Promise.all(
+      session.holds.map((entry) =>
+        fetch("/api/holds/inventory/release", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            holdId: entry.holdId,
+            clientSessionId: session.clientSessionId,
+          }),
+        }).catch(() => null),
+      ),
+    );
+  };
+
+  const ensureInventoryHolds = async () => {
+    if (!inventoryRequirements.length) {
+      return { ok: true as const, clientSessionId: null, holdIds: [] as string[] };
+    }
+
+    if (inventoryHoldSession && activeInventoryHolds.length && holdsCoverCurrentCart) {
+      return {
+        ok: true as const,
+        clientSessionId: inventoryHoldSession.clientSessionId,
+        holdIds: activeInventoryHolds.map((entry) => entry.holdId),
+      };
+    }
+
+    if (inventoryHoldSession?.holds.length) {
+      await releaseInventorySessionHolds(inventoryHoldSession);
+    }
+
+    const clientSessionId = inventoryHoldSession?.clientSessionId || createClientSessionId();
+    const createdHolds: InventoryHoldEntry[] = [];
+
+    for (const requirement of inventoryRequirements) {
+      const res = await fetch("/api/holds/inventory/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          storeId,
+          productId: requirement.productId,
+          variantId: requirement.variantId,
+          quantity: requirement.quantity,
+          clientSessionId,
+          metadata: { subjectLabel: requirement.subjectLabel },
+        }),
+      });
+      const payload = await res.json().catch(() => null);
+      const data = payload?.data ?? payload;
+      if (!res.ok) {
+        const message =
+          payload?.message ||
+          payload?.error ||
+          payload?.details?.message ||
+          "Não foi possível reservar stock para checkout.";
+        return { ok: false as const, message };
+      }
+      const holdRequired = data?.holdRequired !== false;
+      if (!holdRequired) continue;
+      const holdId = typeof data?.holdId === "string" ? data.holdId : null;
+      const expiresAt =
+        typeof data?.expiresAt === "string" ? data.expiresAt : null;
+      const subjectFingerprint =
+        typeof data?.subjectFingerprint === "string"
+          ? data.subjectFingerprint
+          : null;
+      if (!holdId || !expiresAt || !subjectFingerprint) {
+        return {
+          ok: false as const,
+          message: "Resposta inválida ao criar hold de inventory.",
+        };
+      }
+      createdHolds.push({
+        holdId,
+        expiresAt,
+        subjectFingerprint,
+        quantity: requirement.quantity,
+        productId: requirement.productId,
+        variantId: requirement.variantId,
+        subjectLabel: requirement.subjectLabel,
+      });
+    }
+
+    const next: InventoryHoldSession = {
+      clientSessionId,
+      holds: createdHolds,
+      updatedAt: new Date().toISOString(),
+    };
+    setInventoryHoldSession(next);
+    writeInventoryHoldSession(next);
+
+    return {
+      ok: true as const,
+      clientSessionId,
+      holdIds: createdHolds.map((entry) => entry.holdId),
+    };
+  };
+
   const handleStartCheckout = async () => {
     if (!items.length && !bundles.length) {
       setError("Carrinho vazio.");
@@ -417,6 +785,11 @@ export default function StorefrontCheckoutClient({
     setError(null);
     setPromoError(null);
     try {
+      const ensuredHolds = await ensureInventoryHolds();
+      if (!ensuredHolds.ok) {
+        throw new Error(ensuredHolds.message);
+      }
+
       const res = await fetch(`/api/public/store/checkout?storeId=${storeId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -444,6 +817,8 @@ export default function StorefrontCheckoutClient({
           shippingMethodId: requiresShipping ? selectedShippingMethodId : null,
           notes: notes || null,
           promoCode: promoCode?.trim() || null,
+          clientSessionId: ensuredHolds.clientSessionId,
+          inventoryHoldIds: ensuredHolds.holdIds,
         }),
       });
       const json = (await res.json().catch(() => null)) as CheckoutResponse | null;
@@ -480,6 +855,28 @@ export default function StorefrontCheckoutClient({
       )}
 
       {loading && <p className="text-sm text-white/60">A preparar checkout...</p>}
+
+      {!checkout && inventoryRequirements.length > 0 && activeInventoryHolds.length > 0 && holdsCoverCurrentCart && (
+        <div className="rounded-2xl border border-emerald-400/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+          <p className="font-semibold">Stock reservado para checkout.</p>
+          <p className="mt-1 text-emerald-100/90">
+            Tempo restante: {holdCountdown ?? `${Math.floor(HOLD_TTL_SECONDS / 60)}:00`}
+          </p>
+          <button
+            type="button"
+            onClick={() => void handleStartCheckout()}
+            className="mt-3 rounded-full border border-emerald-300/50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-50 hover:bg-emerald-400/20"
+          >
+            Voltar ao checkout
+          </button>
+        </div>
+      )}
+
+      {!checkout && inventoryRequirements.length > 0 && inventoryHoldSession && activeInventoryHolds.length === 0 && (
+        <div className="rounded-2xl border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+          O seu bloqueio expirou - o stock já não está reservado.
+        </div>
+      )}
 
       {!checkout ? (
         <div className="space-y-6">

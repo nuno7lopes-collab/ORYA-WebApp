@@ -29,6 +29,7 @@ import {
 } from "../../features/checkout/api";
 import {
   CheckoutMethod,
+  CheckoutInventoryHold,
   CheckoutStatusResponse,
 } from "../../features/checkout/types";
 import { useAuth } from "../../lib/auth";
@@ -85,6 +86,25 @@ const formatCountdown = (ms: number) => {
   const minutes = Math.floor(total / 60);
   const seconds = total % 60;
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+};
+
+const parseInventoryHolds = (raw: unknown): CheckoutInventoryHold[] => {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((entry): entry is CheckoutInventoryHold => {
+    if (!entry || typeof entry !== "object") return false;
+    const value = entry as Partial<CheckoutInventoryHold>;
+    return (
+      typeof value.holdId === "string" &&
+      typeof value.ticketTypeId === "number" &&
+      Number.isFinite(value.ticketTypeId) &&
+      typeof value.quantity === "number" &&
+      Number.isFinite(value.quantity) &&
+      value.quantity > 0 &&
+      typeof value.subjectFingerprint === "string" &&
+      typeof value.expiresAt === "string" &&
+      typeof value.subjectLabel === "string"
+    );
+  });
 };
 
 const CHECKOUT_BLOCKED_CODES = new Set([
@@ -177,6 +197,12 @@ type StatusMeta = {
   secondaryActionLabel?: string;
   secondaryAction?: () => void;
   showSpinner?: boolean;
+};
+
+type TicketInventoryRequirement = {
+  ticketTypeId: number;
+  quantity: number;
+  subjectLabel: string;
 };
 
 export default function CheckoutScreen() {
@@ -286,12 +312,12 @@ export default function CheckoutScreen() {
   }, [draft?.paymentIntentId, draft?.purchaseId, draft?.bookingId]);
 
   useEffect(() => {
-    if (!draft?.holdExpiresAt) {
+    if (!checkoutHoldExpiresAt) {
       setHoldCountdownLabel(null);
       return;
     }
     const tick = () => {
-      const remaining = new Date(draft.holdExpiresAt ?? "").getTime() - Date.now();
+      const remaining = new Date(checkoutHoldExpiresAt).getTime() - Date.now();
       if (!Number.isFinite(remaining) || remaining <= 0) {
         setHoldCountdownLabel(null);
         return;
@@ -301,7 +327,7 @@ export default function CheckoutScreen() {
     tick();
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, [draft?.holdExpiresAt]);
+  }, [checkoutHoldExpiresAt]);
 
   useEffect(() => {
     if (!draft) return;
@@ -351,6 +377,78 @@ export default function CheckoutScreen() {
     draft?.sourceType,
     setDraft,
   ]);
+
+  useEffect(() => {
+    if (!draft) return;
+    if (isServiceBooking || isPadelRegistration) return;
+    const clientSessionId =
+      typeof draft.inventoryClientSessionId === "string"
+        ? draft.inventoryClientSessionId.trim()
+        : "";
+    const holds = parseInventoryHolds(draft.inventoryHolds);
+    if (!clientSessionId || holds.length === 0) return;
+    const interval = setInterval(() => {
+      void (async () => {
+        const active = holds.filter((entry) => {
+          const expires = new Date(entry.expiresAt).getTime();
+          return Number.isFinite(expires) && expires > Date.now();
+        });
+        if (active.length === 0) {
+          const { createdAt: _createdAt, expiresAt: _expiresAt, ...persisted } = draft;
+          setDraft({
+            ...persisted,
+            inventoryClientSessionId: null,
+            inventoryHolds: [],
+            inventoryHoldExpiresAt: null,
+          });
+          return;
+        }
+
+        const refreshed: CheckoutInventoryHold[] = [];
+        for (const hold of active) {
+          const pingResult = await api.requestRaw<{
+            ok?: boolean;
+            expiresAt?: string | null;
+            data?: { expiresAt?: string | null };
+          }>("/api/holds/inventory/ping", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              holdId: hold.holdId,
+              clientSessionId,
+            }),
+          });
+          const body = pingResult.data;
+          if (!pingResult.ok || !body?.ok) {
+            continue;
+          }
+          const expiresAt =
+            typeof body.expiresAt === "string"
+              ? body.expiresAt
+              : typeof body.data?.expiresAt === "string"
+                ? body.data.expiresAt
+                : hold.expiresAt;
+          refreshed.push({ ...hold, expiresAt });
+        }
+
+        const earliest = refreshed.reduce<number | null>((min, hold) => {
+          const value = new Date(hold.expiresAt).getTime();
+          if (!Number.isFinite(value)) return min;
+          if (min === null) return value;
+          return Math.min(min, value);
+        }, null);
+
+        const { createdAt: _createdAt, expiresAt: _expiresAt, ...persisted } = draft;
+        setDraft({
+          ...persisted,
+          inventoryClientSessionId: refreshed.length > 0 ? clientSessionId : null,
+          inventoryHolds: refreshed,
+          inventoryHoldExpiresAt: earliest ? new Date(earliest).toISOString() : null,
+        });
+      })().catch(() => undefined);
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, [draft, isPadelRegistration, isServiceBooking, setDraft]);
 
   const allowApplePay = Boolean(merchantId && applePaySupported);
   const isExpoGo =
@@ -419,6 +517,48 @@ export default function CheckoutScreen() {
     checkoutItems.every((item) => item.unitPriceCents <= 0);
   const isPadelRegistration = draft?.sourceType === "PADEL_REGISTRATION";
   const isServiceBooking = draft?.sourceType === "SERVICE_BOOKING";
+  const ticketInventoryRequirements = useMemo(() => {
+    if (isServiceBooking || isPadelRegistration || checkoutItems.length === 0) {
+      return [] as TicketInventoryRequirement[];
+    }
+    return checkoutItems.map((item) => ({
+      ticketTypeId: item.ticketTypeId,
+      quantity: item.quantity,
+      subjectLabel: item.ticketName || `Bilhete ${item.ticketTypeId}`,
+    }));
+  }, [checkoutItems, isPadelRegistration, isServiceBooking]);
+  const activeTicketInventoryHolds = useMemo(() => {
+    const holds = parseInventoryHolds(draft?.inventoryHolds);
+    const now = Date.now();
+    return holds.filter((entry) => {
+      const expiresMs = new Date(entry.expiresAt).getTime();
+      return Number.isFinite(expiresMs) && expiresMs > now;
+    });
+  }, [draft?.inventoryHolds]);
+  const ticketInventoryHoldsCoverSelection = useMemo(() => {
+    if (!ticketInventoryRequirements.length) return false;
+    const byType = new Map<number, number>();
+    for (const hold of activeTicketInventoryHolds) {
+      byType.set(hold.ticketTypeId, (byType.get(hold.ticketTypeId) ?? 0) + hold.quantity);
+    }
+    return ticketInventoryRequirements.every(
+      (requirement) =>
+        (byType.get(requirement.ticketTypeId) ?? 0) >= requirement.quantity,
+    );
+  }, [activeTicketInventoryHolds, ticketInventoryRequirements]);
+  const ticketInventoryHoldExpiresAt = useMemo(() => {
+    if (!activeTicketInventoryHolds.length) return null;
+    const earliest = activeTicketInventoryHolds.reduce<number | null>((min, hold) => {
+      const value = new Date(hold.expiresAt).getTime();
+      if (!Number.isFinite(value)) return min;
+      if (min === null) return value;
+      return Math.min(min, value);
+    }, null);
+    return earliest ? new Date(earliest).toISOString() : null;
+  }, [activeTicketInventoryHolds]);
+  const checkoutHoldExpiresAt = isServiceBooking
+    ? draft?.holdExpiresAt ?? null
+    : ticketInventoryHoldExpiresAt;
   const itemLabel = isServiceBooking
     ? (draft?.ticketName ?? "Reserva")
     : isPadelRegistration
@@ -1005,6 +1145,143 @@ export default function CheckoutScreen() {
     return { holdId, clientSessionId, subjectFingerprint: holdSubjectFingerprint };
   }, [draft, isServiceBooking, setDraft]);
 
+  const ensureTicketInventoryHolds = useCallback(async () => {
+    if (!draft || isServiceBooking || isPadelRegistration) {
+      return { ok: true as const, clientSessionId: null, holdIds: [] as string[] };
+    }
+    if (ticketInventoryRequirements.length === 0) {
+      return { ok: true as const, clientSessionId: null, holdIds: [] as string[] };
+    }
+
+    if (
+      activeTicketInventoryHolds.length > 0 &&
+      ticketInventoryHoldsCoverSelection &&
+      typeof draft.inventoryClientSessionId === "string" &&
+      draft.inventoryClientSessionId.trim().length > 0
+    ) {
+      return {
+        ok: true as const,
+        clientSessionId: draft.inventoryClientSessionId.trim(),
+        holdIds: activeTicketInventoryHolds.map((entry) => entry.holdId),
+      };
+    }
+
+    const sessionClientId =
+      typeof draft.inventoryClientSessionId === "string" &&
+      draft.inventoryClientSessionId.trim().length > 0
+        ? draft.inventoryClientSessionId.trim()
+        : createClientSessionId();
+
+    const releaseHold = async (holdId: string) => {
+      await api.requestRaw<unknown>("/api/holds/inventory/release", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          holdId,
+          clientSessionId: sessionClientId,
+        }),
+      });
+    };
+
+    if (activeTicketInventoryHolds.length > 0) {
+      await Promise.all(activeTicketInventoryHolds.map((entry) => releaseHold(entry.holdId)));
+    }
+
+    const created: CheckoutInventoryHold[] = [];
+    for (const requirement of ticketInventoryRequirements) {
+      const response = await api.requestRaw<{
+        ok?: boolean;
+        errorCode?: string;
+        message?: string;
+        holdId?: string;
+        expiresAt?: string;
+        holdRequired?: boolean;
+        subjectFingerprint?: string;
+        data?: {
+          holdId?: string;
+          expiresAt?: string;
+          holdRequired?: boolean;
+          subjectFingerprint?: string;
+        };
+      }>("/api/holds/inventory/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventId: draft.eventId,
+          ticketTypeId: requirement.ticketTypeId,
+          quantity: requirement.quantity,
+          clientSessionId: sessionClientId,
+          metadata: { subjectLabel: requirement.subjectLabel },
+        }),
+      });
+      const body = response.data;
+      if (!response.ok || !body?.ok) {
+        await Promise.all(created.map((entry) => releaseHold(entry.holdId)));
+        return {
+          ok: false as const,
+          message:
+            body?.message ||
+            (body?.errorCode === "OUT_OF_STOCK"
+              ? "Stock esgotado para um dos bilhetes."
+              : "Não foi possível reservar os bilhetes para checkout."),
+        };
+      }
+      const holdPayload = (body.data ?? body) as {
+        holdId?: string;
+        expiresAt?: string;
+        holdRequired?: boolean;
+        subjectFingerprint?: string;
+      };
+      if (holdPayload.holdRequired === false) continue;
+      if (
+        typeof holdPayload.holdId !== "string" ||
+        typeof holdPayload.expiresAt !== "string" ||
+        typeof holdPayload.subjectFingerprint !== "string"
+      ) {
+        await Promise.all(created.map((entry) => releaseHold(entry.holdId)));
+        return {
+          ok: false as const,
+          message: "Resposta inválida ao reservar bilhetes para checkout.",
+        };
+      }
+      created.push({
+        holdId: holdPayload.holdId,
+        expiresAt: holdPayload.expiresAt,
+        subjectFingerprint: holdPayload.subjectFingerprint,
+        ticketTypeId: requirement.ticketTypeId,
+        quantity: requirement.quantity,
+        subjectLabel: requirement.subjectLabel,
+      });
+    }
+
+    const earliest = created.reduce<number | null>((min, hold) => {
+      const value = new Date(hold.expiresAt).getTime();
+      if (!Number.isFinite(value)) return min;
+      if (min === null) return value;
+      return Math.min(min, value);
+    }, null);
+    const { createdAt: _createdAt, expiresAt: _expiresAt, ...persisted } = draft;
+    setDraft({
+      ...persisted,
+      inventoryClientSessionId: sessionClientId,
+      inventoryHolds: created,
+      inventoryHoldExpiresAt: earliest ? new Date(earliest).toISOString() : null,
+    });
+    return {
+      ok: true as const,
+      clientSessionId: sessionClientId,
+      holdIds: created.map((entry) => entry.holdId),
+    };
+  }, [
+    activeTicketInventoryHolds,
+    draft,
+    isPadelRegistration,
+    isServiceBooking,
+    setDraft,
+    ticketInventoryHoldsCoverSelection,
+    ticketInventoryRequirements,
+  ]);
+
   const handlePay = async () => {
     if (!draft) return;
     if (!session?.user?.id) {
@@ -1114,6 +1391,10 @@ export default function CheckoutScreen() {
             return;
           }
         } else {
+          const ticketInventory = await ensureTicketInventoryHolds();
+          if (!ticketInventory.ok) {
+            throw new Error(ticketInventory.message);
+          }
           const response = isPadelRegistration
             ? await (async () => {
                 if (!draft.pairingId || !draft.ticketTypeId) {
@@ -1144,6 +1425,8 @@ export default function CheckoutScreen() {
                   (allFreeItems ? "FREE_CHECKOUT" : "SINGLE"),
                 idempotencyKey,
                 inviteToken: draft.inviteToken ?? undefined,
+                clientSessionId: ticketInventory.clientSessionId ?? undefined,
+                inventoryHoldIds: ticketInventory.holdIds,
               });
           clientSecret = response.clientSecret ?? null;
           purchaseId = response.purchaseId ?? null;
@@ -1634,12 +1917,14 @@ export default function CheckoutScreen() {
                   <Text style={{ color: "#F4FAFF", fontSize: 18, fontWeight: "700" }} numberOfLines={2}>
                     {draft.eventTitle ?? draft.serviceTitle ?? "Checkout"}
                   </Text>
-                  {isServiceBooking && draft.holdExpiresAt ? (
+                  {checkoutHoldExpiresAt ? (
                     <View className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
                       <Text style={{ color: "rgba(233,244,255,0.72)", fontSize: 12 }}>
                         {holdCountdownLabel
                           ? `Bloqueio de checkout ativo (${holdCountdownLabel})`
-                          : "O seu bloqueio expirou - o slot já não está reservado."}
+                          : isServiceBooking
+                            ? "O seu bloqueio expirou - o slot já não está reservado."
+                            : "O seu bloqueio expirou - os bilhetes já não estão reservados."}
                       </Text>
                     </View>
                   ) : null}

@@ -67,6 +67,86 @@ type GuestInfo = {
 };
 
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
+const INVENTORY_HOLD_STORAGE_KEY = "orya.inventory.hold.v1";
+
+type InventoryHoldEntry = {
+  holdId: string;
+  expiresAt: string;
+  subjectFingerprint: string;
+  ticketTypeId: number;
+  quantity: number;
+  subjectLabel: string;
+};
+
+type InventoryHoldSession = {
+  clientSessionId: string;
+  holds: InventoryHoldEntry[];
+  updatedAt: string;
+};
+
+type TicketInventoryRequirement = {
+  ticketTypeId: number;
+  quantity: number;
+  subjectLabel: string;
+};
+
+function createClientSessionId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 14)}`;
+}
+
+function readInventoryHoldSession(): InventoryHoldSession | null {
+  if (typeof window === "undefined") return null;
+  const raw = window.sessionStorage.getItem(INVENTORY_HOLD_STORAGE_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<InventoryHoldSession>;
+    if (!parsed || typeof parsed !== "object") return null;
+    if (typeof parsed.clientSessionId !== "string" || !Array.isArray(parsed.holds)) {
+      return null;
+    }
+    const holds = parsed.holds.filter((entry): entry is InventoryHoldEntry => {
+      if (!entry || typeof entry !== "object") return false;
+      const hold = entry as Partial<InventoryHoldEntry>;
+      return (
+        typeof hold.holdId === "string" &&
+        typeof hold.expiresAt === "string" &&
+        typeof hold.subjectFingerprint === "string" &&
+        typeof hold.ticketTypeId === "number" &&
+        typeof hold.quantity === "number" &&
+        typeof hold.subjectLabel === "string"
+      );
+    });
+    return {
+      clientSessionId: parsed.clientSessionId,
+      holds,
+      updatedAt:
+        typeof parsed.updatedAt === "string"
+          ? parsed.updatedAt
+          : new Date().toISOString(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeInventoryHoldSession(value: InventoryHoldSession | null) {
+  if (typeof window === "undefined") return;
+  if (!value) {
+    window.sessionStorage.removeItem(INVENTORY_HOLD_STORAGE_KEY);
+    return;
+  }
+  window.sessionStorage.setItem(INVENTORY_HOLD_STORAGE_KEY, JSON.stringify(value));
+}
+
+function formatHoldCountdown(expiresAt: string) {
+  const remaining = Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000));
+  const minutes = Math.floor(remaining / 60);
+  const seconds = remaining % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
 
 export default function Step2Pagamento() {
   const { dados, irParaPasso, atualizarDados, breakdown, setBreakdown } = useCheckout();
@@ -132,6 +212,8 @@ export default function Step2Pagamento() {
   const [promoWarning, setPromoWarning] = useState<string | null>(null);
   const [appliedPromoLabel, setAppliedPromoLabel] = useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<"mbway" | "card">("mbway");
+  const [inventoryHoldSession, setInventoryHoldSession] = useState<InventoryHoldSession | null>(null);
+  const [holdCountdownLabel, setHoldCountdownLabel] = useState<string | null>(null);
   const [intentCycleState, setIntentCycleState] = useState<IntentCycleState>("IDLE");
   const lastIntentKeyRef = useRef<string | null>(null);
   const inFlightIntentRef = useRef<string | null>(null);
@@ -344,6 +426,90 @@ export default function Step2Pagamento() {
     setPaymentMethod(method);
   }, [safeDados]);
 
+  useEffect(() => {
+    const persisted = readInventoryHoldSession();
+    if (!persisted) return;
+    setInventoryHoldSession(persisted);
+  }, []);
+
+  useEffect(() => {
+    if (!inventoryHoldSession?.holds.length) {
+      setHoldCountdownLabel(null);
+      return;
+    }
+    const tick = () => {
+      const active = inventoryHoldSession.holds.filter((entry) => {
+        const expires = new Date(entry.expiresAt).getTime();
+        return Number.isFinite(expires) && expires > Date.now();
+      });
+      if (!active.length) {
+        setHoldCountdownLabel(null);
+        setInventoryHoldSession(null);
+        writeInventoryHoldSession(null);
+        return;
+      }
+      const nextExpiry = active
+        .map((entry) => entry.expiresAt)
+        .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())[0];
+      setHoldCountdownLabel(formatHoldCountdown(nextExpiry));
+      if (active.length !== inventoryHoldSession.holds.length) {
+        const next: InventoryHoldSession = {
+          ...inventoryHoldSession,
+          holds: active,
+          updatedAt: new Date().toISOString(),
+        };
+        setInventoryHoldSession(next);
+        writeInventoryHoldSession(next);
+      }
+    };
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [inventoryHoldSession]);
+
+  useEffect(() => {
+    if (!inventoryHoldSession?.clientSessionId) return;
+    if (!inventoryHoldSession.holds.length) return;
+    const timer = window.setInterval(() => {
+      void (async () => {
+        const active = inventoryHoldSession.holds.filter((entry) => {
+          const expires = new Date(entry.expiresAt).getTime();
+          return Number.isFinite(expires) && expires > Date.now();
+        });
+        if (!active.length) return;
+        const refreshed = await Promise.all(
+          active.map(async (entry) => {
+            const res = await fetch("/api/holds/inventory/ping", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                holdId: entry.holdId,
+                clientSessionId: inventoryHoldSession.clientSessionId,
+              }),
+            });
+            const payload = await res.json().catch(() => null);
+            if (!res.ok) return entry;
+            const expiresAt =
+              typeof payload?.data?.expiresAt === "string"
+                ? payload.data.expiresAt
+                : typeof payload?.expiresAt === "string"
+                  ? payload.expiresAt
+                  : entry.expiresAt;
+            return { ...entry, expiresAt };
+          }),
+        );
+        const next: InventoryHoldSession = {
+          ...inventoryHoldSession,
+          holds: refreshed,
+          updatedAt: new Date().toISOString(),
+        };
+        setInventoryHoldSession(next);
+        writeInventoryHoldSession(next);
+      })();
+    }, 45_000);
+    return () => window.clearInterval(timer);
+  }, [inventoryHoldSession]);
+
   const payload = useMemo(() => {
     if (!safeDados) return null;
 
@@ -419,6 +585,133 @@ export default function Step2Pagamento() {
     inviteToken,
     checkoutVariant,
   ]);
+
+  const ticketInventoryRequirements = useMemo(() => {
+    if (!payload?.items?.length) return [] as TicketInventoryRequirement[];
+    const waves = Array.isArray(safeDados?.waves) ? safeDados!.waves : [];
+    const waveMap = new Map(
+      waves
+        .map((wave) => {
+          const id = Number(wave.id);
+          if (!Number.isFinite(id)) return null;
+          return [id, wave] as const;
+        })
+        .filter(Boolean) as Array<readonly [number, CheckoutWave]>,
+    );
+    return payload.items.map((item) => ({
+      ticketTypeId: item.ticketId,
+      quantity: item.quantity,
+      subjectLabel: waveMap.get(item.ticketId)?.id
+        ? String((waveMap.get(item.ticketId) as CheckoutWave).id)
+        : `Bilhete ${item.ticketId}`,
+    }));
+  }, [payload, safeDados]);
+
+  const activeInventoryHolds = useMemo(() => {
+    if (!inventoryHoldSession?.holds.length) return [] as InventoryHoldEntry[];
+    return inventoryHoldSession.holds.filter((entry) => {
+      const expires = new Date(entry.expiresAt).getTime();
+      return Number.isFinite(expires) && expires > Date.now();
+    });
+  }, [inventoryHoldSession]);
+
+  const holdsCoverCurrentTickets = useMemo(() => {
+    if (!ticketInventoryRequirements.length) return false;
+    const totals = new Map<number, number>();
+    for (const hold of activeInventoryHolds) {
+      totals.set(hold.ticketTypeId, (totals.get(hold.ticketTypeId) ?? 0) + hold.quantity);
+    }
+    return ticketInventoryRequirements.every(
+      (requirement) => (totals.get(requirement.ticketTypeId) ?? 0) >= requirement.quantity,
+    );
+  }, [activeInventoryHolds, ticketInventoryRequirements]);
+
+  const ensureInventoryHolds = async () => {
+    if (!ticketInventoryRequirements.length) {
+      return { ok: true as const, clientSessionId: null, holdIds: [] as string[] };
+    }
+
+    if (inventoryHoldSession && activeInventoryHolds.length && holdsCoverCurrentTickets) {
+      return {
+        ok: true as const,
+        clientSessionId: inventoryHoldSession.clientSessionId,
+        holdIds: activeInventoryHolds.map((entry) => entry.holdId),
+      };
+    }
+
+    if (inventoryHoldSession?.clientSessionId && inventoryHoldSession.holds.length > 0) {
+      await Promise.all(
+        inventoryHoldSession.holds.map((entry) =>
+          fetch("/api/holds/inventory/release", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              holdId: entry.holdId,
+              clientSessionId: inventoryHoldSession.clientSessionId,
+            }),
+          }).catch(() => null),
+        ),
+      );
+    }
+
+    const clientSessionId = inventoryHoldSession?.clientSessionId || createClientSessionId();
+    const created: InventoryHoldEntry[] = [];
+    for (const requirement of ticketInventoryRequirements) {
+      const res = await fetch("/api/holds/inventory/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ticketTypeId: requirement.ticketTypeId,
+          quantity: requirement.quantity,
+          eventId: payload?.eventId,
+          clientSessionId,
+          metadata: { subjectLabel: requirement.subjectLabel },
+        }),
+      });
+      const response = await res.json().catch(() => null);
+      const data = response?.data ?? response;
+      if (!res.ok) {
+        const message =
+          response?.message ||
+          response?.error ||
+          "Não foi possível reservar o bilhete para checkout.";
+        return { ok: false as const, message };
+      }
+      if (data?.holdRequired === false) continue;
+      const holdId = typeof data?.holdId === "string" ? data.holdId : null;
+      const expiresAt = typeof data?.expiresAt === "string" ? data.expiresAt : null;
+      const subjectFingerprint =
+        typeof data?.subjectFingerprint === "string"
+          ? data.subjectFingerprint
+          : null;
+      if (!holdId || !expiresAt || !subjectFingerprint) {
+        return {
+          ok: false as const,
+          message: "Resposta inválida ao criar hold de bilhete.",
+        };
+      }
+      created.push({
+        holdId,
+        expiresAt,
+        subjectFingerprint,
+        ticketTypeId: requirement.ticketTypeId,
+        quantity: requirement.quantity,
+        subjectLabel: requirement.subjectLabel,
+      });
+    }
+    const nextSession: InventoryHoldSession = {
+      clientSessionId,
+      holds: created,
+      updatedAt: new Date().toISOString(),
+    };
+    setInventoryHoldSession(nextSession);
+    writeInventoryHoldSession(nextSession);
+    return {
+      ok: true as const,
+      clientSessionId,
+      holdIds: created.map((entry) => entry.holdId),
+    };
+  };
 
   useEffect(() => {
     // Se não houver dados de checkout, mandamos de volta
@@ -655,6 +948,15 @@ export default function Step2Pagamento() {
         const idem = currentIdempotencyKey;
 
         let attempt = 0;
+        const ensuredHolds = await ensureInventoryHolds();
+        if (!ensuredHolds.ok) {
+          if (!cancelled) {
+            setBreakdown(null);
+            setError(ensuredHolds.message);
+            setIntentCycleState("FAILED");
+          }
+          return;
+        }
         // Não enviamos purchaseId; o backend calcula anchors determinísticas. idempotencyKey segue para evitar PI terminal.
         let currentPayload = { ...payload };
         delete (currentPayload as any).purchaseId;
@@ -676,6 +978,8 @@ export default function Step2Pagamento() {
               purchaseId: null,
               idempotencyKey: currentIdemKey,
               intentFingerprint: currentIntentFingerprint ?? undefined,
+              clientSessionId: ensuredHolds.clientSessionId ?? undefined,
+              inventoryHoldIds: ensuredHolds.holdIds,
             }),
           });
           lastResponseStatus = res.status;
@@ -1423,6 +1727,28 @@ export default function Step2Pagamento() {
         scenario={scenario}
         scenarioCopy={scenarioCopy}
       />
+
+      {ticketInventoryRequirements.length > 0 && activeInventoryHolds.length > 0 && holdsCoverCurrentTickets && (
+        <div className="rounded-2xl border border-emerald-400/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+          <p className="font-semibold">Bilhetes reservados para checkout.</p>
+          <p className="mt-1 text-emerald-100/90">
+            Tempo restante: {holdCountdownLabel ?? "05:00"}
+          </p>
+          <button
+            type="button"
+            onClick={() => setGuestSubmitVersion((v) => v + 1)}
+            className="mt-3 rounded-full border border-emerald-300/40 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-50 hover:bg-emerald-400/15"
+          >
+            Voltar ao checkout
+          </button>
+        </div>
+      )}
+
+      {ticketInventoryRequirements.length > 0 && inventoryHoldSession && activeInventoryHolds.length === 0 && (
+        <div className="rounded-2xl border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+          O seu bloqueio expirou - os bilhetes já não estão reservados.
+        </div>
+      )}
 
       {authChecking && (
         <AuthRequiredCard

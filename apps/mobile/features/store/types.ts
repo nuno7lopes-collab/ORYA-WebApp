@@ -168,9 +168,11 @@ export type StoreCartStandaloneItem = {
     compareAtPriceCents: number | null;
     currency: string;
     requiresShipping: boolean;
+    stockPolicy: "NONE" | "TRACKED";
+    stockQty: number | null;
     images: Array<{ url: string; altText: string | null; isPrimary: boolean; sortOrder: number }>;
   };
-  variant: { id: number; label: string; priceCents: number | null } | null;
+  variant: { id: number; label: string; priceCents: number | null; stockQty: number | null } | null;
 };
 
 export type StoreCartBundle = {
@@ -200,9 +202,11 @@ export type StoreCartBundle = {
       compareAtPriceCents: number | null;
       currency: string;
       requiresShipping: boolean;
+      stockPolicy: "NONE" | "TRACKED";
+      stockQty: number | null;
       images: Array<{ url: string; altText: string | null; isPrimary: boolean; sortOrder: number }>;
     };
-    variant: { id: number; label: string; priceCents: number | null } | null;
+    variant: { id: number; label: string; priceCents: number | null; stockQty: number | null } | null;
   }>;
 };
 
@@ -297,6 +301,8 @@ export type StoreCheckoutPayload = {
   notes?: string | null;
   idempotencyKey?: string;
   promoCode?: string | null;
+  clientSessionId?: string | null;
+  inventoryHoldIds?: string[];
 };
 
 export type StoreCheckoutResponse = {

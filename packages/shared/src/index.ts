@@ -9,3 +9,4 @@ export * from "./interests";
 export * from "./messagesContracts";
 export * from "./datetime/bookingCalendar";
 export * from "./holds/fingerprint";
+export * from "./holds/inventoryFingerprint";
