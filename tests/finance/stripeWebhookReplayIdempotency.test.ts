@@ -160,4 +160,38 @@ describe("POST /api/stripe/webhook idempotência", () => {
     expect(appendEventLog).toHaveBeenCalledTimes(2);
     expect(recordOutboxEvent).toHaveBeenCalledTimes(1);
   });
+
+  it("ignora replay do mesmo stripe event.id para flow PADEL_REGISTRATION", async () => {
+    constructStripeWebhookEvent.mockReturnValue({
+      id: "evt_replay_padel_registration",
+      type: "payment_intent.succeeded",
+      data: {
+        object: {
+          id: "pi_padel_registration_1",
+          metadata: {
+            orgId: "40",
+            purchaseId: "padel:88:slot:2",
+            sourceType: "PADEL_REGISTRATION",
+            sourceId: "88",
+          },
+        },
+      },
+    });
+    appendEventLog
+      .mockResolvedValueOnce({ eventId: "log_padel_1" })
+      .mockResolvedValueOnce(null);
+
+    const first = await POST(makeReq());
+    const firstBody = await first.json();
+    const second = await POST(makeReq());
+    const secondBody = await second.json();
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(firstBody.ok).toBe(true);
+    expect(secondBody.ok).toBe(true);
+
+    expect(appendEventLog).toHaveBeenCalledTimes(2);
+    expect(recordOutboxEvent).toHaveBeenCalledTimes(1);
+  });
 });

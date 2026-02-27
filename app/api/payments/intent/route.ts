@@ -799,7 +799,10 @@ async function handlePadelRegistrationIntent(req: NextRequest, body: Body) {
   const purchaseId =
     purchaseIdFromBody ||
     `padel:${pairing.id}:${scenario === "GROUP_FULL" ? "full" : `slot:${targetSlot.id}`}`;
-  const checkoutIdempotencyKey = checkoutKey(purchaseId);
+  const checkoutIdempotencyKey = buildPaymentSubjectIdempotencyKey({
+    subject: PaymentSubject.PADEL_REGISTRATION,
+    purchaseId,
+  });
 
   const snapshotLines = payableLines.map((line) => ({
     quantity: line.qty,
@@ -909,6 +912,7 @@ async function handlePadelRegistrationIntent(req: NextRequest, body: Body) {
       orgId: pairing.organizationId,
       sourceType: SourceType.PADEL_REGISTRATION,
       sourceId: registration.id,
+      paymentSubject: PaymentSubject.PADEL_REGISTRATION,
       amountCents: pricing.totalCents,
       currency,
       intentParams: {
@@ -921,6 +925,7 @@ async function handlePadelRegistrationIntent(req: NextRequest, body: Body) {
         paymentScenario: scenario,
         categoryLinkId: String(categoryLink.id),
         paymentMethod,
+        paymentSubject: PaymentSubject.PADEL_REGISTRATION,
         ...(ownerResolved.ownerUserId ? { ownerUserId: ownerResolved.ownerUserId } : {}),
         ...(buyerIdentityId ? { ownerIdentityId: buyerIdentityId } : {}),
         ...(ownerResolved.emailNormalized ? { emailNormalized: ownerResolved.emailNormalized } : {}),
