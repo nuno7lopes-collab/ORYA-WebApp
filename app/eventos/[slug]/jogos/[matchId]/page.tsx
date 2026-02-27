@@ -5,6 +5,7 @@ import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
 import { isPadelOfficialPublicResult } from "@/domain/padel/publicResult";
+import { isPublicEventStatus } from "@/domain/events/publicStatus";
 import { EventAccessMode } from "@prisma/client";
 import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
 import { formatDate, formatTime, resolveLocale, t } from "@/lib/i18n";
@@ -167,7 +168,7 @@ export default async function PadelMatchPage({ params, searchParams }: PageProps
   const accessMode = resolveEventAccessMode(event.accessPolicies?.[0], EventAccessMode.INVITE_ONLY);
   const isPublicEvent =
     isPublicAccessMode(accessMode) &&
-    ["PUBLISHED", "DATE_CHANGED", "FINISHED", "CANCELLED"].includes(event.status) &&
+    isPublicEventStatus(event.status) &&
     competitionState === "PUBLIC";
   if (!isPublicEvent) notFound();
 

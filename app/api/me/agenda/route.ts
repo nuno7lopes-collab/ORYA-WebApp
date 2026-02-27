@@ -10,6 +10,10 @@ import { isPublicEventCardComplete } from "@/domain/events/publicEventCard";
 import { resolveEventLocation } from "@/lib/location/eventLocation";
 import { listEffectiveOrganizationMembershipsForUser } from "@/lib/organizationMembers";
 import { OrganizationStatus } from "@prisma/client";
+import {
+  PENDING_BOOKING_STATUSES,
+  resolvePendingBookingState,
+} from "@/lib/reservas/pendingBookingState";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 type AgendaItem = {
@@ -106,6 +110,9 @@ const participationPriority: Record<string, number> = {
   RESERVA: 3,
 };
 
+const isPendingState = (status: string | null | undefined) =>
+  typeof status === "string" && PENDING_BOOKING_STATUSES.includes(status as any);
+
 async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
@@ -120,6 +127,7 @@ async function _GET(req: NextRequest) {
 
     const { start, end } = buildRange(req);
     const userId = user.id;
+    const now = new Date();
 
     const [
       ticketRows,
@@ -167,7 +175,7 @@ async function _GET(req: NextRequest) {
         where: {
           userId,
           status: "ACTIVE",
-          expiresAt: { gte: new Date() },
+          expiresAt: { gte: now },
           event: {
             isDeleted: false,
             status: { in: PUBLIC_EVENT_STATUSES },
@@ -217,6 +225,9 @@ async function _GET(req: NextRequest) {
           id: true,
           startsAt: true,
           durationMinutes: true,
+          status: true,
+          pendingExpiresAt: true,
+          createdAt: true,
           service: {
             select: {
               title: true,
@@ -429,7 +440,40 @@ async function _GET(req: NextRequest) {
 
     const items: AgendaItem[] = Array.from(eventMap.values()).map((entry) => entry.item);
 
-    bookingRows.forEach((booking) => {
+    const stalePendingBookingIds = bookingRows
+      .filter((row) => {
+        if (!isPendingState(row.status)) return false;
+        const pendingState = resolvePendingBookingState({
+          status: row.status,
+          startsAt: row.startsAt,
+          pendingExpiresAt: row.pendingExpiresAt,
+          createdAt: row.createdAt,
+          now,
+        });
+        return pendingState === "EXPIRED" || pendingState === "PAST_START";
+      })
+      .map((row) => row.id);
+    if (stalePendingBookingIds.length > 0) {
+      await prisma.booking.updateMany({
+        where: {
+          id: { in: stalePendingBookingIds },
+          status: { in: [...PENDING_BOOKING_STATUSES] as any },
+        },
+        data: { status: "CANCELLED_BY_CLIENT" },
+      });
+    }
+    const visibleBookingRows = bookingRows.filter((row) => {
+      const pendingState = resolvePendingBookingState({
+        status: row.status,
+        startsAt: row.startsAt,
+        pendingExpiresAt: row.pendingExpiresAt,
+        createdAt: row.createdAt,
+        now,
+      });
+      return pendingState === "NONE" || pendingState === "ACTIVE";
+    });
+
+    visibleBookingRows.forEach((booking) => {
       const endAt = new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000);
       items.push({
         id: `booking-${booking.id}`,

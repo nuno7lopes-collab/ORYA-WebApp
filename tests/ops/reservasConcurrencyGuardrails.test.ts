@@ -7,6 +7,19 @@ function readLocal(pathname: string) {
 }
 
 describe("reservas concurrency guardrails", () => {
+  it("mantém lock + revalidação no create booking público", () => {
+    const route = readLocal("app/api/servicos/[id]/reservar/route.ts");
+    expect(route).toContain("pg_advisory_xact_lock");
+    expect(route).toContain("AGENDA_CONFLICT_LOCKED");
+    expect(route).toContain("createBooking({");
+    expect(route).toContain("tx,");
+    expect(route).toContain("durationMinutes: true");
+    expect(route).toContain("professionalId: true");
+    expect(route).toContain("resourceId: true");
+    expect(route).toContain("booking-pending-limit:user:");
+    expect(route).toContain("PENDING_LIMIT_LOCKED");
+  });
+
   it("mantém lock + revalidação no create booking org", () => {
     const route = readLocal("app/api/org/[orgId]/reservas/route.ts");
     expect(route).toContain("pg_advisory_xact_lock");

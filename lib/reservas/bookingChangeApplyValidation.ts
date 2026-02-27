@@ -410,7 +410,7 @@ export async function validateBookingChangeApply(params: {
   const activeBookingStatusFilter = {
     OR: [
       { status: { in: ACTIVE_BOOKED_STATUSES } },
-      { status: { in: ACTIVE_PENDING_STATUSES }, pendingExpiresAt: { gt: now } },
+      { status: { in: ACTIVE_PENDING_STATUSES }, pendingExpiresAt: { gt: now }, startsAt: { gt: now } },
     ],
   };
 

@@ -62,6 +62,8 @@ type TelemetryIncident = {
   rule?: { id: string; name: string } | null;
 };
 
+type TelemetryIncidentSort = "TRIGGERED_DESC" | "SLA_IMPACT_DESC";
+
 type TelemetryIncidentKpis = {
   from: string;
   to: string;
@@ -291,6 +293,9 @@ export default function AdminTelemetryPage() {
   const [sourceType, setSourceType] = useState("");
   const [severity, setSeverity] = useState("");
   const [incidentStatuses, setIncidentStatuses] = useState("OPEN,ACKNOWLEDGED");
+  const [incidentSeverity, setIncidentSeverity] = useState("");
+  const [incidentQuery, setIncidentQuery] = useState("");
+  const [incidentSort, setIncidentSort] = useState<TelemetryIncidentSort>("TRIGGERED_DESC");
   const [exportDataset, setExportDataset] = useState<TelemetryExportDataset>("events");
   const [exportFormat, setExportFormat] = useState<TelemetryExportFormat>("csv");
   const [exportPreviewBusy, setExportPreviewBusy] = useState(false);
@@ -305,6 +310,8 @@ export default function AdminTelemetryPage() {
   const [funnelResults, setFunnelResults] = useState<TelemetryFunnelResult[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
+  const [incidentNextCursor, setIncidentNextCursor] = useState<string | null>(null);
+  const [incidentHasMore, setIncidentHasMore] = useState(false);
 
   const [loadingOverview, setLoadingOverview] = useState(false);
   const [loadingEvents, setLoadingEvents] = useState(false);
@@ -349,15 +356,17 @@ export default function AdminTelemetryPage() {
     [buildBaseParams, query, sourceType, severity],
   );
 
-  const buildIncidentsParams = useCallback(() => {
+  const buildIncidentsParams = useCallback((cursor?: string | null) => {
     const params = new URLSearchParams();
     if (scopedOrgId) params.set("orgId", String(scopedOrgId));
     if (incidentStatuses !== "ALL") params.set("statuses", incidentStatuses);
-    if (severity) params.set("severities", severity);
-    if (query.trim()) params.set("q", query.trim());
+    if (incidentSeverity) params.set("severities", incidentSeverity);
+    if (incidentQuery.trim()) params.set("q", incidentQuery.trim());
+    params.set("sort", incidentSort);
     params.set("take", "150");
+    if (cursor) params.set("cursor", cursor);
     return params;
-  }, [incidentStatuses, query, scopedOrgId, severity]);
+  }, [incidentQuery, incidentSeverity, incidentSort, incidentStatuses, scopedOrgId]);
 
   const loadOverview = useCallback(async () => {
     setLoadingOverview(true);
@@ -392,14 +401,19 @@ export default function AdminTelemetryPage() {
     [buildEventsParams],
   );
 
-  const loadIncidents = useCallback(async () => {
+  const loadIncidents = useCallback(async (opts?: { reset?: boolean; cursor?: string | null }) => {
     setLoadingIncidents(true);
     try {
-      const params = buildIncidentsParams();
-      const payload = await fetchJson<{ items: TelemetryIncident[] }>(
+      const params = buildIncidentsParams(opts?.cursor ?? null);
+      const payload = await fetchJson<{
+        items: TelemetryIncident[];
+        pagination?: { hasMore: boolean; nextCursor: string | null };
+      }>(
         `/api/admin/telemetry/incidents?${params.toString()}`,
       );
-      setIncidents(payload.items);
+      setIncidents((prev) => (opts?.reset ? payload.items : [...prev, ...payload.items]));
+      setIncidentHasMore(Boolean(payload.pagination?.hasMore));
+      setIncidentNextCursor(payload.pagination?.nextCursor ?? null);
     } finally {
       setLoadingIncidents(false);
     }
@@ -459,7 +473,7 @@ export default function AdminTelemetryPage() {
       await Promise.all([
         loadOverview(),
         loadEvents({ reset: true }),
-        loadIncidents(),
+        loadIncidents({ reset: true }),
         loadRules(),
         loadFunnels(),
         loadFunnelResults(),
@@ -486,7 +500,7 @@ export default function AdminTelemetryPage() {
       );
       setLastEvaluation(payload.result);
       setOpsInfo("Avaliação de alertas concluída.");
-      await Promise.all([loadOverview(), loadIncidents()]);
+      await Promise.all([loadOverview(), loadIncidents({ reset: true })]);
     } catch (err) {
       setOpsError(formatApiError(err));
     } finally {
@@ -541,6 +555,9 @@ export default function AdminTelemetryPage() {
       if (severity) params.set("severity", severity);
     } else if (exportDataset === "incidents") {
       params.set("statuses", incidentStatuses === "ALL" ? "ALL" : incidentStatuses);
+      params.set("sort", incidentSort);
+      if (incidentSeverity) params.set("severity", incidentSeverity);
+      if (incidentQuery.trim()) params.set("q", incidentQuery.trim());
     } else if (exportDataset === "rules" || exportDataset === "funnels") {
       params.set("includeGlobal", "true");
       params.set("activeOnly", "false");
@@ -550,7 +567,18 @@ export default function AdminTelemetryPage() {
 
     window.open(`/api/admin/telemetry/export?${params.toString()}`, "_blank", "noopener,noreferrer");
     setOpsInfo(exportFormat === "pdf" ? "Exportação PDF iniciada." : "Exportação CSV iniciada.");
-  }, [buildBaseParams, exportDataset, exportFormat, incidentStatuses, query, severity, sourceType]);
+  }, [
+    buildBaseParams,
+    exportDataset,
+    exportFormat,
+    incidentQuery,
+    incidentSeverity,
+    incidentSort,
+    incidentStatuses,
+    query,
+    severity,
+    sourceType,
+  ]);
 
   const runPreviewExport = useCallback(async () => {
     setOpsError(null);
@@ -568,6 +596,9 @@ export default function AdminTelemetryPage() {
         if (severity) params.set("severity", severity);
       } else if (exportDataset === "incidents") {
         params.set("statuses", incidentStatuses === "ALL" ? "ALL" : incidentStatuses);
+        params.set("sort", incidentSort);
+        if (incidentSeverity) params.set("severity", incidentSeverity);
+        if (incidentQuery.trim()) params.set("q", incidentQuery.trim());
       } else if (exportDataset === "rules" || exportDataset === "funnels") {
         params.set("includeGlobal", "true");
         params.set("activeOnly", "false");
@@ -586,7 +617,17 @@ export default function AdminTelemetryPage() {
     } finally {
       setExportPreviewBusy(false);
     }
-  }, [buildBaseParams, exportDataset, incidentStatuses, query, severity, sourceType]);
+  }, [
+    buildBaseParams,
+    exportDataset,
+    incidentQuery,
+    incidentSeverity,
+    incidentSort,
+    incidentStatuses,
+    query,
+    severity,
+    sourceType,
+  ]);
 
   const applyIncidentAction = useCallback(
     async (incidentId: string, action: "ACK" | "RESOLVE") => {
@@ -601,7 +642,7 @@ export default function AdminTelemetryPage() {
           body: JSON.stringify({ action }),
         });
         setOpsInfo(action === "ACK" ? "Incidente reconhecido." : "Incidente resolvido.");
-        await Promise.all([loadOverview(), loadIncidents()]);
+        await Promise.all([loadOverview(), loadIncidents({ reset: true })]);
       } catch (err) {
         setOpsError(formatApiError(err));
       } finally {
@@ -726,8 +767,8 @@ export default function AdminTelemetryPage() {
   }, [overview]);
 
   const openIncidentsCount = useMemo(
-    () => incidents.filter((item) => item.status !== "RESOLVED").length,
-    [incidents],
+    () => incidentKpis?.openIncidents ?? incidents.filter((item) => item.status !== "RESOLVED").length,
+    [incidentKpis?.openIncidents, incidents],
   );
   const activeRulesCount = useMemo(
     () => rules.filter((item) => item.isActive).length,
@@ -756,7 +797,7 @@ export default function AdminTelemetryPage() {
         />
 
         <div className="admin-card p-4">
-          <div className="grid gap-3 md:grid-cols-7">
+          <div className="grid gap-3 md:grid-cols-9">
             <label className="md:col-span-1">
               <span className="text-[11px] uppercase tracking-[0.2em] text-white/50">Janela</span>
               <select
@@ -782,7 +823,7 @@ export default function AdminTelemetryPage() {
             </label>
 
             <label className="md:col-span-2">
-              <span className="text-[11px] uppercase tracking-[0.2em] text-white/50">Pesquisa</span>
+              <span className="text-[11px] uppercase tracking-[0.2em] text-white/50">Pesquisa eventos</span>
               <input
                 className="admin-input mt-2"
                 value={query}
@@ -809,11 +850,26 @@ export default function AdminTelemetryPage() {
             </label>
 
             <label className="md:col-span-1">
-              <span className="text-[11px] uppercase tracking-[0.2em] text-white/50">Severidade</span>
+              <span className="text-[11px] uppercase tracking-[0.2em] text-white/50">Severidade eventos</span>
               <select
                 className="admin-select mt-2"
                 value={severity}
                 onChange={(e) => setSeverity(e.target.value)}
+              >
+                <option value="">Todas</option>
+                <option value="INFO">INFO</option>
+                <option value="WARN">WARN</option>
+                <option value="ERROR">ERROR</option>
+                <option value="CRITICAL">CRITICAL</option>
+              </select>
+            </label>
+
+            <label className="md:col-span-1">
+              <span className="text-[11px] uppercase tracking-[0.2em] text-white/50">Severidade incidentes</span>
+              <select
+                className="admin-select mt-2"
+                value={incidentSeverity}
+                onChange={(e) => setIncidentSeverity(e.target.value)}
               >
                 <option value="">Todas</option>
                 <option value="INFO">INFO</option>
@@ -836,6 +892,28 @@ export default function AdminTelemetryPage() {
                 <option value="RESOLVED">Resolvidos</option>
                 <option value="ALL">Todos</option>
               </select>
+            </label>
+
+            <label className="md:col-span-1">
+              <span className="text-[11px] uppercase tracking-[0.2em] text-white/50">Ordenação incidentes</span>
+              <select
+                className="admin-select mt-2"
+                value={incidentSort}
+                onChange={(e) => setIncidentSort(e.target.value as TelemetryIncidentSort)}
+              >
+                <option value="TRIGGERED_DESC">Mais recentes</option>
+                <option value="SLA_IMPACT_DESC">Impacto SLA</option>
+              </select>
+            </label>
+
+            <label className="md:col-span-2">
+              <span className="text-[11px] uppercase tracking-[0.2em] text-white/50">Pesquisa incidentes</span>
+              <input
+                className="admin-input mt-2"
+                value={incidentQuery}
+                onChange={(e) => setIncidentQuery(e.target.value)}
+                placeholder="titulo, dimensão, regra..."
+              />
             </label>
           </div>
 
@@ -1124,6 +1202,17 @@ export default function AdminTelemetryPage() {
                 <p className="rounded-xl border border-white/10 bg-black/20 px-3 py-4 text-sm text-white/65">
                   Sem incidentes com os filtros atuais.
                 </p>
+              )}
+              {incidentHasMore && (
+                <div className="pt-1">
+                  <button
+                    className="admin-button-secondary px-3 py-1.5 text-[11px]"
+                    onClick={() => void loadIncidents({ cursor: incidentNextCursor })}
+                    disabled={loadingIncidents || !incidentNextCursor}
+                  >
+                    {loadingIncidents ? "A carregar..." : "Carregar mais incidentes"}
+                  </button>
+                </div>
               )}
             </div>
           </div>

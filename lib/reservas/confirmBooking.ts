@@ -491,7 +491,7 @@ export async function confirmPendingBooking({
       const activePendingStatuses: BookingStatus[] = ["PENDING_CONFIRMATION", "PENDING"];
       return [
         { status: { in: activeBookedStatuses } },
-        { status: { in: activePendingStatuses }, pendingExpiresAt: { gt: now } },
+        { status: { in: activePendingStatuses }, pendingExpiresAt: { gt: now }, startsAt: { gt: now } },
       ];
     })(),
   };

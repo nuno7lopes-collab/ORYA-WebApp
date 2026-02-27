@@ -1,4 +1,8 @@
-import { listTelemetryAlertRules, listTelemetryIncidents } from "@/domain/telemetry/alerts";
+import {
+  listTelemetryAlertRules,
+  listTelemetryIncidentsPage,
+  type TelemetryIncidentSort,
+} from "@/domain/telemetry/alerts";
 import {
   type TelemetryBucketUnit,
   type TelemetryIncidentStatus,
@@ -30,6 +34,7 @@ export type BuildTelemetryExportCsvParams = {
   includeGlobal?: boolean;
   activeOnly?: boolean;
   statuses?: TelemetryIncidentStatus[];
+  incidentSort?: TelemetryIncidentSort;
   sourceType?: TelemetrySourceType | null;
   severity?: TelemetrySeverity | null;
   eventName?: string | null;
@@ -172,11 +177,15 @@ async function buildTelemetryExportTableData(params: BuildTelemetryExportCsvPara
       toJsonCell(item.tags),
     ]);
   } else if (params.dataset === "incidents") {
-    const items = await listTelemetryIncidents({
+    const result = await listTelemetryIncidentsPage({
       organizationId: params.organizationId,
       statuses: params.statuses,
+      sort: params.incidentSort ?? "TRIGGERED_DESC",
+      severities: params.severity ? [params.severity] : undefined,
+      query: toNullableString(params.query),
       take,
     });
+    const items = result.items;
 
     headers = [
       "id",

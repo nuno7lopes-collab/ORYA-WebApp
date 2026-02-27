@@ -9,18 +9,34 @@ import { fulfillServiceBookingIntent } from "@/lib/operations/fulfillServiceBook
 import { confirmPendingBooking } from "@/lib/reservas/confirmBooking";
 import { attachBookingPaymentIntentIfMissing } from "@/domain/bookings/commands";
 import { PaymentStatus, SourceType } from "@prisma/client";
+import {
+  PENDING_BOOKING_STATUSES,
+  resolvePendingBookingState,
+} from "@/lib/reservas/pendingBookingState";
 
 function parseId(value: string) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-const PENDING_BOOKING_STATUSES = new Set(["PENDING", "PENDING_CONFIRMATION"]);
+function isPendingState(status: string | null | undefined) {
+  return typeof status === "string" && PENDING_BOOKING_STATUSES.includes(status as any);
+}
+
+function resolveEffectiveState(status: string, pendingState: "NONE" | "ACTIVE" | "EXPIRED" | "PAST_START") {
+  if (pendingState === "EXPIRED" || pendingState === "PAST_START") return "CANCELLED_BY_CLIENT";
+  return status;
+}
+
 const BOOKING_SELECT = {
   id: true,
   status: true,
   startsAt: true,
+  durationMinutes: true,
+  professionalId: true,
+  resourceId: true,
   pendingExpiresAt: true,
+  createdAt: true,
   paymentIntentId: true,
 } as const;
 
@@ -51,7 +67,7 @@ async function _GET(
     // Fallback de consistência: em dev/test pode haver sucesso no PaymentSheet sem webhook
     // local ativo. Se o PI (ou ledger) já estiver em estado pago, tentamos concluir a reserva aqui.
     const currentStatus = booking["status"];
-    if (PENDING_BOOKING_STATUSES.has(currentStatus)) {
+    if (isPendingState(currentStatus)) {
       try {
         const latestBookingPayment = await prisma.payment.findFirst({
           where: {
@@ -143,7 +159,34 @@ async function _GET(
       }
     }
 
-    return jsonWrap({ ok: true, booking });
+    const pendingState = resolvePendingBookingState({
+      status: booking["status"],
+      startsAt: booking.startsAt,
+      pendingExpiresAt: booking.pendingExpiresAt,
+      createdAt: booking.createdAt,
+      now: new Date(),
+    });
+    const isStalePending = pendingState === "EXPIRED" || pendingState === "PAST_START";
+    const effectiveStatus = resolveEffectiveState(booking["status"], pendingState);
+    if (isStalePending && isPendingState(booking["status"])) {
+      await prisma.booking.updateMany({
+        where: {
+          id: booking.id,
+          status: { in: [...PENDING_BOOKING_STATUSES] as any },
+        },
+        data: { status: "CANCELLED_BY_CLIENT" },
+      });
+    }
+
+    return jsonWrap({
+      ok: true,
+      booking: {
+        ...booking,
+        status: isStalePending ? effectiveStatus : booking["status"],
+        effectiveStatus,
+        pendingState,
+      },
+    });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });

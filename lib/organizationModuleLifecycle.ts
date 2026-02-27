@@ -1,6 +1,5 @@
 import {
   BookingStatus,
-  EventStatus,
   OrganizationFormStatus,
   PadelTournamentLifecycleStatus,
   Prisma,
@@ -8,6 +7,7 @@ import {
   StoreStatus,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { EVENT_OPERATIONAL_STATUSES } from "@/domain/events/lifecycle";
 import {
   NON_DEACTIVABLE_ORGANIZATION_TOOL_MODULE_SET,
   ORGANIZATION_MODULES,
@@ -19,7 +19,6 @@ type PrismaReadClient = Prisma.TransactionClient | typeof prisma;
 
 const ORGANIZATION_MODULE_SET = new Set<OrganizationModule>(ORGANIZATION_MODULES);
 
-const ACTIVE_EVENT_STATUSES = [EventStatus.PUBLISHED, EventStatus.DATE_CHANGED];
 const ACTIVE_BOOKING_STATUSES = [
   BookingStatus.PENDING_CONFIRMATION,
   BookingStatus.PENDING,
@@ -125,7 +124,7 @@ async function resolveEventosDeactivationBlocker(params: {
       organizationId: params.organizationId,
       isDeleted: false,
       NOT: { templateType: "PADEL" },
-      status: { in: ACTIVE_EVENT_STATUSES },
+      status: { in: EVENT_OPERATIONAL_STATUSES },
     },
   });
   if (activeEvents <= 0) return null;

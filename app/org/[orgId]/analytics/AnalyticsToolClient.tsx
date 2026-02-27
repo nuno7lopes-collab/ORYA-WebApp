@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import {
@@ -195,6 +195,12 @@ type TelemetryEventsResponse = {
     occurredAt: string;
   }>;
   pagination: { hasMore: boolean; nextCursor: string | null };
+};
+
+type TelemetryIncidentsResponse = {
+  items: TelemetryIncidentResponse[];
+  pagination?: { hasMore: boolean; nextCursor: string | null };
+  sort?: "TRIGGERED_DESC" | "SLA_IMPACT_DESC";
 };
 
 type TelemetryFunnelStepResponse = {
@@ -392,6 +398,29 @@ function parseTelemetrySeverity(raw: string | null | undefined) {
   return "";
 }
 
+function parseTelemetryIncidentStatuses(raw: string | null | undefined) {
+  if (!raw) return "OPEN,ACKNOWLEDGED";
+  const normalized = raw
+    .split(",")
+    .map((token) => token.trim().toUpperCase())
+    .filter(Boolean);
+  if (normalized.includes("ALL")) return "ALL";
+  const valid = normalized.filter((token) => ["OPEN", "ACKNOWLEDGED", "RESOLVED"].includes(token));
+  if (!valid.length) return "OPEN,ACKNOWLEDGED";
+  return Array.from(new Set(valid)).join(",");
+}
+
+function parseTelemetrySearch(raw: string | null | undefined) {
+  if (!raw) return "";
+  return raw.trim().slice(0, 120);
+}
+
+function parseTelemetryIncidentSort(raw: string | null | undefined) {
+  const normalized = raw?.trim().toUpperCase();
+  if (normalized === "SLA_IMPACT_DESC") return "SLA_IMPACT_DESC" as const;
+  return "TRIGGERED_DESC" as const;
+}
+
 function parseTelemetryFunnelWithinMinutes(raw: string) {
   const trimmed = raw.trim();
   if (!trimmed) return null;
@@ -455,6 +484,69 @@ function formatTelemetryMetricKey(value: string | null | undefined) {
   if (value === "ERROR_COUNT") return "Total de erros";
   if (value === "UNIQUE_ACTORS") return "Actores únicos";
   return value;
+}
+
+function minutesBetween(fromIso: string, toIso: string) {
+  const from = new Date(fromIso);
+  const to = new Date(toIso);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return null;
+  return (to.getTime() - from.getTime()) / (60 * 1000);
+}
+
+function buildTelemetryIncidentSlaHint(
+  incident: TelemetryIncidentResponse,
+  kpis: TelemetryIncidentKpisResponse | null,
+) {
+  const ackSlaMinutes = kpis?.ackSlaMinutes ?? 15;
+  const resolveSlaMinutes = kpis?.resolveSlaMinutes ?? 120;
+  const nowIso = new Date().toISOString();
+  const elapsedMinutes = minutesBetween(incident.triggeredAt, nowIso);
+  if (elapsedMinutes === null) return null;
+
+  if (incident.status === "OPEN") {
+    const delta = ackSlaMinutes - elapsedMinutes;
+    if (delta >= 0) {
+      return {
+        label: `ACK SLA: ${Math.ceil(delta)}m restantes`,
+        breached: false,
+      };
+    }
+    return {
+      label: `ACK SLA excedido em ${Math.ceil(Math.abs(delta))}m`,
+      breached: true,
+    };
+  }
+
+  if (incident.status === "ACKNOWLEDGED") {
+    const delta = resolveSlaMinutes - elapsedMinutes;
+    if (delta >= 0) {
+      return {
+        label: `Resolve SLA: ${Math.ceil(delta)}m restantes`,
+        breached: false,
+      };
+    }
+    return {
+      label: `Resolve SLA excedido em ${Math.ceil(Math.abs(delta))}m`,
+      breached: true,
+    };
+  }
+
+  if (incident.status === "RESOLVED" && incident.resolvedAt) {
+    const resolvedMinutes = minutesBetween(incident.triggeredAt, incident.resolvedAt);
+    if (resolvedMinutes === null) return null;
+    if (resolvedMinutes <= resolveSlaMinutes) {
+      return {
+        label: `Resolvido em ${Math.round(resolvedMinutes)}m`,
+        breached: false,
+      };
+    }
+    return {
+      label: `Resolvido fora SLA (+${Math.ceil(resolvedMinutes - resolveSlaMinutes)}m)`,
+      breached: true,
+    };
+  }
+
+  return null;
 }
 
 function prettyMetricKey(value: MetricOption) {
@@ -562,6 +654,18 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
   const telemetryHours = parseTelemetryHours(searchParams?.get("telemetryHours") ?? null);
   const telemetrySource = parseTelemetrySource(searchParams?.get("telemetrySource") ?? null);
   const telemetrySeverity = parseTelemetrySeverity(searchParams?.get("telemetrySeverity") ?? null);
+  const telemetryIncidentStatuses = parseTelemetryIncidentStatuses(
+    searchParams?.get("telemetryIncidentStatuses") ?? null,
+  );
+  const telemetryIncidentSeverity = parseTelemetrySeverity(
+    searchParams?.get("telemetryIncidentSeverity") ?? null,
+  );
+  const telemetryIncidentQuery = parseTelemetrySearch(
+    searchParams?.get("telemetryIncidentQuery") ?? null,
+  );
+  const telemetryIncidentSort = parseTelemetryIncidentSort(
+    searchParams?.get("telemetryIncidentSort") ?? null,
+  );
   const orgApiBase = `/api/org/${orgId}`;
   const scopeQuery = buildScopeQuery(scope);
 
@@ -629,6 +733,19 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
           severity: telemetrySeverity || null,
         })}`
       : null;
+  const telemetryIncidentsKey =
+    view === "telemetry"
+      ? `${orgApiBase}/telemetry/incidents?${buildQueryString({
+          take: 120,
+          statuses:
+            telemetryIncidentStatuses === "ALL"
+              ? null
+              : telemetryIncidentStatuses,
+          severities: telemetryIncidentSeverity || null,
+          q: telemetryIncidentQuery || null,
+          sort: telemetryIncidentSort,
+        })}`
+      : null;
   const telemetryFunnelsKey =
     view === "telemetry"
       ? `${orgApiBase}/telemetry/funnels?${buildQueryString({
@@ -685,6 +802,16 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
     mutate: mutateTelemetryEvents,
   } = useSWR<TelemetryEventsResponse>(telemetryEventsKey, apiFetcher, swrOptions);
   const {
+    data: telemetryIncidents,
+    error: telemetryIncidentsError,
+    isLoading: telemetryIncidentsLoading,
+    mutate: mutateTelemetryIncidents,
+  } = useSWR<TelemetryIncidentsResponse>(
+    telemetryIncidentsKey,
+    apiFetcher,
+    swrOptions,
+  );
+  const {
     data: telemetryFunnels,
     error: telemetryFunnelsError,
     isLoading: telemetryFunnelsLoading,
@@ -722,6 +849,18 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
   const [telemetryExportFormat, setTelemetryExportFormat] = useState<TelemetryExportFormat>("csv");
   const [telemetryExportPreviewBusy, setTelemetryExportPreviewBusy] = useState(false);
   const [telemetryExportPreview, setTelemetryExportPreview] = useState<TelemetryExportPreviewPayload | null>(null);
+  const [telemetryIncidentRows, setTelemetryIncidentRows] = useState<TelemetryIncidentResponse[]>([]);
+  const [telemetryIncidentHasMore, setTelemetryIncidentHasMore] = useState(false);
+  const [telemetryIncidentNextCursor, setTelemetryIncidentNextCursor] = useState<string | null>(null);
+  const [telemetryIncidentLoadMoreBusy, setTelemetryIncidentLoadMoreBusy] = useState(false);
+
+  useEffect(() => {
+    if (view !== "telemetry") return;
+    const items = telemetryIncidents?.items ?? [];
+    setTelemetryIncidentRows(items);
+    setTelemetryIncidentHasMore(Boolean(telemetryIncidents?.pagination?.hasMore));
+    setTelemetryIncidentNextCursor(telemetryIncidents?.pagination?.nextCursor ?? null);
+  }, [telemetryIncidents?.items, telemetryIncidents?.pagination?.hasMore, telemetryIncidents?.pagination?.nextCursor, view]);
 
   const applyTelemetryIncidentAction = useCallback(
     async (incidentId: string, action: "ACK" | "RESOLVE") => {
@@ -746,14 +885,14 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
           throw new Error(String(errorCode));
         }
         setTelemetryActionInfo(action === "ACK" ? "Incidente reconhecido." : "Incidente resolvido.");
-        await mutateTelemetryOverview();
+        await Promise.all([mutateTelemetryOverview(), mutateTelemetryIncidents()]);
       } catch (error) {
         setTelemetryActionError(formatAnalyticsError(error));
       } finally {
         setTelemetryActionBusyKey((current) => (current === busyKey ? null : current));
       }
     },
-    [mutateTelemetryOverview, orgApiBase],
+    [mutateTelemetryIncidents, mutateTelemetryOverview, orgApiBase],
   );
 
   const runTelemetryEvaluate = useCallback(async () => {
@@ -779,13 +918,13 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
       }
       setTelemetryLastEvaluation(result);
       setTelemetryActionInfo("Avaliação de alertas concluída.");
-      await mutateTelemetryOverview();
+      await Promise.all([mutateTelemetryOverview(), mutateTelemetryIncidents()]);
     } catch (error) {
       setTelemetryActionError(formatAnalyticsError(error));
     } finally {
       setTelemetryEvaluateBusy(false);
     }
-  }, [mutateTelemetryOverview, orgApiBase]);
+  }, [mutateTelemetryIncidents, mutateTelemetryOverview, orgApiBase]);
 
   const runTelemetryRecompute = useCallback(async () => {
     setTelemetryActionError(null);
@@ -824,6 +963,7 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
       setTelemetryActionInfo("Recompute de telemetria executado com sucesso.");
       await Promise.all([
         mutateTelemetryOverview(),
+        mutateTelemetryIncidents(),
         mutateTelemetryEvents(),
         mutateTelemetryFunnels(),
         mutateTelemetryFunnelResults(),
@@ -836,6 +976,7 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
     }
   }, [
     telemetryHours,
+    mutateTelemetryIncidents,
     mutateTelemetryOverview,
     mutateTelemetryEvents,
     mutateTelemetryFunnels,
@@ -859,7 +1000,15 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
       if (telemetrySource) params.set("sourceType", telemetrySource);
       if (telemetrySeverity) params.set("severity", telemetrySeverity);
     } else if (telemetryExportDataset === "incidents") {
-      params.set("statuses", "ALL");
+      params.set(
+        "statuses",
+        telemetryIncidentStatuses === "ALL"
+          ? "ALL"
+          : telemetryIncidentStatuses,
+      );
+      params.set("sort", telemetryIncidentSort);
+      if (telemetryIncidentSeverity) params.set("severity", telemetryIncidentSeverity);
+      if (telemetryIncidentQuery) params.set("q", telemetryIncidentQuery);
     } else if (telemetryExportDataset === "rules" || telemetryExportDataset === "funnels") {
       params.set("includeGlobal", "true");
       params.set("activeOnly", "false");
@@ -869,7 +1018,18 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
 
     window.open(`${orgApiBase}/telemetry/export?${params.toString()}`, "_blank", "noopener,noreferrer");
     setTelemetryActionInfo(telemetryExportFormat === "pdf" ? "Exportação PDF iniciada." : "Exportação CSV iniciada.");
-  }, [orgApiBase, telemetryExportDataset, telemetryExportFormat, telemetryHours, telemetrySeverity, telemetrySource]);
+  }, [
+    orgApiBase,
+    telemetryExportDataset,
+    telemetryExportFormat,
+    telemetryHours,
+    telemetryIncidentQuery,
+    telemetryIncidentSeverity,
+    telemetryIncidentSort,
+    telemetryIncidentStatuses,
+    telemetrySeverity,
+    telemetrySource,
+  ]);
 
   const runTelemetryExportPreview = useCallback(async () => {
     setTelemetryActionError(null);
@@ -886,7 +1046,15 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
         if (telemetrySource) params.set("sourceType", telemetrySource);
         if (telemetrySeverity) params.set("severity", telemetrySeverity);
       } else if (telemetryExportDataset === "incidents") {
-        params.set("statuses", "ALL");
+        params.set(
+          "statuses",
+          telemetryIncidentStatuses === "ALL"
+            ? "ALL"
+            : telemetryIncidentStatuses,
+        );
+        params.set("sort", telemetryIncidentSort);
+        if (telemetryIncidentSeverity) params.set("severity", telemetryIncidentSeverity);
+        if (telemetryIncidentQuery) params.set("q", telemetryIncidentQuery);
       } else if (telemetryExportDataset === "rules" || telemetryExportDataset === "funnels") {
         params.set("includeGlobal", "true");
         params.set("activeOnly", "false");
@@ -909,8 +1077,45 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
     orgApiBase,
     telemetryExportDataset,
     telemetryHours,
+    telemetryIncidentQuery,
+    telemetryIncidentSeverity,
+    telemetryIncidentSort,
+    telemetryIncidentStatuses,
     telemetrySeverity,
     telemetrySource,
+  ]);
+
+  const loadMoreTelemetryIncidents = useCallback(async () => {
+    if (!telemetryIncidentHasMore || !telemetryIncidentNextCursor) return;
+    setTelemetryActionError(null);
+    setTelemetryIncidentLoadMoreBusy(true);
+    try {
+      const params = new URLSearchParams();
+      params.set("take", "120");
+      params.set("cursor", telemetryIncidentNextCursor);
+      params.set("sort", telemetryIncidentSort);
+      if (telemetryIncidentStatuses !== "ALL") params.set("statuses", telemetryIncidentStatuses);
+      if (telemetryIncidentSeverity) params.set("severities", telemetryIncidentSeverity);
+      if (telemetryIncidentQuery) params.set("q", telemetryIncidentQuery);
+      const payload = await apiFetcher<TelemetryIncidentsResponse>(
+        `${orgApiBase}/telemetry/incidents?${params.toString()}`,
+      );
+      setTelemetryIncidentRows((prev) => [...prev, ...(payload.items ?? [])]);
+      setTelemetryIncidentHasMore(Boolean(payload.pagination?.hasMore));
+      setTelemetryIncidentNextCursor(payload.pagination?.nextCursor ?? null);
+    } catch (error) {
+      setTelemetryActionError(formatAnalyticsError(error));
+    } finally {
+      setTelemetryIncidentLoadMoreBusy(false);
+    }
+  }, [
+    orgApiBase,
+    telemetryIncidentHasMore,
+    telemetryIncidentNextCursor,
+    telemetryIncidentQuery,
+    telemetryIncidentSeverity,
+    telemetryIncidentSort,
+    telemetryIncidentStatuses,
   ]);
 
   const resetTelemetryFunnelDraft = useCallback(() => {
@@ -1136,6 +1341,7 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
     if (view === "telemetry") {
       await Promise.all([
         mutateTelemetryOverview(),
+        mutateTelemetryIncidents(),
         mutateTelemetryEvents(),
         mutateTelemetryFunnels(),
         mutateTelemetryFunnelResults(),
@@ -1152,6 +1358,7 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
     mutateSeries,
     mutateTelemetryFunnelResults,
     mutateTelemetryFunnels,
+    mutateTelemetryIncidents,
     mutateTelemetryEvents,
     mutateTelemetryOverview,
     mutateTelemetryCatalog,
@@ -1264,9 +1471,13 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
     () => telemetryOverview?.sourceBreakdown ?? [],
     [telemetryOverview?.sourceBreakdown],
   );
+  const telemetryIncidentItems = useMemo(
+    () => telemetryIncidentRows,
+    [telemetryIncidentRows],
+  );
   const telemetryOpenIncidents = useMemo(
-    () => (telemetryOverview?.incidents ?? []).filter((item) => item.status !== "RESOLVED"),
-    [telemetryOverview?.incidents],
+    () => telemetryIncidentItems.filter((item) => item.status !== "RESOLVED"),
+    [telemetryIncidentItems],
   );
   const telemetryIncidentKpis = telemetryOverview?.incidentKpis ?? null;
   const telemetryActiveRules = useMemo(
@@ -1326,6 +1537,18 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
       chips.push({ id: "telemetry-hours", label: `Telemetria: ${telemetryHours}h` });
       if (telemetrySource) chips.push({ id: "telemetry-source", label: `Source: ${telemetrySource}` });
       if (telemetrySeverity) chips.push({ id: "telemetry-severity", label: `Sev: ${telemetrySeverity}` });
+      if (telemetryIncidentStatuses !== "OPEN,ACKNOWLEDGED") {
+        chips.push({ id: "telemetry-incident-statuses", label: `Incidentes: ${telemetryIncidentStatuses}` });
+      }
+      if (telemetryIncidentSeverity) {
+        chips.push({ id: "telemetry-incident-severity", label: `Sev incidente: ${telemetryIncidentSeverity}` });
+      }
+      if (telemetryIncidentQuery) {
+        chips.push({ id: "telemetry-incident-query", label: `Pesquisa incidente: ${telemetryIncidentQuery}` });
+      }
+      if (telemetryIncidentSort !== "TRIGGERED_DESC") {
+        chips.push({ id: "telemetry-incident-sort", label: "Ordenação incidente: impacto SLA" });
+      }
     }
     return chips;
   }, [
@@ -1336,6 +1559,10 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
     range,
     scope,
     telemetryHours,
+    telemetryIncidentQuery,
+    telemetryIncidentSeverity,
+    telemetryIncidentSort,
+    telemetryIncidentStatuses,
     telemetrySeverity,
     telemetrySource,
     view,
@@ -1352,6 +1579,10 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
       telemetryHours: 24,
       telemetrySource: null,
       telemetrySeverity: null,
+      telemetryIncidentStatuses: null,
+      telemetryIncidentSeverity: null,
+      telemetryIncidentQuery: null,
+      telemetryIncidentSort: null,
     });
   }, [updateQuery]);
 
@@ -1481,6 +1712,67 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
                 { label: "CRITICAL", value: "CRITICAL" },
               ]}
             />
+          )}
+          {view === "telemetry" && (
+            <FilterSelect
+              label="Estados incidente"
+              value={telemetryIncidentStatuses}
+              onChange={(value) =>
+                updateQuery({
+                  telemetryIncidentStatuses:
+                    value === "OPEN,ACKNOWLEDGED" ? null : value,
+                })
+              }
+              options={[
+                { label: "Abertos + reconhecidos", value: "OPEN,ACKNOWLEDGED" },
+                { label: "Abertos", value: "OPEN" },
+                { label: "Reconhecidos", value: "ACKNOWLEDGED" },
+                { label: "Resolvidos", value: "RESOLVED" },
+                { label: "Todos", value: "ALL" },
+              ]}
+            />
+          )}
+          {view === "telemetry" && (
+            <FilterSelect
+              label="Sev incidente"
+              value={telemetryIncidentSeverity}
+              onChange={(value) => updateQuery({ telemetryIncidentSeverity: value || null })}
+              options={[
+                { label: "Todas", value: "" },
+                { label: "INFO", value: "INFO" },
+                { label: "WARN", value: "WARN" },
+                { label: "ERROR", value: "ERROR" },
+                { label: "CRITICAL", value: "CRITICAL" },
+              ]}
+            />
+          )}
+          {view === "telemetry" && (
+            <FilterSelect
+              label="Ordenação incidente"
+              value={telemetryIncidentSort}
+              onChange={(value) =>
+                updateQuery({
+                  telemetryIncidentSort:
+                    value === "TRIGGERED_DESC" ? null : value,
+                })
+              }
+              options={[
+                { label: "Mais recentes", value: "TRIGGERED_DESC" },
+                { label: "Impacto SLA", value: "SLA_IMPACT_DESC" },
+              ]}
+            />
+          )}
+          {view === "telemetry" && (
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-white/65">Pesquisa incidente</span>
+              <input
+                key={`telemetry-incident-query-${telemetryIncidentQuery}`}
+                defaultValue={telemetryIncidentQuery}
+                className="h-10 rounded-xl border border-white/20 bg-[#141414] px-3 text-sm text-white outline-none transition focus:border-cyan-300/80"
+                placeholder="título, regra, dimensão..."
+                onBlur={(event) => updateQuery({ telemetryIncidentQuery: event.target.value.trim() || null })}
+              />
+            </label>
           )}
           <div className="flex items-end">
             <button
@@ -1842,6 +2134,7 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
         <ViewSection
           loading={
             telemetryOverviewLoading ||
+            telemetryIncidentsLoading ||
             telemetryEventsLoading ||
             telemetryFunnelsLoading ||
             telemetryFunnelResultsLoading ||
@@ -1849,6 +2142,7 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
           }
           error={
             telemetryOverviewError ??
+            telemetryIncidentsError ??
             telemetryEventsError ??
             telemetryFunnelsError ??
             telemetryFunnelResultsError ??
@@ -1857,6 +2151,7 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
           onRetry={() =>
             void Promise.all([
               mutateTelemetryOverview(),
+              mutateTelemetryIncidents(),
               mutateTelemetryEvents(),
               mutateTelemetryFunnels(),
               mutateTelemetryFunnelResults(),
@@ -1894,7 +2189,7 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
           </div>
 
           <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr]">
-            <Panel title="Incidentes activos" subtitle="Acompanhar e fechar alertas desta organização">
+            <Panel title="Incidentes" subtitle="Acompanhar, filtrar e fechar alertas desta organização">
               {telemetryActionInfo ? (
                 <div className="mb-3 rounded-lg border border-emerald-300/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-100">
                   {telemetryActionInfo}
@@ -1906,11 +2201,12 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
                 </div>
               ) : null}
               <div className="space-y-2">
-                {telemetryOpenIncidents.map((incident) => {
+                {telemetryIncidentItems.map((incident) => {
                   const canAck = incident.status === "OPEN";
                   const canResolve = incident.status !== "RESOLVED";
                   const ackBusy = telemetryActionBusyKey === `${incident.id}:ACK`;
                   const resolveBusy = telemetryActionBusyKey === `${incident.id}:RESOLVE`;
+                  const slaHint = buildTelemetryIncidentSlaHint(incident, telemetryIncidentKpis);
                   return (
                     <div key={incident.id} className="rounded-xl border border-white/12 bg-black/20 p-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1923,6 +2219,13 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
                         {formatTelemetryMetricKey(incident.metricKey)} · Observado {incident.observedValue ?? 0} / Limite {incident.thresholdValue ?? 0}
                       </p>
                       <p className="mt-1 text-[11px] text-white/55">{formatDateTime(incident.triggeredAt)}</p>
+                      {slaHint ? (
+                        <p
+                          className={`mt-1 text-[11px] ${slaHint.breached ? "text-rose-200" : "text-emerald-200"}`}
+                        >
+                          {slaHint.label}
+                        </p>
+                      ) : null}
                       <div className="mt-3 flex flex-wrap gap-2">
                         {canAck ? (
                           <button
@@ -1948,8 +2251,20 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
                     </div>
                   );
                 })}
-                {telemetryOpenIncidents.length === 0 ? (
-                  <EmptyState label="Sem incidentes abertos para esta janela." />
+                {telemetryIncidentItems.length === 0 ? (
+                  <EmptyState label="Sem incidentes para os filtros atuais." />
+                ) : null}
+                {telemetryIncidentHasMore ? (
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      className="rounded-md border border-white/20 bg-white/[0.08] px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/[0.15] disabled:opacity-60"
+                      onClick={() => void loadMoreTelemetryIncidents()}
+                      disabled={telemetryIncidentLoadMoreBusy || !telemetryIncidentNextCursor}
+                    >
+                      {telemetryIncidentLoadMoreBusy ? "A carregar..." : "Carregar mais incidentes"}
+                    </button>
+                  </div>
                 ) : null}
               </div>
             </Panel>

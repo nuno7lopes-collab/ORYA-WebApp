@@ -8,6 +8,7 @@ import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { BookingStatus, OrganizationMemberRole } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { jsonWrap } from "@/lib/api/wrapResponse";
+import { BOOKING_PENDING_HOLD_MINUTES } from "@/lib/reservas/pendingBookingState";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -35,6 +36,9 @@ const BOOKING_PENDING_STATUSES: BookingStatus[] = [
   BookingStatus.PENDING_CONFIRMATION,
   BookingStatus.PENDING,
 ];
+const BOOKING_NON_PENDING_SCOPE_STATUSES: BookingStatus[] = BOOKING_SCOPE_STATUSES.filter(
+  (status) => !BOOKING_PENDING_STATUSES.includes(status),
+);
 
 async function _GET(req: NextRequest) {
   try {
@@ -68,13 +72,15 @@ async function _GET(req: NextRequest) {
     const now = new Date();
     const weekAhead = new Date(now);
     weekAhead.setDate(weekAhead.getDate() + 7);
+    const pendingCreatedAtThreshold = new Date(now.getTime() - BOOKING_PENDING_HOLD_MINUTES * 60 * 1000);
 
     const [
       servicesTotal,
       servicesActive,
       availabilityScheduleCount,
       availabilityTemplateCount,
-      upcoming,
+      upcomingNonPending,
+      upcomingPending,
       confirmed,
       pending,
       revenueAgg,
@@ -92,8 +98,19 @@ async function _GET(req: NextRequest) {
       prisma.booking.count({
         where: {
           organizationId: organization.id,
-          status: { in: BOOKING_SCOPE_STATUSES },
+          status: { in: BOOKING_NON_PENDING_SCOPE_STATUSES },
           startsAt: { gte: now, lte: weekAhead },
+        },
+      }),
+      prisma.booking.count({
+        where: {
+          organizationId: organization.id,
+          status: { in: BOOKING_PENDING_STATUSES },
+          startsAt: { gt: now, lte: weekAhead },
+          OR: [
+            { pendingExpiresAt: { gt: now } },
+            { pendingExpiresAt: null, createdAt: { gt: pendingCreatedAtThreshold } },
+          ],
         },
       }),
       prisma.booking.count({
@@ -106,6 +123,11 @@ async function _GET(req: NextRequest) {
         where: {
           organizationId: organization.id,
           status: { in: BOOKING_PENDING_STATUSES },
+          startsAt: { gt: now },
+          OR: [
+            { pendingExpiresAt: { gt: now } },
+            { pendingExpiresAt: null, createdAt: { gt: pendingCreatedAtThreshold } },
+          ],
         },
       }),
       prisma.booking.aggregate({
@@ -126,7 +148,7 @@ async function _GET(req: NextRequest) {
         availabilityTemplateCount,
       },
       bookings: {
-        upcoming,
+        upcoming: upcomingNonPending + upcomingPending,
         confirmed,
         pending,
         revenueCents: revenueAgg._sum.price ?? 0,

@@ -141,6 +141,9 @@ type BookingPending = {
   status: string;
   pendingExpiresAt: string | null;
   startsAt: string;
+  durationMinutes?: number | null;
+  professionalId?: number | null;
+  resourceId?: number | null;
 };
 
 type CheckoutHoldSession = {
@@ -154,6 +157,9 @@ type CheckoutHoldSession = {
   serviceId: number;
   bookingId: number;
   bookingStartsAt: string;
+  durationMinutes?: number | null;
+  professionalId?: number | null;
+  resourceId?: number | null;
 };
 
 type ReservationStep = 1 | 2 | 3 | 4;
@@ -292,6 +298,9 @@ function readStoredHold(): CheckoutHoldSession | null {
       serviceId: parsed.serviceId,
       bookingId: parsed.bookingId,
       bookingStartsAt: parsed.bookingStartsAt,
+      durationMinutes: typeof parsed.durationMinutes === "number" ? parsed.durationMinutes : null,
+      professionalId: typeof parsed.professionalId === "number" ? parsed.professionalId : null,
+      resourceId: typeof parsed.resourceId === "number" ? parsed.resourceId : null,
     };
   } catch {
     return null;
@@ -517,10 +526,13 @@ export default function ReservasBookingClient({
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [pendingSlot, setPendingSlot] = useState<AvailabilitySlot | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<AvailabilitySlot | null>(null);
+  const [slotSubmittingKey, setSlotSubmittingKey] = useState<string | null>(null);
   const [checkoutHold, setCheckoutHold] = useState<CheckoutHoldSession | null>(null);
   const [holdCountdownMs, setHoldCountdownMs] = useState<number | null>(null);
   const [resumeCheckoutVisible, setResumeCheckoutVisible] = useState(false);
   const holdExpiredHandledRef = useRef(false);
+  const skipServiceResetRef = useRef(true);
+  const skipSelectionResetRef = useRef(true);
 
   const selectedService = activeServices.find((service) => service.id === selectedServiceId) ?? null;
   const selectedServiceVertical = resolveServiceVertical(selectedService);
@@ -892,6 +904,9 @@ export default function ReservasBookingClient({
         status: "PENDING_CONFIRMATION",
         pendingExpiresAt: stored.expiresAt,
         startsAt: stored.bookingStartsAt,
+        durationMinutes: stored.durationMinutes ?? null,
+        professionalId: stored.professionalId ?? null,
+        resourceId: stored.resourceId ?? null,
       });
     }
   }, [organization.id, selectedServiceApiId]);
@@ -911,19 +926,16 @@ export default function ReservasBookingClient({
       setCheckout(null);
       setCheckoutLoading(false);
       setResumeCheckoutVisible(false);
-      setBookingError("O seu bloqueio expirou - o slot já não está reservado.");
+      setBookingError("O bloqueio de checkout expirou. Continua para renovar o bloqueio.");
       persistStoredHold(null);
       setCheckoutHold(null);
-      if (bookingPending) {
-        void cancelPendingBooking("HOLD_EXPIRED");
-      }
     };
     tick();
     const interval = window.setInterval(tick, 1000);
     return () => {
       window.clearInterval(interval);
     };
-  }, [checkoutHold, bookingPending]);
+  }, [checkoutHold]);
 
   useEffect(() => {
     if (!checkoutHold) return;
@@ -988,6 +1000,10 @@ export default function ReservasBookingClient({
   }, [fixedServiceId, selectedServiceId]);
 
   useEffect(() => {
+    if (skipServiceResetRef.current) {
+      skipServiceResetRef.current = false;
+      return;
+    }
     const resetStep: ReservationStep = allowServiceSelection ? 1 : 2;
     setActiveStep(resetStep);
     setSelectedProfessionalId(null);
@@ -1008,8 +1024,9 @@ export default function ReservasBookingClient({
     setPhoneRequired(false);
     setPhoneError(null);
     setPendingSlot(null);
+    setSlotSubmittingKey(null);
     setPaymentMethod("mbway");
-    clearHoldSession();
+    void releaseHoldSession(checkoutHold, false);
   }, [selectedServiceId, allowServiceSelection]);
 
   useEffect(() => {
@@ -1056,6 +1073,10 @@ export default function ReservasBookingClient({
   }, [selectedServiceId]);
 
   useEffect(() => {
+    if (skipSelectionResetRef.current) {
+      skipSelectionResetRef.current = false;
+      return;
+    }
     setSelectedDay(null);
     setDaySlots([]);
     setSelectedSlot(null);
@@ -1068,7 +1089,8 @@ export default function ReservasBookingClient({
     setDurationError(null);
     setBookingSuccess(null);
     setPendingSlot(null);
-    clearHoldSession();
+    setSlotSubmittingKey(null);
+    void releaseHoldSession(checkoutHold, false);
   }, [assignmentConfig.assignmentMode, selectedProfessionalId, selectedPartySize, addonsParam, durationOverrideMinutes]);
 
   useEffect(() => {
@@ -1327,19 +1349,95 @@ export default function ReservasBookingClient({
     if (!selectedServiceApiId) {
       throw new Error("Serviço inválido para checkout.");
     }
-    const startsAtISO = bookingPending?.startsAt ?? selectedSlot?.startsAt ?? null;
-    if (!startsAtISO) {
+    const checkoutHoldForBooking =
+      checkoutHold && checkoutHold.bookingId === bookingId ? checkoutHold : null;
+    const bookingPendingForCheckout =
+      bookingPending && bookingPending.id === bookingId ? bookingPending : null;
+    let startsAtISO =
+      bookingPendingForCheckout?.startsAt ??
+      checkoutHoldForBooking?.bookingStartsAt ??
+      selectedSlot?.startsAt ??
+      null;
+    let durationMinutesForHold =
+      bookingPendingForCheckout?.durationMinutes ??
+      checkoutHoldForBooking?.durationMinutes ??
+      effectiveDurationMinutes;
+    let professionalIdForHold =
+      bookingPendingForCheckout?.professionalId ??
+      checkoutHoldForBooking?.professionalId ??
+      selectedProfessionalId ??
+      null;
+    let resourceIdForHold =
+      bookingPendingForCheckout?.resourceId ?? checkoutHoldForBooking?.resourceId ?? null;
+    const needsBookingRefresh =
+      !startsAtISO ||
+      durationMinutesForHold == null ||
+      (requiresProfessional && professionalIdForHold == null) ||
+      (requiresResource && resourceIdForHold == null);
+    if (needsBookingRefresh) {
+      const bookingRes = await fetch(`/api/me/reservas/${bookingId}`, {
+        cache: "no-store",
+      });
+      const bookingJson = await bookingRes.json().catch(() => null);
+      const bookingData =
+        bookingJson?.booking && typeof bookingJson.booking === "object"
+          ? (bookingJson.booking as Record<string, unknown>)
+          : null;
+      if (!bookingRes.ok || !bookingJson?.ok || !bookingData) {
+        throw new Error("Não foi possível validar a pré-reserva.");
+      }
+      const bookingStatus =
+        typeof bookingData.effectiveStatus === "string"
+          ? bookingData.effectiveStatus
+          : typeof bookingData.status === "string"
+            ? bookingData.status
+            : null;
+      if (bookingStatus && ["CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG", "CANCELLED"].includes(bookingStatus)) {
+        setBookingPending(null);
+        setCheckout(null);
+        clearHoldSession();
+        throw new Error("Esta pré-reserva expirou.");
+      }
+      if (typeof bookingData.startsAt === "string") {
+        startsAtISO = bookingData.startsAt;
+      }
+      if (typeof bookingData.durationMinutes === "number") {
+        durationMinutesForHold = bookingData.durationMinutes;
+      }
+      if (typeof bookingData.professionalId === "number") {
+        professionalIdForHold = bookingData.professionalId;
+      }
+      if (typeof bookingData.resourceId === "number") {
+        resourceIdForHold = bookingData.resourceId;
+      }
+      if (startsAtISO) {
+        const refreshedBookingPending: BookingPending = {
+          id: bookingId,
+          status: bookingPendingForCheckout?.status ?? "PENDING_CONFIRMATION",
+          pendingExpiresAt: bookingPendingForCheckout?.pendingExpiresAt ?? null,
+          startsAt: startsAtISO,
+          durationMinutes: durationMinutesForHold ?? null,
+          professionalId: professionalIdForHold,
+          resourceId: resourceIdForHold,
+        };
+        setBookingPending((current) =>
+          current && current.id === bookingId ? { ...current, ...refreshedBookingPending } : current,
+        );
+      }
+    }
+    if (!startsAtISO || durationMinutesForHold == null) {
       throw new Error("Slot indisponível para checkout.");
     }
+    const resourceIdsForHold = resourceIdForHold != null ? [resourceIdForHold] : [];
 
     const subjectFingerprint = buildHoldSubjectFingerprint({
       orgId: organization.id,
       subjectType: "SERVICE",
       serviceId: selectedServiceApiId,
       startAtISO: new Date(startsAtISO).toISOString(),
-      durationMinutes: effectiveDurationMinutes,
-      resourceIds: [],
-      professionalId: selectedProfessionalId ?? null,
+      durationMinutes: durationMinutesForHold,
+      resourceIds: resourceIdsForHold,
+      professionalId: professionalIdForHold,
     });
     const nowMs = Date.now();
     if (
@@ -1401,6 +1499,9 @@ export default function ReservasBookingClient({
       serviceId: selectedServiceApiId,
       bookingId,
       bookingStartsAt: startsAtISO,
+      durationMinutes: durationMinutesForHold,
+      professionalId: professionalIdForHold,
+      resourceId: resourceIdForHold,
     };
     setCheckoutHold(hold);
     persistStoredHold(hold);
@@ -1411,7 +1512,6 @@ export default function ReservasBookingClient({
   const startBookingCheckout = async (
     bookingId: number,
     method?: PaymentMethod,
-    holdOverride?: CheckoutHoldSession | null,
   ) => {
     if (!selectedServiceApiId) return;
     if (!ensureAuth(redirectPath)) return;
@@ -1423,7 +1523,7 @@ export default function ReservasBookingClient({
     setPaymentMessage(null);
 
     try {
-      const hold = holdOverride ?? (await ensureCheckoutHold(bookingId));
+      const hold = await ensureCheckoutHold(bookingId);
       const res = await fetch(`/api/servicos/${selectedServiceApiId}/checkout`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1491,6 +1591,7 @@ export default function ReservasBookingClient({
     setBookingSuccess(null);
     setPendingSlot(null);
     setSelectedSlot(null);
+    setSlotSubmittingKey(null);
     setPhoneRequired(false);
     setPhoneError(null);
     try {
@@ -1527,31 +1628,49 @@ export default function ReservasBookingClient({
         status: "PENDING_CONFIRMATION",
         pendingExpiresAt: checkoutHold.expiresAt,
         startsAt: checkoutHold.bookingStartsAt,
+        durationMinutes: checkoutHold.durationMinutes ?? null,
+        professionalId: checkoutHold.professionalId ?? null,
+        resourceId: checkoutHold.resourceId ?? null,
       });
     }
-    await startBookingCheckout(checkoutHold.bookingId, paymentMethod, checkoutHold);
+    await startBookingCheckout(checkoutHold.bookingId, paymentMethod);
   };
 
   const pollBookingStatus = async (bookingId: number, startsAtIso: string) => {
+    const holdToRelease =
+      checkoutHold && checkoutHold.bookingId === bookingId ? checkoutHold : null;
     for (let attempt = 0; attempt < 8; attempt += 1) {
       if (!mountedRef.current) return;
       try {
         const res = await fetch(`/api/me/reservas/${bookingId}`, { cache: "no-store" });
         const json = await res.json().catch(() => null);
-        const status = json?.booking?.status as string | undefined;
+        const status = (json?.booking?.effectiveStatus ?? json?.booking?.status) as string | undefined;
+        const pendingState = json?.booking?.pendingState as string | undefined;
         if (status === "CONFIRMED") {
           setBookingSuccess("Agendamento confirmado.");
           setBookingPending(null);
           setCheckout(null);
-          clearHoldSession();
+          if (holdToRelease) {
+            await releaseHoldSession(holdToRelease, true);
+          } else {
+            clearHoldSession();
+          }
           loadDaySlots(startsAtIso.slice(0, 10), { force: true });
           return;
         }
         if (status && ["CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG", "CANCELLED"].includes(status)) {
-          setBookingError("Esta reserva foi cancelada.");
+          setBookingError(
+            pendingState === "EXPIRED" || pendingState === "PAST_START"
+              ? "Esta pré-reserva expirou."
+              : "Esta reserva foi cancelada.",
+          );
           setBookingPending(null);
           setCheckout(null);
-          clearHoldSession();
+          if (holdToRelease) {
+            await releaseHoldSession(holdToRelease, false);
+          } else {
+            clearHoldSession();
+          }
           return;
         }
       } catch {
@@ -1571,6 +1690,7 @@ export default function ReservasBookingClient({
   const reserveSlot = async (slot: AvailabilitySlot) => {
     if (!selectedServiceApiId || !selectedService) return;
     if (!ensureAuth(redirectPath)) return;
+    if (slotSubmittingKey) return;
 
     if (bookingPending) {
       if (bookingPending.startsAt === slot.startsAt) {
@@ -1588,6 +1708,7 @@ export default function ReservasBookingClient({
     setPendingSlot(null);
     setPhoneError(null);
     setSelectedSlot(slot);
+    setSlotSubmittingKey(slot.slotKey);
 
     try {
       if (selectedService.locationMode === "CHOOSE_AT_BOOKING" && !resolvedAddressId) {
@@ -1620,17 +1741,38 @@ export default function ReservasBookingClient({
         }
         throw new Error(resolveBookingApiErrorMessage(json, "Não foi possível criar a pré-reserva."));
       }
+      const bookingPayload =
+        json?.booking && typeof json.booking === "object"
+          ? (json.booking as Record<string, unknown>)
+          : null;
       setBookingPending({
         id: json.booking.id,
         status: json.booking.status,
         pendingExpiresAt: json.booking.pendingExpiresAt ?? null,
-        startsAt: slot.startsAt,
+        startsAt:
+          typeof bookingPayload?.startsAt === "string"
+            ? bookingPayload.startsAt
+            : slot.startsAt,
+        durationMinutes:
+          typeof bookingPayload?.durationMinutes === "number"
+            ? bookingPayload.durationMinutes
+            : effectiveDurationMinutes,
+        professionalId:
+          typeof bookingPayload?.professionalId === "number"
+            ? bookingPayload.professionalId
+            : null,
+        resourceId:
+          typeof bookingPayload?.resourceId === "number"
+            ? bookingPayload.resourceId
+            : null,
       });
       setActiveStep(4);
       await startBookingCheckout(json.booking.id, paymentMethod);
     } catch (err) {
       setSelectedSlot(null);
       setBookingError(err instanceof Error ? err.message : "Não foi possível criar a pré-reserva.");
+    } finally {
+      setSlotSubmittingKey(null);
     }
   };
 
@@ -1743,6 +1885,7 @@ export default function ReservasBookingClient({
       ? `${selectedPartySize}`
       : null;
   const locationLabel = resolvedAddressLabel ?? "Local por definir";
+  const assignmentSummaryLabel = requiresResource ? "Capacidade" : "Profissional";
   const professionalLabel =
     requiresResource
       ? selectedCapacityLabel
@@ -2418,6 +2561,7 @@ export default function ReservasBookingClient({
                             type="button"
                             className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 transition hover:border-white/35 hover:text-white"
                             onClick={() => reserveSlot(daySlots[0])}
+                            disabled={Boolean(slotSubmittingKey)}
                           >
                             Escolher primeiro horário
                           </button>
@@ -2474,6 +2618,7 @@ export default function ReservasBookingClient({
                                     key={slot.slotKey}
                                     type="button"
                                     onClick={() => reserveSlot(slot)}
+                                    disabled={Boolean(slotSubmittingKey)}
                                     className={`snap-start rounded-full border px-4 py-2 text-[12px] font-semibold text-white/85 transition ${
                                       isSelected
                                         ? "border-white/60 bg-white/15"
@@ -2765,7 +2910,7 @@ export default function ReservasBookingClient({
 
                   <div className="flex items-start justify-between gap-2 py-3">
                     <div>
-                      <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Profissional</p>
+                      <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">{assignmentSummaryLabel}</p>
                       <p className="mt-1 text-sm text-white">{professionalLabel}</p>
                     </div>
                     <button

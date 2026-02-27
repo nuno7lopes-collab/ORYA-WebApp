@@ -43,6 +43,7 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { resolveRequiredOrganizationIdFromRequest } from "@/lib/organizationId";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 import { refundKey } from "@/lib/stripe/idempotency";
+import { isEventCancelledStatus } from "@/domain/events/lifecycle";
 
 const canonicalize = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -459,7 +460,7 @@ async function _POST(req: NextRequest) {
     const hasNewTicketTypesPayload =
       Array.isArray(body.newTicketTypes) && body.newTicketTypes.length > 0;
 
-    if (String(event.status) === "CANCELLED") {
+    if (isEventCancelledStatus(event.status)) {
       return fail(409, "EVENT_CANCELLED_TERMINAL");
     }
     if (requestedStatus && requestedStatus !== "CANCELLED") {
@@ -467,7 +468,7 @@ async function _POST(req: NextRequest) {
     }
     const shouldCancelEvent =
       requestedStatus === "CANCELLED" &&
-      String(event.status) !== "CANCELLED";
+      !isEventCancelledStatus(event.status);
     const eventEndsAt = event.endsAt ? new Date(event.endsAt) : null;
     const endedByDate =
       eventEndsAt && Number.isFinite(eventEndsAt.getTime())

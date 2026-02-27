@@ -13,6 +13,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { applyInactivityToVisual, computeVisualLevel } from "@/domain/padel/ratingEngine";
 import { enforceMobileVersionGate } from "@/lib/http/mobileVersionGate";
 import { executePadelRankingRebuild } from "@/domain/padel/rankingRebuild";
+import { isPublicEventStatus } from "@/domain/events/publicStatus";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const DEFAULT_LIMIT = 50;
@@ -99,7 +100,7 @@ async function _GET(req: NextRequest) {
     });
     const isPublicEvent =
       isPublicAccessMode(accessMode) &&
-      ["PUBLISHED", "DATE_CHANGED", "FINISHED", "CANCELLED"].includes(event.status) &&
+      isPublicEventStatus(event.status) &&
       competitionState === "PUBLIC";
     if (!isPublicEvent) {
       return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });

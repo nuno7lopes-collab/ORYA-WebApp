@@ -46,6 +46,10 @@ import {
   buildBookingConflictBlocks,
   buildSessionConflictBlocks,
 } from "@/lib/reservas/agendaConflictHelpers";
+import {
+  PENDING_BOOKING_STATUSES,
+  resolvePendingBookingState,
+} from "@/lib/reservas/pendingBookingState";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -107,6 +111,15 @@ function resolveBookingChannel(params: {
   if (params.bookingLocationMode === ServiceLocationMode.FIXED) return "PRESENTIAL";
   if (params.bookingLocationMode === ServiceLocationMode.CHOOSE_AT_BOOKING) return "ONLINE";
   return "UNKNOWN";
+}
+
+function isPendingState(status: string | null | undefined) {
+  return typeof status === "string" && PENDING_BOOKING_STATUSES.includes(status as any);
+}
+
+function resolveEffectiveState(status: string, pendingState: "NONE" | "ACTIVE" | "EXPIRED" | "PAST_START") {
+  if (pendingState === "EXPIRED" || pendingState === "PAST_START") return "CANCELLED_BY_CLIENT";
+  return status;
 }
 
 async function _GET(req: NextRequest) {
@@ -249,6 +262,7 @@ async function _GET(req: NextRequest) {
         price: true,
         currency: true,
         createdAt: true,
+        pendingExpiresAt: true,
         locationMode: true,
         addressId: true,
         assignmentMode: true,
@@ -311,6 +325,29 @@ async function _GET(req: NextRequest) {
         },
       },
     });
+    const now = new Date();
+    const stalePendingBookingIds = items
+      .filter((item) => {
+        if (!isPendingState(item.status)) return false;
+        const pendingState = resolvePendingBookingState({
+          status: item.status,
+          startsAt: item.startsAt,
+          pendingExpiresAt: item.pendingExpiresAt,
+          createdAt: item.createdAt,
+          now,
+        });
+        return pendingState === "EXPIRED" || pendingState === "PAST_START";
+      })
+      .map((item) => item.id);
+    if (stalePendingBookingIds.length > 0) {
+      await prisma.booking.updateMany({
+        where: {
+          id: { in: stalePendingBookingIds },
+          status: { in: [...PENDING_BOOKING_STATUSES] as any },
+        },
+        data: { status: "CANCELLED_BY_CLIENT" },
+      });
+    }
 
     const professionalIds = Array.from(
       new Set(items.map((item) => item.professional?.id).filter((id): id is number => typeof id === "number")),
@@ -374,6 +411,18 @@ async function _GET(req: NextRequest) {
       resourceIds,
     });
     const itemsWithDelay = items.map((item) => {
+      const pendingState = resolvePendingBookingState({
+        status: item.status,
+        startsAt: item.startsAt,
+        pendingExpiresAt: item.pendingExpiresAt,
+        createdAt: item.createdAt,
+        now,
+      });
+      const effectiveStatus = resolveEffectiveState(item.status, pendingState);
+      const resolvedStatus =
+        pendingState === "EXPIRED" || pendingState === "PAST_START"
+          ? effectiveStatus
+          : item.status;
       const delay = resolveBookingDelay({
         startsAt: item.startsAt,
         assignmentMode: item.assignmentMode,
@@ -400,7 +449,13 @@ async function _GET(req: NextRequest) {
         },
         { total: 0, confirmed: 0, cancelled: 0 },
       );
-      const { invites: _invites, participants: _participants, changeRequests: _changeRequests, ...rest } = item;
+      const {
+        invites: _invites,
+        participants: _participants,
+        changeRequests: _changeRequests,
+        status: _status,
+        ...rest
+      } = item;
       const canonicalPaymentStatus = latestPaymentStatusBySourceId.get(String(item.id));
       const paymentStatus: CalendarPaymentStatus =
         canonicalPaymentStatus != null ? mapCalendarPaymentStatus(canonicalPaymentStatus) : "UNKNOWN";
@@ -412,6 +467,9 @@ async function _GET(req: NextRequest) {
       });
       return {
         ...rest,
+        status: resolvedStatus,
+        effectiveStatus,
+        pendingState,
         channel,
         paymentStatus,
         inviteSummary: inviteCounts,

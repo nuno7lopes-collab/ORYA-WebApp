@@ -197,6 +197,8 @@ describe("checkin.consume v7", () => {
       startsAt: new Date(Date.now() - 60_000),
       endsAt: new Date(Date.now() + 60_000),
       organizationId: 10,
+      status: "PUBLISHED",
+      isDeleted: false,
     };
     entitlementState = {
       id: "ent-1",
@@ -271,5 +273,16 @@ describe("checkin.consume v7", () => {
     res = await POST(makeReq({ qrPayload: "token", eventId: 1 }) as any);
     json = await res.json();
     expect(json.data.reasonCode).toBe(CheckinResultCode.NOT_ALLOWED);
+  });
+
+  it("bloqueia check-in interno quando evento está cancelado", async () => {
+    eventState.status = "CANCELLED";
+
+    const res = await POST(makeReq({ qrPayload: "token", eventId: 1, deviceId: "dev-1" }) as any);
+    const json = await res.json();
+
+    expect(json.data.allow).toBe(false);
+    expect(json.data.reasonCode).toBe(CheckinResultCode.NOT_ALLOWED);
+    expect(createNotificationMock).not.toHaveBeenCalled();
   });
 });

@@ -9,6 +9,7 @@ import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logError, logWarn } from "@/lib/observability/logger";
 import { recordCronHeartbeat } from "@/lib/cron/heartbeat";
+import { BOOKING_PENDING_HOLD_MINUTES } from "@/lib/reservas/pendingBookingState";
 
 const COMPLETION_GRACE_HOURS = 2;
 
@@ -20,6 +21,7 @@ async function _GET(req: NextRequest) {
     }
 
     const now = new Date();
+    const pendingFallbackCutoff = new Date(now.getTime() - BOOKING_PENDING_HOLD_MINUTES * 60 * 1000);
 
     const stale = await prisma.booking.findMany({
       where: {
@@ -27,10 +29,19 @@ async function _GET(req: NextRequest) {
         paymentIntentId: null,
         OR: [
           { pendingExpiresAt: { lt: now } },
+          { pendingExpiresAt: null, createdAt: { lt: pendingFallbackCutoff } },
           { startsAt: { lt: now } },
         ],
       },
-      select: { id: true, organizationId: true, serviceId: true, userId: true, startsAt: true, pendingExpiresAt: true },
+      select: {
+        id: true,
+        organizationId: true,
+        serviceId: true,
+        userId: true,
+        startsAt: true,
+        createdAt: true,
+        pendingExpiresAt: true,
+      },
     });
 
     const expired = stale;
@@ -42,6 +53,8 @@ async function _GET(req: NextRequest) {
           const reason =
             booking.pendingExpiresAt && booking.pendingExpiresAt.getTime() < now.getTime()
               ? "PENDING_EXPIRED"
+              : booking.pendingExpiresAt == null && booking.createdAt.getTime() < pendingFallbackCutoff.getTime()
+                ? "PENDING_EXPIRED"
               : booking.startsAt.getTime() < now.getTime()
                 ? "PENDING_PAST_START"
                 : "PENDING_EXPIRED";

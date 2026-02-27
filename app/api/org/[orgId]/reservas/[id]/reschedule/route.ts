@@ -43,6 +43,7 @@ import {
   buildBookingConflictBlocks,
   buildSessionConflictBlocks,
 } from "@/lib/reservas/agendaConflictHelpers";
+import { resolvePendingBookingState } from "@/lib/reservas/pendingBookingState";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -74,6 +75,10 @@ function getRequestMeta(req: NextRequest) {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
   const userAgent = req.headers.get("user-agent") ?? null;
   return { ip, userAgent };
+}
+
+function isPendingState(status: string | null | undefined) {
+  return status === "PENDING_CONFIRMATION" || status === "PENDING";
 }
 
 async function _POST(
@@ -119,6 +124,7 @@ async function _POST(
     if (!startsAt || Number.isNaN(startsAt.getTime())) {
       return fail(ctx, 400, "INVALID_DATE", "Data inválida.");
     }
+    const now = new Date();
 
     const booking = await prisma.booking.findFirst({
       where: { id: bookingId, organizationId: organization.id },
@@ -211,6 +217,16 @@ async function _POST(
     if (["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG", "COMPLETED", "DISPUTED", "NO_SHOW"].includes(booking.status)) {
       return fail(ctx, 409, "BOOKING_CLOSED", "Reserva já encerrada.");
     }
+    const pendingState = resolvePendingBookingState({
+      status: booking["status"],
+      startsAt: booking.startsAt,
+      pendingExpiresAt: booking.pendingExpiresAt,
+      createdAt: booking.createdAt,
+      now,
+    });
+    if ((pendingState === "EXPIRED" || pendingState === "PAST_START") && isPendingState(booking["status"])) {
+      return fail(ctx, 409, "BOOKING_CLOSED", "Reserva pendente expirada.");
+    }
 
     const timezone = booking.service.organization?.timezone || "Europe/Lisbon";
     const bookingPolicy = await getOrganizationBookingPolicy({
@@ -236,7 +252,6 @@ async function _POST(
     if (startsAt <= new Date()) {
       return fail(ctx, 400, "TIME_PASSED", "Este horário já passou.");
     }
-    const now = new Date();
     const orgRescheduleWindowMinutes = clampOrgRescheduleWindowMinutes(
       booking.service.organization?.orgRescheduleWindowMinutes ?? null,
     );

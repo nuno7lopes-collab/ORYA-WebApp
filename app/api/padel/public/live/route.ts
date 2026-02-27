@@ -8,6 +8,7 @@ import { buildPadelLiveReadModel } from "@/domain/padel/liveReadModel";
 import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
 import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
+import { isPublicEventStatus } from "@/domain/events/publicStatus";
 
 function emitPadelMetric(metric: string, payload: Record<string, unknown>) {
   console.log(JSON.stringify({ kind: "padel_metric", metric, ...payload }));
@@ -64,7 +65,7 @@ async function _GET(req: NextRequest) {
   const accessMode = resolveEventAccessMode(event.accessPolicies?.[0]);
   const isPublicEvent =
     isPublicAccessMode(accessMode) &&
-    ["PUBLISHED", "DATE_CHANGED", "FINISHED", "CANCELLED"].includes(event.status) &&
+    isPublicEventStatus(event.status) &&
     competitionState === "PUBLIC";
 
   if (!isPublicEvent) {

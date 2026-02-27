@@ -76,7 +76,14 @@ describe("calendar ux guardrails", () => {
     expect(booking).toContain("window.sessionStorage.setItem(HOLD_STORAGE_KEY");
     expect(booking).toContain("/api/holds/ping");
     expect(booking).toContain("Voltar ao checkout");
-    expect(booking).toContain("O seu bloqueio expirou - o slot já não está reservado.");
+    expect(booking).toContain("O bloqueio de checkout expirou. Continua para renovar o bloqueio.");
+    expect(booking).not.toContain('cancelPendingBooking("HOLD_EXPIRED")');
+    expect(booking).toContain("durationMinutesForHold");
+    expect(booking).toContain("professionalIdForHold");
+    expect(booking).toContain("resourceIdForHold");
+    expect(booking).not.toContain("resourceIds: []");
+    expect(booking).toContain("fetch(`/api/me/reservas/${bookingId}`");
+    expect(booking).not.toContain("holdOverride ??");
   });
 
   it("removes native date/time inputs from standardized flows", () => {

@@ -52,7 +52,6 @@ export const ENV_MODELS = new Set([
   'Event',
   'EventAccessPolicy',
   'EventFavorite',
-  'EventInvite',
   'EventLog',
   'GlobalUsername',
   'GroupMembershipRequest',

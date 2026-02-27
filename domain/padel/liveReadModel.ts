@@ -11,6 +11,7 @@ import {
 import { resolvePadelRuleSetSnapshotForEvent } from "@/domain/padel/ruleSetSnapshot";
 import { isPadelOfficialStatus, normalizePadelMatchStatus } from "@/domain/padel/liveStatus";
 import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
+import { isPublicEventStatus } from "@/domain/events/publicStatus";
 import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
 import {
   buildScoreRuleSummary,
@@ -490,7 +491,7 @@ export async function buildPadelLiveReadModel(params: BuildLiveReadModelParams):
     });
     const mode = resolveEventAccessMode(event.accessPolicies?.[0]);
     const publicMode = isPublicAccessMode(mode);
-    return publicMode && ["PUBLISHED", "DATE_CHANGED", "FINISHED", "CANCELLED"].includes(event.status) && competitionState === "PUBLIC";
+    return publicMode && isPublicEventStatus(event.status) && competitionState === "PUBLIC";
   })();
 
   let liveNowCount = 0;

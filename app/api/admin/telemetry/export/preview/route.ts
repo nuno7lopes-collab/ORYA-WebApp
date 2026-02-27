@@ -100,6 +100,13 @@ function parseIncidentStatuses(value: string | null): TelemetryIncidentStatus[] 
   return entries as TelemetryIncidentStatus[];
 }
 
+function parseIncidentSort(value: string | null) {
+  if (!value) return "TRIGGERED_DESC" as const;
+  const normalized = value.trim().toUpperCase();
+  if (normalized === "TRIGGERED_DESC" || normalized === "SLA_IMPACT_DESC") return normalized;
+  return null;
+}
+
 async function _GET(req: NextRequest) {
   try {
     const admin = await requireAdminUser({ req });
@@ -137,6 +144,10 @@ async function _GET(req: NextRequest) {
     if (statuses === null) {
       return jsonWrap({ ok: false, error: "INVALID_STATUSES" }, { status: 400, req });
     }
+    const incidentSort = parseIncidentSort(searchParams.get("sort"));
+    if (!incidentSort) {
+      return jsonWrap({ ok: false, error: "INVALID_INCIDENT_SORT" }, { status: 400, req });
+    }
 
     const take = parseTake(searchParams.get("take"));
     const sampleSize = parseSample(searchParams.get("sample"));
@@ -164,6 +175,7 @@ async function _GET(req: NextRequest) {
       includeGlobal,
       activeOnly,
       statuses: statuses.length > 0 ? statuses : undefined,
+      incidentSort,
       sourceType,
       severity,
       eventName: searchParams.get("eventName"),
@@ -190,4 +202,3 @@ async function _GET(req: NextRequest) {
 }
 
 export const GET = withApiEnvelope(_GET);
-

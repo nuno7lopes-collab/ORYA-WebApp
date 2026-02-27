@@ -22,6 +22,7 @@ import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessP
 import { logError } from "@/lib/observability/logger";
 import { resolvePadelRuleSetSnapshotForEvent } from "@/domain/padel/ruleSetSnapshot";
 import { enforceMobileVersionGate } from "@/lib/http/mobileVersionGate";
+import { isPublicEventStatus } from "@/domain/events/publicStatus";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 type StandingsApiRow = {
@@ -150,7 +151,7 @@ async function _GET(req: NextRequest) {
     const accessMode = resolveEventAccessMode(event.accessPolicies?.[0]);
     const isPublicEvent =
       isPublicAccessMode(accessMode) &&
-      ["PUBLISHED", "DATE_CHANGED", "FINISHED", "CANCELLED"].includes(event.status) &&
+      isPublicEventStatus(event.status) &&
       competitionState === "PUBLIC";
 
     if (!isPublicEvent) {

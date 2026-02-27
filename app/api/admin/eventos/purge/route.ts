@@ -217,7 +217,6 @@ async function _POST(req: Request) {
         await tx.operation.deleteMany({ where: { eventId } });
       }
 
-      await tx.eventInvite.deleteMany({ where: { eventId } });
       await tx.padelPairing.deleteMany({ where: { eventId } });
       await tx.event.delete({ where: { id: eventId } });
     });

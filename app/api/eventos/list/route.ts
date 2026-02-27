@@ -7,8 +7,9 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { logError } from "@/lib/observability/logger";
 import { listRankedEvents } from "@/domain/ranking/listRankedEvents";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { EventStatus, Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { resolveTicketPricingSummary } from "@/domain/events/ticketPricing";
+import { EVENT_OPERATIONAL_STATUSES } from "@/domain/events/lifecycle";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const DEFAULT_PAGE_SIZE = 12;
@@ -236,7 +237,7 @@ async function _GET(req: NextRequest) {
     items = mapped;
 
     if (items.length === 0) {
-      const fallbackStatuses = [EventStatus.PUBLISHED, EventStatus.DATE_CHANGED, EventStatus.FINISHED];
+      const fallbackStatuses = EVENT_OPERATIONAL_STATUSES;
 
       const fallbackEvents = await prisma.event.findMany({
         where: (() => {

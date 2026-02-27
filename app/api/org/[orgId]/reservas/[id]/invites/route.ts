@@ -15,6 +15,10 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { ensureStaffCanAccessBooking } from "@/lib/reservas/staffBookingAccess";
+import {
+  PENDING_BOOKING_STATUSES,
+  resolvePendingBookingState,
+} from "@/lib/reservas/pendingBookingState";
 
 const MAX_INVITES = 20;
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
@@ -60,6 +64,15 @@ function generateToken(existing: Set<string>) {
   } while (existing.has(token));
   existing.add(token);
   return token;
+}
+
+function isPendingState(status: string | null | undefined) {
+  return typeof status === "string" && PENDING_BOOKING_STATUSES.includes(status as any);
+}
+
+function resolveEffectiveState(status: string, pendingState: "NONE" | "ACTIVE" | "EXPIRED" | "PAST_START") {
+  if (pendingState === "EXPIRED" || pendingState === "PAST_START") return "CANCELLED_BY_CLIENT";
+  return status;
 }
 
 async function getOrganizationContext(req: NextRequest) {
@@ -215,6 +228,9 @@ async function _POST(
       select: {
         id: true,
         status: true,
+        startsAt: true,
+        pendingExpiresAt: true,
+        createdAt: true,
         organizationId: true,
         professionalId: true,
         resourceId: true,
@@ -238,9 +254,28 @@ async function _POST(
     if (!staffAccess.ok) {
       return fail(staffAccess.status, staffAccess.message, staffAccess.errorCode);
     }
+    const pendingState = resolvePendingBookingState({
+      status: booking["status"],
+      startsAt: booking.startsAt,
+      pendingExpiresAt: booking.pendingExpiresAt,
+      createdAt: booking.createdAt,
+      now: new Date(),
+    });
+    const effectiveStatus = resolveEffectiveState(booking["status"], pendingState);
+    const stalePending = pendingState === "EXPIRED" || pendingState === "PAST_START";
+    if (stalePending && isPendingState(booking["status"])) {
+      await prisma.booking.updateMany({
+        where: {
+          id: booking.id,
+          status: { in: [...PENDING_BOOKING_STATUSES] as any },
+        },
+        data: { status: "CANCELLED_BY_CLIENT" },
+      });
+      return fail(409, "Reserva pendente expirada.");
+    }
     if (!isBookingConfirmed(booking)) {
       const bookingState = getBookingState(booking);
-      if (!["PENDING", "PENDING_CONFIRMATION"].includes(bookingState ?? "")) {
+      if (!["PENDING", "PENDING_CONFIRMATION"].includes(bookingState ?? "") || effectiveStatus === "CANCELLED_BY_CLIENT") {
         return fail(409, "Só podes convidar após confirmação.");
       }
     }

@@ -4,11 +4,12 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated } from "@/lib/security";
-import { EventTemplateType, EventStatus, OrganizationModule, Prisma } from "@prisma/client";
+import { EventTemplateType, OrganizationModule, Prisma } from "@prisma/client";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { EVENT_OPERATIONAL_STATUSES, EVENT_TERMINAL_STATUSES } from "@/domain/events/lifecycle";
 
 async function _GET(req: NextRequest) {
   try {
@@ -107,7 +108,7 @@ async function _GET(req: NextRequest) {
     const now = new Date();
     const activeFilter: Prisma.EventWhereInput = {
       ...baseWhere,
-      status: { in: [EventStatus.PUBLISHED, EventStatus.DATE_CHANGED] },
+      status: { in: EVENT_OPERATIONAL_STATUSES },
     };
 
     const [total, upcoming, ongoing, finished, nextEvent] = await prisma.$transaction([
@@ -128,7 +129,7 @@ async function _GET(req: NextRequest) {
       prisma.event.count({
         where: {
           ...baseWhere,
-          OR: [{ status: EventStatus.CANCELLED }, { status: EventStatus.FINISHED }, { endsAt: { lt: now } }],
+          OR: [{ status: { in: EVENT_TERMINAL_STATUSES } }, { endsAt: { lt: now } }],
         },
       }),
       prisma.event.findFirst({

@@ -709,9 +709,11 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
                 Calendário do Hub
               </a>
             )}
-            <a href={operationsHref} className={CTA_SECONDARY}>
-              Operação
-            </a>
+            {!standardEventCancelled && (
+              <a href={operationsHref} className={CTA_SECONDARY}>
+                Operação
+              </a>
+            )}
             <a href={publicPageHref} className={CTA_PRIMARY}>
               Ver página pública
             </a>
@@ -719,7 +721,13 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
         </div>
       </div>
 
-      {isPadelEvent && (
+      {standardEventCancelled && (
+        <section className="rounded-2xl border border-red-400/40 bg-red-500/10 px-4 py-4 text-[12px] text-red-100">
+          Evento cancelado em estado terminal. Operações de bilhetes, inscrições e check-in estão bloqueadas.
+        </section>
+      )}
+
+      {isPadelEvent && !standardEventCancelled && (
         <section className="rounded-2xl border border-white/12 bg-gradient-to-br from-[#0b1226]/85 via-[#0b1126]/75 to-[#050810]/90 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>

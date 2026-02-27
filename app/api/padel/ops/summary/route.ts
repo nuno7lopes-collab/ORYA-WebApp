@@ -223,9 +223,10 @@ async function _GET(req: NextRequest) {
     prisma.booking.count({
       where: {
         organizationId: event.organizationId,
-        startsAt: { gte: classWindowStart, lte: classWindowEnd },
+        startsAt: { gte: classWindowStart, gt: now, lte: classWindowEnd },
         service: { kind: "CLASS" },
         status: { in: ["PENDING_CONFIRMATION", "PENDING"] },
+        pendingExpiresAt: { gt: now },
       },
     }),
     prisma.booking.count({

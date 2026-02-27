@@ -14,6 +14,7 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { resolveRequiredOrganizationIdFromRequest } from "@/lib/organizationId";
+import { resolveEventOperationalBlockReason } from "@/domain/events/lifecycle";
 
 async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ctx = getRequestContext(req);
@@ -71,18 +72,13 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     if (event.organizationId == null) {
       return fail(403, "FORBIDDEN");
     }
-    if (event.isDeleted) {
-      return fail(409, "EVENT_CLOSED");
-    }
-    const normalizedEventStatus = String(event.status ?? "").toUpperCase();
-    if (normalizedEventStatus === "CANCELLED") {
-      return fail(409, "EVENT_CANCELLED");
-    }
-    if (normalizedEventStatus !== "PUBLISHED" && normalizedEventStatus !== "DATE_CHANGED") {
-      return fail(409, "EVENT_CLOSED");
-    }
-    if (event.endsAt && event.endsAt.getTime() <= Date.now()) {
-      return fail(409, "EVENT_CLOSED");
+    const blockReason = resolveEventOperationalBlockReason({
+      status: event.status,
+      isDeleted: event.isDeleted,
+      endsAt: event.endsAt,
+    });
+    if (blockReason) {
+      return fail(409, blockReason);
     }
     const organizationId = event.organizationId;
 

@@ -13,6 +13,7 @@ import {
 } from "@/lib/reservas/confirmationSnapshot";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { normalizeEmail } from "@/lib/utils/email";
+import { resolvePendingBookingState } from "@/lib/reservas/pendingBookingState";
 
 function parseId(value: string) {
   const parsed = Number(value);
@@ -49,6 +50,8 @@ async function _POST(
         guestEmail: true,
         status: true,
         startsAt: true,
+        pendingExpiresAt: true,
+        createdAt: true,
         paymentIntentId: true,
         snapshotTimezone: true,
         confirmationSnapshot: true,
@@ -67,7 +70,24 @@ async function _POST(
     }
 
     const { status } = booking;
-    const isPending = status === "PENDING_CONFIRMATION" || status === "PENDING";
+    const now = new Date();
+    const pendingState = resolvePendingBookingState({
+      status,
+      startsAt: booking.startsAt,
+      pendingExpiresAt: booking.pendingExpiresAt,
+      createdAt: booking.createdAt,
+      now,
+    });
+    if (pendingState === "EXPIRED" || pendingState === "PAST_START") {
+      return respondOk(ctx, {
+        allowed: false,
+        reason: pendingState === "PAST_START" ? "PENDING_PAST_START" : "PENDING_EXPIRED",
+        deadline: null,
+        refund: null,
+        snapshotTimezone: booking.snapshotTimezone,
+      });
+    }
+    const isPending = pendingState === "ACTIVE";
     const snapshot = parseBookingConfirmationSnapshot(booking.confirmationSnapshot);
     if (!isPending && status === "CONFIRMED" && !snapshot) {
       return fail(
@@ -78,7 +98,6 @@ async function _POST(
       );
     }
 
-    const now = new Date();
     const cancellationWindowMinutes = snapshot ? getSnapshotCancellationWindowMinutes(snapshot) : null;
     const allowCancellation = snapshot ? getSnapshotAllowCancellation(snapshot) : true;
     const decision = decideCancellation(booking.startsAt, isPending ? null : cancellationWindowMinutes, now);

@@ -25,6 +25,7 @@ import { logError, logWarn } from "@/lib/observability/logger";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { ensureEventChatInvite } from "@/lib/chat/invites";
 import { createNotification } from "@/lib/notifications";
+import { isEventCancelledStatus, isEventOperationalStatus } from "@/domain/events/lifecycle";
 
 type Body = {
   qrPayload?: string;
@@ -148,8 +149,23 @@ async function _POST(req: NextRequest) {
 
   const event = await prisma.event.findUnique({
     where: { id: eventId },
-    select: { id: true, title: true, slug: true, startsAt: true, endsAt: true, organizationId: true },
+    select: {
+      id: true,
+      title: true,
+      slug: true,
+      startsAt: true,
+      endsAt: true,
+      organizationId: true,
+      status: true,
+      isDeleted: true,
+    },
   });
+  if (!event || event.isDeleted || !event.organizationId) {
+    return allow({ allow: false, reasonCode: "NOT_ALLOWED" });
+  }
+  if (isEventCancelledStatus(event.status) || !isEventOperationalStatus(event.status)) {
+    return allow({ allow: false, reasonCode: "NOT_ALLOWED" });
+  }
   const window = buildDefaultCheckinWindow(event?.startsAt ?? null, event?.endsAt ?? null);
   if (isOutsideWindow(window)) {
     return allow({ allow: false, reasonCode: "OUTSIDE_WINDOW" });

@@ -45,6 +45,11 @@ import {
 import type { DashboardToolActivationCard } from "@/lib/organizationDashboardTools";
 import type { OrganizationMemberRole, OrganizationModule, OrganizationRolePack } from "@prisma/client";
 import { ModuleIcon } from "./moduleIcons";
+import {
+  hasEventEndedByDate,
+  isEventCancelledStatus,
+  isEventTerminalStatus,
+} from "@/domain/events/lifecycle";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 const fetcherStrict = async (url: string) => {
@@ -1653,10 +1658,7 @@ function OrganizacaoPageInner({
     eventsList.forEach((ev) => {
       const startsAt = ev.startsAt ? new Date(ev.startsAt) : null;
       const endsAt = ev.endsAt ? new Date(ev.endsAt) : null;
-      const isFinished =
-        ev.status === "CANCELLED" ||
-        ev.status === "FINISHED" ||
-        (endsAt ? endsAt.getTime() < now.getTime() : false);
+      const isFinished = isEventTerminalStatus(ev.status) || hasEventEndedByDate(endsAt, now);
       const isOngoing =
         startsAt && endsAt
           ? startsAt.getTime() <= now.getTime() && now.getTime() <= endsAt.getTime()
@@ -1800,13 +1802,10 @@ function OrganizacaoPageInner({
     return eventsList.filter((ev) => {
       const startsAt = ev.startsAt ? new Date(ev.startsAt) : null;
       const endsAt = ev.endsAt ? new Date(ev.endsAt) : null;
-      const isFinished = endsAt ? endsAt.getTime() < now.getTime() : false;
+      const isFinished = hasEventEndedByDate(endsAt, now);
       const isFuture = startsAt ? startsAt.getTime() >= now.getTime() : false;
       const isOngoing = startsAt && endsAt ? startsAt.getTime() <= now.getTime() && now.getTime() <= endsAt.getTime() : false;
-      const isTerminated =
-        ev.status === "CANCELLED" ||
-        ev.status === "FINISHED" ||
-        isFinished;
+      const isTerminated = isEventTerminalStatus(ev.status) || isFinished;
       const isActive = !isTerminated && ev.status !== "DRAFT" && (isFuture || isOngoing);
 
       if (eventStatusFilter === "active" && !isActive) return false;
@@ -4112,7 +4111,7 @@ function OrganizacaoPageInner({
                               const now = new Date();
                               const isOngoing = date && endsAt ? date.getTime() <= now.getTime() && now.getTime() <= endsAt.getTime() : false;
                               const isFuture = date ? date.getTime() > now.getTime() : false;
-                              const isFinished = endsAt ? endsAt.getTime() < now.getTime() : false;
+                              const isFinished = hasEventEndedByDate(endsAt, now);
                               const dateLabel = date
                                 ? formatDateTime(date, {
                                     day: "2-digit",
@@ -4131,7 +4130,7 @@ function OrganizacaoPageInner({
                                   ? "border-sky-400/40 bg-sky-400/10 text-sky-100"
                                   : "border-white/20 bg-white/5 text-white/80";
                               const statusBadge =
-                                ev.status === "CANCELLED"
+                                isEventCancelledStatus(ev.status)
                                   ? { label: "Cancelado", classes: "border-red-400/60 bg-red-500/10 text-red-100" }
                                   : ev.status === "DRAFT"
                                     ? {
@@ -4146,10 +4145,7 @@ function OrganizacaoPageInner({
                                           ? { label: "Concluído", classes: "border-purple-400/60 bg-purple-500/10 text-purple-100" }
                                           : { label: ev.status, classes: "border-white/20 bg-white/5 text-white/70" };
                               const salesLabel = normalizedTemplate === "PADEL" ? "Inscrições" : "Bilhetes";
-                              const isTerminated =
-                                ev.status === "CANCELLED" ||
-                                ev.status === "FINISHED" ||
-                                isFinished;
+                              const isTerminated = isEventTerminalStatus(ev.status) || isFinished;
                               const actionMode: "cancel" | "delete" | null =
                                 ev.status === "DRAFT" ? "delete" : isTerminated ? null : "cancel";
 
@@ -4189,12 +4185,14 @@ function OrganizacaoPageInner({
                                           Editar
                                         </Link>
                                       ) : null}
-                                      <Link
-                                        href={`${eventRouteBase}/${ev.id}`}
-                                        className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
-                                      >
-                                        Operação
-                                      </Link>
+                                      {ev.status !== "CANCELLED" ? (
+                                        <Link
+                                          href={`${eventRouteBase}/${ev.id}`}
+                                          className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
+                                        >
+                                          Operação
+                                        </Link>
+                                      ) : null}
                                       {!isTerminated && ev.status !== "DRAFT" ? (
                                         <Link
                                           href={`${eventRouteBase}/${ev.id}`}
@@ -4235,7 +4233,7 @@ function OrganizacaoPageInner({
                           const now = new Date();
                           const isOngoing = date && endsAt ? date.getTime() <= now.getTime() && now.getTime() <= endsAt.getTime() : false;
                           const isFuture = date ? date.getTime() > now.getTime() : false;
-                          const isFinished = endsAt ? endsAt.getTime() < now.getTime() : false;
+                          const isFinished = hasEventEndedByDate(endsAt, now);
                           const dateLabel = date
                             ? formatDateTime(date, {
                                 day: "2-digit",
@@ -4255,7 +4253,7 @@ function OrganizacaoPageInner({
                               ? "border-sky-400/40 bg-sky-400/10 text-sky-100"
                               : "border-white/20 bg-white/5 text-white/80";
                           const statusBadge =
-                            ev.status === "CANCELLED"
+                            isEventCancelledStatus(ev.status)
                               ? { label: "Cancelado", classes: "border-red-400/60 bg-red-500/10 text-red-100" }
                               : ev.status === "DRAFT"
                                   ? {
@@ -4269,10 +4267,7 @@ function OrganizacaoPageInner({
                                       : isFinished
                                       ? { label: "Concluído", classes: "border-purple-400/60 bg-purple-500/10 text-purple-100" }
                                       : { label: ev.status, classes: "border-white/20 bg-white/5 text-white/70" };
-                          const isTerminated =
-                            ev.status === "CANCELLED" ||
-                            ev.status === "FINISHED" ||
-                            isFinished;
+                          const isTerminated = isEventTerminalStatus(ev.status) || isFinished;
                           const actionMode: "cancel" | "delete" | null =
                             ev.status === "DRAFT" ? "delete" : isTerminated ? null : "cancel";
                           const coverSuggestions = getEventCoverSuggestionIds({
@@ -4350,18 +4345,20 @@ function OrganizacaoPageInner({
                                       Editar
                                     </Link>
                                   ) : null}
-                                  <Link
-                                    href={`${eventRouteBase}/${ev.id}`}
-                                    className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
-                                  >
-                                    Operação
-                                  </Link>
+                                  {ev.status !== "CANCELLED" ? (
+                                    <Link
+                                      href={`${eventRouteBase}/${ev.id}`}
+                                      className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
+                                    >
+                                      Operação
+                                    </Link>
+                                  ) : null}
                                   {!isTerminated && ev.status !== "DRAFT" ? (
                                     <Link
                                       href={`${eventRouteBase}/${ev.id}`}
                                       className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
                                     >
-                                      Inscrições
+                                      {cardSalesLabel}
                                     </Link>
                                   ) : null}
                                   <Link

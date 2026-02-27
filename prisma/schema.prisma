@@ -70,8 +70,6 @@ model Profile {
   bookingSplitsCreated                                            BookingSplit[]                   @relation("BookingSplitCreatedBy")
   bookingSplitParticipants                                        BookingSplitParticipant[]        @relation("BookingSplitParticipantUser")
   scheduleDelaysCreated                                           ScheduleDelay[]                  @relation("ScheduleDelayCreatedBy")
-  eventInvitesSent                                                EventInvite[]                    @relation("EventInviteInviter")
-  eventInvitesReceived                                            EventInvite[]                    @relation("EventInviteTarget")
   organizationGroupMembers                                        OrganizationGroupMember[]
   ownedOrganizationGroups                                         OrganizationGroup[]              @relation("OrganizationGroupOwner")
   groupMembershipRequestsInitiated                                GroupMembershipRequest[]         @relation("GroupMembershipRequestInitiator")
@@ -1881,7 +1879,6 @@ model Event {
   reservations                   TicketReservation[]
   ticketTypes                    TicketType[]
   tickets                        Ticket[]
-  invites                        EventInvite[]
   accessPolicies                 EventAccessPolicy[]
   inviteTokens                   InviteToken[]
   padelRegistrations             PadelRegistration[]
@@ -1941,28 +1938,6 @@ model EventAccessPolicy {
   @@unique([eventId, policyVersion], map: "event_access_policies_event_version_uq")
   @@index([eventId], map: "event_access_policies_event_idx")
   @@map("event_access_policies")
-  @@schema("app_v3")
-}
-
-model EventInvite {
-  env              String           @default("prod")
-  id               Int              @id @default(autoincrement())
-  eventId          Int              @map("event_id")
-  invitedByUserId  String           @map("invited_by_user_id") @db.Uuid
-  targetIdentifier String           @map("target_identifier") @db.Citext
-  targetUserId     String?          @map("target_user_id") @db.Uuid
-  scope            EventInviteScope @default(PUBLIC) @map("scope")
-  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
-  event            Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  invitedBy        Profile          @relation("EventInviteInviter", fields: [invitedByUserId], references: [id], onDelete: Cascade)
-  targetUser       Profile?         @relation("EventInviteTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
-
-  @@unique([eventId, targetIdentifier, scope], map: "event_invites_event_identifier_uq")
-  @@index([eventId], map: "event_invites_event_idx")
-  @@index([eventId, scope], map: "event_invites_event_scope_idx")
-  @@index([targetUserId], map: "event_invites_target_idx")
-  @@map("event_invites")
   @@schema("app_v3")
 }
 
@@ -6504,13 +6479,6 @@ enum Visibility {
   PUBLIC
   FOLLOWERS
   PRIVATE
-
-  @@schema("app_v3")
-}
-
-enum EventInviteScope {
-  PUBLIC
-  PARTICIPANT
 
   @@schema("app_v3")
 }

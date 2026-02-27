@@ -21,6 +21,7 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext, type RequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { enforceMobileVersionGate } from "@/lib/http/mobileVersionGate";
+import { isPublicEventStatus } from "@/domain/events/publicStatus";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
@@ -202,7 +203,7 @@ async function _GET(req: NextRequest) {
   const accessMode = resolveEventAccessMode(event.accessPolicies?.[0]);
   const isPublicEvent =
     isPublicAccessMode(accessMode) &&
-    ["PUBLISHED", "DATE_CHANGED", "FINISHED", "CANCELLED"].includes(event.status) &&
+    isPublicEventStatus(event.status) &&
     competitionState === "PUBLIC";
 
   let canReadInternal = false;

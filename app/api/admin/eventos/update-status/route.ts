@@ -11,6 +11,7 @@ import { auditAdminAction } from "@/lib/admin/audit";
 import { logError } from "@/lib/observability/logger";
 import { getClientIp } from "@/lib/auth/requestValidation";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { isEventCancelledStatus } from "@/domain/events/lifecycle";
 
 /**
  * 6.14 – Update de estado de evento (admin)
@@ -126,7 +127,7 @@ async function _POST(req: NextRequest) {
         eventEndsAt && Number.isFinite(eventEndsAt.getTime())
           ? eventEndsAt.getTime() < Date.now()
           : false;
-      if (String(existing.status) === "CANCELLED") {
+      if (isEventCancelledStatus(existing.status)) {
         return jsonWrap(
           { ok: false, error: "EVENT_CANCELLED_TERMINAL" },
           { status: 409 }
@@ -174,7 +175,7 @@ async function _POST(req: NextRequest) {
       }
 
       const shouldAutoRefund =
-        String(existing.status) !== "CANCELLED" && String(updated.status) === "CANCELLED";
+        !isEventCancelledStatus(existing.status) && isEventCancelledStatus(updated.status);
 
       if (shouldAutoRefund) {
         // Disparar refunds base-only para todas as compras deste evento (idempotente por dedupeKey)

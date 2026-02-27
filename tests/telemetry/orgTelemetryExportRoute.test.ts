@@ -143,6 +143,37 @@ describe("org telemetry export route", () => {
     expect(buildTelemetryExportCsv).not.toHaveBeenCalled();
   });
 
+  it("exporta incidentes da organização com severidade e pesquisa", async () => {
+    requireOrgTelemetryAccess.mockResolvedValue({
+      ok: true,
+      organizationId: 77,
+      userId: "user-1",
+    });
+    buildTelemetryExportCsv.mockResolvedValue({
+      dataset: "incidents",
+      csv: "id,title\ninc-7,Gateway timeout",
+      rowCount: 1,
+    });
+
+    const req = new NextRequest(
+      "http://localhost/api/org/77/telemetry/export?dataset=incidents&statuses=OPEN&severity=ERROR&q=timeout",
+    );
+    const res = await GET(req);
+    const body = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(body).toContain("Gateway timeout");
+    expect(buildTelemetryExportCsv).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dataset: "incidents",
+        organizationId: 77,
+        statuses: ["OPEN"],
+        severity: "ERROR",
+        query: "timeout",
+      }),
+    );
+  });
+
   it("exporta PDF da organização", async () => {
     requireOrgTelemetryAccess.mockResolvedValue({
       ok: true,

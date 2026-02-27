@@ -228,14 +228,14 @@ async function main() {
   });
 
   if (state.createdEvent && !KEEP_EVENT) {
-    await runStep("Cleanup: archive test event", async () => {
+    await runStep("Cleanup: cancel test event", async () => {
       assert(state.eventId, "eventId ausente para cleanup.");
       const { response } = await api(`/api/org/${ORG_ID}/events/update`, {
         method: "POST",
-        body: { eventId: state.eventId, archive: true },
+        body: { eventId: state.eventId, status: "CANCELLED" },
       });
       assert(response.ok, `HTTP ${response.status}`);
-      return { archivedEventId: state.eventId };
+      return { cancelledEventId: state.eventId };
     });
   }
 }

@@ -19,6 +19,10 @@ import {
   hasSplitCaptureWindowViability,
   hasSplitGuaranteeCoverage,
 } from "@/domain/bookings/splitGarantido";
+import {
+  PENDING_BOOKING_STATUSES,
+  resolvePendingBookingState,
+} from "@/lib/reservas/pendingBookingState";
 
 function parseId(value: string) {
   const parsed = Number(value);
@@ -61,6 +65,10 @@ function parseOptionalDate(value: unknown) {
   if (typeof value !== "string") return null;
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function isPendingState(status: string | null | undefined) {
+  return typeof status === "string" && PENDING_BOOKING_STATUSES.includes(status as any);
 }
 
 async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -180,6 +188,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         currency: true,
         pendingExpiresAt: true,
         startsAt: true,
+        createdAt: true,
         userId: true,
         guestEmail: true,
         organizationId: true,
@@ -207,6 +216,23 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     const bookingState = getBookingState(booking);
     if (["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG", "COMPLETED", "NO_SHOW", "DISPUTED"].includes(bookingState ?? "")) {
       return fail(ctx, 409, "BOOKING_INACTIVE", "Reserva inativa.");
+    }
+    const pendingState = resolvePendingBookingState({
+      status: booking["status"],
+      startsAt: booking.startsAt,
+      pendingExpiresAt: booking.pendingExpiresAt,
+      createdAt: booking.createdAt,
+      now: new Date(),
+    });
+    if ((pendingState === "EXPIRED" || pendingState === "PAST_START") && isPendingState(booking["status"])) {
+      await prisma.booking.updateMany({
+        where: {
+          id: booking.id,
+          status: { in: [...PENDING_BOOKING_STATUSES] as any },
+        },
+        data: { status: "CANCELLED_BY_CLIENT" },
+      });
+      return fail(ctx, 409, "BOOKING_INACTIVE", "Reserva pendente expirada.");
     }
     if (!booking.price || booking.price <= 0) {
       return fail(ctx, 409, "INVALID_PRICE", "Reserva sem valor válido.");

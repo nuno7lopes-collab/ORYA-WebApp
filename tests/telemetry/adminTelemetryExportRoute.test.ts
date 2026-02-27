@@ -149,6 +149,36 @@ describe("admin telemetry export route", () => {
     expect(buildTelemetryExportCsv).not.toHaveBeenCalled();
   });
 
+  it("exporta incidentes com filtros de severidade e pesquisa", async () => {
+    requireAdminUser.mockResolvedValue({
+      ok: true,
+      userId: "admin-1",
+      userEmail: "admin@orya.pt",
+    });
+    buildTelemetryExportCsv.mockResolvedValue({
+      dataset: "incidents",
+      csv: "id,title\ninc-1,Erro crítico",
+      rowCount: 1,
+    });
+
+    const req = new NextRequest(
+      "http://localhost/api/admin/telemetry/export?dataset=incidents&statuses=OPEN,ACKNOWLEDGED&severity=CRITICAL&q=timeout",
+    );
+    const res = await GET(req);
+    const body = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(body).toContain("Erro crítico");
+    expect(buildTelemetryExportCsv).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dataset: "incidents",
+        statuses: ["OPEN", "ACKNOWLEDGED"],
+        severity: "CRITICAL",
+        query: "timeout",
+      }),
+    );
+  });
+
   it("exporta PDF quando format=pdf", async () => {
     requireAdminUser.mockResolvedValue({
       ok: true,

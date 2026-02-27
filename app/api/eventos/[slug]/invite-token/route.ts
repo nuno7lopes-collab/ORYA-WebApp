@@ -6,6 +6,7 @@ import { resolveInviteTokenGrant } from "@/lib/invites/inviteTokens";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { resolveEventOperationalBlockReason } from "@/domain/events/lifecycle";
 
 async function _POST(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const ctx = getRequestContext(req);
@@ -49,18 +50,13 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ slug: str
   if (!event) {
     return respondOk(ctx, { allow: false, reason: "EVENT_NOT_FOUND" });
   }
-  if (event.isDeleted) {
-    return respondOk(ctx, { allow: false, reason: "EVENT_CLOSED" });
-  }
-  const normalizedEventStatus = String(event.status ?? "").toUpperCase();
-  if (normalizedEventStatus === "CANCELLED") {
-    return respondOk(ctx, { allow: false, reason: "EVENT_CANCELLED" });
-  }
-  if (normalizedEventStatus !== "PUBLISHED" && normalizedEventStatus !== "DATE_CHANGED") {
-    return respondOk(ctx, { allow: false, reason: "EVENT_CLOSED" });
-  }
-  if (event.endsAt && event.endsAt.getTime() <= Date.now()) {
-    return respondOk(ctx, { allow: false, reason: "EVENT_CLOSED" });
+  const blockReason = resolveEventOperationalBlockReason({
+    status: event.status,
+    isDeleted: event.isDeleted,
+    endsAt: event.endsAt,
+  });
+  if (blockReason) {
+    return respondOk(ctx, { allow: false, reason: blockReason });
   }
 
   const grantResult = await resolveInviteTokenGrant(

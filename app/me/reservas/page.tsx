@@ -22,6 +22,8 @@ type BookingItem = {
   startsAt: string;
   durationMinutes: number;
   status: string;
+  effectiveStatus?: string | null;
+  pendingState?: "NONE" | "ACTIVE" | "EXPIRED" | "PAST_START" | null;
   price: number;
   currency: string;
   createdAt: string;
@@ -120,7 +122,31 @@ function formatDeadline(deadline: string | null) {
   return date.toLocaleString("pt-PT", { dateStyle: "medium", timeStyle: "short" });
 }
 
-function formatBookingStatus(status: string) {
+function isPendingBookingStatus(status: string) {
+  return status === "PENDING_CONFIRMATION" || status === "PENDING";
+}
+
+function resolvePendingState(booking: BookingItem, nowMs: number): "NONE" | "ACTIVE" | "EXPIRED" | "PAST_START" {
+  if (booking.pendingState) return booking.pendingState;
+  if (!isPendingBookingStatus(booking.status)) return "NONE";
+  const startAtMs = new Date(booking.startsAt).getTime();
+  if (!Number.isNaN(startAtMs) && startAtMs <= nowMs) return "PAST_START";
+  const createdAtMs = new Date(booking.createdAt).getTime();
+  const fallbackExpiry = Number.isNaN(createdAtMs) ? Number.NaN : createdAtMs + BOOKING_HOLD_MINUTES * 60 * 1000;
+  const pendingExpiryMs = booking.pendingExpiresAt ? new Date(booking.pendingExpiresAt).getTime() : fallbackExpiry;
+  if (!Number.isNaN(pendingExpiryMs) && pendingExpiryMs <= nowMs) return "EXPIRED";
+  return "ACTIVE";
+}
+
+function resolveEffectiveStatus(booking: BookingItem, nowMs: number) {
+  if (booking.effectiveStatus) return booking.effectiveStatus;
+  const pendingState = resolvePendingState(booking, nowMs);
+  if (pendingState === "EXPIRED" || pendingState === "PAST_START") return "CANCELLED_BY_CLIENT";
+  return booking.status;
+}
+
+function formatBookingStatus(status: string, pendingState: "NONE" | "ACTIVE" | "EXPIRED" | "PAST_START") {
+  if (pendingState === "EXPIRED" || pendingState === "PAST_START") return "Expirada";
   if (status === "CONFIRMED") return "Confirmada";
   if (status === "PENDING_CONFIRMATION" || status === "PENDING") return "Pendente";
   if (status === "COMPLETED") return "Concluída";
@@ -272,7 +298,9 @@ export default function MinhasReservasPage() {
     const now = Date.now();
     items.forEach((item) => {
       const startAt = new Date(item.startsAt).getTime();
-      if (!Number.isNaN(startAt) && startAt >= now) {
+      const pendingState = resolvePendingState(item, now);
+      const stalePending = pendingState === "EXPIRED" || pendingState === "PAST_START";
+      if (!Number.isNaN(startAt) && startAt >= now && !stalePending) {
         upcoming.push(item);
       } else {
         past.push(item);
@@ -1003,15 +1031,18 @@ export default function MinhasReservasPage() {
 
           <div className="mt-4 space-y-3">
             {grouped.upcoming.map((booking) => {
+              const nowMs = Date.now();
+              const pendingState = resolvePendingState(booking, nowMs);
+              const status = resolveEffectiveStatus(booking, nowMs);
               const deadlineLabel = formatDeadline(booking.cancellation.deadline);
               const rescheduleDeadlineLabel = formatDeadline(booking.reschedule.deadline);
-              const isCancelled = ["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG"].includes(booking.status);
-              const isCompleted = booking.status === "COMPLETED";
-              const isPending = ["PENDING_CONFIRMATION", "PENDING"].includes(booking.status);
+              const isCancelled = ["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG"].includes(status);
+              const isCompleted = status === "COMPLETED";
+              const isPending = pendingState === "ACTIVE";
               const canCancel = booking.cancellation.allowed && !isCancelled && !isCompleted;
               const canReschedule = booking.reschedule.allowed && !isCancelled && !isCompleted;
-              const canChat = booking.status === "CONFIRMED";
-              const canInvite = ["CONFIRMED", "PENDING", "PENDING_CONFIRMATION"].includes(booking.status);
+              const canChat = status === "CONFIRMED";
+              const canInvite = ["CONFIRMED", "PENDING", "PENDING_CONFIRMATION"].includes(status);
               const holdDeadline = isPending ? formatHoldDeadline(booking.pendingExpiresAt, booking.createdAt) : null;
               const estimatedStart = booking.estimatedStartsAt ? new Date(booking.estimatedStartsAt) : null;
               const originalStart = new Date(booking.startsAt);
@@ -1041,10 +1072,10 @@ export default function MinhasReservasPage() {
                         {booking.resource?.label ? ` · ${booking.resource.label}` : ""}
                         {booking.partySize ? ` · ${booking.partySize} pax` : ""}
                       </p>
-                      {booking.status === "CONFIRMED" && deadlineLabel && (
+                      {status === "CONFIRMED" && deadlineLabel && (
                         <p className="mt-1 text-[12px] text-white/50">Cancelamento até {deadlineLabel}.</p>
                       )}
-                      {booking.status === "CONFIRMED" && rescheduleDeadlineLabel && (
+                      {status === "CONFIRMED" && rescheduleDeadlineLabel && (
                         <p className="mt-1 text-[12px] text-white/50">Reagendamento até {rescheduleDeadlineLabel}.</p>
                       )}
                       {showEstimate && (
@@ -1098,7 +1129,7 @@ export default function MinhasReservasPage() {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[11px] text-white/70">
-                        {formatBookingStatus(booking.status)}
+                        {formatBookingStatus(status, pendingState)}
                       </span>
                       {canChat && (
                         <button
@@ -1164,8 +1195,12 @@ export default function MinhasReservasPage() {
                 Ainda não tens histórico de reservas.
               </div>
             )}
-            {grouped.past.map((booking) => (
-              <div key={booking.id} className="rounded-xl border border-white/10 bg-white/5 p-3">
+            {grouped.past.map((booking) => {
+              const nowMs = Date.now();
+              const pendingState = resolvePendingState(booking, nowMs);
+              const status = resolveEffectiveStatus(booking, nowMs);
+              return (
+                <div key={booking.id} className="rounded-xl border border-white/10 bg-white/5 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="text-sm font-semibold text-white">
@@ -1186,9 +1221,9 @@ export default function MinhasReservasPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[11px] text-white/70">
-                      {formatBookingStatus(booking.status)}
+                      {formatBookingStatus(status, pendingState)}
                     </span>
-                    {["CONFIRMED", "COMPLETED"].includes(booking.status) && (
+                    {["CONFIRMED", "COMPLETED"].includes(status) && (
                       <button
                         type="button"
                         className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-[11px] text-white/70 hover:border-white/40"
@@ -1206,7 +1241,7 @@ export default function MinhasReservasPage() {
                       </div>
                     </div>
                   )}
-                {booking.status === "COMPLETED" && !booking.reviewId && (
+                {status === "COMPLETED" && !booking.reviewId && (
                   <div className="mt-3 space-y-2">
                     {!reviewDrafts[booking.id]?.open ? (
                       <button
@@ -1274,8 +1309,9 @@ export default function MinhasReservasPage() {
                     )}
                   </div>
                 )}
-              </div>
-            ))}
+                </div>
+              );
+            })}
           </div>
         </section>
       </div>

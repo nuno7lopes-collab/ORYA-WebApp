@@ -16,6 +16,7 @@ import {
 } from "@/lib/reservas/confirmationSnapshot";
 import { loadScheduleDelays, resolveBookingDelay } from "@/lib/reservas/scheduleDelay";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { resolveEffectiveBookingStatus, resolvePendingBookingState } from "@/lib/reservas/pendingBookingState";
 
 function errorCodeForStatus(status: number) {
   if (status === 401) return "UNAUTHENTICATED";
@@ -231,6 +232,16 @@ async function _GET(req: NextRequest) {
 
     const items = bookings.map((booking) => {
       const snapshot = parseBookingConfirmationSnapshot(booking.confirmationSnapshot);
+      const pendingState = resolvePendingBookingState({
+        status: booking.status,
+        startsAt: booking.startsAt,
+        pendingExpiresAt: booking.pendingExpiresAt,
+        createdAt: booking.createdAt,
+        now,
+      });
+      const isPendingActive = pendingState === "ACTIVE";
+      const isStalePending = pendingState === "EXPIRED" || pendingState === "PAST_START";
+      const effectiveStatus = resolveEffectiveBookingStatus(booking.status, pendingState);
       const policyRaw =
         booking.policyRef?.policy ??
         booking.service?.policy ??
@@ -261,33 +272,32 @@ async function _GET(req: NextRequest) {
             }
           : null;
 
-      const isPending = ["PENDING_CONFIRMATION", "PENDING"].includes(booking.status);
       const cancellationWindowMinutes = snapshot
         ? getSnapshotCancellationWindowMinutes(snapshot)
         : policy?.cancellationWindowMinutes ?? null;
       const cancellationDecision = decideCancellation(
         booking.startsAt,
-        isPending ? null : cancellationWindowMinutes,
+        isPendingActive ? null : cancellationWindowMinutes,
         now,
       );
-      const snapshotRequired = booking.status === "CONFIRMED" && !snapshot;
+      const snapshotRequired = effectiveStatus === "CONFIRMED" && !snapshot;
       const allowCancellation = snapshot ? getSnapshotAllowCancellation(snapshot) : policy?.allowCancellation ?? true;
       const canCancel =
         !snapshotRequired &&
-        (isPending || (booking.status === "CONFIRMED" && allowCancellation && cancellationDecision.allowed));
+        (isPendingActive || (effectiveStatus === "CONFIRMED" && allowCancellation && cancellationDecision.allowed));
 
       const rescheduleWindowMinutes = snapshot
         ? getSnapshotRescheduleWindowMinutes(snapshot)
         : policy?.rescheduleWindowMinutes ?? null;
       const rescheduleDecision = decideCancellation(
         booking.startsAt,
-        isPending ? null : rescheduleWindowMinutes,
+        isPendingActive ? null : rescheduleWindowMinutes,
         now,
       );
       const allowReschedule = snapshot ? getSnapshotAllowReschedule(snapshot) : policy?.allowReschedule ?? true;
       const canReschedule =
         !snapshotRequired &&
-        booking.status === "CONFIRMED" &&
+        effectiveStatus === "CONFIRMED" &&
         allowReschedule &&
         rescheduleWindowMinutes != null &&
         rescheduleDecision.allowed;
@@ -297,6 +307,8 @@ async function _GET(req: NextRequest) {
         startsAt: booking.startsAt,
         durationMinutes: booking.durationMinutes,
         status: booking.status,
+        effectiveStatus,
+        pendingState,
         price: booking.price,
         currency: booking.currency,
         createdAt: booking.createdAt,
@@ -369,12 +381,24 @@ async function _GET(req: NextRequest) {
         snapshotTimezone: booking.snapshotTimezone,
         cancellation: {
           allowed: canCancel,
-          reason: canCancel ? null : snapshotRequired ? "SNAPSHOT_REQUIRED" : cancellationDecision.reason,
+          reason: canCancel
+            ? null
+            : snapshotRequired
+              ? "SNAPSHOT_REQUIRED"
+              : isStalePending
+                ? "PENDING_EXPIRED"
+                : cancellationDecision.reason,
           deadline: cancellationDecision.deadline,
         },
         reschedule: {
           allowed: canReschedule,
-          reason: canReschedule ? null : snapshotRequired ? "SNAPSHOT_REQUIRED" : rescheduleDecision.reason,
+          reason: canReschedule
+            ? null
+            : snapshotRequired
+              ? "SNAPSHOT_REQUIRED"
+              : isStalePending
+                ? "PENDING_EXPIRED"
+                : rescheduleDecision.reason,
           deadline: rescheduleDecision.deadline,
         },
       };

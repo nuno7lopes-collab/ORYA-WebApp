@@ -23,6 +23,7 @@ const prisma = vi.hoisted(() => ({
   address: { findUnique: vi.fn() },
   bookingPackage: { create: vi.fn() },
   bookingAddon: { createMany: vi.fn() },
+  $executeRaw: vi.fn(),
   $transaction: vi.fn(),
 }));
 
@@ -81,6 +82,7 @@ beforeEach(() => {
   prisma.address.findUnique.mockReset();
   prisma.bookingPackage.create.mockReset();
   prisma.bookingAddon.createMany.mockReset();
+  prisma.$executeRaw.mockReset();
   prisma.$transaction.mockReset();
 
   prisma.availabilitySchedule.findMany.mockResolvedValue([]);
@@ -103,10 +105,19 @@ beforeEach(() => {
   }));
   prisma.booking.count.mockResolvedValue(0);
   prisma.address.findUnique.mockResolvedValue({ sourceProvider: "APPLE_MAPS" });
+  prisma.$executeRaw.mockResolvedValue(1);
   prisma.$transaction.mockImplementation(async (fn: any) => fn(prisma));
 
   createBooking.mockResolvedValue({
-    booking: { id: 123, status: "PENDING_CONFIRMATION", pendingExpiresAt: new Date("2030-01-01T10:10:00.000Z") },
+    booking: {
+      id: 123,
+      status: "PENDING_CONFIRMATION",
+      startsAt: new Date("2030-01-01T10:00:00.000Z"),
+      durationMinutes: 90,
+      professionalId: 1,
+      resourceId: 2,
+      pendingExpiresAt: new Date("2030-01-01T10:10:00.000Z"),
+    },
   });
 });
 
@@ -339,6 +350,9 @@ describe("POST /api/servicos/[id]/reservar (HYBRID)", () => {
     expect(args?.data?.professionalId).toBe(1);
     expect(args?.data?.resourceId).toBe(2);
     expect(args?.data?.courtId).toBe(99);
+    expect(body.booking?.professionalId).toBe(1);
+    expect(body.booking?.resourceId).toBe(2);
+    expect(body.booking?.durationMinutes).toBe(90);
   });
 
   it("bloqueia novas reservas quando estado operacional está OFF", async () => {
@@ -398,6 +412,72 @@ describe("POST /api/servicos/[id]/reservar (HYBRID)", () => {
     expect(res.status).toBe(409);
     expect(body.ok).toBe(false);
     expect(body.errorCode ?? body.error).toBe("RESERVAS_OPERATIONAL_OFF");
+  });
+
+  it("revalida limite de pré-reservas dentro de transação com lock", async () => {
+    const day = formatLisbonYmd(new Date(Date.now() + 24 * 60 * 60 * 1000));
+    const slot = new Date(`${day}T10:00:00.000Z`);
+    prisma.service.findFirst.mockResolvedValue({
+      id: 1,
+      organizationId: 10,
+      kind: "COURT",
+      assignmentMode: "PROFESSIONAL_AND_RESOURCE",
+      partySizeRequired: true,
+      partySizeMin: 2,
+      partySizeMax: 4,
+      partySizeStep: 1,
+      durationMinutes: 90,
+      unitPriceCents: 0,
+      currency: "EUR",
+      locationMode: "FIXED",
+      addressId: "addr_1",
+      policy: { guestBookingAllowed: true },
+      organization: {
+        id: 10,
+        status: "ACTIVE",
+        timezone: "Europe/Lisbon",
+        reservationAssignmentMode: null,
+        orgType: "CLUB",
+        officialEmail: null,
+        officialEmailVerifiedAt: null,
+        stripeAccountId: null,
+        stripeChargesEnabled: false,
+        stripePayoutsEnabled: false,
+        addressId: "addr_1",
+      },
+      professionalLinks: [],
+      resourceLinks: [],
+    });
+    prisma.reservationProfessional.findMany.mockResolvedValue([{ id: 1, priority: 1 }]);
+    prisma.reservationResource.findMany.mockResolvedValue([{ id: 2, capacity: 4, priority: 1, courtId: 99 }]);
+    prisma.booking.count.mockResolvedValueOnce(0).mockResolvedValueOnce(1);
+
+    getAvailableSlotsForScope.mockImplementation((args: any) => {
+      if (args.scopeType === "PROFESSIONAL" && args.scopeId === 1) {
+        return [{ startsAt: slot, durationMinutes: 90 }];
+      }
+      if (args.scopeType === "RESOURCE" && args.scopeId === 2) {
+        return [{ startsAt: slot, durationMinutes: 90 }];
+      }
+      return [];
+    });
+
+    const { POST } = await import("@/app/api/servicos/[id]/reservar/route");
+    const req = new NextRequest("http://localhost/api/servicos/1/reservar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        startsAt: slot.toISOString(),
+        partySize: 2,
+        guest: { name: "Guest", email: "guest@example.com", phone: "+351912345678", consent: true },
+      }),
+    });
+    const res = await POST(req, { params: Promise.resolve({ id: "1" }) });
+    const body = await res.json();
+
+    expect(res.status).toBe(429);
+    expect(body.ok).toBe(false);
+    expect(body.error).toBe("Demasiadas pré-reservas ativas.");
   });
 });
 

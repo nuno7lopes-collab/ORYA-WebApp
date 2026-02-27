@@ -66,6 +66,7 @@ import { requiresOrganizationStripe } from "@/domain/finance/payoutModePolicy";
 import { getStripeEnv, tryGetStripePublishableKeyForEnv } from "@/lib/stripeKeys";
 import { paymentEventRepo } from "@/domain/finance/readModelConsumer";
 import { resolveInviteTokenGrant } from "@/lib/invites/inviteTokens";
+import { isEventCancelledStatus, isEventOperationalStatus } from "@/domain/events/lifecycle";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
@@ -466,15 +467,14 @@ async function handlePadelRegistrationIntent(req: NextRequest, body: Body) {
   if (!pairing?.event || pairing.event.isDeleted) {
     return intentError("EVENT_NOT_FOUND", "Evento não encontrado.", { httpStatus: 404 });
   }
-  const pairingEventStatus = String(pairing.event.status ?? "").toUpperCase();
-  if (pairingEventStatus === "CANCELLED") {
+  if (isEventCancelledStatus(pairing.event.status)) {
     return intentError("EVENT_CANCELLED", "Este evento foi cancelado.", {
       httpStatus: 409,
       status: "FAILED",
       retryable: false,
     });
   }
-  if (pairingEventStatus !== "PUBLISHED" && pairingEventStatus !== "DATE_CHANGED") {
+  if (!isEventOperationalStatus(pairing.event.status)) {
     return intentError("EVENT_CLOSED", "Evento indisponível para inscrição.", {
       httpStatus: 409,
       status: "FAILED",
@@ -1381,18 +1381,17 @@ async function _POST(req: NextRequest) {
       }
     }
 
-    const normalizedEventStatus = String(event.status ?? "").toUpperCase();
     if (event.is_deleted || event.type !== "ORGANIZATION_EVENT") {
       return intentError("EVENT_CLOSED", "Evento indisponível para compra.", { httpStatus: 400 });
     }
-    if (normalizedEventStatus === "CANCELLED") {
+    if (isEventCancelledStatus(event.status)) {
       return intentError("EVENT_CANCELLED", "Este evento foi cancelado.", {
         httpStatus: 409,
         status: "FAILED",
         retryable: false,
       });
     }
-    if (normalizedEventStatus !== "PUBLISHED" && normalizedEventStatus !== "DATE_CHANGED") {
+    if (!isEventOperationalStatus(event.status)) {
       return intentError("EVENT_CLOSED", "Evento indisponível para compra.", { httpStatus: 400 });
     }
 

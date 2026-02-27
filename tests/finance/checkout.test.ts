@@ -124,9 +124,6 @@ vi.mock("@/lib/prisma", () => {
   const ticketType = {
     findMany: vi.fn(() => []),
   };
-  const eventInvite = {
-    findFirst: vi.fn(() => null),
-  };
   const profile = {
     findUnique: vi.fn(() => null),
   };
@@ -159,7 +156,6 @@ vi.mock("@/lib/prisma", () => {
     eventAccessPolicy,
     emailIdentity,
     ticketType,
-    eventInvite,
     profile,
     payment,
     ledgerEntry,
@@ -255,7 +251,6 @@ describe("createCheckout", () => {
     prismaMock.eventAccessPolicy.findFirst.mockResolvedValue(null as any);
     prismaMock.emailIdentity.findUnique.mockResolvedValue(null as any);
     prismaMock.ticketType.findMany.mockResolvedValue([] as any);
-    prismaMock.eventInvite.findFirst.mockResolvedValue(null as any);
     prismaMock.profile.findUnique.mockResolvedValue(null as any);
     computePricingMock.mockReturnValue({
       subtotalCents: 1000,
@@ -396,7 +391,6 @@ describe("createCheckout", () => {
       emailNormalized: "user@example.com",
       userId: "user-1",
     } as any);
-    prismaMock.eventInvite.findFirst.mockResolvedValue(null as any);
 
     await expect(
       createCheckout({
@@ -410,7 +404,7 @@ describe("createCheckout", () => {
     ).rejects.toThrow("INVITE_REQUIRED");
   });
 
-  it("exige token para bilhete privado mesmo quando a identidade está convidada", async () => {
+  it("exige token para bilhete privado mesmo com identidade válida", async () => {
     prismaMock.eventAccessPolicy.findFirst.mockResolvedValue({
       mode: "PUBLIC",
       inviteTokenAllowed: true,
@@ -424,7 +418,6 @@ describe("createCheckout", () => {
       emailNormalized: "user@example.com",
       userId: "user-1",
     } as any);
-    prismaMock.eventInvite.findFirst.mockResolvedValue({ id: 99 } as any);
 
     await expect(
       createCheckout({

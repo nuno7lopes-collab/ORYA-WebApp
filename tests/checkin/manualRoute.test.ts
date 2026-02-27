@@ -20,6 +20,8 @@ const prisma = vi.hoisted(() => {
       startsAt: new Date("2026-02-16T10:00:00.000Z"),
       endsAt: new Date("2026-02-16T18:00:00.000Z"),
       organizationId: 99,
+      status: "PUBLISHED",
+      isDeleted: false,
     },
     entitlement: {
       id: "11111111-1111-4111-8111-111111111111",
@@ -38,7 +40,11 @@ const prisma = vi.hoisted(() => {
     event: {
       findUnique: vi.fn(async ({ select }: any) => {
         if (select?.organizationId && !select?.id) {
-          return { organizationId: state.eventDetails.organizationId };
+          return {
+            organizationId: state.eventDetails.organizationId,
+            status: state.eventDetails.status,
+            isDeleted: state.eventDetails.isDeleted,
+          };
         }
         return state.eventDetails;
       }),
@@ -159,6 +165,8 @@ describe("org checkin manual route", () => {
     policyMethods = [CheckinMethod.MANUAL];
     existingCheckin = null;
     createdCheckinPayload = null;
+    prisma.__state.eventDetails.status = "PUBLISHED";
+    prisma.__state.eventDetails.isDeleted = false;
     prisma.__state.entitlement.status = EntitlementStatus.ACTIVE;
     prisma.__state.entitlement.eventId = 7;
     prisma.__state.entitlement.checkins = [];
@@ -215,5 +223,23 @@ describe("org checkin manual route", () => {
     expect(res.status).toBe(200);
     expect(json.data.code).toBe(CheckinResultCode.ALREADY_USED);
     expect(createdCheckinPayload).toBeNull();
+  });
+
+  it("bloqueia quando o evento está cancelado", async () => {
+    prisma.__state.eventDetails.status = "CANCELLED";
+
+    const res = await POST(
+      makeReq({
+        eventId: 7,
+        entitlementId,
+        deviceId: "device-1",
+        reason: "Evento cancelado",
+      }) as any,
+    );
+    const json = await res.json();
+
+    expect(res.status).toBe(409);
+    expect(json.ok).toBe(false);
+    expect(json.errorCode).toBe("EVENT_CANCELLED_TERMINAL");
   });
 });

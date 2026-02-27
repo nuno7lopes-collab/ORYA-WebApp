@@ -137,6 +137,9 @@ async function _POST(
       ) {
         return { error: fail(409, "BOOKING_ALREADY_CLOSED", "Reserva já encerrada.") };
       }
+      if (booking.status !== "CONFIRMED") {
+        return { error: fail(409, "BOOKING_NOT_ELIGIBLE", "Só reservas confirmadas podem ser marcadas como no-show.") };
+      }
 
       if (booking.startsAt > now) {
         return { error: fail(409, "BOOKING_NOT_STARTED", "Reserva ainda não ocorreu.") };

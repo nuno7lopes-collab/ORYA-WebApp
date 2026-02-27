@@ -296,12 +296,106 @@ export type ListTelemetryIncidentsParams = {
   take?: number;
 };
 
-export async function listTelemetryIncidents(
-  params: ListTelemetryIncidentsParams = {},
-): Promise<TelemetryAlertIncidentRecord[]> {
-  const delegate = alertIncidentDelegate();
-  if (!delegate?.findMany) return [];
+export type TelemetryIncidentSort = "TRIGGERED_DESC" | "SLA_IMPACT_DESC";
 
+export type ListTelemetryIncidentsPageParams = ListTelemetryIncidentsParams & {
+  cursor?: string | null;
+  sort?: TelemetryIncidentSort;
+  ackSlaMinutes?: number;
+  resolveSlaMinutes?: number;
+};
+
+export type ListTelemetryIncidentsPageResult = {
+  sort: TelemetryIncidentSort;
+  items: TelemetryAlertIncidentRecord[];
+  pagination: {
+    hasMore: boolean;
+    nextCursor: string | null;
+  };
+};
+
+type TelemetryIncidentSlaCursorPayload = {
+  kind: "sla_v1";
+  breachRank: number;
+  statusRank: number;
+  severityRank: number;
+  triggeredAt: string;
+  id: string;
+  referenceTime: string;
+  ackSlaMinutes: number;
+  resolveSlaMinutes: number;
+};
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function parseIncidentTake(value: unknown) {
+  return toNullableInt(value, { min: 1, max: 200 }) ?? 100;
+}
+
+function normalizeIncidentSort(value: unknown): TelemetryIncidentSort {
+  return toEnumValue(value, ["TRIGGERED_DESC", "SLA_IMPACT_DESC"] as const) ?? "TRIGGERED_DESC";
+}
+
+function parseIncidentCursorId(value: unknown) {
+  const normalized = toNullableText(value, 128);
+  if (!normalized) return null;
+  return UUID_PATTERN.test(normalized) ? normalized : null;
+}
+
+function encodeIncidentSlaCursor(payload: TelemetryIncidentSlaCursorPayload) {
+  return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+}
+
+function parseIncidentSlaCursor(value: string | null | undefined) {
+  const raw = toNullableText(value, 800);
+  if (!raw) return null;
+  try {
+    const decoded = JSON.parse(Buffer.from(raw, "base64url").toString("utf8")) as Record<string, unknown>;
+    if (decoded.kind !== "sla_v1") return null;
+    const breachRank = toNullableInt(decoded.breachRank, { min: 0, max: 10 });
+    const statusRank = toNullableInt(decoded.statusRank, { min: 0, max: 10 });
+    const severityRank = toNullableInt(decoded.severityRank, { min: 0, max: 10 });
+    const id = toNullableText(decoded.id, 128);
+    const triggeredAtRaw = toNullableText(decoded.triggeredAt, 80);
+    const referenceTimeRaw = toNullableText(decoded.referenceTime, 80);
+    const ackSlaMinutes = toNullableInt(decoded.ackSlaMinutes, { min: 1, max: 24 * 60 });
+    const resolveSlaMinutes = toNullableInt(decoded.resolveSlaMinutes, { min: 1, max: 7 * 24 * 60 });
+    if (
+      breachRank === null ||
+      statusRank === null ||
+      severityRank === null ||
+      !id ||
+      !UUID_PATTERN.test(id) ||
+      !triggeredAtRaw ||
+      !referenceTimeRaw ||
+      ackSlaMinutes === null ||
+      resolveSlaMinutes === null
+    ) {
+      return null;
+    }
+    const triggeredAt = new Date(triggeredAtRaw);
+    const referenceTime = new Date(referenceTimeRaw);
+    if (Number.isNaN(triggeredAt.getTime()) || Number.isNaN(referenceTime.getTime())) {
+      return null;
+    }
+    return {
+      kind: "sla_v1" as const,
+      breachRank,
+      statusRank,
+      severityRank,
+      triggeredAt: triggeredAt.toISOString(),
+      id,
+      referenceTime: referenceTime.toISOString(),
+      ackSlaMinutes,
+      resolveSlaMinutes,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function buildIncidentWhere(params: ListTelemetryIncidentsParams) {
+  const query = toNullableText(params.query, 120);
   const where: Record<string, unknown> = {
     ...(typeof params.organizationId === "number"
       ? { organizationId: params.organizationId }
@@ -313,57 +407,323 @@ export async function listTelemetryIncidents(
     ...(params.severities?.length
       ? { severity: { in: params.severities } }
       : {}),
-    ...(toNullableText(params.query, 120)
-      ? {
-          OR: [
-            { title: { contains: toNullableText(params.query, 120), mode: "insensitive" } },
-            { description: { contains: toNullableText(params.query, 120), mode: "insensitive" } },
-            { dimensionKey: { contains: toNullableText(params.query, 120), mode: "insensitive" } },
-            { dimensionValue: { contains: toNullableText(params.query, 120), mode: "insensitive" } },
-            { rule: { name: { contains: toNullableText(params.query, 120), mode: "insensitive" } } },
-          ],
-        }
-      : {}),
   };
+  if (query) {
+    where.OR = [
+      { title: { contains: query, mode: "insensitive" } },
+      { description: { contains: query, mode: "insensitive" } },
+      { dimensionKey: { contains: query, mode: "insensitive" } },
+      { dimensionValue: { contains: query, mode: "insensitive" } },
+      { rule: { name: { contains: query, mode: "insensitive" } } },
+    ];
+  }
+  return { where, query };
+}
 
-  const rows = await delegate.findMany({
-    where,
-    orderBy: [{ triggeredAt: "desc" }, { id: "desc" }],
-    take:
-      typeof params.take === "number" && params.take > 0
-        ? Math.min(Math.floor(params.take), 200)
-        : 100,
+const INCIDENT_SELECT = {
+  id: true,
+  ruleId: true,
+  organizationId: true,
+  status: true,
+  severity: true,
+  title: true,
+  description: true,
+  metricKey: true,
+  dimensionKey: true,
+  dimensionValue: true,
+  observedValue: true,
+  thresholdValue: true,
+  triggeredAt: true,
+  acknowledgedAt: true,
+  resolvedAt: true,
+  acknowledgedByUserId: true,
+  resolvedByUserId: true,
+  context: true,
+  createdAt: true,
+  updatedAt: true,
+  rule: {
     select: {
       id: true,
-      ruleId: true,
-      organizationId: true,
-      status: true,
-      severity: true,
-      title: true,
-      description: true,
-      metricKey: true,
-      dimensionKey: true,
-      dimensionValue: true,
-      observedValue: true,
-      thresholdValue: true,
-      triggeredAt: true,
-      acknowledgedAt: true,
-      resolvedAt: true,
-      acknowledgedByUserId: true,
-      resolvedByUserId: true,
-      context: true,
-      createdAt: true,
-      updatedAt: true,
-      rule: {
-        select: {
-          id: true,
-          name: true,
-        },
-      },
+      name: true,
     },
-  });
+  },
+} as const;
 
-  return rows.map(mapIncident);
+export async function listTelemetryIncidentsPage(
+  params: ListTelemetryIncidentsPageParams = {},
+): Promise<ListTelemetryIncidentsPageResult> {
+  const sort = normalizeIncidentSort(params.sort);
+  const take = parseIncidentTake(params.take);
+
+  if (sort === "TRIGGERED_DESC") {
+    const delegate = alertIncidentDelegate();
+    if (!delegate?.findMany) {
+      return {
+        sort,
+        items: [],
+        pagination: { hasMore: false, nextCursor: null },
+      };
+    }
+
+    const cursorId = parseIncidentCursorId(params.cursor);
+    const { where } = buildIncidentWhere(params);
+    const rows = await delegate.findMany({
+      where,
+      orderBy: [{ triggeredAt: "desc" }, { id: "desc" }],
+      take: take + 1,
+      ...(cursorId ? { cursor: { id: cursorId }, skip: 1 } : {}),
+      select: INCIDENT_SELECT,
+    });
+
+    const hasMore = rows.length > take;
+    const trimmed = hasMore ? rows.slice(0, take) : rows;
+    const nextCursor = hasMore ? String(trimmed[trimmed.length - 1]?.id ?? "") || null : null;
+    return {
+      sort,
+      items: trimmed.map(mapIncident),
+      pagination: {
+        hasMore,
+        nextCursor,
+      },
+    };
+  }
+
+  const env = getAppEnv();
+  const decodedCursor = parseIncidentSlaCursor(params.cursor);
+  const referenceTime = decodedCursor ? new Date(decodedCursor.referenceTime) : new Date();
+  const ackSlaMinutes =
+    decodedCursor?.ackSlaMinutes ??
+    toNullableInt(params.ackSlaMinutes, { min: 1, max: 24 * 60 }) ??
+    15;
+  const resolveSlaMinutes =
+    decodedCursor?.resolveSlaMinutes ??
+    toNullableInt(params.resolveSlaMinutes, { min: 1, max: 7 * 24 * 60 }) ??
+    120;
+  const query = toNullableText(params.query, 120);
+  const queryLike = query ? `%${query}%` : null;
+
+  const statusRankExpr = Prisma.sql`
+    CASE i.status
+      WHEN 'OPEN' THEN 3
+      WHEN 'ACKNOWLEDGED' THEN 2
+      ELSE 1
+    END
+  `;
+  const severityRankExpr = Prisma.sql`
+    CASE i.severity
+      WHEN 'CRITICAL' THEN 4
+      WHEN 'ERROR' THEN 3
+      WHEN 'WARN' THEN 2
+      ELSE 1
+    END
+  `;
+  const breachRankExpr = Prisma.sql`
+    CASE
+      WHEN i.status = 'OPEN'
+        AND EXTRACT(EPOCH FROM (${referenceTime}::timestamptz - i.triggered_at)) > ${ackSlaMinutes * 60}
+      THEN 3
+      WHEN i.status = 'ACKNOWLEDGED'
+        AND EXTRACT(EPOCH FROM (${referenceTime}::timestamptz - i.triggered_at)) > ${resolveSlaMinutes * 60}
+      THEN 2
+      WHEN i.status = 'RESOLVED'
+        AND i.resolved_at IS NOT NULL
+        AND EXTRACT(EPOCH FROM (i.resolved_at - i.triggered_at)) > ${resolveSlaMinutes * 60}
+      THEN 1
+      ELSE 0
+    END
+  `;
+
+  const orgFilter =
+    typeof params.organizationId === "number"
+      ? Prisma.sql`AND i.organization_id = ${params.organizationId}`
+      : Prisma.empty;
+  const ruleFilter = params.ruleId
+    ? Prisma.sql`AND i.rule_id::text = ${params.ruleId}`
+    : Prisma.empty;
+  const statusesFilter = params.statuses?.length
+    ? Prisma.sql`AND i.status IN (${Prisma.join(params.statuses)})`
+    : Prisma.empty;
+  const severitiesFilter = params.severities?.length
+    ? Prisma.sql`AND i.severity IN (${Prisma.join(params.severities)})`
+    : Prisma.empty;
+  const queryFilter = queryLike
+    ? Prisma.sql`
+        AND (
+          i.title ILIKE ${queryLike}
+          OR COALESCE(i.description, '') ILIKE ${queryLike}
+          OR COALESCE(i.dimension_key, '') ILIKE ${queryLike}
+          OR COALESCE(i.dimension_value, '') ILIKE ${queryLike}
+          OR COALESCE(r.name, '') ILIKE ${queryLike}
+        )
+      `
+    : Prisma.empty;
+  const cursorFilter = decodedCursor
+    ? Prisma.sql`
+        AND (
+          ${breachRankExpr} < ${decodedCursor.breachRank}
+          OR (${breachRankExpr} = ${decodedCursor.breachRank} AND ${statusRankExpr} < ${decodedCursor.statusRank})
+          OR (${breachRankExpr} = ${decodedCursor.breachRank} AND ${statusRankExpr} = ${decodedCursor.statusRank} AND ${severityRankExpr} < ${decodedCursor.severityRank})
+          OR (${breachRankExpr} = ${decodedCursor.breachRank} AND ${statusRankExpr} = ${decodedCursor.statusRank} AND ${severityRankExpr} = ${decodedCursor.severityRank} AND i.triggered_at > ${decodedCursor.triggeredAt}::timestamptz)
+          OR (${breachRankExpr} = ${decodedCursor.breachRank} AND ${statusRankExpr} = ${decodedCursor.statusRank} AND ${severityRankExpr} = ${decodedCursor.severityRank} AND i.triggered_at = ${decodedCursor.triggeredAt}::timestamptz AND i.id < ${decodedCursor.id}::uuid)
+        )
+      `
+    : Prisma.empty;
+
+  const rows = await prisma.$queryRaw<
+    Array<{
+      id: string;
+      rule_id: string | null;
+      organization_id: number | null;
+      status: string;
+      severity: string;
+      title: string;
+      description: string | null;
+      metric_key: string | null;
+      dimension_key: string | null;
+      dimension_value: string | null;
+      observed_value: number | null;
+      threshold_value: number | null;
+      triggered_at: Date | string;
+      acknowledged_at: Date | string | null;
+      resolved_at: Date | string | null;
+      acknowledged_by_user_id: string | null;
+      resolved_by_user_id: string | null;
+      context: Record<string, unknown> | null;
+      created_at: Date | string;
+      updated_at: Date | string;
+      rule_join_id: string | null;
+      rule_name: string | null;
+      breach_rank: number | string | bigint;
+      status_rank: number | string | bigint;
+      severity_rank: number | string | bigint;
+    }>
+  >(
+    Prisma.sql`
+      SELECT
+        i.id,
+        i.rule_id,
+        i.organization_id,
+        i.status,
+        i.severity,
+        i.title,
+        i.description,
+        i.metric_key,
+        i.dimension_key,
+        i.dimension_value,
+        i.observed_value,
+        i.threshold_value,
+        i.triggered_at,
+        i.acknowledged_at,
+        i.resolved_at,
+        i.acknowledged_by_user_id,
+        i.resolved_by_user_id,
+        i.context,
+        i.created_at,
+        i.updated_at,
+        r.id AS rule_join_id,
+        r.name AS rule_name,
+        ${breachRankExpr} AS breach_rank,
+        ${statusRankExpr} AS status_rank,
+        ${severityRankExpr} AS severity_rank
+      FROM app_v3.telemetry_alert_incidents i
+      LEFT JOIN app_v3.telemetry_alert_rules r
+        ON r.id = i.rule_id
+       AND r.env = i.env
+      WHERE i.env = ${env}
+        ${orgFilter}
+        ${ruleFilter}
+        ${statusesFilter}
+        ${severitiesFilter}
+        ${queryFilter}
+        ${cursorFilter}
+      ORDER BY
+        breach_rank DESC,
+        status_rank DESC,
+        severity_rank DESC,
+        i.triggered_at ASC,
+        i.id DESC
+      LIMIT ${take + 1}
+    `,
+  );
+
+  const hasMore = rows.length > take;
+  const trimmed = hasMore ? rows.slice(0, take) : rows;
+  const items = trimmed.map((row) =>
+    mapIncident({
+      id: row.id,
+      ruleId: row.rule_id,
+      organizationId: row.organization_id,
+      status: row.status,
+      severity: row.severity,
+      title: row.title,
+      description: row.description,
+      metricKey: row.metric_key,
+      dimensionKey: row.dimension_key,
+      dimensionValue: row.dimension_value,
+      observedValue: row.observed_value,
+      thresholdValue: row.threshold_value,
+      triggeredAt: row.triggered_at instanceof Date ? row.triggered_at : new Date(row.triggered_at),
+      acknowledgedAt:
+        row.acknowledged_at instanceof Date
+          ? row.acknowledged_at
+          : row.acknowledged_at
+            ? new Date(row.acknowledged_at)
+            : null,
+      resolvedAt:
+        row.resolved_at instanceof Date
+          ? row.resolved_at
+          : row.resolved_at
+            ? new Date(row.resolved_at)
+            : null,
+      acknowledgedByUserId: row.acknowledged_by_user_id,
+      resolvedByUserId: row.resolved_by_user_id,
+      context: row.context ?? {},
+      createdAt: row.created_at instanceof Date ? row.created_at : new Date(row.created_at),
+      updatedAt: row.updated_at instanceof Date ? row.updated_at : new Date(row.updated_at),
+      rule:
+        row.rule_join_id && row.rule_name
+          ? { id: row.rule_join_id, name: row.rule_name }
+          : null,
+    }),
+  );
+
+  const lastRow = hasMore ? trimmed[trimmed.length - 1] : null;
+  const nextCursor = lastRow
+    ? encodeIncidentSlaCursor({
+        kind: "sla_v1",
+        breachRank: normalizeNumericValue(lastRow.breach_rank),
+        statusRank: normalizeNumericValue(lastRow.status_rank),
+        severityRank: normalizeNumericValue(lastRow.severity_rank),
+        triggeredAt:
+          lastRow.triggered_at instanceof Date
+            ? lastRow.triggered_at.toISOString()
+            : new Date(lastRow.triggered_at).toISOString(),
+        id: String(lastRow.id),
+        referenceTime: referenceTime.toISOString(),
+        ackSlaMinutes,
+        resolveSlaMinutes,
+      })
+    : null;
+
+  return {
+    sort,
+    items,
+    pagination: {
+      hasMore,
+      nextCursor,
+    },
+  };
+}
+
+export async function listTelemetryIncidents(
+  params: ListTelemetryIncidentsParams = {},
+): Promise<TelemetryAlertIncidentRecord[]> {
+  const page = await listTelemetryIncidentsPage({
+    ...params,
+    sort: "TRIGGERED_DESC",
+    cursor: null,
+  });
+  return page.items;
 }
 
 function normalizeNumericValue(value: unknown) {

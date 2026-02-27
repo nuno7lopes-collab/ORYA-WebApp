@@ -25,6 +25,7 @@ import { ensureEventChatInvite } from "@/lib/chat/invites";
 import { createNotification } from "@/lib/notifications";
 import { logWarn } from "@/lib/observability/logger";
 import { resolveRequiredOrganizationIdFromRequest } from "@/lib/organizationId";
+import { isEventCancelledStatus, isEventOperationalStatus } from "@/domain/events/lifecycle";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 type Body = { qrToken?: string; eventId?: number; deviceId?: string };
@@ -36,11 +37,20 @@ function hashToken(token: string) {
 async function ensureOrganization(userId: string, eventId: number, requestOrganizationId: number) {
   const event = await prisma.event.findUnique({
     where: { id: eventId },
-    select: { organizationId: true },
+    select: { organizationId: true, status: true, isDeleted: true },
   });
   if (!event) return { ok: false as const, reason: "EVENT_NOT_FOUND" };
   if (!event.organizationId || event.organizationId !== requestOrganizationId) {
     return { ok: false as const, reason: "EVENT_NOT_FOUND" };
+  }
+  if (event.isDeleted) {
+    return { ok: false as const, reason: "EVENT_CLOSED" };
+  }
+  if (isEventCancelledStatus(event.status)) {
+    return { ok: false as const, reason: "EVENT_CANCELLED_TERMINAL" };
+  }
+  if (!isEventOperationalStatus(event.status)) {
+    return { ok: false as const, reason: "EVENT_CLOSED" };
   }
 
   const organization = await prisma.organization.findUnique({
@@ -154,7 +164,13 @@ async function _POST(req: NextRequest) {
         { status: access.status ?? 403 },
       );
     }
-    return fail(access.reason === "EVENT_NOT_FOUND" ? 404 : 403, access.reason);
+    const status =
+      access.reason === "EVENT_NOT_FOUND"
+        ? 404
+        : access.reason === "EVENT_CLOSED" || access.reason === "EVENT_CANCELLED_TERMINAL"
+          ? 409
+          : 403;
+    return fail(status, access.reason);
   }
 
   let qrToken = qrTokenRaw;
@@ -198,10 +214,19 @@ async function _POST(req: NextRequest) {
   const ent = tokenRow.entitlement;
   const event = await prisma.event.findUnique({
     where: { id: eventId },
-    select: { id: true, title: true, slug: true, startsAt: true, endsAt: true, organizationId: true },
+    select: { id: true, title: true, slug: true, startsAt: true, endsAt: true, organizationId: true, status: true, isDeleted: true },
   });
   if (!event?.organizationId || event.organizationId !== requestOrganizationId) {
     return respondOk(ctx, { code: CheckinResultCode.NOT_ALLOWED }, { status: 200 });
+  }
+  if (event.isDeleted) {
+    return fail(409, "EVENT_CLOSED");
+  }
+  if (isEventCancelledStatus(event.status)) {
+    return fail(409, "EVENT_CANCELLED_TERMINAL");
+  }
+  if (!isEventOperationalStatus(event.status)) {
+    return fail(409, "EVENT_CLOSED");
   }
   const orgId = event?.organizationId ?? null;
   if (!orgId) {

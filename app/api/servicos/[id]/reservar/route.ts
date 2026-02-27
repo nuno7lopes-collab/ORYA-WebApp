@@ -440,14 +440,16 @@ async function _POST(
     if (startsAt <= now) {
       return jsonWrap({ ok: false, error: "Este horário já passou." }, { status: 400 });
     }
+    const pendingIdentityWhere: Prisma.BookingWhereInput =
+      user
+        ? { userId: user.id }
+        : guestEmailNormalized
+          ? { guestEmail: guestEmailNormalized }
+          : { guestEmail: "__invalid__" };
 
     const pendingCount = await prisma.booking.count({
       where: {
-        ...(user
-          ? { userId: user.id }
-          : guestEmailNormalized
-            ? { guestEmail: guestEmailNormalized }
-            : { guestEmail: "__invalid__" }),
+        ...pendingIdentityWhere,
         status: { in: ["PENDING_CONFIRMATION", "PENDING"] },
         pendingExpiresAt: { gt: now },
         startsAt: { gt: now },
@@ -949,6 +951,96 @@ async function _POST(
     }
 
     const { booking } = await prisma.$transaction(async (tx) => {
+      const lockKey = `booking:${service.organizationId}`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+      const pendingLimitLockKey = user
+        ? `booking-pending-limit:user:${user.id}`
+        : guestEmailNormalized
+          ? `booking-pending-limit:guest:${guestEmailNormalized}`
+          : null;
+      if (pendingLimitLockKey) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${pendingLimitLockKey}))`;
+      }
+      const nowLocked = new Date();
+      const pendingCountLocked = await tx.booking.count({
+        where: {
+          ...pendingIdentityWhere,
+          status: { in: ["PENDING_CONFIRMATION", "PENDING"] },
+          pendingExpiresAt: { gt: nowLocked },
+          startsAt: { gt: nowLocked },
+        },
+      });
+      if (pendingCountLocked >= MAX_PENDING_PER_USER) {
+        throw new Error("PENDING_LIMIT_LOCKED");
+      }
+
+      const lockedScopeFilter =
+        availabilityMode === "RESOURCE"
+          ? { resourceId: resourceId ?? -1 }
+          : availabilityMode === "PROFESSIONAL"
+            ? { professionalId: professionalId ?? -1 }
+            : {
+                OR: [
+                  { professionalId: professionalId ?? -1 },
+                  { resourceId: resourceId ?? -1 },
+                ],
+              };
+      const lockedBookings = await tx.booking.findMany({
+        where: {
+          organizationId: service.organizationId,
+          startsAt: { lt: bookingEndsAt, gte: conflictWindowStart },
+          AND: [
+            {
+              OR: [
+                { status: { in: ["CONFIRMED", "DISPUTED", "NO_SHOW"] } },
+                { status: { in: ["PENDING_CONFIRMATION", "PENDING"] }, pendingExpiresAt: { gt: now }, startsAt: { gt: now } },
+              ],
+            },
+            lockedScopeFilter,
+          ],
+        },
+        select: {
+          startsAt: true,
+          durationMinutes: true,
+          professionalId: true,
+          resourceId: true,
+        },
+      });
+      const lockedConflict = lockedBookings.some((item) => {
+        const itemEndsAt = new Date(item.startsAt.getTime() + item.durationMinutes * 60 * 1000);
+        const overlaps = item.startsAt < bookingEndsAt && itemEndsAt > startsAt;
+        if (!overlaps) return false;
+        if (availabilityMode === "RESOURCE") {
+          return resourceId != null && item.resourceId === resourceId;
+        }
+        if (availabilityMode === "PROFESSIONAL") {
+          return professionalId != null && item.professionalId === professionalId;
+        }
+        return (
+          (professionalId != null && item.professionalId === professionalId) ||
+          (resourceId != null && item.resourceId === resourceId)
+        );
+      });
+      if (lockedConflict) {
+        throw new Error("AGENDA_CONFLICT_LOCKED");
+      }
+
+      if ((availabilityMode === "PROFESSIONAL" || availabilityMode === "HYBRID") && professionalId != null) {
+        const lockedSessions = await tx.classSession.findMany({
+          where: {
+            organizationId: service.organizationId,
+            status: "SCHEDULED",
+            professionalId,
+            startsAt: { lt: bookingEndsAt, gte: conflictWindowStart },
+            endsAt: { gt: startsAt },
+          },
+          select: { id: true },
+        });
+        if (lockedSessions.length > 0) {
+          throw new Error("AGENDA_CONFLICT_LOCKED");
+        }
+      }
+
       const created = await createBooking({
         tx,
         organizationId: service.organizationId,
@@ -975,7 +1067,15 @@ async function _POST(
           locationMode: service.locationMode,
           addressId: resolvedAddressId,
         },
-        select: { id: true, status: true, pendingExpiresAt: true },
+        select: {
+          id: true,
+          status: true,
+          startsAt: true,
+          durationMinutes: true,
+          professionalId: true,
+          resourceId: true,
+          pendingExpiresAt: true,
+        },
       });
 
       if (packageResolution.ok && packageResolution.package) {
@@ -1042,6 +1142,12 @@ async function _POST(
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+    }
+    if (err instanceof Error && err.message === "PENDING_LIMIT_LOCKED") {
+      return jsonWrap({ ok: false, error: "Demasiadas pré-reservas ativas." }, { status: 429 });
+    }
+    if (err instanceof Error && err.message === "AGENDA_CONFLICT_LOCKED") {
+      return jsonWrap(agendaConflictResponse(), { status: 409 });
     }
     console.error("POST /api/servicos/[id]/reservar error:", err);
     return jsonWrap({ ok: false, error: "Erro ao reservar." }, { status: 500 });
