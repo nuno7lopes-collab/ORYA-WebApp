@@ -54,7 +54,7 @@
     "db:env": "node -r ./scripts/load-env.js ./scripts/check-db-env.js",
     "db:preflight": "node ./scripts/db/preflight.js",
     "db:status": "npm run db:env && npm run db:preflight && node ./scripts/db/prisma-retry.js migrate status --schema=prisma/schema.prisma",
-    "db:deploy": "npm run db:env && npm run db:preflight && node ./scripts/db/prisma-retry.js migrate deploy --schema=prisma/schema.prisma",
+    "db:deploy": "DB_DEPLOY_GUARD=1 npm run db:env && npm run db:preflight && node ./scripts/db/prisma-retry.js migrate deploy --schema=prisma/schema.prisma",
     "db:generate": "npm run db:env && npm run db:preflight && node ./scripts/db/prisma-retry.js generate --schema=prisma/schema.prisma",
     "db:local:up": "docker compose -f infra/dev/docker-compose.db.yml up -d",
     "db:local:down": "docker compose -f infra/dev/docker-compose.db.yml down -v",
