@@ -1,4 +1,5 @@
 import { getMobileEnv } from "./env";
+import { getActiveSession } from "./session";
 
 export type AnalyticsPayload = Record<string, unknown>;
 
@@ -75,12 +76,22 @@ async function flushQueue() {
   const endpoint = `${baseUrl}/api/telemetry/events`;
 
   try {
+    const session = await getActiveSession({
+      minTtlMs: 30_000,
+      refreshIfNearExpiry: false,
+    });
+    const accessToken = session?.access_token ?? null;
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+      "x-client-platform": "mobile",
+    };
+    if (accessToken) {
+      headers.Authorization = `Bearer ${accessToken}`;
+    }
+
     const res = await fetch(endpoint, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-client-platform": "mobile",
-      },
+      headers,
       body: JSON.stringify({ events: batch }),
     });
     if (!res.ok) {

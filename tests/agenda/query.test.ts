@@ -79,4 +79,24 @@ describe("agenda query", () => {
       }),
     ]);
   });
+
+  it("exclui pendentes de reservas cujo início já passou", async () => {
+    const from = new Date("2025-03-01T00:00:00Z");
+    const to = new Date("2025-03-31T23:59:59Z");
+    mocks.findMany.mockResolvedValue([]);
+
+    await getAgendaItemsForOrganization({ organizationId: 7, from, to });
+
+    expect(mocks.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          NOT: expect.objectContaining({
+            sourceType: SourceType.BOOKING,
+            status: { in: ["PENDING_CONFIRMATION", "PENDING"] },
+            startsAt: { lt: expect.any(Date) },
+          }),
+        }),
+      }),
+    );
+  });
 });

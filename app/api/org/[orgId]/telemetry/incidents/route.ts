@@ -3,7 +3,9 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { requireOrgTelemetryAccess } from "@/app/api/org/[orgId]/telemetry/_access";
 import {
+  TELEMETRY_SEVERITIES,
   TELEMETRY_INCIDENT_STATUSES,
+  type TelemetrySeverity,
   type TelemetryIncidentStatus,
 } from "@/domain/telemetry/constants";
 import { listTelemetryIncidents } from "@/domain/telemetry/alerts";
@@ -32,6 +34,20 @@ function parseStatuses(value: string | null): TelemetryIncidentStatus[] | undefi
   return valid.length ? valid : undefined;
 }
 
+function parseSeverities(value: string | null): TelemetrySeverity[] | undefined {
+  if (!value) return undefined;
+  const tokens = value
+    .split(",")
+    .map((part) => part.trim().toUpperCase())
+    .filter(Boolean);
+
+  const valid = tokens.filter((token): token is TelemetrySeverity =>
+    (TELEMETRY_SEVERITIES as readonly string[]).includes(token),
+  );
+
+  return valid.length ? valid : undefined;
+}
+
 async function _GET(req: NextRequest) {
   try {
     const access = await requireOrgTelemetryAccess(req);
@@ -39,12 +55,16 @@ async function _GET(req: NextRequest) {
 
     const searchParams = req.nextUrl.searchParams;
     const statuses = parseStatuses(searchParams.get("statuses"));
+    const severities = parseSeverities(searchParams.get("severities"));
     const ruleId = searchParams.get("ruleId")?.trim() || null;
+    const query = searchParams.get("q")?.trim() || null;
 
     const items = await listTelemetryIncidents({
       organizationId: access.organizationId,
       statuses,
+      severities,
       ruleId,
+      query,
       take: parseTake(searchParams.get("take")),
     });
 

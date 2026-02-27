@@ -4,7 +4,6 @@
   "endpoints": [
     "app/api/payments/intent/route.ts",
     "app/api/checkout/status/route.ts",
-    "app/api/checkout/resale/route.ts",
     "app/api/convites/[token]/checkout/route.ts",
     "app/api/cobrancas/[token]/checkout/route.ts",
     "app/api/servicos/[id]/checkout/route.ts",

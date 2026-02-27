@@ -30,4 +30,20 @@ describe("reservas concurrency guardrails", () => {
     expect(route).toContain("bookingChangeRequest.updateMany");
     expect(route).toContain("bookingChangeRequest.create");
   });
+
+  it("mantém revalidação com lock na aceitação de booking change pelo cliente", () => {
+    const route = readLocal("app/api/me/reservas/[id]/reschedule/respond/route.ts");
+    const helper = readLocal("lib/reservas/bookingChangeApplyValidation.ts");
+    expect(route).toContain("validateBookingChangeApply({");
+    expect(helper).toContain("pg_advisory_xact_lock");
+    expect(helper).toContain("\"SLOT_UNAVAILABLE\"");
+    expect(helper).toContain("\"AGENDA_CONFLICT\"");
+  });
+
+  it("mantém revalidação com lock no fulfill de booking change pago", () => {
+    const operation = readLocal("lib/operations/fulfillServiceBooking.ts");
+    const helper = readLocal("lib/reservas/bookingChangeApplyValidation.ts");
+    expect(operation).toContain("validateBookingChangeApply({");
+    expect(helper).toContain("pg_advisory_xact_lock");
+  });
 });

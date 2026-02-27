@@ -50,6 +50,7 @@ Jobs e defaults:
 - `analytics-rollup` — `86400000ms` (`CRON_ANALYTICS_INTERVAL_MS`)
 - `telemetry-rollup` — `300000ms` (`CRON_TELEMETRY_ROLLUP_INTERVAL_MS`)
 - `telemetry-alerts-evaluate` — `300000ms` (`CRON_TELEMETRY_ALERTS_EVALUATE_INTERVAL_MS`)
+- `telemetry-retention` — `86400000ms` (`CRON_TELEMETRY_RETENTION_INTERVAL_MS`)
 - `loyalty-expire` — `86400000ms` (`CRON_LOYALTY_EXPIRE_INTERVAL_MS`)
 
 Notas operacionais:

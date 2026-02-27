@@ -25,6 +25,13 @@ describe("organization module lifecycle", () => {
       client,
     });
 
+    expect(client.event.count).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: { in: ["PUBLISHED", "DATE_CHANGED"] },
+        }),
+      }),
+    );
     expect(preview.disabledModules).toEqual(["EVENTOS"]);
     expect(preview.blockers).toHaveLength(1);
     expect(preview.blockers[0]).toMatchObject({

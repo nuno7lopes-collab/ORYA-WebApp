@@ -5,6 +5,7 @@ import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { recordCronHeartbeat } from "@/lib/cron/heartbeat";
 import { recomputeTelemetryMetricRollups } from "@/domain/telemetry/rollup";
 import { evaluateTelemetryAlertRules } from "@/domain/telemetry/alerts";
+import { recomputeTelemetryFunnelResults } from "@/domain/telemetry/funnels";
 import { type TelemetryBucketUnit } from "@/domain/telemetry/constants";
 import { logError } from "@/lib/observability/logger";
 
@@ -48,6 +49,7 @@ async function _POST(req: NextRequest) {
   const bucketUnit = parseBucketUnit(req.nextUrl.searchParams.get("bucket"));
   const hours = parseHours(req.nextUrl.searchParams.get("hours"), bucketUnit === "HOUR" ? 24 : 24 * 14);
   const shouldEvaluate = parseBoolean(req.nextUrl.searchParams.get("evaluate"), true);
+  const shouldRecomputeFunnels = parseBoolean(req.nextUrl.searchParams.get("funnels"), true);
   const organizationId = parseOrganizationId(req.nextUrl.searchParams.get("orgId"));
   const to = new Date();
   const from = new Date(to.getTime() - hours * 60 * 60 * 1000);
@@ -63,6 +65,15 @@ async function _POST(req: NextRequest) {
       shouldEvaluate
         ? await evaluateTelemetryAlertRules({ organizationId })
         : null;
+    const funnelResults =
+      shouldRecomputeFunnels
+        ? await recomputeTelemetryFunnelResults({
+            from,
+            to,
+            bucketUnit,
+            organizationId,
+          })
+        : null;
 
     await recordCronHeartbeat(JOB_KEY, {
       status: "SUCCESS",
@@ -72,8 +83,20 @@ async function _POST(req: NextRequest) {
         to: rollup.to.toISOString(),
         written: rollup.written,
         evaluate: shouldEvaluate,
+        recomputeFunnels: shouldRecomputeFunnels,
         organizationId,
         evaluation,
+        funnels: funnelResults
+          ? {
+              organizations: funnelResults.organizations,
+              funnels: funnelResults.funnels,
+              buckets: funnelResults.buckets,
+              rowsDeleted: funnelResults.rowsDeleted,
+              rowsWritten: funnelResults.rowsWritten,
+              skippedFunnels: funnelResults.skippedFunnels,
+              errors: funnelResults.errors,
+            }
+          : null,
       },
     });
 
@@ -86,6 +109,20 @@ async function _POST(req: NextRequest) {
         rows: rollup.rows,
         written: rollup.written,
         evaluation,
+        funnels: funnelResults
+          ? {
+              from: funnelResults.from.toISOString(),
+              to: funnelResults.to.toISOString(),
+              bucketUnit: funnelResults.bucketUnit,
+              organizations: funnelResults.organizations,
+              funnels: funnelResults.funnels,
+              buckets: funnelResults.buckets,
+              rowsDeleted: funnelResults.rowsDeleted,
+              rowsWritten: funnelResults.rowsWritten,
+              skippedFunnels: funnelResults.skippedFunnels,
+              errors: funnelResults.errors,
+            }
+          : null,
       },
       { status: 200, req },
     );

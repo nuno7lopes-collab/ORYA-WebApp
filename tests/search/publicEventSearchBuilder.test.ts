@@ -93,4 +93,17 @@ describe("publicEventSearch", () => {
     expect(call.where.startsAt?.gte).toBeInstanceOf(Date);
     expect(call.where.startsAt?.lte).toBeInstanceOf(Date);
   });
+
+  it("ignora itens DRAFT no feed público", async () => {
+    mocks.findMany.mockResolvedValue([
+      baseItem({ id: "idx-1", sourceId: "1", slug: "legacy-draft", status: "DRAFT" }),
+      baseItem({ id: "idx-2", sourceId: "2", slug: "evento-publicado", status: "PUBLISHED" }),
+    ]);
+    mocks.eventFindMany.mockResolvedValue([{ id: 1 }, { id: 2 }]);
+
+    const res = await searchPublicEvents({});
+
+    expect(res.items).toHaveLength(1);
+    expect(res.items[0]?.slug).toBe("evento-publicado");
+  });
 });

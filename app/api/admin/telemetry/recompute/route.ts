@@ -4,6 +4,7 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { recomputeTelemetryMetricRollups } from "@/domain/telemetry/rollup";
 import { evaluateTelemetryAlertRules } from "@/domain/telemetry/alerts";
+import { recomputeTelemetryFunnelResults } from "@/domain/telemetry/funnels";
 import { type TelemetryBucketUnit } from "@/domain/telemetry/constants";
 import { logError } from "@/lib/observability/logger";
 
@@ -49,6 +50,7 @@ async function _POST(req: NextRequest) {
       bucketUnit === "HOUR" ? 24 : 24 * 14,
     );
     const shouldEvaluate = parseBoolean(req.nextUrl.searchParams.get("evaluate"), true);
+    const shouldRecomputeFunnels = parseBoolean(req.nextUrl.searchParams.get("funnels"), true);
     const organizationId = parseOrganizationId(req.nextUrl.searchParams.get("orgId"));
     const to = new Date();
     const from = new Date(to.getTime() - hours * 60 * 60 * 1000);
@@ -62,6 +64,14 @@ async function _POST(req: NextRequest) {
     const evaluation = shouldEvaluate
       ? await evaluateTelemetryAlertRules({ organizationId })
       : null;
+    const funnelResults = shouldRecomputeFunnels
+      ? await recomputeTelemetryFunnelResults({
+          from,
+          to,
+          bucketUnit,
+          organizationId,
+        })
+      : null;
 
     return jsonWrap(
       {
@@ -74,6 +84,20 @@ async function _POST(req: NextRequest) {
           written: rollup.written,
         },
         evaluation,
+        funnels: funnelResults
+          ? {
+              from: funnelResults.from.toISOString(),
+              to: funnelResults.to.toISOString(),
+              bucketUnit: funnelResults.bucketUnit,
+              organizations: funnelResults.organizations,
+              funnels: funnelResults.funnels,
+              buckets: funnelResults.buckets,
+              rowsDeleted: funnelResults.rowsDeleted,
+              rowsWritten: funnelResults.rowsWritten,
+              skippedFunnels: funnelResults.skippedFunnels,
+              errors: funnelResults.errors,
+            }
+          : null,
       },
       { status: 200, req },
     );

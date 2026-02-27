@@ -29,6 +29,7 @@ import { ensureEmailIdentity, resolveIdentityForUser } from "@/lib/ownership/ide
 import { buildSubjectFingerprint } from "@/lib/holds/fingerprint";
 import { isPlatformHoldContractEnabled } from "@/lib/holds/config";
 import { releaseCheckoutHold, verifyCheckoutHoldOwnership } from "@/lib/holds/service";
+import { validateBookingChangeApply } from "@/lib/reservas/bookingChangeApplyValidation";
 
 function parseNumber(value: unknown) {
   const parsed = Number(value);
@@ -531,6 +532,47 @@ async function fulfillBookingChangeIntent(intent: Stripe.PaymentIntent): Promise
       return { status: "BOOKING_CLOSED" as const, bookingId: booking.id, organizationId: booking.organizationId };
     }
 
+    const validation = await validateBookingChangeApply({
+      tx,
+      bookingId: booking.id,
+      requestId: request.id,
+      now,
+    });
+    if (!validation.ok) {
+      if (validation.code === "REQUEST_NOT_PENDING") {
+        return { status: "INACTIVE" as const, bookingId: booking.id, organizationId: booking.organizationId };
+      }
+      if (validation.code === "REQUEST_EXPIRED") {
+        await tx.bookingChangeRequest.update({
+          where: { id: request.id },
+          data: {
+            status: "EXPIRED",
+            respondedAt: now,
+            respondedByUserId:
+              normalizeOptionalUuid(request.respondedByUserId) ?? normalizeOptionalUuid(booking.userId),
+          },
+        });
+        return { status: "EXPIRED" as const, bookingId: booking.id, organizationId: booking.organizationId };
+      }
+      if (validation.code === "BOOKING_CLOSED") {
+        await tx.bookingChangeRequest.update({
+          where: { id: request.id },
+          data: {
+            status: "CANCELLED",
+            respondedAt: now,
+            respondedByUserId:
+              normalizeOptionalUuid(request.respondedByUserId) ?? normalizeOptionalUuid(booking.userId),
+          },
+        });
+        return { status: "BOOKING_CLOSED" as const, bookingId: booking.id, organizationId: booking.organizationId };
+      }
+      return {
+        status: validation.code,
+        bookingId: booking.id,
+        organizationId: booking.organizationId,
+      };
+    }
+
     const newPriceCents = Math.max(0, Math.round((booking.price ?? 0) + request.priceDeltaCents));
     const actorUserId =
       normalizeOptionalUuid(request.respondedByUserId) ?? normalizeOptionalUuid(booking.userId);
@@ -540,11 +582,11 @@ async function fulfillBookingChangeIntent(intent: Stripe.PaymentIntent): Promise
       organizationId: booking.organizationId,
       actorUserId,
       data: {
-        startsAt: request.proposedStartsAt,
+        startsAt: validation.startsAt,
         price: newPriceCents,
-        courtId: request.proposedCourtId ?? booking.courtId,
-        professionalId: request.proposedProfessionalId ?? booking.professionalId,
-        resourceId: request.proposedResourceId ?? booking.resourceId,
+        courtId: validation.courtId,
+        professionalId: validation.professionalId,
+        resourceId: validation.resourceId,
       },
       select: {
         id: true,
@@ -636,7 +678,7 @@ async function fulfillBookingChangeIntent(intent: Stripe.PaymentIntent): Promise
       metadata: {
         bookingId: booking.id,
         requestId: request.id,
-        proposedStartsAt: request.proposedStartsAt.toISOString(),
+        proposedStartsAt: validation.startsAt.toISOString(),
         priceDeltaCents: request.priceDeltaCents,
       },
     });
@@ -646,7 +688,7 @@ async function fulfillBookingChangeIntent(intent: Stripe.PaymentIntent): Promise
       bookingId: booking.id,
       organizationId: booking.organizationId,
       requestId: request.id,
-      proposedStartsAt: request.proposedStartsAt,
+      proposedStartsAt: validation.startsAt,
       priceDeltaCents: request.priceDeltaCents,
       actorUserId,
     };

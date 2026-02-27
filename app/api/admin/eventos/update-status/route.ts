@@ -112,6 +112,7 @@ async function _POST(req: NextRequest) {
           type: true,
           organizationId: true,
           startsAt: true,
+          endsAt: true,
         },
       });
       if (!existing) {
@@ -120,9 +121,20 @@ async function _POST(req: NextRequest) {
           { status: 404 }
         );
       }
+      const eventEndsAt = existing.endsAt ? new Date(existing.endsAt) : null;
+      const endedByDate =
+        eventEndsAt && Number.isFinite(eventEndsAt.getTime())
+          ? eventEndsAt.getTime() < Date.now()
+          : false;
       if (String(existing.status) === "CANCELLED") {
         return jsonWrap(
           { ok: false, error: "EVENT_CANCELLED_TERMINAL" },
+          { status: 409 }
+        );
+      }
+      if (String(existing.status) === "FINISHED" || endedByDate) {
+        return jsonWrap(
+          { ok: false, error: "EVENT_ALREADY_FINISHED" },
           { status: 409 }
         );
       }

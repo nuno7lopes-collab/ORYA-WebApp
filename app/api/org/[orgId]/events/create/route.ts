@@ -250,8 +250,10 @@ async function _POST(req: NextRequest) {
       payoutModeRequested,
     );
     const statusRaw = typeof body.status === "string" ? body.status.trim().toUpperCase() : null;
-    const eventStatus: EventStatus =
-      statusRaw === "DRAFT" || statusRaw === "PUBLISHED" ? (statusRaw as EventStatus) : EventStatus.PUBLISHED;
+    if (statusRaw && statusRaw !== "PUBLISHED") {
+      return fail(400, "UNSUPPORTED_EVENT_STATUS_ON_CREATE");
+    }
+    const eventStatus: EventStatus = EventStatus.PUBLISHED;
     const timezone =
       typeof body.timezone === "string" && body.timezone.trim() ? body.timezone.trim() : null;
 

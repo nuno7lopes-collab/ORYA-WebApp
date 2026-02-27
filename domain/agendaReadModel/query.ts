@@ -42,6 +42,7 @@ export async function getAgendaItemsForOrganization(params: {
     scopeFilter = null,
     scopeMode = "OR",
   } = params;
+  const now = new Date();
   const rangeFilter = buildAgendaOverlapFilter({ from, to });
   const scopeOr: Array<Record<string, unknown>> = [];
   const courtIds = scopeFilter?.courtIds ?? [];
@@ -73,6 +74,11 @@ export async function getAgendaItemsForOrganization(params: {
         in: sourceTypes,
       },
       status: { not: "DELETED" },
+      NOT: {
+        sourceType: SourceType.BOOKING,
+        status: { in: ["PENDING_CONFIRMATION", "PENDING"] },
+        startsAt: { lt: now },
+      },
     },
     select: {
       title: true,

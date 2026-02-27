@@ -9,6 +9,8 @@ import {
 import { filterOrphanedEventSearchItems } from "@/domain/searchIndex/guard";
 
 const DEFAULT_PAGE_SIZE = 12;
+const isLegacyDraftStatus = (status: string | null | undefined) =>
+  String(status ?? "").toUpperCase() === "DRAFT";
 
 type DiscoverParams = {
   q?: string | null;
@@ -413,9 +415,11 @@ export async function listPublicDiscover(
 
   const { items, nextCursor } = await listPublicDiscoverIndex(params);
 
-  const computed: PublicEventCardWithPrice[] = items.map((item) =>
+  const computed: PublicEventCardWithPrice[] = items
+    .filter((item) => !isLegacyDraftStatus(item.status))
+    .map((item) =>
     mapSearchItemToPublicEventCardWithPrice(item, item.addressRef),
-  );
+    );
 
   const filtered = filterDiscoverByPrice(computed, priceMinCents, priceMaxCents).filter((item) =>
     isPublicEventCardComplete(item),
@@ -445,6 +449,7 @@ export async function getPublicDiscoverBySlug(slug: string): Promise<PublicEvent
 
   const [safeItem] = await filterOrphanedEventSearchItems([item], { prune: true });
   if (!safeItem) return null;
+  if (isLegacyDraftStatus(safeItem.status)) return null;
 
   const { _priceFromCents, ...event } = mapSearchItemToPublicEventCardWithPrice(safeItem, safeItem.addressRef);
   return isPublicEventCardComplete(event) ? event : null;

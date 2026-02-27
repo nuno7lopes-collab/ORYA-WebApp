@@ -6,6 +6,8 @@ import { filterOrphanedEventSearchItems } from "@/domain/searchIndex/guard";
 const DEFAULT_PAGE_SIZE = 12;
 const PUBLIC_VISIBILITY = (SearchIndexVisibility as Record<string, string> | undefined)?.PUBLIC ?? "PUBLIC";
 const EVENT_SOURCE_TYPE = (SourceType as Record<string, string> | undefined)?.EVENT ?? "EVENT";
+const isLegacyDraftStatus = (status: string | null | undefined) =>
+  String(status ?? "").toUpperCase() === "DRAFT";
 
 function clampTake(value: number | null): number {
   if (!value || Number.isNaN(value)) return DEFAULT_PAGE_SIZE;
@@ -179,6 +181,7 @@ export async function searchPublicEvents(
   const safeEvents = await filterOrphanedEventSearchItems(events);
 
   const filtered = safeEvents.filter((item) => {
+    if (isLegacyDraftStatus(item.status)) return false;
     const priceFrom = item.priceFromCents;
     if (priceMinCents !== null && priceMaxCents !== null) {
       return (

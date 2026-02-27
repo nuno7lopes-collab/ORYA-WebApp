@@ -119,10 +119,12 @@ const overlapsWithBuffer = (aStart: Date, aEnd: Date, bStart: Date, bEnd: Date, 
   return aStartBuffered < bEnd && bStart < aEndBuffered;
 };
 
-const isActiveBooking = (booking: { status: string; pendingExpiresAt: Date | null }) => {
+const isActiveBooking = (booking: { status: string; pendingExpiresAt: Date | null; startsAt: Date }) => {
   if (["CONFIRMED", "DISPUTED", "NO_SHOW"].includes(booking.status)) return true;
   if (["PENDING_CONFIRMATION", "PENDING"].includes(booking.status)) {
-    return booking.pendingExpiresAt ? booking.pendingExpiresAt > new Date() : false;
+    const now = new Date();
+    if (booking.startsAt <= now) return false;
+    return booking.pendingExpiresAt ? booking.pendingExpiresAt > now : false;
   }
   return false;
 };
@@ -691,7 +693,7 @@ async function _GET(req: NextRequest) {
   }
   // reserva vs jogo
   const activeBookings = bookings
-    .filter((booking) => isActiveBooking({ status: booking.status, pendingExpiresAt: booking.pendingExpiresAt }))
+    .filter((booking) => isActiveBooking(booking))
     .map((booking) => ({
       ...booking,
       endAt: new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000),

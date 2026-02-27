@@ -112,6 +112,9 @@ async function _GET(req: NextRequest, context: { params: Params | Promise<Params
     if (!indexed) {
       return jsonWrap({ errorCode: "NOT_FOUND", message: "Evento não encontrado." }, { status: 404 });
     }
+    if (String(indexed.status ?? "").toUpperCase() === "DRAFT") {
+      return jsonWrap({ errorCode: "NOT_FOUND", message: "Evento não encontrado." }, { status: 404 });
+    }
     return jsonWrap({ item: indexed });
   }
 

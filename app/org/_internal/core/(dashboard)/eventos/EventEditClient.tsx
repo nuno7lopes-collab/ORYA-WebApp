@@ -1071,7 +1071,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
         )}
 
         <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-white/75">
-          Convites por evento foram removidos. Para acesso privado, usa bilhetes com visibilidade "Por convite" e
+          Convites por evento foram removidos. Para acesso privado, usa bilhetes com visibilidade &quot;Por convite&quot; e
           emite tokens por bilhete.
         </div>
       </div>
@@ -1522,7 +1522,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
               <p className="text-[11px] uppercase tracking-wide text-white/60">Edição em passos</p>
               <p className="text-lg font-semibold text-white">Editar {primaryLabelTitle}</p>
               <p className="text-sm text-white/60">
-                Define o teu {primaryLabel} passo a passo. Podes guardar como rascunho em qualquer momento.
+                Define o teu {primaryLabel} passo a passo. Guarda as alterações para manter tudo atualizado.
               </p>
             </div>
             <div className="text-right text-[12px] text-white/60">

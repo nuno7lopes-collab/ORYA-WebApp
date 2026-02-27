@@ -574,8 +574,7 @@ async function listRankedEventsFromEvents(
     .filter(({ event }) =>
       isPublicEventCardComplete(event) &&
       event.status !== "PAST" &&
-      event.status !== "CANCELLED" &&
-      event.status !== "DRAFT",
+      event.status !== "CANCELLED",
     );
 
   const filtered = filterByPrice(
@@ -688,8 +687,7 @@ export async function listRankedEvents(params: RankedEventsParams): Promise<{ it
     .filter(({ event }) =>
       isPublicEventCardComplete(event) &&
       event.status !== "PAST" &&
-      event.status !== "CANCELLED" &&
-      event.status !== "DRAFT",
+      event.status !== "CANCELLED",
     );
 
   const filtered = filterByPrice(

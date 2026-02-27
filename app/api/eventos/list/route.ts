@@ -236,10 +236,7 @@ async function _GET(req: NextRequest) {
     items = mapped;
 
     if (items.length === 0) {
-      const fallbackStatuses =
-        process.env.NODE_ENV === "production"
-          ? [EventStatus.PUBLISHED, EventStatus.DATE_CHANGED, EventStatus.FINISHED]
-          : [EventStatus.PUBLISHED, EventStatus.DATE_CHANGED, EventStatus.FINISHED, EventStatus.DRAFT];
+      const fallbackStatuses = [EventStatus.PUBLISHED, EventStatus.DATE_CHANGED, EventStatus.FINISHED];
 
       const fallbackEvents = await prisma.event.findMany({
         where: (() => {

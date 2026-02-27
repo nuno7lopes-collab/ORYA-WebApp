@@ -74,8 +74,9 @@ describe("telemetry ingest", () => {
     expect(result.duplicate).toBe(false);
 
     const createArg = telemetryDelegates.telemetryEvent.create.mock.calls[0]?.[0] as {
-      data: { payload: Record<string, unknown> };
+      data: { eventName: string; payload: Record<string, unknown> };
     };
+    expect(createArg.data.eventName).toBe("checkout.flow.started");
     expect(createArg.data.payload.email).toBe("[REDACTED]");
     expect((createArg.data.payload.nested as Record<string, unknown>).token).toBe("[REDACTED]");
     expect(createArg.data.payload.ok).toBe(true);
@@ -105,5 +106,35 @@ describe("telemetry ingest", () => {
     expect(single).toHaveLength(1);
     expect(wrapped).toHaveLength(2);
     expect(array).toHaveLength(2);
+  });
+
+  it("rejeita evento fora do catálogo canónico", async () => {
+    const result = await ingestTelemetryEvent(
+      {
+        eventName: "custom_unknown_event",
+      },
+      defaults,
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.accepted).toBe(false);
+    expect(result.reason).toBe("UNKNOWN_EVENT_CONTRACT");
+    expect(telemetryDelegates.telemetryIngestError.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejeita versão fora do contrato", async () => {
+    const result = await ingestTelemetryEvent(
+      {
+        eventName: "checkout_started",
+        eventVersion: "2.0.0",
+      },
+      defaults,
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.accepted).toBe(false);
+    expect(result.reason).toBe("INVALID_EVENT_VERSION");
+    expect(telemetryDelegates.telemetryIngestError.create).toHaveBeenCalledTimes(1);
+    expect(telemetryDelegates.telemetryEvent.create).not.toHaveBeenCalled();
   });
 });

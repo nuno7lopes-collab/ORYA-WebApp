@@ -144,6 +144,24 @@ type TelemetryIncidentResponse = {
   rule?: { id: string; name: string } | null;
 };
 
+type TelemetryIncidentKpisResponse = {
+  from: string;
+  to: string;
+  windowMinutes: number;
+  totalIncidents: number;
+  openIncidents: number;
+  acknowledgedIncidents: number;
+  resolvedIncidents: number;
+  acknowledgedSamples: number;
+  resolvedSamples: number;
+  mttaMinutes: number | null;
+  mttrMinutes: number | null;
+  ackSlaMinutes: number;
+  resolveSlaMinutes: number;
+  ackSlaBreaches: number;
+  resolveSlaBreaches: number;
+};
+
 type TelemetryOverviewResponse = {
   window: { hours: number; from: string; to: string };
   totals: { totalEvents: number; errorEvents: number; uniqueActors: number; errorRateBps: number };
@@ -160,6 +178,7 @@ type TelemetryOverviewResponse = {
     requestId: string | null;
     organizationId: number | null;
   }>;
+  incidentKpis?: TelemetryIncidentKpisResponse;
   incidents?: TelemetryIncidentResponse[];
   rules?: TelemetryAlertRuleResponse[];
 };
@@ -178,6 +197,80 @@ type TelemetryEventsResponse = {
   pagination: { hasMore: boolean; nextCursor: string | null };
 };
 
+type TelemetryFunnelStepResponse = {
+  key: string;
+  eventName: string;
+  required: boolean;
+  withinMinutes: number | null;
+};
+
+type TelemetryFunnelDraftStep = {
+  key: string;
+  eventName: string;
+  withinMinutes: string;
+};
+
+type TelemetryFunnelDefinitionResponse = {
+  id: string;
+  organizationId: number | null;
+  name: string;
+  description: string | null;
+  steps: TelemetryFunnelStepResponse[];
+  isActive: boolean;
+  createdByUserId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type TelemetryFunnelResultResponse = {
+  id: number;
+  funnelId: string;
+  organizationId: number | null;
+  bucketStart: string;
+  bucketUnit: "HOUR" | "DAY";
+  stepKey: string;
+  enteredCount: number;
+  convertedCount: number;
+  conversionRateBps: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type TelemetryFunnelListResponse = {
+  items: TelemetryFunnelDefinitionResponse[];
+};
+
+type TelemetryFunnelResultsResponse = {
+  items: TelemetryFunnelResultResponse[];
+};
+
+type TelemetryCatalogEntryResponse = {
+  eventName: string;
+  eventVersion: string;
+  owner: string;
+  description: string;
+  defaultSeverity: string;
+  piiRisk: string;
+  aliases: string[];
+};
+
+type TelemetryCatalogResponse = {
+  total: number;
+  items: TelemetryCatalogEntryResponse[];
+};
+
+type TelemetryExportDataset = "events" | "incidents" | "rules" | "funnels" | "funnel_results";
+type TelemetryExportFormat = "csv" | "pdf";
+
+type TelemetryExportPreviewPayload = {
+  dataset: TelemetryExportDataset;
+  headers: string[];
+  rows: string[][];
+  rowCount: number;
+  sampleSize: number;
+  truncated: boolean;
+};
+
 type TelemetryEvaluationResult = {
   evaluatedRules: number;
   evaluatedOrganizations: number;
@@ -187,6 +280,34 @@ type TelemetryEvaluationResult = {
   skippedByCooldown: number;
   breachesDetected: number;
   errors: number;
+};
+
+type TelemetryRecomputeResult = {
+  rollup: {
+    bucketUnit: "HOUR" | "DAY";
+    from: string;
+    to: string;
+    rows: {
+      totalRows?: number;
+      eventRows: number;
+      sourceRows: number;
+      actorRows: number;
+    };
+    written: number;
+  };
+  evaluation: TelemetryEvaluationResult | null;
+  funnels: {
+    from: string;
+    to: string;
+    bucketUnit: "HOUR" | "DAY";
+    organizations: number;
+    funnels: number;
+    buckets: number;
+    rowsDeleted: number;
+    rowsWritten: number;
+    skippedFunnels: number;
+    errors: number;
+  } | null;
 };
 
 const swrOptions = {
@@ -201,6 +322,14 @@ const DEFAULT_RANGE: RangeOption = "30d";
 const DEFAULT_SCOPE: ScopeOption = "all";
 const DEFAULT_COHORT_MONTHS = 12;
 const DEFAULT_DIMENSION: DimensionOption = "MODULE";
+const TELEMETRY_FUNNEL_STEP_KEY_PATTERN = /^[a-z0-9][a-z0-9._:-]{1,63}$/;
+
+function defaultTelemetryFunnelDraftSteps(): TelemetryFunnelDraftStep[] {
+  return [
+    { key: "start", eventName: "checkout.flow.started", withinMinutes: "" },
+    { key: "success", eventName: "checkout.payment.succeeded", withinMinutes: "30" },
+  ];
+}
 
 function parseView(raw: string | null | undefined, fallback: AnalyticsAllowedView): AnalyticsAllowedView {
   if (isAnalyticsAllowedView(raw)) return raw;
@@ -263,6 +392,15 @@ function parseTelemetrySeverity(raw: string | null | undefined) {
   return "";
 }
 
+function parseTelemetryFunnelWithinMinutes(raw: string) {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) return null;
+  if (parsed < 1 || parsed > 7 * 24 * 60) return null;
+  return parsed;
+}
+
 function toCurrency(cents: number | null | undefined, currency = "EUR") {
   const value = (cents ?? 0) / 100;
   return new Intl.NumberFormat("pt-PT", {
@@ -297,6 +435,12 @@ function formatDateTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function formatTelemetryMinutes(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+  if (value >= 120) return `${(value / 60).toFixed(1)} h`;
+  return `${value.toFixed(1)} min`;
 }
 
 function formatTelemetryStatus(status: TelemetryIncidentResponse["status"]) {
@@ -485,6 +629,24 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
           severity: telemetrySeverity || null,
         })}`
       : null;
+  const telemetryFunnelsKey =
+    view === "telemetry"
+      ? `${orgApiBase}/telemetry/funnels?${buildQueryString({
+          includeGlobal: "true",
+          activeOnly: "false",
+        })}`
+      : null;
+  const telemetryFunnelResultsKey =
+    view === "telemetry"
+      ? `${orgApiBase}/telemetry/funnels/results?${buildQueryString({
+          take: 120,
+          bucketUnit: "HOUR",
+        })}`
+      : null;
+  const telemetryCatalogKey =
+    view === "telemetry"
+      ? `${orgApiBase}/telemetry/catalog`
+      : null;
 
   const { data: overview, error: overviewError, isLoading: overviewLoading, mutate: mutateOverview } = useSWR<AnalyticsOverviewResponse>(
     overviewKey,
@@ -522,11 +684,44 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
     isLoading: telemetryEventsLoading,
     mutate: mutateTelemetryEvents,
   } = useSWR<TelemetryEventsResponse>(telemetryEventsKey, apiFetcher, swrOptions);
+  const {
+    data: telemetryFunnels,
+    error: telemetryFunnelsError,
+    isLoading: telemetryFunnelsLoading,
+    mutate: mutateTelemetryFunnels,
+  } = useSWR<TelemetryFunnelListResponse>(telemetryFunnelsKey, apiFetcher, swrOptions);
+  const {
+    data: telemetryFunnelResults,
+    error: telemetryFunnelResultsError,
+    isLoading: telemetryFunnelResultsLoading,
+    mutate: mutateTelemetryFunnelResults,
+  } = useSWR<TelemetryFunnelResultsResponse>(telemetryFunnelResultsKey, apiFetcher, swrOptions);
+  const {
+    data: telemetryCatalog,
+    error: telemetryCatalogError,
+    isLoading: telemetryCatalogLoading,
+    mutate: mutateTelemetryCatalog,
+  } = useSWR<TelemetryCatalogResponse>(telemetryCatalogKey, apiFetcher, swrOptions);
   const [telemetryActionBusyKey, setTelemetryActionBusyKey] = useState<string | null>(null);
   const [telemetryActionError, setTelemetryActionError] = useState<string | null>(null);
   const [telemetryActionInfo, setTelemetryActionInfo] = useState<string | null>(null);
   const [telemetryEvaluateBusy, setTelemetryEvaluateBusy] = useState(false);
+  const [telemetryRecomputeBusy, setTelemetryRecomputeBusy] = useState(false);
+  const [telemetryFunnelBusyKey, setTelemetryFunnelBusyKey] = useState<string | null>(null);
+  const [telemetryFunnelSaveBusy, setTelemetryFunnelSaveBusy] = useState(false);
+  const [telemetryFunnelEditingId, setTelemetryFunnelEditingId] = useState<string | null>(null);
+  const [telemetryFunnelName, setTelemetryFunnelName] = useState("");
+  const [telemetryFunnelDescription, setTelemetryFunnelDescription] = useState("");
+  const [telemetryFunnelIsActive, setTelemetryFunnelIsActive] = useState(true);
+  const [telemetryFunnelSteps, setTelemetryFunnelSteps] = useState<TelemetryFunnelDraftStep[]>(
+    () => defaultTelemetryFunnelDraftSteps(),
+  );
   const [telemetryLastEvaluation, setTelemetryLastEvaluation] = useState<TelemetryEvaluationResult | null>(null);
+  const [telemetryLastRecompute, setTelemetryLastRecompute] = useState<TelemetryRecomputeResult | null>(null);
+  const [telemetryExportDataset, setTelemetryExportDataset] = useState<TelemetryExportDataset>("events");
+  const [telemetryExportFormat, setTelemetryExportFormat] = useState<TelemetryExportFormat>("csv");
+  const [telemetryExportPreviewBusy, setTelemetryExportPreviewBusy] = useState(false);
+  const [telemetryExportPreview, setTelemetryExportPreview] = useState<TelemetryExportPreviewPayload | null>(null);
 
   const applyTelemetryIncidentAction = useCallback(
     async (incidentId: string, action: "ACK" | "RESOLVE") => {
@@ -592,6 +787,345 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
     }
   }, [mutateTelemetryOverview, orgApiBase]);
 
+  const runTelemetryRecompute = useCallback(async () => {
+    setTelemetryActionError(null);
+    setTelemetryActionInfo(null);
+    setTelemetryRecomputeBusy(true);
+    try {
+      const params = new URLSearchParams();
+      params.set("bucket", "HOUR");
+      params.set("hours", String(telemetryHours));
+      params.set("evaluate", "true");
+      params.set("funnels", "true");
+
+      const res = await fetch(`${orgApiBase}/telemetry/recompute?${params.toString()}`, {
+        method: "POST",
+      });
+      const payload = await res.json().catch(() => null);
+      const body = unwrapEnvelope(payload) as Record<string, unknown> | null;
+      const result =
+        (body as TelemetryRecomputeResult | null) ??
+        (payload && typeof payload === "object"
+          ? ((payload as Record<string, unknown>) as unknown as TelemetryRecomputeResult)
+          : null);
+      const ok = res.ok && body?.ok !== false;
+      if (!ok || !result?.rollup) {
+        const errorCode =
+          (body?.error as string | undefined) ??
+          (payload && typeof payload === "object"
+            ? (payload as Record<string, unknown>).error
+            : undefined) ??
+          `HTTP_${res.status}`;
+        throw new Error(String(errorCode));
+      }
+
+      setTelemetryLastRecompute(result);
+      if (result.evaluation) setTelemetryLastEvaluation(result.evaluation);
+      setTelemetryActionInfo("Recompute de telemetria executado com sucesso.");
+      await Promise.all([
+        mutateTelemetryOverview(),
+        mutateTelemetryEvents(),
+        mutateTelemetryFunnels(),
+        mutateTelemetryFunnelResults(),
+        mutateTelemetryCatalog(),
+      ]);
+    } catch (error) {
+      setTelemetryActionError(formatAnalyticsError(error));
+    } finally {
+      setTelemetryRecomputeBusy(false);
+    }
+  }, [
+    telemetryHours,
+    mutateTelemetryOverview,
+    mutateTelemetryEvents,
+    mutateTelemetryFunnels,
+    mutateTelemetryFunnelResults,
+    mutateTelemetryCatalog,
+    orgApiBase,
+  ]);
+
+  const runTelemetryExport = useCallback(() => {
+    setTelemetryActionError(null);
+    setTelemetryActionInfo(null);
+    setTelemetryExportPreview(null);
+
+    const params = new URLSearchParams();
+    params.set("dataset", telemetryExportDataset);
+    params.set("format", telemetryExportFormat);
+    params.set("take", "2500");
+
+    if (telemetryExportDataset === "events") {
+      params.set("hours", String(telemetryHours));
+      if (telemetrySource) params.set("sourceType", telemetrySource);
+      if (telemetrySeverity) params.set("severity", telemetrySeverity);
+    } else if (telemetryExportDataset === "incidents") {
+      params.set("statuses", "ALL");
+    } else if (telemetryExportDataset === "rules" || telemetryExportDataset === "funnels") {
+      params.set("includeGlobal", "true");
+      params.set("activeOnly", "false");
+    } else if (telemetryExportDataset === "funnel_results") {
+      params.set("bucketUnit", "HOUR");
+    }
+
+    window.open(`${orgApiBase}/telemetry/export?${params.toString()}`, "_blank", "noopener,noreferrer");
+    setTelemetryActionInfo(telemetryExportFormat === "pdf" ? "Exportação PDF iniciada." : "Exportação CSV iniciada.");
+  }, [orgApiBase, telemetryExportDataset, telemetryExportFormat, telemetryHours, telemetrySeverity, telemetrySource]);
+
+  const runTelemetryExportPreview = useCallback(async () => {
+    setTelemetryActionError(null);
+    setTelemetryActionInfo(null);
+    setTelemetryExportPreviewBusy(true);
+    try {
+      const params = new URLSearchParams();
+      params.set("dataset", telemetryExportDataset);
+      params.set("take", "300");
+      params.set("sample", "20");
+
+      if (telemetryExportDataset === "events") {
+        params.set("hours", String(telemetryHours));
+        if (telemetrySource) params.set("sourceType", telemetrySource);
+        if (telemetrySeverity) params.set("severity", telemetrySeverity);
+      } else if (telemetryExportDataset === "incidents") {
+        params.set("statuses", "ALL");
+      } else if (telemetryExportDataset === "rules" || telemetryExportDataset === "funnels") {
+        params.set("includeGlobal", "true");
+        params.set("activeOnly", "false");
+      } else if (telemetryExportDataset === "funnel_results") {
+        params.set("bucketUnit", "HOUR");
+      }
+
+      const payload = await apiFetcher<{ preview: TelemetryExportPreviewPayload }>(
+        `${orgApiBase}/telemetry/export/preview?${params.toString()}`,
+      );
+      setTelemetryExportPreview(payload.preview);
+      setTelemetryActionInfo("Pré-visualização de exportação carregada.");
+    } catch (error) {
+      setTelemetryActionError(formatAnalyticsError(error));
+      setTelemetryExportPreview(null);
+    } finally {
+      setTelemetryExportPreviewBusy(false);
+    }
+  }, [
+    orgApiBase,
+    telemetryExportDataset,
+    telemetryHours,
+    telemetrySeverity,
+    telemetrySource,
+  ]);
+
+  const resetTelemetryFunnelDraft = useCallback(() => {
+    setTelemetryFunnelEditingId(null);
+    setTelemetryFunnelName("");
+    setTelemetryFunnelDescription("");
+    setTelemetryFunnelIsActive(true);
+    setTelemetryFunnelSteps(defaultTelemetryFunnelDraftSteps());
+  }, []);
+
+  const startEditTelemetryFunnel = useCallback((funnel: TelemetryFunnelDefinitionResponse) => {
+    setTelemetryFunnelEditingId(funnel.id);
+    setTelemetryFunnelName(funnel.name);
+    setTelemetryFunnelDescription(funnel.description ?? "");
+    setTelemetryFunnelIsActive(Boolean(funnel.isActive));
+    setTelemetryFunnelSteps(
+      funnel.steps.map((step) => ({
+        key: step.key,
+        eventName: step.eventName,
+        withinMinutes:
+          typeof step.withinMinutes === "number" && step.withinMinutes > 0
+            ? String(step.withinMinutes)
+            : "",
+      })),
+    );
+  }, []);
+
+  const updateTelemetryFunnelStep = useCallback(
+    (index: number, patch: Partial<TelemetryFunnelDraftStep>) => {
+      setTelemetryFunnelSteps((prev) =>
+        prev.map((step, currentIndex) =>
+          currentIndex === index ? { ...step, ...patch } : step,
+        ),
+      );
+    },
+    [],
+  );
+
+  const addTelemetryFunnelStep = useCallback(() => {
+    setTelemetryFunnelSteps((prev) => [
+      ...prev,
+      { key: `step${prev.length + 1}`, eventName: "", withinMinutes: "" },
+    ]);
+  }, []);
+
+  const removeTelemetryFunnelStep = useCallback((index: number) => {
+    setTelemetryFunnelSteps((prev) => prev.filter((_, currentIndex) => currentIndex !== index));
+  }, []);
+
+  const saveTelemetryFunnel = useCallback(async () => {
+    setTelemetryActionError(null);
+    setTelemetryActionInfo(null);
+
+    const name = telemetryFunnelName.trim();
+    if (name.length < 2) {
+      setTelemetryActionError("Nome do funil inválido (mínimo 2 caracteres).");
+      return;
+    }
+
+    if (telemetryFunnelSteps.length < 2) {
+      setTelemetryActionError("Define pelo menos 2 passos no funil.");
+      return;
+    }
+
+    const keys = new Set<string>();
+    const catalogEventNames = new Set(
+      (telemetryCatalog?.items ?? []).map((entry) => entry.eventName),
+    );
+    const normalizedSteps: Array<{
+      key: string;
+      eventName: string;
+      required: boolean;
+      withinMinutes: number | null;
+    }> = [];
+
+    for (const step of telemetryFunnelSteps) {
+      const key = step.key.trim().toLowerCase();
+      if (!TELEMETRY_FUNNEL_STEP_KEY_PATTERN.test(key)) {
+        setTelemetryActionError(
+          `Chave de passo inválida (${step.key || "vazio"}). Usa minúsculas, números e . _ : -`,
+        );
+        return;
+      }
+      if (keys.has(key)) {
+        setTelemetryActionError(`Chave de passo duplicada: ${key}`);
+        return;
+      }
+      keys.add(key);
+
+      const eventName = step.eventName.trim();
+      if (!eventName) {
+        setTelemetryActionError(`Evento em falta no passo ${key}.`);
+        return;
+      }
+      if (catalogEventNames.size > 0 && !catalogEventNames.has(eventName)) {
+        setTelemetryActionError(
+          `Evento fora do catálogo no passo ${key}: ${eventName}. Usa um evento canónico ORYA.`,
+        );
+        return;
+      }
+
+      const withinMinutes = parseTelemetryFunnelWithinMinutes(step.withinMinutes);
+      if (step.withinMinutes.trim() && withinMinutes === null) {
+        setTelemetryActionError(
+          `withinMinutes inválido no passo ${key}. Usa inteiro entre 1 e ${7 * 24 * 60}.`,
+        );
+        return;
+      }
+
+      normalizedSteps.push({
+        key,
+        eventName,
+        required: true,
+        withinMinutes,
+      });
+    }
+
+    setTelemetryFunnelSaveBusy(true);
+    try {
+      const editingId = telemetryFunnelEditingId;
+      const url = editingId
+        ? `${orgApiBase}/telemetry/funnels/${editingId}`
+        : `${orgApiBase}/telemetry/funnels`;
+      const method = editingId ? "PATCH" : "POST";
+
+      const payloadBody = editingId
+        ? {
+            name,
+            description: telemetryFunnelDescription.trim() || null,
+            isActive: telemetryFunnelIsActive,
+            steps: normalizedSteps,
+          }
+        : {
+            name,
+            description: telemetryFunnelDescription.trim() || null,
+            isActive: telemetryFunnelIsActive,
+            steps: normalizedSteps,
+          };
+
+      const res = await fetch(url, {
+        method,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payloadBody),
+      });
+
+      const payload = await res.json().catch(() => null);
+      const body = unwrapEnvelope(payload) as Record<string, unknown> | null;
+      const ok = res.ok && body?.ok !== false;
+      if (!ok) {
+        const errorCode =
+          (body?.error as string | undefined) ??
+          (payload && typeof payload === "object"
+            ? (payload as Record<string, unknown>).error
+            : undefined) ??
+          `HTTP_${res.status}`;
+        throw new Error(String(errorCode));
+      }
+
+      setTelemetryActionInfo(editingId ? "Funil atualizado." : "Funil criado.");
+      resetTelemetryFunnelDraft();
+      await Promise.all([mutateTelemetryFunnels(), mutateTelemetryFunnelResults()]);
+    } catch (error) {
+      setTelemetryActionError(formatAnalyticsError(error));
+    } finally {
+      setTelemetryFunnelSaveBusy(false);
+    }
+  }, [
+    telemetryFunnelName,
+    telemetryFunnelSteps,
+    telemetryFunnelEditingId,
+    telemetryFunnelDescription,
+    telemetryFunnelIsActive,
+    telemetryCatalog,
+    orgApiBase,
+    resetTelemetryFunnelDraft,
+    mutateTelemetryFunnels,
+    mutateTelemetryFunnelResults,
+  ]);
+
+  const toggleTelemetryFunnelActive = useCallback(
+    async (funnel: TelemetryFunnelDefinitionResponse) => {
+      setTelemetryActionError(null);
+      setTelemetryActionInfo(null);
+      const busyKey = `funnel:${funnel.id}`;
+      setTelemetryFunnelBusyKey(busyKey);
+      try {
+        const res = await fetch(`${orgApiBase}/telemetry/funnels/${funnel.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ isActive: !funnel.isActive }),
+        });
+        const payload = await res.json().catch(() => null);
+        const body = unwrapEnvelope(payload) as Record<string, unknown> | null;
+        const ok = res.ok && body?.ok !== false;
+        if (!ok) {
+          const errorCode =
+            (body?.error as string | undefined) ??
+            (payload && typeof payload === "object"
+              ? (payload as Record<string, unknown>).error
+              : undefined) ??
+            `HTTP_${res.status}`;
+          throw new Error(String(errorCode));
+        }
+
+        setTelemetryActionInfo(funnel.isActive ? "Funil desativado." : "Funil ativado.");
+        await Promise.all([mutateTelemetryFunnels(), mutateTelemetryFunnelResults()]);
+      } catch (error) {
+        setTelemetryActionError(formatAnalyticsError(error));
+      } finally {
+        setTelemetryFunnelBusyKey((current) => (current === busyKey ? null : current));
+      }
+    },
+    [mutateTelemetryFunnelResults, mutateTelemetryFunnels, orgApiBase],
+  );
+
   const refreshCurrentView = useCallback(async () => {
     if (view === "overview") await Promise.all([mutateOverview(), mutateSeries()]);
     if (view === "conversion") await mutateConversion();
@@ -599,7 +1133,15 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
     if (view === "buyers") await Promise.all([mutateEvents(), mutateBuyers()]);
     if (view === "time-series") await mutateSeries();
     if (view === "dimensions") await mutateDimensions();
-    if (view === "telemetry") await Promise.all([mutateTelemetryOverview(), mutateTelemetryEvents()]);
+    if (view === "telemetry") {
+      await Promise.all([
+        mutateTelemetryOverview(),
+        mutateTelemetryEvents(),
+        mutateTelemetryFunnels(),
+        mutateTelemetryFunnelResults(),
+        mutateTelemetryCatalog(),
+      ]);
+    }
   }, [
     mutateBuyers,
     mutateCohorts,
@@ -608,8 +1150,11 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
     mutateEvents,
     mutateOverview,
     mutateSeries,
+    mutateTelemetryFunnelResults,
+    mutateTelemetryFunnels,
     mutateTelemetryEvents,
     mutateTelemetryOverview,
+    mutateTelemetryCatalog,
     view,
   ]);
 
@@ -723,9 +1268,48 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
     () => (telemetryOverview?.incidents ?? []).filter((item) => item.status !== "RESOLVED"),
     [telemetryOverview?.incidents],
   );
+  const telemetryIncidentKpis = telemetryOverview?.incidentKpis ?? null;
   const telemetryActiveRules = useMemo(
     () => (telemetryOverview?.rules ?? []).filter((item) => item.isActive),
     [telemetryOverview?.rules],
+  );
+  const telemetryFunnelsById = useMemo(() => {
+    const map = new Map<string, TelemetryFunnelDefinitionResponse>();
+    for (const item of telemetryFunnels?.items ?? []) {
+      map.set(item.id, item);
+    }
+    return map;
+  }, [telemetryFunnels?.items]);
+  const telemetryActiveFunnels = useMemo(
+    () => (telemetryFunnels?.items ?? []).filter((item) => item.isActive),
+    [telemetryFunnels?.items],
+  );
+  const telemetryOwnFunnels = useMemo(
+    () => (telemetryFunnels?.items ?? []).filter((item) => item.organizationId === orgId),
+    [orgId, telemetryFunnels?.items],
+  );
+  const telemetryCatalogEventNames = useMemo(
+    () => new Set((telemetryCatalog?.items ?? []).map((item) => item.eventName)),
+    [telemetryCatalog?.items],
+  );
+  const telemetryDraftUnknownEvents = useMemo(() => {
+    const unknown = new Set<string>();
+    for (const step of telemetryFunnelSteps) {
+      const eventName = step.eventName.trim();
+      if (!eventName) continue;
+      if (!telemetryCatalogEventNames.has(eventName)) {
+        unknown.add(eventName);
+      }
+    }
+    return Array.from(unknown);
+  }, [telemetryCatalogEventNames, telemetryFunnelSteps]);
+  const telemetryFunnelRows = useMemo(
+    () =>
+      (telemetryFunnelResults?.items ?? []).slice(0, 40).map((item) => ({
+        ...item,
+        funnelName: telemetryFunnelsById.get(item.funnelId)?.name ?? item.funnelId,
+      })),
+    [telemetryFunnelResults?.items, telemetryFunnelsById],
   );
   const activeFilters = useMemo(() => {
     const chips = [
@@ -1256,13 +1840,33 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
 
       {view === "telemetry" && (
         <ViewSection
-          loading={telemetryOverviewLoading || telemetryEventsLoading}
-          error={telemetryOverviewError ?? telemetryEventsError}
-          onRetry={() => void Promise.all([mutateTelemetryOverview(), mutateTelemetryEvents()])}
+          loading={
+            telemetryOverviewLoading ||
+            telemetryEventsLoading ||
+            telemetryFunnelsLoading ||
+            telemetryFunnelResultsLoading ||
+            telemetryCatalogLoading
+          }
+          error={
+            telemetryOverviewError ??
+            telemetryEventsError ??
+            telemetryFunnelsError ??
+            telemetryFunnelResultsError ??
+            telemetryCatalogError
+          }
+          onRetry={() =>
+            void Promise.all([
+              mutateTelemetryOverview(),
+              mutateTelemetryEvents(),
+              mutateTelemetryFunnels(),
+              mutateTelemetryFunnelResults(),
+              mutateTelemetryCatalog(),
+            ])
+          }
           empty={!telemetryOverview}
           emptyLabel="Sem telemetria para o período selecionado."
         >
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
             <MetricCard label="Eventos" value={String(telemetryOverview?.totals.totalEvents ?? 0)} />
             <MetricCard label="Erros" value={String(telemetryOverview?.totals.errorEvents ?? 0)} />
             <MetricCard
@@ -1272,6 +1876,20 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
             <MetricCard
               label="Actores únicos"
               value={String(telemetryOverview?.totals.uniqueActors ?? 0)}
+            />
+            <MetricCard label="Incidentes activos" value={String(telemetryOpenIncidents.length)} />
+            <MetricCard label="Funis activos" value={String(telemetryActiveFunnels.length)} />
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <MetricCard label="MTTA" value={formatTelemetryMinutes(telemetryIncidentKpis?.mttaMinutes)} />
+            <MetricCard label="MTTR" value={formatTelemetryMinutes(telemetryIncidentKpis?.mttrMinutes)} />
+            <MetricCard
+              label={`Breaches ACK (${telemetryIncidentKpis?.ackSlaMinutes ?? 15}m)`}
+              value={String(telemetryIncidentKpis?.ackSlaBreaches ?? 0)}
+            />
+            <MetricCard
+              label={`Breaches Resolve (${telemetryIncidentKpis?.resolveSlaMinutes ?? 120}m)`}
+              value={String(telemetryIncidentKpis?.resolveSlaBreaches ?? 0)}
             />
           </div>
 
@@ -1337,7 +1955,7 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
             </Panel>
 
             <Panel title="Regras e avaliação" subtitle="Regras activas e avaliação manual imediata">
-              <div className="mb-3">
+              <div className="mb-3 flex flex-wrap gap-2">
                 <button
                   type="button"
                   className="rounded-md border border-[#22D3EE]/45 bg-[#22D3EE]/14 px-3 py-1.5 text-xs font-semibold text-white transition hover:border-[#22D3EE]/70 hover:bg-[#22D3EE]/24 disabled:opacity-60"
@@ -1346,11 +1964,99 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
                 >
                   {telemetryEvaluateBusy ? "A avaliar..." : "Avaliar alertas agora"}
                 </button>
+                <button
+                  type="button"
+                  className="rounded-md border border-emerald-300/45 bg-emerald-300/12 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:border-emerald-300/70 hover:bg-emerald-300/24 disabled:opacity-60"
+                  onClick={() => void runTelemetryRecompute()}
+                  disabled={telemetryRecomputeBusy}
+                >
+                  {telemetryRecomputeBusy ? "A recomputar..." : "Recompute org"}
+                </button>
+                <select
+                  className="rounded-md border border-white/20 bg-black/25 px-2 py-1.5 text-xs text-white outline-none transition focus:border-cyan-300/80"
+                  value={telemetryExportDataset}
+                  onChange={(event) => setTelemetryExportDataset(event.target.value as TelemetryExportDataset)}
+                >
+                  <option value="events">Exportar: eventos</option>
+                  <option value="incidents">Exportar: incidentes</option>
+                  <option value="rules">Exportar: regras</option>
+                  <option value="funnels">Exportar: funis</option>
+                  <option value="funnel_results">Exportar: resultados funil</option>
+                </select>
+                <select
+                  className="rounded-md border border-white/20 bg-black/25 px-2 py-1.5 text-xs text-white outline-none transition focus:border-cyan-300/80"
+                  value={telemetryExportFormat}
+                  onChange={(event) => setTelemetryExportFormat(event.target.value as TelemetryExportFormat)}
+                >
+                  <option value="csv">CSV</option>
+                  <option value="pdf">PDF</option>
+                </select>
+                <button
+                  type="button"
+                  className="rounded-md border border-[#22D3EE]/40 bg-[#22D3EE]/10 px-3 py-1.5 text-xs font-semibold text-[#CFFAFE] transition hover:bg-[#22D3EE]/20 disabled:opacity-60"
+                  onClick={() => void runTelemetryExportPreview()}
+                  disabled={telemetryExportPreviewBusy}
+                >
+                  {telemetryExportPreviewBusy ? "A gerar preview..." : "Pré-visualizar"}
+                </button>
+                <button
+                  type="button"
+                  className="rounded-md border border-white/25 bg-white/[0.08] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/[0.16]"
+                  onClick={() => runTelemetryExport()}
+                >
+                  {telemetryExportFormat === "pdf" ? "Exportar PDF" : "Exportar CSV"}
+                </button>
               </div>
               {telemetryLastEvaluation ? (
                 <div className="mb-3 rounded-lg border border-white/15 bg-black/20 px-3 py-2 text-[11px] text-white/75">
                   {telemetryLastEvaluation.evaluatedRules} regras · {telemetryLastEvaluation.openedIncidents} novos incidentes ·{" "}
                   {telemetryLastEvaluation.resolvedIncidents} resolvidos
+                </div>
+              ) : null}
+              {telemetryLastRecompute ? (
+                <div className="mb-3 rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-3 py-2 text-[11px] text-emerald-100">
+                  Recompute: {telemetryLastRecompute.rollup.written} linhas rollup ·{" "}
+                  {telemetryLastRecompute.funnels?.rowsWritten ?? 0} linhas de funil.
+                </div>
+              ) : null}
+              {telemetryExportPreview ? (
+                <div className="mb-3 rounded-xl border border-white/14 bg-black/20 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs font-semibold text-white">
+                      Preview exportação ({telemetryExportPreview.dataset})
+                    </p>
+                    <p className="text-[11px] text-white/60">
+                      {telemetryExportPreview.rowCount} linhas
+                      {telemetryExportPreview.truncated ? ` · amostra ${telemetryExportPreview.sampleSize}` : ""}
+                    </p>
+                  </div>
+                  <div className="mt-2 overflow-auto rounded-lg border border-white/10">
+                    <table className="min-w-full text-[11px]">
+                      <thead className="bg-white/5 text-left uppercase tracking-[0.12em] text-white/50">
+                        <tr>
+                          {telemetryExportPreview.headers.map((header) => (
+                            <th key={`telemetry-preview-head-${header}`} className="px-2 py-1.5">
+                              {header}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/10">
+                        {telemetryExportPreview.rows.map((row, rowIndex) => (
+                          <tr key={`telemetry-preview-row-${rowIndex}`} className="bg-black/15">
+                            {telemetryExportPreview.headers.map((header, colIndex) => (
+                              <td
+                                key={`telemetry-preview-cell-${rowIndex}-${header}`}
+                                className="max-w-[260px] truncate px-2 py-1.5 text-white/80"
+                              >
+                                {row[colIndex] || "-"}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               ) : null}
               <div className="space-y-2">
@@ -1373,6 +2079,256 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
               </div>
             </Panel>
           </div>
+
+          <div className="grid gap-3 lg:grid-cols-2">
+            <Panel title="Funis activos" subtitle="Definições activas para análise desta organização">
+              <div className="space-y-2">
+                {telemetryActiveFunnels.map((funnel) => (
+                  <div key={funnel.id} className="rounded-xl border border-white/12 bg-black/20 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-white">{funnel.name}</p>
+                      <span className="rounded-md border border-white/20 bg-white/[0.08] px-2 py-0.5 text-[11px] text-white/70">
+                        {funnel.steps.length} passos
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[11px] text-white/60">
+                      {funnel.steps
+                        .slice(0, 4)
+                        .map((step) => step.key)
+                        .join(" → ")}
+                      {funnel.steps.length > 4 ? " → ..." : ""}
+                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      {funnel.organizationId === orgId ? (
+                        <>
+                          <button
+                            type="button"
+                            className="rounded-md border border-[#22D3EE]/40 bg-[#22D3EE]/10 px-2 py-1 text-[11px] font-semibold text-[#CFFAFE] transition hover:bg-[#22D3EE]/20 disabled:opacity-60"
+                            onClick={() => startEditTelemetryFunnel(funnel)}
+                            disabled={telemetryFunnelSaveBusy}
+                          >
+                            Editar
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-md border border-white/20 bg-white/[0.08] px-2 py-1 text-[11px] font-semibold text-white transition hover:bg-white/[0.15] disabled:opacity-60"
+                            onClick={() => void toggleTelemetryFunnelActive(funnel)}
+                            disabled={telemetryFunnelBusyKey === `funnel:${funnel.id}` || telemetryFunnelSaveBusy}
+                          >
+                            {telemetryFunnelBusyKey === `funnel:${funnel.id}`
+                              ? "A atualizar..."
+                              : "Desativar"}
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-[11px] text-white/50">Funil global (só leitura)</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {telemetryActiveFunnels.length === 0 ? (
+                  <EmptyState label="Sem funis activos definidos para esta organização." />
+                ) : null}
+              </div>
+            </Panel>
+
+            <Panel title="Resultados de funil" subtitle="Conversões recentes por passo (hora)">
+              <div className="space-y-2">
+                {telemetryFunnelRows.map((item) => (
+                  <div key={item.id} className="rounded-xl border border-white/12 bg-black/20 px-3 py-2 text-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="truncate text-white">{item.funnelName}</p>
+                      <span className="text-[11px] text-white/60">{formatDateTime(item.bucketStart)}</span>
+                    </div>
+                    <p className="mt-1 text-xs text-white/65">
+                      Passo <span className="font-semibold text-white">{item.stepKey}</span> · entraram {item.enteredCount} · converteram {item.convertedCount} · taxa{" "}
+                      {toPctFromBps(item.conversionRateBps)}
+                    </p>
+                  </div>
+                ))}
+                {telemetryFunnelRows.length === 0 ? (
+                  <EmptyState label="Sem resultados de funil para esta janela." />
+                ) : null}
+              </div>
+            </Panel>
+          </div>
+
+          <Panel
+            title="Gestão de funis da organização"
+            subtitle="Cria e mantém funis próprios para análises de conversão"
+          >
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="flex flex-col gap-1">
+                <span className="text-[11px] uppercase tracking-[0.16em] text-white/60">Nome</span>
+                <input
+                  className="h-10 rounded-xl border border-white/20 bg-[#141414] px-3 text-sm text-white outline-none transition focus:border-cyan-300/80"
+                  value={telemetryFunnelName}
+                  onChange={(event) => setTelemetryFunnelName(event.target.value)}
+                  placeholder="ex: Checkout principal"
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-[11px] uppercase tracking-[0.16em] text-white/60">Estado</span>
+                <select
+                  className="h-10 rounded-xl border border-white/20 bg-[#141414] px-3 text-sm text-white outline-none transition focus:border-cyan-300/80"
+                  value={telemetryFunnelIsActive ? "true" : "false"}
+                  onChange={(event) => setTelemetryFunnelIsActive(event.target.value === "true")}
+                >
+                  <option value="true">Ativo</option>
+                  <option value="false">Inativo</option>
+                </select>
+              </label>
+            </div>
+
+            <label className="mt-3 flex flex-col gap-1">
+              <span className="text-[11px] uppercase tracking-[0.16em] text-white/60">Descrição</span>
+              <textarea
+                className="min-h-20 rounded-xl border border-white/20 bg-[#141414] px-3 py-2 text-sm text-white outline-none transition focus:border-cyan-300/80"
+                value={telemetryFunnelDescription}
+                onChange={(event) => setTelemetryFunnelDescription(event.target.value)}
+                placeholder="Descrição operacional do funil."
+              />
+            </label>
+
+            <div className="mt-3 rounded-xl border border-white/12 bg-black/20 px-3 py-2 text-[11px] text-white/70">
+              Catálogo ORYA disponível: {telemetryCatalog?.total ?? telemetryCatalog?.items?.length ?? 0} eventos canónicos.
+              {telemetryDraftUnknownEvents.length > 0 ? (
+                <p className="mt-1 text-amber-200">
+                  Eventos fora de catálogo no draft: {telemetryDraftUnknownEvents.join(", ")}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="mt-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/65">Passos</p>
+                <button
+                  type="button"
+                  className="rounded-md border border-emerald-300/40 bg-emerald-300/10 px-2 py-1 text-[11px] font-semibold text-emerald-100 transition hover:bg-emerald-300/20"
+                  onClick={addTelemetryFunnelStep}
+                >
+                  + Adicionar passo
+                </button>
+              </div>
+              {telemetryFunnelSteps.map((step, index) => (
+                <div
+                  key={`draft-step-${index}`}
+                  className="rounded-xl border border-white/12 bg-black/20 p-3"
+                >
+                  <div className="grid gap-2 md:grid-cols-[1fr_2fr_1fr_auto]">
+                    <input
+                      className="h-9 rounded-lg border border-white/20 bg-[#121212] px-2 text-sm text-white outline-none transition focus:border-cyan-300/80"
+                      value={step.key}
+                      onChange={(event) =>
+                        updateTelemetryFunnelStep(index, { key: event.target.value })
+                      }
+                      placeholder="key (ex: start)"
+                    />
+                    <input
+                      className="h-9 rounded-lg border border-white/20 bg-[#121212] px-2 text-sm text-white outline-none transition focus:border-cyan-300/80"
+                      value={step.eventName}
+                      onChange={(event) =>
+                        updateTelemetryFunnelStep(index, { eventName: event.target.value })
+                      }
+                      list="telemetry-catalog-event-names"
+                      placeholder="eventName (ex: checkout.flow.started)"
+                    />
+                    <input
+                      className="h-9 rounded-lg border border-white/20 bg-[#121212] px-2 text-sm text-white outline-none transition focus:border-cyan-300/80"
+                      value={step.withinMinutes}
+                      onChange={(event) =>
+                        updateTelemetryFunnelStep(index, { withinMinutes: event.target.value })
+                      }
+                      inputMode="numeric"
+                      placeholder="within min"
+                    />
+                    <button
+                      type="button"
+                      className="rounded-lg border border-rose-300/35 bg-rose-500/10 px-2 text-[11px] font-semibold text-rose-100 transition hover:bg-rose-500/20 disabled:opacity-50"
+                      onClick={() => removeTelemetryFunnelStep(index)}
+                      disabled={telemetryFunnelSteps.length <= 2}
+                    >
+                      Remover
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <datalist id="telemetry-catalog-event-names">
+              {(telemetryCatalog?.items ?? []).map((entry) => (
+                <option key={`catalog-${entry.eventName}`} value={entry.eventName}>
+                  {entry.owner}
+                </option>
+              ))}
+            </datalist>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="rounded-md border border-[#22D3EE]/45 bg-[#22D3EE]/14 px-3 py-1.5 text-xs font-semibold text-white transition hover:border-[#22D3EE]/70 hover:bg-[#22D3EE]/24 disabled:opacity-60"
+                onClick={() => void saveTelemetryFunnel()}
+                disabled={telemetryFunnelSaveBusy}
+              >
+                {telemetryFunnelSaveBusy
+                  ? "A gravar..."
+                  : telemetryFunnelEditingId
+                    ? "Guardar alterações"
+                    : "Criar funil"}
+              </button>
+              {telemetryFunnelEditingId ? (
+                <button
+                  type="button"
+                  className="rounded-md border border-white/25 bg-white/[0.08] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/[0.16]"
+                  onClick={resetTelemetryFunnelDraft}
+                  disabled={telemetryFunnelSaveBusy}
+                >
+                  Cancelar edição
+                </button>
+              ) : null}
+            </div>
+
+            <div className="mt-4 rounded-xl border border-white/12 bg-black/20 p-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/65">
+                Funis próprios existentes
+              </p>
+              <div className="mt-2 space-y-2">
+                {telemetryOwnFunnels.map((funnel) => (
+                  <div key={`own-${funnel.id}`} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-sm">
+                    <div>
+                      <p className="font-semibold text-white">{funnel.name}</p>
+                      <p className="text-[11px] text-white/60">{funnel.steps.length} passos</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="rounded-md border border-[#22D3EE]/40 bg-[#22D3EE]/10 px-2 py-1 text-[11px] font-semibold text-[#CFFAFE] transition hover:bg-[#22D3EE]/20"
+                        onClick={() => startEditTelemetryFunnel(funnel)}
+                      >
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-md border border-white/20 bg-white/[0.08] px-2 py-1 text-[11px] font-semibold text-white transition hover:bg-white/[0.15] disabled:opacity-60"
+                        onClick={() => void toggleTelemetryFunnelActive(funnel)}
+                        disabled={telemetryFunnelBusyKey === `funnel:${funnel.id}`}
+                      >
+                        {telemetryFunnelBusyKey === `funnel:${funnel.id}`
+                          ? "A atualizar..."
+                          : funnel.isActive
+                            ? "Desativar"
+                            : "Ativar"}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {telemetryOwnFunnels.length === 0 ? (
+                  <p className="text-xs text-white/60">
+                    Ainda não existem funis próprios nesta organização.
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          </Panel>
 
           <Panel title="Timeline de telemetria" subtitle="Eventos totais vs erros">
             {telemetryTimelineData.length > 0 ? (

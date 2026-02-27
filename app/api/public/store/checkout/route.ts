@@ -26,6 +26,7 @@ import { isValidPhone, normalizePhone, resolvePhoneNormalizationOptions } from "
 import { getStripeEnv, tryGetStripePublishableKeyForEnv } from "@/lib/stripeKeys";
 import { resolveStorePolicy } from "@/lib/store/policySettings";
 import { buildStorePolicySnapshot, STORE_POLICY_SNAPSHOT_VERSION } from "@/lib/store/policySnapshot";
+import { PaymentSubject } from "@/lib/payments/kernel";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const CART_SESSION_COOKIE = "orya_store_cart";
@@ -915,6 +916,7 @@ async function _POST(req: NextRequest) {
         orgId: organizationId,
         sourceType: SourceType.STORE_ORDER,
         sourceId: String(order.id),
+        paymentSubject: PaymentSubject.STORE_ORDER,
         amountCents: totalCents,
         currency: store.currency,
         intentParams: {

@@ -468,6 +468,14 @@ async function _POST(req: NextRequest) {
     const shouldCancelEvent =
       requestedStatus === "CANCELLED" &&
       String(event.status) !== "CANCELLED";
+    const eventEndsAt = event.endsAt ? new Date(event.endsAt) : null;
+    const endedByDate =
+      eventEndsAt && Number.isFinite(eventEndsAt.getTime())
+        ? eventEndsAt.getTime() < Date.now()
+        : false;
+    if (shouldCancelEvent && (String(event.status) === "FINISHED" || endedByDate)) {
+      return fail(409, "EVENT_ALREADY_FINISHED");
+    }
 
     const hasLifecycleAction = shouldDeleteDraft || shouldCancelEvent;
     if (hasLifecycleAction) {

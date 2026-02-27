@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { getClientIp } from "@/lib/auth/requestValidation";
 import { getRedisCommandClient, isRedisConfigured } from "@/lib/redis/client";
+import { logWarn } from "@/lib/observability/logger";
 
 type RateLimitOptions = {
   windowMs: number;
@@ -81,10 +82,10 @@ export async function rateLimit(
       if (mustUseDistributed) {
         throw new RateLimitBackendUnavailableError("Redis indisponível para rate limit distribuído.");
       }
-      console.warn(
-        "[rateLimit] redis falhou, a usar memória.",
-        err
-      );
+      logWarn("rate_limit.redis_fallback_memory", {
+        backend: "redis",
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 

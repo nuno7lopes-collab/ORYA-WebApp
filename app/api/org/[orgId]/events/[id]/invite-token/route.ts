@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated } from "@/lib/security";
 import { ensureGroupMemberModuleAccess } from "@/lib/organizationMemberAccess";
-import { OrganizationModule } from "@prisma/client";
+import { OrganizationModule, TicketTypeStatus } from "@prisma/client";
 import { issueInviteToken } from "@/lib/invites/inviteTokens";
 import { normalizeEmail } from "@/lib/utils/email";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
@@ -56,6 +56,9 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       select: {
         id: true,
         organizationId: true,
+        status: true,
+        endsAt: true,
+        isDeleted: true,
         organization: { select: { officialEmail: true, officialEmailVerifiedAt: true } },
       },
     });
@@ -67,6 +70,19 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     }
     if (event.organizationId == null) {
       return fail(403, "FORBIDDEN");
+    }
+    if (event.isDeleted) {
+      return fail(409, "EVENT_CLOSED");
+    }
+    const normalizedEventStatus = String(event.status ?? "").toUpperCase();
+    if (normalizedEventStatus === "CANCELLED") {
+      return fail(409, "EVENT_CANCELLED");
+    }
+    if (normalizedEventStatus !== "PUBLISHED" && normalizedEventStatus !== "DATE_CHANGED") {
+      return fail(409, "EVENT_CLOSED");
+    }
+    if (event.endsAt && event.endsAt.getTime() <= Date.now()) {
+      return fail(409, "EVENT_CLOSED");
     }
     const organizationId = event.organizationId;
 
@@ -120,10 +136,16 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
     const ticketType = await prisma.ticketType.findUnique({
       where: { id: ticketTypeId },
-      select: { id: true, eventId: true },
+      select: { id: true, eventId: true, publicAccess: true, status: true },
     });
     if (!ticketType || ticketType.eventId !== eventId) {
       return fail(400, "INVITE_TICKET_TYPE_INVALID");
+    }
+    if (ticketType.publicAccess !== false) {
+      return fail(409, "INVITE_TICKET_MUST_BE_PRIVATE");
+    }
+    if (ticketType.status === TicketTypeStatus.CLOSED) {
+      return fail(409, "INVITE_TICKET_CLOSED");
     }
 
     const issued = await prisma.$transaction(async (tx) => {

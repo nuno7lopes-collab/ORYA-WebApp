@@ -12,10 +12,12 @@ import {
   parsePositiveInt,
 } from "@/app/api/padel/partnerships/_shared";
 
-function isActiveBooking(status: string, pendingExpiresAt: Date | null) {
+function isActiveBooking(status: string, pendingExpiresAt: Date | null, startsAt: Date) {
   if (["CONFIRMED", "DISPUTED", "NO_SHOW"].includes(status)) return true;
   if (["PENDING_CONFIRMATION", "PENDING"].includes(status)) {
-    return pendingExpiresAt ? pendingExpiresAt > new Date() : false;
+    const now = new Date();
+    if (startsAt <= now) return false;
+    return pendingExpiresAt ? pendingExpiresAt > now : false;
   }
   return false;
 }
@@ -206,8 +208,8 @@ async function _POST(req: NextRequest) {
     });
 
     const overlappingBookings = bookings.filter((reservation) => {
-      const { status, pendingExpiresAt } = reservation;
-      if (!isActiveBooking(status, pendingExpiresAt)) return false;
+      const { status, pendingExpiresAt, startsAt: bookingStartsAt } = reservation;
+      if (!isActiveBooking(status, pendingExpiresAt, bookingStartsAt)) return false;
       const bookingEnd = new Date(reservation.startsAt.getTime() + reservation.durationMinutes * 60 * 1000);
       return reservation.startsAt < endsAt && startsAt < bookingEnd;
     });

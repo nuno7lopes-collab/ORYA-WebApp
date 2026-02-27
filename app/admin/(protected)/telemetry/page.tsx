@@ -62,6 +62,24 @@ type TelemetryIncident = {
   rule?: { id: string; name: string } | null;
 };
 
+type TelemetryIncidentKpis = {
+  from: string;
+  to: string;
+  windowMinutes: number;
+  totalIncidents: number;
+  openIncidents: number;
+  acknowledgedIncidents: number;
+  resolvedIncidents: number;
+  acknowledgedSamples: number;
+  resolvedSamples: number;
+  mttaMinutes: number | null;
+  mttrMinutes: number | null;
+  ackSlaMinutes: number;
+  resolveSlaMinutes: number;
+  ackSlaBreaches: number;
+  resolveSlaBreaches: number;
+};
+
 type TelemetryEvaluationResult = {
   evaluatedRules: number;
   evaluatedOrganizations: number;
@@ -87,6 +105,51 @@ type RecomputePayload = {
     written: number;
   };
   evaluation: TelemetryEvaluationResult | null;
+  funnels: {
+    from: string;
+    to: string;
+    bucketUnit: "HOUR" | "DAY";
+    organizations: number;
+    funnels: number;
+    buckets: number;
+    rowsDeleted: number;
+    rowsWritten: number;
+    skippedFunnels: number;
+    errors: number;
+  } | null;
+};
+
+type TelemetryFunnelStep = {
+  key: string;
+  eventName: string;
+  required: boolean;
+  withinMinutes: number | null;
+};
+
+type TelemetryFunnelDefinition = {
+  id: string;
+  organizationId: number | null;
+  name: string;
+  description: string | null;
+  steps: TelemetryFunnelStep[];
+  isActive: boolean;
+  createdByUserId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type TelemetryFunnelResult = {
+  id: number;
+  funnelId: string;
+  organizationId: number | null;
+  bucketStart: string;
+  bucketUnit: "HOUR" | "DAY";
+  stepKey: string;
+  enteredCount: number;
+  convertedCount: number;
+  conversionRateBps: number;
+  createdAt: string;
+  updatedAt: string;
 };
 
 type EventsPayload = {
@@ -108,6 +171,18 @@ type EventsPayload = {
     actor?: { id: string; name: string | null; email: string | null } | null;
   }>;
   pagination: { hasMore: boolean; nextCursor: string | null };
+};
+
+type TelemetryExportDataset = "events" | "incidents" | "rules" | "funnels" | "funnel_results";
+type TelemetryExportFormat = "csv" | "pdf";
+
+type TelemetryExportPreviewPayload = {
+  dataset: TelemetryExportDataset;
+  headers: string[];
+  rows: string[][];
+  rowCount: number;
+  sampleSize: number;
+  truncated: boolean;
 };
 
 type RuleDraft = {
@@ -184,6 +259,12 @@ function formatDateTime(value: string) {
   }).format(parsed);
 }
 
+function formatDurationMinutes(value: number | null) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+  if (value >= 120) return `${(value / 60).toFixed(1)} h`;
+  return `${value.toFixed(1)} min`;
+}
+
 function parseScopedOrgId(raw: string) {
   const parsed = Number(raw.trim());
   if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed <= 0) return null;
@@ -210,11 +291,18 @@ export default function AdminTelemetryPage() {
   const [sourceType, setSourceType] = useState("");
   const [severity, setSeverity] = useState("");
   const [incidentStatuses, setIncidentStatuses] = useState("OPEN,ACKNOWLEDGED");
+  const [exportDataset, setExportDataset] = useState<TelemetryExportDataset>("events");
+  const [exportFormat, setExportFormat] = useState<TelemetryExportFormat>("csv");
+  const [exportPreviewBusy, setExportPreviewBusy] = useState(false);
+  const [exportPreview, setExportPreview] = useState<TelemetryExportPreviewPayload | null>(null);
 
   const [overview, setOverview] = useState<OverviewPayload | null>(null);
+  const [incidentKpis, setIncidentKpis] = useState<TelemetryIncidentKpis | null>(null);
   const [events, setEvents] = useState<EventsPayload["items"]>([]);
   const [incidents, setIncidents] = useState<TelemetryIncident[]>([]);
   const [rules, setRules] = useState<TelemetryRule[]>([]);
+  const [funnels, setFunnels] = useState<TelemetryFunnelDefinition[]>([]);
+  const [funnelResults, setFunnelResults] = useState<TelemetryFunnelResult[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
 
@@ -222,6 +310,8 @@ export default function AdminTelemetryPage() {
   const [loadingEvents, setLoadingEvents] = useState(false);
   const [loadingIncidents, setLoadingIncidents] = useState(false);
   const [loadingRules, setLoadingRules] = useState(false);
+  const [loadingFunnels, setLoadingFunnels] = useState(false);
+  const [loadingFunnelResults, setLoadingFunnelResults] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const [opsError, setOpsError] = useState<string | null>(null);
@@ -263,18 +353,24 @@ export default function AdminTelemetryPage() {
     const params = new URLSearchParams();
     if (scopedOrgId) params.set("orgId", String(scopedOrgId));
     if (incidentStatuses !== "ALL") params.set("statuses", incidentStatuses);
+    if (severity) params.set("severities", severity);
+    if (query.trim()) params.set("q", query.trim());
     params.set("take", "150");
     return params;
-  }, [incidentStatuses, scopedOrgId]);
+  }, [incidentStatuses, query, scopedOrgId, severity]);
 
   const loadOverview = useCallback(async () => {
     setLoadingOverview(true);
     try {
       const params = buildBaseParams();
-      const payload = await fetchJson<{ overview: OverviewPayload }>(
+      const payload = await fetchJson<{
+        overview: OverviewPayload;
+        incidentKpis?: TelemetryIncidentKpis;
+      }>(
         `/api/admin/telemetry/overview?${params.toString()}`,
       );
       setOverview(payload.overview);
+      setIncidentKpis(payload.incidentKpis ?? null);
     } finally {
       setLoadingOverview(false);
     }
@@ -325,6 +421,38 @@ export default function AdminTelemetryPage() {
     }
   }, [scopedOrgId]);
 
+  const loadFunnels = useCallback(async () => {
+    setLoadingFunnels(true);
+    try {
+      const params = new URLSearchParams();
+      params.set("includeGlobal", "true");
+      params.set("activeOnly", "false");
+      if (scopedOrgId) params.set("orgId", String(scopedOrgId));
+      const payload = await fetchJson<{ items: TelemetryFunnelDefinition[] }>(
+        `/api/admin/telemetry/funnels?${params.toString()}`,
+      );
+      setFunnels(payload.items);
+    } finally {
+      setLoadingFunnels(false);
+    }
+  }, [scopedOrgId]);
+
+  const loadFunnelResults = useCallback(async () => {
+    setLoadingFunnelResults(true);
+    try {
+      const params = new URLSearchParams();
+      params.set("take", "150");
+      params.set("bucketUnit", "HOUR");
+      if (scopedOrgId) params.set("orgId", String(scopedOrgId));
+      const payload = await fetchJson<{ items: TelemetryFunnelResult[] }>(
+        `/api/admin/telemetry/funnels/results?${params.toString()}`,
+      );
+      setFunnelResults(payload.items);
+    } finally {
+      setLoadingFunnelResults(false);
+    }
+  }, [scopedOrgId]);
+
   const reloadAll = useCallback(async () => {
     setError(null);
     try {
@@ -333,11 +461,13 @@ export default function AdminTelemetryPage() {
         loadEvents({ reset: true }),
         loadIncidents(),
         loadRules(),
+        loadFunnels(),
+        loadFunnelResults(),
       ]);
     } catch (err) {
       setError(formatApiError(err));
     }
-  }, [loadEvents, loadIncidents, loadOverview, loadRules]);
+  }, [loadEvents, loadFunnelResults, loadFunnels, loadIncidents, loadOverview, loadRules]);
 
   useEffect(() => {
     void reloadAll();
@@ -373,6 +503,7 @@ export default function AdminTelemetryPage() {
       params.set("bucket", "HOUR");
       params.set("hours", String(hours));
       params.set("evaluate", "true");
+      params.set("funnels", "true");
       if (scopedOrgId) params.set("orgId", String(scopedOrgId));
 
       const payload = await fetchJson<RecomputePayload>(
@@ -381,7 +512,11 @@ export default function AdminTelemetryPage() {
       );
       setLastRecompute(payload);
       if (payload.evaluation) setLastEvaluation(payload.evaluation);
-      setOpsInfo("Rollup e avaliação executados com sucesso.");
+      setOpsInfo(
+        payload.funnels
+          ? "Rollup, avaliação e recompute de funis executados com sucesso."
+          : "Rollup e avaliação executados com sucesso.",
+      );
       await reloadAll();
     } catch (err) {
       setOpsError(formatApiError(err));
@@ -389,6 +524,69 @@ export default function AdminTelemetryPage() {
       setRecomputeBusy(false);
     }
   }, [hours, reloadAll, scopedOrgId]);
+
+  const runExportCsv = useCallback(() => {
+    setOpsError(null);
+    setOpsInfo(null);
+    setExportPreview(null);
+
+    const params = buildBaseParams();
+    params.set("dataset", exportDataset);
+    params.set("format", exportFormat);
+    params.set("take", "2500");
+
+    if (exportDataset === "events") {
+      if (query.trim()) params.set("q", query.trim());
+      if (sourceType) params.set("sourceType", sourceType);
+      if (severity) params.set("severity", severity);
+    } else if (exportDataset === "incidents") {
+      params.set("statuses", incidentStatuses === "ALL" ? "ALL" : incidentStatuses);
+    } else if (exportDataset === "rules" || exportDataset === "funnels") {
+      params.set("includeGlobal", "true");
+      params.set("activeOnly", "false");
+    } else if (exportDataset === "funnel_results") {
+      params.set("bucketUnit", "HOUR");
+    }
+
+    window.open(`/api/admin/telemetry/export?${params.toString()}`, "_blank", "noopener,noreferrer");
+    setOpsInfo(exportFormat === "pdf" ? "Exportação PDF iniciada." : "Exportação CSV iniciada.");
+  }, [buildBaseParams, exportDataset, exportFormat, incidentStatuses, query, severity, sourceType]);
+
+  const runPreviewExport = useCallback(async () => {
+    setOpsError(null);
+    setOpsInfo(null);
+    setExportPreviewBusy(true);
+    try {
+      const params = buildBaseParams();
+      params.set("dataset", exportDataset);
+      params.set("take", "300");
+      params.set("sample", "20");
+
+      if (exportDataset === "events") {
+        if (query.trim()) params.set("q", query.trim());
+        if (sourceType) params.set("sourceType", sourceType);
+        if (severity) params.set("severity", severity);
+      } else if (exportDataset === "incidents") {
+        params.set("statuses", incidentStatuses === "ALL" ? "ALL" : incidentStatuses);
+      } else if (exportDataset === "rules" || exportDataset === "funnels") {
+        params.set("includeGlobal", "true");
+        params.set("activeOnly", "false");
+      } else if (exportDataset === "funnel_results") {
+        params.set("bucketUnit", "HOUR");
+      }
+
+      const payload = await fetchJson<{ preview: TelemetryExportPreviewPayload }>(
+        `/api/admin/telemetry/export/preview?${params.toString()}`,
+      );
+      setExportPreview(payload.preview);
+      setOpsInfo("Pré-visualização carregada.");
+    } catch (err) {
+      setOpsError(formatApiError(err));
+      setExportPreview(null);
+    } finally {
+      setExportPreviewBusy(false);
+    }
+  }, [buildBaseParams, exportDataset, incidentStatuses, query, severity, sourceType]);
 
   const applyIncidentAction = useCallback(
     async (incidentId: string, action: "ACK" | "RESOLVE") => {
@@ -434,6 +632,29 @@ export default function AdminTelemetryPage() {
       }
     },
     [loadOverview, loadRules],
+  );
+
+  const toggleFunnel = useCallback(
+    async (funnel: TelemetryFunnelDefinition) => {
+      setOpsError(null);
+      setOpsInfo(null);
+      const busyKey = `funnel:${funnel.id}`;
+      setActionBusyKey(busyKey);
+      try {
+        await fetchJson<{ item: TelemetryFunnelDefinition }>(`/api/admin/telemetry/funnels/${funnel.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ isActive: !funnel.isActive }),
+        });
+        setOpsInfo(funnel.isActive ? "Funil desativado." : "Funil ativado.");
+        await Promise.all([loadFunnels(), loadFunnelResults()]);
+      } catch (err) {
+        setOpsError(formatApiError(err));
+      } finally {
+        setActionBusyKey((current) => (current === busyKey ? null : current));
+      }
+    },
+    [loadFunnelResults, loadFunnels],
   );
 
   const createRule = useCallback(async () => {
@@ -512,6 +733,15 @@ export default function AdminTelemetryPage() {
     () => rules.filter((item) => item.isActive).length,
     [rules],
   );
+  const activeFunnelsCount = useMemo(
+    () => funnels.filter((item) => item.isActive).length,
+    [funnels],
+  );
+  const funnelsById = useMemo(() => {
+    const map = new Map<string, TelemetryFunnelDefinition>();
+    for (const item of funnels) map.set(item.id, item);
+    return map;
+  }, [funnels]);
 
   return (
     <AdminLayout
@@ -627,6 +857,35 @@ export default function AdminTelemetryPage() {
             >
               {recomputeBusy ? "A recomputar..." : "Recompute + avaliar"}
             </button>
+            <select
+              className="admin-select h-9 min-w-[180px]"
+              value={exportDataset}
+              onChange={(event) => setExportDataset(event.target.value as TelemetryExportDataset)}
+            >
+              <option value="events">Exportar: eventos</option>
+              <option value="incidents">Exportar: incidentes</option>
+              <option value="rules">Exportar: regras</option>
+              <option value="funnels">Exportar: funis</option>
+              <option value="funnel_results">Exportar: resultados de funil</option>
+            </select>
+            <select
+              className="admin-select h-9 min-w-[120px]"
+              value={exportFormat}
+              onChange={(event) => setExportFormat(event.target.value as TelemetryExportFormat)}
+            >
+              <option value="csv">CSV</option>
+              <option value="pdf">PDF</option>
+            </select>
+            <button
+              className="admin-button-secondary"
+              onClick={() => void runPreviewExport()}
+              disabled={exportPreviewBusy}
+            >
+              {exportPreviewBusy ? "A gerar preview..." : "Pré-visualizar"}
+            </button>
+            <button className="admin-button-secondary" onClick={() => void runExportCsv()}>
+              {exportFormat === "pdf" ? "Exportar PDF" : "Exportar CSV"}
+            </button>
             <p className="text-xs text-white/60">{summaryText}</p>
           </div>
 
@@ -639,9 +898,16 @@ export default function AdminTelemetryPage() {
                 </p>
               ) : null}
               {lastRecompute ? (
-                <p className="mt-1">
-                  Último recompute: {lastRecompute.rollup.written} linhas escritas ({lastRecompute.rollup.bucketUnit}).
-                </p>
+                <div className="mt-1 space-y-1">
+                  <p>
+                    Último recompute: {lastRecompute.rollup.written} linhas escritas ({lastRecompute.rollup.bucketUnit}).
+                  </p>
+                  {lastRecompute.funnels ? (
+                    <p>
+                      Funis: {lastRecompute.funnels.rowsWritten} linhas ({lastRecompute.funnels.funnels} funis).
+                    </p>
+                  ) : null}
+                </div>
               ) : null}
             </div>
           )}
@@ -665,7 +931,45 @@ export default function AdminTelemetryPage() {
           </div>
         )}
 
-        <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+        {exportPreview && (
+          <div className="admin-card p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-white">
+                Pré-visualização exportação ({exportPreview.dataset})
+              </p>
+              <p className="text-xs text-white/60">
+                {exportPreview.rowCount} linhas carregadas
+                {exportPreview.truncated ? ` · amostra ${exportPreview.sampleSize}` : ""}
+              </p>
+            </div>
+            <div className="mt-3 overflow-auto rounded-xl border border-white/10">
+              <table className="min-w-full text-xs">
+                <thead className="bg-white/5 text-left uppercase tracking-[0.12em] text-white/55">
+                  <tr>
+                    {exportPreview.headers.map((header) => (
+                      <th key={`preview-head-${header}`} className="px-2 py-2">
+                        {header}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/10">
+                  {exportPreview.rows.map((row, rowIndex) => (
+                    <tr key={`preview-row-${rowIndex}`} className="bg-black/15">
+                      {exportPreview.headers.map((header, colIndex) => (
+                        <td key={`preview-cell-${rowIndex}-${header}`} className="max-w-[280px] truncate px-2 py-1.5 text-white/80">
+                          {row[colIndex] || "-"}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-7">
           <div className="admin-card p-4">
             <p className="text-[10px] uppercase tracking-[0.2em] text-white/45">Eventos</p>
             <p className="mt-2 text-2xl font-semibold text-white">{overview?.totals.totalEvents ?? "-"}</p>
@@ -691,6 +995,45 @@ export default function AdminTelemetryPage() {
           <div className="admin-card p-4">
             <p className="text-[10px] uppercase tracking-[0.2em] text-white/45">Regras activas</p>
             <p className="mt-2 text-2xl font-semibold text-white">{activeRulesCount}</p>
+          </div>
+          <div className="admin-card p-4">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-white/45">Funis activos</p>
+            <p className="mt-2 text-2xl font-semibold text-white">{activeFunnelsCount}</p>
+          </div>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="admin-card p-4">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-white/45">MTTA</p>
+            <p className="mt-2 text-2xl font-semibold text-white">{formatDurationMinutes(incidentKpis?.mttaMinutes ?? null)}</p>
+            <p className="mt-1 text-[11px] text-white/55">
+              {incidentKpis ? `${incidentKpis.acknowledgedSamples} amostras` : "Sem dados"}
+            </p>
+          </div>
+          <div className="admin-card p-4">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-white/45">MTTR</p>
+            <p className="mt-2 text-2xl font-semibold text-white">{formatDurationMinutes(incidentKpis?.mttrMinutes ?? null)}</p>
+            <p className="mt-1 text-[11px] text-white/55">
+              {incidentKpis ? `${incidentKpis.resolvedSamples} amostras` : "Sem dados"}
+            </p>
+          </div>
+          <div className="admin-card p-4">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-white/45">
+              Breaches ACK ({incidentKpis?.ackSlaMinutes ?? 15}m)
+            </p>
+            <p className="mt-2 text-2xl font-semibold text-white">{incidentKpis?.ackSlaBreaches ?? "-"}</p>
+            <p className="mt-1 text-[11px] text-white/55">
+              {incidentKpis ? `${incidentKpis.acknowledgedIncidents} reconhecidos` : "Sem dados"}
+            </p>
+          </div>
+          <div className="admin-card p-4">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-white/45">
+              Breaches Resolve ({incidentKpis?.resolveSlaMinutes ?? 120}m)
+            </p>
+            <p className="mt-2 text-2xl font-semibold text-white">{incidentKpis?.resolveSlaBreaches ?? "-"}</p>
+            <p className="mt-1 text-[11px] text-white/55">
+              {incidentKpis ? `${incidentKpis.resolvedIncidents} resolvidos` : "Sem dados"}
+            </p>
           </div>
         </div>
 
@@ -977,6 +1320,87 @@ export default function AdminTelemetryPage() {
           </div>
         </div>
 
+        <div className="grid gap-4 xl:grid-cols-2">
+          <div className="admin-card p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Funis</p>
+              {loadingFunnels && <p className="text-xs text-white/50">A carregar...</p>}
+            </div>
+            <p className="mt-1 text-xs text-white/60">
+              Definições de funis para análise de conversão por organização/global.
+            </p>
+
+            <div className="mt-3 space-y-2">
+              {funnels.map((funnel) => {
+                const busy = actionBusyKey === `funnel:${funnel.id}`;
+                return (
+                  <div key={funnel.id} className="rounded-xl border border-white/12 bg-white/[0.03] px-3 py-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-white">{funnel.name}</p>
+                      <span className="text-[11px] text-white/55">
+                        {funnel.organizationId ? `Org #${funnel.organizationId}` : "Global"}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-white/65">
+                      {funnel.steps.map((step) => step.key).slice(0, 4).join(" → ")}
+                      {funnel.steps.length > 4 ? " → ..." : ""} · {funnel.steps.length} passos
+                    </p>
+                    <div className="mt-2 flex items-center gap-2">
+                      <button
+                        className="admin-button-secondary px-2 py-1 text-[11px]"
+                        onClick={() => void toggleFunnel(funnel)}
+                        disabled={busy || Boolean(actionBusyKey)}
+                      >
+                        {busy ? "A atualizar..." : funnel.isActive ? "Desativar" : "Ativar"}
+                      </button>
+                      <span className="text-[11px] text-white/55">
+                        {funnel.isActive ? "Ativo" : "Inativo"} · atualizado {formatDateTime(funnel.updatedAt)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+              {!funnels.length && !loadingFunnels && (
+                <p className="rounded-xl border border-white/10 bg-black/20 px-3 py-4 text-sm text-white/65">
+                  Sem funis para os filtros atuais.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="admin-card p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Resultados de funil</p>
+              {loadingFunnelResults && <p className="text-xs text-white/50">A carregar...</p>}
+            </div>
+            <p className="mt-1 text-xs text-white/60">
+              Conversão por passo e bucket horário para monitorização operacional.
+            </p>
+
+            <div className="mt-3 space-y-2">
+              {funnelResults.map((item) => (
+                <div key={item.id} className="rounded-xl border border-white/12 bg-white/[0.03] px-3 py-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-white">
+                      {funnelsById.get(item.funnelId)?.name ?? item.funnelId}
+                    </p>
+                    <span className="text-[11px] text-white/55">{formatDateTime(item.bucketStart)}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-white/65">
+                    Passo {item.stepKey} · entraram {item.enteredCount} · converteram {item.convertedCount} · taxa{" "}
+                    {formatBpsToPct(item.conversionRateBps)}
+                  </p>
+                </div>
+              ))}
+              {!funnelResults.length && !loadingFunnelResults && (
+                <p className="rounded-xl border border-white/10 bg-black/20 px-3 py-4 text-sm text-white/65">
+                  Sem resultados de funil para os filtros atuais.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
         <div className="admin-card p-4">
           <div className="flex items-center justify-between">
             <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Eventos recentes</p>
@@ -1037,7 +1461,12 @@ export default function AdminTelemetryPage() {
           </div>
         </div>
 
-        {(loadingOverview || loadingEvents || loadingIncidents || loadingRules) && (
+        {(loadingOverview ||
+          loadingEvents ||
+          loadingIncidents ||
+          loadingRules ||
+          loadingFunnels ||
+          loadingFunnelResults) && (
           <p className="text-xs text-white/50">Atualização em curso...</p>
         )}
       </section>

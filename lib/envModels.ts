@@ -167,6 +167,8 @@ export const ENV_MODELS = new Set([
   'TelemetryAlertIncident',
   'TelemetryAlertRule',
   'TelemetryEvent',
+  'TelemetryFunnelDefinition',
+  'TelemetryFunnelResult',
   'TelemetryIngestError',
   'TelemetryMetricRollup',
   'Tournament',

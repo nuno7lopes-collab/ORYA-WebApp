@@ -105,9 +105,10 @@ function buildMatchWindow(match: {
   return { start, end };
 }
 
-function isReservationStateActive(status: string, pendingExpiresAt: Date | null, now: Date) {
+function isReservationStateActive(status: string, pendingExpiresAt: Date | null, startsAt: Date, now: Date) {
   if (["CONFIRMED", "DISPUTED", "NO_SHOW"].includes(status)) return true;
   if (["PENDING_CONFIRMATION", "PENDING"].includes(status)) {
+    if (startsAt <= now) return false;
     return pendingExpiresAt ? pendingExpiresAt > now : false;
   }
   return false;
@@ -301,7 +302,7 @@ async function _POST(req: NextRequest) {
 
     bookings.forEach((booking) => {
       if (!booking.courtId) return;
-      if (!isReservationStateActive(booking["status"], booking.pendingExpiresAt, now)) return;
+      if (!isReservationStateActive(booking["status"], booking.pendingExpiresAt, booking.startsAt, now)) return;
       bookingsByCourt.get(booking.courtId)?.push(booking);
     });
 

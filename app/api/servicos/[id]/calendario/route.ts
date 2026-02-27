@@ -486,7 +486,11 @@ async function _GET(
                 {
                   OR: [
                     { status: { in: ["CONFIRMED", "DISPUTED", "NO_SHOW"] } },
-                    { status: { in: ["PENDING_CONFIRMATION", "PENDING"] }, pendingExpiresAt: { gt: now } },
+                    {
+                      status: { in: ["PENDING_CONFIRMATION", "PENDING"] },
+                      pendingExpiresAt: { gt: now },
+                      startsAt: { gt: now },
+                    },
                   ],
                 },
               ],
@@ -626,7 +630,7 @@ async function _GET(
             startsAt: { lt: rangeEnd, gte: new Date(rangeStart.getTime() - 24 * 60 * 60 * 1000) },
             OR: [
               { status: { in: ["CONFIRMED", "DISPUTED", "NO_SHOW"] } },
-              { status: { in: ["PENDING_CONFIRMATION", "PENDING"] }, pendingExpiresAt: { gt: now } },
+              { status: { in: ["PENDING_CONFIRMATION", "PENDING"] }, pendingExpiresAt: { gt: now }, startsAt: { gt: now } },
             ],
           },
           select: { startsAt: true, durationMinutes: true, professionalId: true, resourceId: true },
@@ -934,7 +938,11 @@ async function _GET(
               {
                 OR: [
                   { status: { in: ["CONFIRMED", "DISPUTED", "NO_SHOW"] } },
-                  { status: { in: ["PENDING_CONFIRMATION", "PENDING"] }, pendingExpiresAt: { gt: now } },
+                  {
+                    status: { in: ["PENDING_CONFIRMATION", "PENDING"] },
+                    pendingExpiresAt: { gt: now },
+                    startsAt: { gt: now },
+                  },
                 ],
               },
             ],
@@ -1085,7 +1093,7 @@ async function _GET(
           startsAt: { lt: end, gte: new Date(start.getTime() - 24 * 60 * 60 * 1000) },
           OR: [
             { status: { in: ["CONFIRMED", "DISPUTED", "NO_SHOW"] } },
-            { status: { in: ["PENDING_CONFIRMATION", "PENDING"] }, pendingExpiresAt: { gt: now } },
+            { status: { in: ["PENDING_CONFIRMATION", "PENDING"] }, pendingExpiresAt: { gt: now }, startsAt: { gt: now } },
           ],
         },
         select: { startsAt: true, durationMinutes: true, professionalId: true, resourceId: true },

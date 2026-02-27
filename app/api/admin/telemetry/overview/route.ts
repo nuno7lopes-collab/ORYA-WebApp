@@ -3,7 +3,11 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { getTelemetryOverview } from "@/domain/telemetry/query";
-import { listTelemetryAlertRules, listTelemetryIncidents } from "@/domain/telemetry/alerts";
+import {
+  getTelemetryIncidentKpis,
+  listTelemetryAlertRules,
+  listTelemetryIncidents,
+} from "@/domain/telemetry/alerts";
 import { logError } from "@/lib/observability/logger";
 
 function parseHours(value: string | null) {
@@ -28,8 +32,10 @@ async function _GET(req: NextRequest) {
 
     const organizationId = parseOrganizationId(req.nextUrl.searchParams.get("orgId"));
     const hours = parseHours(req.nextUrl.searchParams.get("hours"));
+    const now = new Date();
+    const from = new Date(now.getTime() - hours * 60 * 60 * 1000);
 
-    const [overview, openIncidents, alertRules] = await Promise.all([
+    const [overview, openIncidents, alertRules, incidentKpis] = await Promise.all([
       getTelemetryOverview({ organizationId, hours }),
       listTelemetryIncidents({
         organizationId,
@@ -42,6 +48,11 @@ async function _GET(req: NextRequest) {
         activeOnly: true,
         take: 30,
       }),
+      getTelemetryIncidentKpis({
+        organizationId,
+        from,
+        to: now,
+      }),
     ]);
 
     return jsonWrap(
@@ -50,6 +61,7 @@ async function _GET(req: NextRequest) {
         overview,
         incidents: openIncidents,
         rules: alertRules,
+        incidentKpis,
       },
       { status: 200, req },
     );

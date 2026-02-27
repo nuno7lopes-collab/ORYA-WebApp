@@ -36,10 +36,23 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ slug: str
 
     const event = await prisma.event.findUnique({
       where: { slug },
-      select: { id: true },
+      select: { id: true, status: true, endsAt: true, isDeleted: true },
     });
     if (!event) {
       return fail(404, "EVENT_NOT_FOUND");
+    }
+    if (event.isDeleted) {
+      return respondOk(ctx, { invited: false, reason: "EVENT_CLOSED" });
+    }
+    const normalizedEventStatus = String(event.status ?? "").toUpperCase();
+    if (normalizedEventStatus === "CANCELLED") {
+      return respondOk(ctx, { invited: false, reason: "EVENT_CANCELLED" });
+    }
+    if (normalizedEventStatus !== "PUBLISHED" && normalizedEventStatus !== "DATE_CHANGED") {
+      return respondOk(ctx, { invited: false, reason: "EVENT_CLOSED" });
+    }
+    if (event.endsAt && event.endsAt.getTime() <= Date.now()) {
+      return respondOk(ctx, { invited: false, reason: "EVENT_CLOSED" });
     }
 
     // Convites são exclusivamente por bilhete via token, sem lista de convites por evento.

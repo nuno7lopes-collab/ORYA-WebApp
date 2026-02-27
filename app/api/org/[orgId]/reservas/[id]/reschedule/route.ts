@@ -481,7 +481,7 @@ async function _POST(
     const activeBookingStatusFilter = {
       OR: [
         { status: { in: activeBookedStatuses } },
-        { status: { in: activePendingStatuses }, pendingExpiresAt: { gt: now } },
+        { status: { in: activePendingStatuses }, pendingExpiresAt: { gt: now }, startsAt: { gt: now } },
       ],
     };
     const scopeFilters =
@@ -726,7 +726,7 @@ async function _POST(
     }
 
     const { ip, userAgent } = getRequestMeta(req);
-    const expiresAt = new Date(Math.min(now.getTime() + 24 * 60 * 60 * 1000, booking.startsAt.getTime() - 2 * 60 * 60 * 1000));
+    const expiresAt = new Date(Math.min(now.getTime() + 24 * 60 * 60 * 1000, startsAt.getTime() - 2 * 60 * 60 * 1000));
     if (expiresAt.getTime() <= now.getTime()) {
       return fail(ctx, 400, "RESCHEDULE_WINDOW_EXPIRED", "Prazo de reagendamento expirado.");
     }

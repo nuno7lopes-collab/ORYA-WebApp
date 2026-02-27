@@ -810,27 +810,36 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
               </Notice>
             ) : null}
 
-            <div className="grid gap-3 md:grid-cols-2">
-              <Field label="Com devoluções?">
-                <select
-                  className={INPUT}
-                  value={storePolicyDraft.returnPolicyMode}
-                  onChange={(event) =>
-                    setStorePolicyDraft((prev) => ({
-                      ...prev,
-                      returnPolicyMode: event.target.value as StorePolicyMode,
-                    }))
-                  }
-                >
-                  <option value="WINDOW_DAYS">Sim</option>
-                  <option value="NO_RETURNS">Não</option>
-                </select>
-              </Field>
+            <Field label="Com devoluções?">
+              <select
+                className={INPUT}
+                value={storePolicyDraft.returnPolicyMode}
+                onChange={(event) =>
+                  setStorePolicyDraft((prev) => ({
+                    ...prev,
+                    returnPolicyMode: event.target.value as StorePolicyMode,
+                  }))
+                }
+              >
+                <option value="WINDOW_DAYS">Sim</option>
+                <option value="NO_RETURNS">Não</option>
+              </select>
+            </Field>
 
-              <Field label="Link público legal">
-                <input className={cn(INPUT, "opacity-80")} value={storePolicyData?.policy.legalUrl ?? ""} readOnly />
-              </Field>
-            </div>
+            {canonicalLegalUrl ? (
+              <Notice tone="info">
+                O URL legal da loja é assumido automaticamente:
+                {" "}
+                <a className="underline" href={canonicalLegalUrl}>
+                  {canonicalLegalUrl}
+                </a>
+                .
+              </Notice>
+            ) : (
+              <Notice tone="warning">
+                O URL legal da loja é assumido automaticamente quando a organização tiver username público ativo.
+              </Notice>
+            )}
 
             {storePolicyDraft.returnPolicyMode === "WINDOW_DAYS" ? (
               <Field label="Prazo de devolução (em dias)">

@@ -521,7 +521,7 @@ const OBJECTIVE_TABS: ObjectiveTab[] = ["create", "manage", "promote", "analyze"
 type SalesRange = "7d" | "30d" | "90d" | "365d" | "all";
 type FinanceFocusView = "overview" | "payouts" | "refunds";
 
-type EventStatusFilter = "all" | "active" | "terminated" | "draft";
+type EventStatusFilter = "all" | "active" | "terminated";
 
 const DATE_LOCALE = "pt-PT";
 const DATE_TIMEZONE = "Europe/Lisbon";
@@ -675,10 +675,7 @@ function OrganizacaoPageInner({
           ? (sectionParamRaw as MarketingSectionKey)
           : null;
 
-    if (
-      statusParam &&
-      ["all", "active", "terminated", "draft"].includes(statusParam)
-    ) {
+    if (statusParam && ["all", "active", "terminated"].includes(statusParam)) {
       setEventStatusFilter(statusParam as EventStatusFilter);
     }
     if (catParam) setEventCategoryFilter(catParam);
@@ -1608,7 +1605,7 @@ function OrganizacaoPageInner({
       {
         label: `${managePrimaryLabel} publicados`,
         value: overview ? overview.activeEventsCount : "—",
-        hint: `${managePrimaryLabel} PUBLISHED ligados a ti`,
+        hint: `${managePrimaryLabel} ativos ligados a ti`,
       },
     ];
   }, [overview, managePrimaryLabel, salesUnitHint, salesUnitLabel]);
@@ -1626,7 +1623,6 @@ function OrganizacaoPageInner({
     all: "Todos",
     active: "Ativos",
     terminated: "Terminados",
-    draft: "Rascunhos",
   };
   const timeScopeLabels: Record<"all" | "upcoming" | "ongoing" | "past", string> = {
     all: "Todos",
@@ -1660,7 +1656,6 @@ function OrganizacaoPageInner({
       const isFinished =
         ev.status === "CANCELLED" ||
         ev.status === "FINISHED" ||
-        ev.status === "ARCHIVED" ||
         (endsAt ? endsAt.getTime() < now.getTime() : false);
       const isOngoing =
         startsAt && endsAt
@@ -1784,7 +1779,7 @@ function OrganizacaoPageInner({
         section?: string;
         marketing?: string;
       };
-      if (parsed.status && ["all", "active", "terminated", "draft"].includes(parsed.status)) {
+      if (parsed.status && ["all", "active", "terminated"].includes(parsed.status)) {
         setEventStatusFilter(parsed.status as EventStatusFilter);
       }
       if (parsed.cat) setEventCategoryFilter(parsed.cat);
@@ -1811,11 +1806,9 @@ function OrganizacaoPageInner({
       const isTerminated =
         ev.status === "CANCELLED" ||
         ev.status === "FINISHED" ||
-        ev.status === "ARCHIVED" ||
         isFinished;
       const isActive = !isTerminated && ev.status !== "DRAFT" && (isFuture || isOngoing);
 
-      if (eventStatusFilter === "draft" && ev.status !== "DRAFT") return false;
       if (eventStatusFilter === "active" && !isActive) return false;
       if (eventStatusFilter === "terminated" && !isTerminated) return false;
 
@@ -3700,7 +3693,7 @@ function OrganizacaoPageInner({
                         {manageFiltersOpen === "status" && (
                           <div className="absolute left-0 z-[var(--z-popover)] mt-2 w-48 rounded-2xl orya-menu-surface p-2 backdrop-blur-2xl animate-popover">
                             <p className="px-2 pb-1 text-[10px] uppercase tracking-[0.22em] text-white/50">Estado</p>
-                            {(["all", "active", "terminated", "draft"] as const).map((key) => (
+                            {(["all", "active", "terminated"] as const).map((key) => (
                               <button
                                 key={key}
                                 type="button"
@@ -4141,7 +4134,10 @@ function OrganizacaoPageInner({
                                 ev.status === "CANCELLED"
                                   ? { label: "Cancelado", classes: "border-red-400/60 bg-red-500/10 text-red-100" }
                                   : ev.status === "DRAFT"
-                                    ? { label: "Rascunho", classes: "border-white/20 bg-white/5 text-white/70" }
+                                    ? {
+                                        label: "Nao publicado (legado)",
+                                        classes: "border-amber-300/60 bg-amber-500/10 text-amber-100",
+                                      }
                                     : isOngoing
                                       ? { label: "A decorrer", classes: "border-emerald-400/60 bg-emerald-500/10 text-emerald-100" }
                                       : isFuture
@@ -4153,7 +4149,6 @@ function OrganizacaoPageInner({
                               const isTerminated =
                                 ev.status === "CANCELLED" ||
                                 ev.status === "FINISHED" ||
-                                ev.status === "ARCHIVED" ||
                                 isFinished;
                               const actionMode: "cancel" | "delete" | null =
                                 ev.status === "DRAFT" ? "delete" : isTerminated ? null : "cancel";
@@ -4186,12 +4181,14 @@ function OrganizacaoPageInner({
                                   <td className="px-4 py-3 text-[12px] font-semibold text-white">{revenue} €</td>
                                   <td className="px-4 py-3 text-right text-[11px]">
                                     <div className="flex flex-wrap items-center justify-end gap-2">
-                                      <Link
-                                        href={`${eventRouteBase}/${ev.id}/edit`}
-                                        className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
-                                      >
-                                        Editar
-                                      </Link>
+                                      {ev.status !== "CANCELLED" ? (
+                                        <Link
+                                          href={`${eventRouteBase}/${ev.id}/edit`}
+                                          className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
+                                        >
+                                          Editar
+                                        </Link>
+                                      ) : null}
                                       <Link
                                         href={`${eventRouteBase}/${ev.id}`}
                                         className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
@@ -4261,7 +4258,10 @@ function OrganizacaoPageInner({
                             ev.status === "CANCELLED"
                               ? { label: "Cancelado", classes: "border-red-400/60 bg-red-500/10 text-red-100" }
                               : ev.status === "DRAFT"
-                                  ? { label: "Rascunho", classes: "border-white/20 bg-white/5 text-white/70" }
+                                  ? {
+                                      label: "Nao publicado (legado)",
+                                      classes: "border-amber-300/60 bg-amber-500/10 text-amber-100",
+                                    }
                                   : isOngoing
                                     ? { label: "A decorrer", classes: "border-emerald-400/60 bg-emerald-500/10 text-emerald-100" }
                                     : isFuture
@@ -4272,7 +4272,6 @@ function OrganizacaoPageInner({
                           const isTerminated =
                             ev.status === "CANCELLED" ||
                             ev.status === "FINISHED" ||
-                            ev.status === "ARCHIVED" ||
                             isFinished;
                           const actionMode: "cancel" | "delete" | null =
                             ev.status === "DRAFT" ? "delete" : isTerminated ? null : "cancel";
@@ -4343,12 +4342,14 @@ function OrganizacaoPageInner({
                                 </div>
 
                                 <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
-                                  <Link
-                                    href={`${eventRouteBase}/${ev.id}/edit`}
-                                    className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
-                                  >
-                                    Editar
-                                  </Link>
+                                  {ev.status !== "CANCELLED" ? (
+                                    <Link
+                                      href={`${eventRouteBase}/${ev.id}/edit`}
+                                      className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
+                                    >
+                                      Editar
+                                    </Link>
+                                  ) : null}
                                   <Link
                                     href={`${eventRouteBase}/${ev.id}`}
                                     className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
@@ -4766,7 +4767,10 @@ function OrganizacaoPageInner({
                         ev.status === "CANCELLED"
                           ? { label: "Cancelado", classes: "border-red-400/50 bg-red-500/10 text-red-100" }
                           : ev.status === "DRAFT"
-                            ? { label: "Rascunho", classes: "border-white/20 bg-white/5 text-white/70" }
+                            ? {
+                                label: "Nao publicado (legado)",
+                                classes: "border-amber-300/60 bg-amber-500/10 text-amber-100",
+                              }
                             : { label: "Publicado", classes: "border-sky-400/50 bg-sky-500/10 text-sky-100" };
                       return (
                         <tr key={ev.id}>

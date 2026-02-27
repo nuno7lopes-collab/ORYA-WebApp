@@ -113,6 +113,34 @@ describe("payments intent access gate", () => {
     expect(evaluateEventAccess).toHaveBeenCalled();
   });
 
+  it("aceita DATE_CHANGED como estado ativo para checkout", async () => {
+    vi.resetModules();
+    POST = (await import("@/app/api/payments/intent/route")).POST;
+    prisma.$queryRaw.mockResolvedValue([
+      {
+        id: 1,
+        organization_id: 1,
+        is_deleted: false,
+        status: "DATE_CHANGED",
+        type: "ORGANIZATION_EVENT",
+        ends_at: null,
+      },
+    ]);
+    evaluateEventAccess.mockResolvedValue({ allowed: false, reasonCode: "INVITE_ONLY" });
+    const req = new NextRequest("http://localhost/api/payments/intent", {
+      method: "POST",
+      body: JSON.stringify({
+        slug: "slug",
+        items: [{ ticketId: 1, quantity: 1 }],
+        guest: { name: "Guest", email: "g@x.com", consent: true },
+      }),
+    });
+    const res = await POST(req);
+    const body = await res.json();
+    expect(body.errorCode).toBe("INVITE_ONLY");
+    expect(evaluateEventAccess).toHaveBeenCalled();
+  });
+
   it("guardrail: LEGACY_INTENT_DISABLED nao pode voltar ao default invertido", async () => {
     const { readFileSync } = await import("node:fs");
     const { resolve } = await import("node:path");

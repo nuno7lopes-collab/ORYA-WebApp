@@ -417,7 +417,7 @@ async function _POST(
     const activeBookingStateFilter: Prisma.BookingWhereInput = {
       OR: [
         { status: { in: [...activeBookedStates] as any } },
-        { status: { in: [...activePendingStates] as any }, pendingExpiresAt: { gt: now } },
+        { status: { in: [...activePendingStates] as any }, pendingExpiresAt: { gt: now }, startsAt: { gt: now } },
       ],
     };
     const scopeFilters =
@@ -689,7 +689,7 @@ async function _POST(
             {
               OR: [
                 { status: { in: ["CONFIRMED", "DISPUTED", "NO_SHOW"] } },
-                { status: { in: ["PENDING_CONFIRMATION", "PENDING"] }, pendingExpiresAt: { gt: now } },
+                { status: { in: ["PENDING_CONFIRMATION", "PENDING"] }, pendingExpiresAt: { gt: now }, startsAt: { gt: now } },
               ],
             },
             lockedScopeFilter,

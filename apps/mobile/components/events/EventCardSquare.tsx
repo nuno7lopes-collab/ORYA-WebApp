@@ -86,7 +86,6 @@ const resolveCountdownTag = (
 const resolveStatusTag = (status: PublicEventCard["status"] | undefined, t: (key: string) => string) => {
   if (status === "CANCELLED") return t("events:status.cancelled");
   if (status === "PAST") return t("events:status.ended");
-  if (status === "DRAFT") return t("events:status.draft");
   return null;
 };
 
@@ -188,7 +187,7 @@ export const EventCardSquare = memo(function EventCardSquare({
   const nowPulse = useRef(new Animated.Value(1)).current;
   const statusBadge = resolveStatusTag(event.status, t) ?? statusTag ?? null;
   const showStatusBadge =
-    statusBadge && (event.status === "CANCELLED" || event.status === "PAST" || event.status === "DRAFT");
+    statusBadge && (event.status === "CANCELLED" || event.status === "PAST");
   const secondaryTag = showStatusBadge ? statusBadge : countdownTag ?? statusTag ?? priceState?.label ?? null;
   const showHeart = showFavorite ?? true;
   const distanceLabel = formatDistanceKm(

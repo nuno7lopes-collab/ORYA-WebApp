@@ -123,7 +123,6 @@ function formatPadelDeadline(value: string | null) {
 function statusTag(status: ExploreItem["status"]) {
   if (status === "CANCELLED") return { text: "Cancelado", className: "text-red-200" };
   if (status === "PAST") return { text: "Já aconteceu", className: "text-white/55" };
-  if (status === "DRAFT") return { text: "Rascunho", className: "text-white/60" };
   return { text: "Em breve", className: "text-[#6BFFFF]" };
 }
 

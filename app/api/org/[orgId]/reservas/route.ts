@@ -1003,7 +1003,7 @@ async function _POST(req: NextRequest) {
           ...scopedConflictFilter,
           OR: [
             { status: { in: ["CONFIRMED", "DISPUTED", "NO_SHOW"] } },
-            { status: { in: ["PENDING_CONFIRMATION", "PENDING"] }, pendingExpiresAt: { gt: now } },
+            { status: { in: ["PENDING_CONFIRMATION", "PENDING"] }, pendingExpiresAt: { gt: now }, startsAt: { gt: now } },
           ],
         },
         select: { id: true, startsAt: true, durationMinutes: true, professionalId: true, resourceId: true },
@@ -1255,7 +1255,7 @@ async function _POST(req: NextRequest) {
             {
               OR: [
                 { status: { in: ["CONFIRMED", "DISPUTED", "NO_SHOW"] } },
-                { status: { in: ["PENDING_CONFIRMATION", "PENDING"] }, pendingExpiresAt: { gt: now } },
+                { status: { in: ["PENDING_CONFIRMATION", "PENDING"] }, pendingExpiresAt: { gt: now }, startsAt: { gt: now } },
               ],
             },
             lockedScopeFilter,

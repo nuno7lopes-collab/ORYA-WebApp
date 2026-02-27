@@ -48,7 +48,12 @@ beforeEach(() => {
 
 describe("invite token routes access", () => {
   it("bloqueia público quando o token não concede acesso", async () => {
-    prisma.event.findUnique.mockResolvedValue({ id: 1 });
+    prisma.event.findUnique.mockResolvedValue({
+      id: 1,
+      status: "PUBLISHED",
+      endsAt: new Date("2030-01-01T00:00:00.000Z"),
+      isDeleted: false,
+    });
     resolveInviteTokenGrantMock.mockResolvedValue({ ok: false, reason: "INVITE_TOKEN_NOT_ALLOWED" });
     const req = new NextRequest("http://localhost/api/eventos/slug/invite-token", {
       method: "POST",
@@ -65,6 +70,9 @@ describe("invite token routes access", () => {
     prisma.event.findUnique.mockResolvedValue({
       id: 1,
       organizationId: 1,
+      status: "PUBLISHED",
+      endsAt: new Date("2030-01-01T00:00:00.000Z"),
+      isDeleted: false,
       organization: { officialEmail: "a@b.com", officialEmailVerifiedAt: new Date() },
     });
     const req = new NextRequest("http://localhost/api/org/1/events/1/invite-token", {
@@ -75,5 +83,51 @@ describe("invite token routes access", () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.errorCode).toBe("INVITE_TICKET_TYPE_REQUIRED");
+  });
+
+  it("bloqueia emissão org para bilhete público", async () => {
+    prisma.event.findUnique.mockResolvedValue({
+      id: 1,
+      organizationId: 1,
+      status: "PUBLISHED",
+      endsAt: new Date("2030-01-01T00:00:00.000Z"),
+      isDeleted: false,
+      organization: { officialEmail: "a@b.com", officialEmailVerifiedAt: new Date() },
+    });
+    prisma.ticketType.findUnique.mockResolvedValue({
+      id: 10,
+      eventId: 1,
+      publicAccess: true,
+      status: "ON_SALE",
+    });
+
+    const req = new NextRequest("http://localhost/api/org/1/events/1/invite-token", {
+      method: "POST",
+      body: JSON.stringify({ email: "a@b.com", ticketTypeId: 10 }),
+    });
+    const res = await orgInviteToken(req, { params: Promise.resolve({ id: "1" }) });
+    const body = await res.json();
+    expect(res.status).toBe(409);
+    expect(body.errorCode).toBe("INVITE_TICKET_MUST_BE_PRIVATE");
+  });
+
+  it("bloqueia emissão org quando evento está cancelado", async () => {
+    prisma.event.findUnique.mockResolvedValue({
+      id: 1,
+      organizationId: 1,
+      status: "CANCELLED",
+      endsAt: new Date("2030-01-01T00:00:00.000Z"),
+      isDeleted: false,
+      organization: { officialEmail: "a@b.com", officialEmailVerifiedAt: new Date() },
+    });
+
+    const req = new NextRequest("http://localhost/api/org/1/events/1/invite-token", {
+      method: "POST",
+      body: JSON.stringify({ email: "a@b.com", ticketTypeId: 10 }),
+    });
+    const res = await orgInviteToken(req, { params: Promise.resolve({ id: "1" }) });
+    const body = await res.json();
+    expect(res.status).toBe(409);
+    expect(body.errorCode).toBe("EVENT_CANCELLED");
   });
 });

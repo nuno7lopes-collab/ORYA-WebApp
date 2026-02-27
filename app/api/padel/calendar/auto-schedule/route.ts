@@ -142,10 +142,12 @@ const getRequestMeta = (req: NextRequest) => {
   return { ip, userAgent };
 };
 
-const isActiveBooking = (booking: { status: string; pendingExpiresAt: Date | null }) => {
+const isActiveBooking = (booking: { status: string; pendingExpiresAt: Date | null; startsAt: Date }) => {
   if (["CONFIRMED", "DISPUTED", "NO_SHOW"].includes(booking.status)) return true;
   if (["PENDING_CONFIRMATION", "PENDING"].includes(booking.status)) {
-    return booking.pendingExpiresAt ? booking.pendingExpiresAt > new Date() : false;
+    const now = new Date();
+    if (booking.startsAt <= now) return false;
+    return booking.pendingExpiresAt ? booking.pendingExpiresAt > now : false;
   }
   return false;
 };
@@ -563,7 +565,7 @@ async function _POST(req: NextRequest) {
         startsAt: { lt: windowEnd },
         OR: [
           { status: { in: ["CONFIRMED", "DISPUTED", "NO_SHOW"] } },
-          { status: { in: ["PENDING_CONFIRMATION", "PENDING"] }, pendingExpiresAt: { gt: now } },
+          { status: { in: ["PENDING_CONFIRMATION", "PENDING"] }, pendingExpiresAt: { gt: now }, startsAt: { gt: now } },
         ],
       },
       select: {

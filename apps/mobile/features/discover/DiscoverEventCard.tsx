@@ -78,8 +78,6 @@ const resolveStatusLabel = (status?: PublicEventCard["status"], t?: (key: string
       return translate("events:status.cancelled");
     case "PAST":
       return translate("events:status.ended");
-    case "DRAFT":
-      return translate("events:status.draft");
     default:
       return translate("events:status.active");
   }

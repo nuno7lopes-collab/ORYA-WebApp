@@ -337,7 +337,7 @@ async function _GET(req: NextRequest) {
           organizationId: { in: organizationIds },
           OR: [
             { status: { in: ["CONFIRMED", "DISPUTED", "NO_SHOW"] } },
-            { status: { in: ["PENDING_CONFIRMATION", "PENDING"] }, pendingExpiresAt: { gt: now } },
+            { status: { in: ["PENDING_CONFIRMATION", "PENDING"] }, pendingExpiresAt: { gt: now }, startsAt: { gt: now } },
           ],
           startsAt: { lt: endBoundary, gte: new Date(startBoundary.getTime() - 24 * 60 * 60 * 1000) },
         },

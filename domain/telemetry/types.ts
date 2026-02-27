@@ -7,7 +7,7 @@ import {
   type TelemetrySourceType,
 } from "@/domain/telemetry/constants";
 
-const EVENT_NAME_PATTERN = /^[a-zA-Z0-9._:-]{2,120}$/;
+const EVENT_NAME_PATTERN = /^[a-z0-9]+(?:\.[a-z0-9]+){2,7}$/;
 const EVENT_VERSION_PATTERN = /^[0-9A-Za-z._-]{1,32}$/;
 const OUTCOME_PATTERN = /^[a-zA-Z0-9._:-]{1,80}$/;
 const UUID_PATTERN =

@@ -74,6 +74,27 @@ beforeEach(async () => {
 });
 
 describe("organization events create route schedule invariants", () => {
+  it("rejects explicit DRAFT status on create", async () => {
+    const req = new NextRequest("http://localhost/api/org/1/events/create", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Evento com draft",
+        startsAt: "2026-03-01T10:00:00.000Z",
+        endsAt: "2026-03-01T11:00:00.000Z",
+        addressId: "addr-1",
+        status: "DRAFT",
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode).toBe("UNSUPPORTED_EVENT_STATUS_ON_CREATE");
+  });
+
   it("rejects EXTERNAL org requesting PLATFORM payout mode", async () => {
     const req = new NextRequest("http://localhost/api/org/1/events/create", {
       method: "POST",

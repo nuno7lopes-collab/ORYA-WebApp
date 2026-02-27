@@ -45,10 +45,12 @@ function toWindow(match: {
   return { start, end };
 }
 
-function isActiveBooking(status: string, pendingExpiresAt: Date | null) {
+function isActiveBooking(status: string, pendingExpiresAt: Date | null, startsAt: Date) {
   if (["CONFIRMED", "DISPUTED", "NO_SHOW"].includes(status)) return true;
   if (["PENDING_CONFIRMATION", "PENDING"].includes(status)) {
-    return pendingExpiresAt ? pendingExpiresAt > new Date() : false;
+    const now = new Date();
+    if (startsAt <= now) return false;
+    return pendingExpiresAt ? pendingExpiresAt > now : false;
   }
   return false;
 }
@@ -349,8 +351,8 @@ async function _POST(req: NextRequest) {
 
   const bookingIntervals: Interval[] = bookingsRaw
     .filter((booking) => typeof booking.courtId === "number")
-    .filter(({ status, pendingExpiresAt }) =>
-      bookingPolicy?.protectExternalReservations ?? true ? isActiveBooking(status, pendingExpiresAt) : false,
+    .filter(({ status, pendingExpiresAt, startsAt }) =>
+      bookingPolicy?.protectExternalReservations ?? true ? isActiveBooking(status, pendingExpiresAt, startsAt) : false,
     )
     .map((booking) => ({
       courtId: booking.courtId as number,

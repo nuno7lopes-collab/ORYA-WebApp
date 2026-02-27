@@ -5,7 +5,10 @@ type LogContext = Record<string, unknown> & {
   correlationId?: string | null;
 };
 
-type ResolveOptions = { fallbackToRequestContext?: boolean };
+type ResolveOptions = {
+  fallbackToRequestContext?: boolean;
+  emitSystemEvent?: boolean;
+};
 
 type LogLevel = "info" | "warn" | "error";
 
@@ -93,6 +96,74 @@ function normalizeError(err: unknown) {
   return { message: String(err) };
 }
 
+const SYSTEM_EVENT_LEVEL_MAP: Record<LogLevel, string> = {
+  info: "system.log.info",
+  warn: "system.log.warn",
+  error: "system.log.error",
+};
+
+function shouldEmitSystemEvent(level: LogLevel, scope: string, opts?: ResolveOptions) {
+  if (opts?.emitSystemEvent === false) return false;
+  if (typeof window !== "undefined") return false;
+  if (scope.startsWith("telemetry.")) return false;
+  if (scope.startsWith("system.log")) return false;
+  return level === "warn" || level === "error";
+}
+
+function toSystemEventPayload(params: {
+  level: LogLevel;
+  scope: string;
+  requestId: string | null;
+  correlationId: string | null;
+  contextPayload: Record<string, unknown>;
+  err: unknown;
+}) {
+  return {
+    logLevel: params.level,
+    scope: params.scope,
+    requestId: params.requestId,
+    correlationId: params.correlationId,
+    context: redactValue(params.contextPayload),
+    error: params.err === undefined ? null : redactValue(normalizeError(params.err)),
+  };
+}
+
+async function emitSystemTelemetryEvent(params: {
+  level: LogLevel;
+  scope: string;
+  requestId: string | null;
+  correlationId: string | null;
+  contextPayload: Record<string, unknown>;
+  err: unknown;
+}) {
+  try {
+    const { ingestTelemetryBatch } = await import("@/domain/telemetry/ingest");
+    await ingestTelemetryBatch(
+      [
+        {
+          eventName: SYSTEM_EVENT_LEVEL_MAP[params.level],
+          eventVersion: "1.0.0",
+          sourceType: "INTERNAL",
+          actorType: "SYSTEM",
+          requestId: params.requestId,
+          correlationId: params.correlationId,
+          payload: toSystemEventPayload(params),
+          tags: { telemetryKind: "SYSTEM_LOG" },
+          occurredAt: new Date().toISOString(),
+        },
+      ],
+      {
+        requestId: params.requestId,
+        correlationId: params.correlationId,
+        defaultSourceType: "INTERNAL",
+        defaultActorType: "SYSTEM",
+      },
+    );
+  } catch {
+    // Intencionalmente silencioso para evitar loops recursivos de logging.
+  }
+}
+
 function emit(level: LogLevel, scope: string, context?: LogContext, err?: unknown, opts?: ResolveOptions) {
   const payload = resolveContext(context, opts);
   const requestId = typeof payload?.requestId === "string" ? payload.requestId : null;
@@ -116,13 +187,22 @@ function emit(level: LogLevel, scope: string, context?: LogContext, err?: unknow
   const line = JSON.stringify(entry);
   if (level === "error") {
     console.error(line);
-    return;
-  }
-  if (level === "warn") {
+  } else if (level === "warn") {
     console.warn(line);
-    return;
+  } else {
+    console.info(line);
   }
-  console.info(line);
+
+  if (shouldEmitSystemEvent(level, scope, opts)) {
+    void emitSystemTelemetryEvent({
+      level,
+      scope,
+      requestId,
+      correlationId,
+      contextPayload,
+      err,
+    });
+  }
 }
 
 export function logInfo(scope: string, context?: LogContext, opts?: ResolveOptions) {

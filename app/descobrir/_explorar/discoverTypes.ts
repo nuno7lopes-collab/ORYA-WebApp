@@ -26,7 +26,7 @@ export type ExploreItem = {
   categories: string[];
   hostName: string | null;
   hostUsername: string | null;
-  status: "ACTIVE" | "CANCELLED" | "PAST" | "DRAFT";
+  status: "ACTIVE" | "CANCELLED" | "PAST";
   isHighlighted: boolean;
 };
 

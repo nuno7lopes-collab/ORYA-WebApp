@@ -353,7 +353,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
         : event.status === "FINISHED"
           ? "Terminado"
           : event.status === "DRAFT"
-            ? "Oculto"
+            ? "Nao publicado (legado)"
             : "Público";
 
   const partnerClubs =
@@ -652,6 +652,13 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
       ]
     : [];
 
+  const standardEventEndedByDate = event.endsAt ? new Date(event.endsAt).getTime() < now.getTime() : false;
+  const standardEventCancelled = event.status === "CANCELLED";
+  const standardEventFinished = event.status === "FINISHED" || standardEventEndedByDate;
+  const standardEventTerminated = standardEventCancelled || standardEventFinished;
+  const standardEventLegacyDraft = event.status === "DRAFT";
+  const standardEventActive = !standardEventTerminated && !standardEventLegacyDraft;
+
   const timeline = isPadelEvent && padelLifecycleStatus
     ? TOURNAMENT_LIFECYCLE_ORDER.map((key, idx) => {
         const currentIndex = TOURNAMENT_LIFECYCLE_ORDER.indexOf(padelLifecycleStatus as any);
@@ -663,10 +670,25 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
         };
       })
     : [
-        { key: "OCULTO", label: "Oculto", active: ["DRAFT"].includes(event.status), done: event.status !== "DRAFT" },
-        { key: "INSCRICOES", label: "Inscrições", active: event.status === "PUBLISHED", done: ["PUBLISHED", "FINISHED", "CANCELLED"].includes(event.status) },
-        { key: "PUBLICO", label: "Público", active: event.status === "PUBLISHED", done: ["PUBLISHED", "FINISHED", "CANCELLED"].includes(event.status) },
-        { key: "TERMINADO", label: "Terminado", active: event.status === "FINISHED", done: event.status === "FINISHED" },
+        {
+          key: "LEGACY_UNPUBLISHED",
+          label: "Nao publicado (legado)",
+          active: standardEventLegacyDraft,
+          done: !standardEventLegacyDraft,
+        },
+        { key: "ATIVO", label: "Ativo", active: standardEventActive, done: standardEventTerminated },
+        {
+          key: "TERMINADO",
+          label: "Terminado",
+          active: !standardEventCancelled && standardEventFinished,
+          done: !standardEventCancelled && standardEventFinished,
+        },
+        {
+          key: "CANCELADO",
+          label: "Cancelado",
+          active: standardEventCancelled,
+          done: standardEventCancelled,
+        },
       ];
 
   return (
@@ -1113,7 +1135,11 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
           </div>
         </div>
 
-        {isPadelEvent ? (
+        {event.status === "CANCELLED" ? (
+          <div className="mt-2 rounded-xl border border-red-400/40 bg-red-500/10 px-4 py-4 text-[11px] text-red-100">
+            Evento cancelado. A gestão de bilhetes/inscrições está bloqueada neste estado terminal.
+          </div>
+        ) : isPadelEvent ? (
           padelCategorySummary.length === 0 ? (
             <div className="mt-2 rounded-xl border border-dashed border-white/20 bg-white/5 px-4 py-4 text-[11px] text-white/70">
               Este torneio ainda não tem categorias ativas.

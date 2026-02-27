@@ -28,7 +28,7 @@ export type PublicEventCard = {
   hostName: string | null;
   hostUsername: string | null;
   hostAvatarUrl?: string | null;
-  status: "ACTIVE" | "CANCELLED" | "PAST" | "DRAFT";
+  status: "ACTIVE" | "CANCELLED" | "PAST";
   isHighlighted: boolean;
   ticketTypes?: PublicEventTicketType[];
   rank?: {
@@ -186,7 +186,8 @@ export function resolvePublicEventStatus(event: {
   endsAt: Date | string | null;
 }): PublicEventCard["status"] {
   if (event.status === "CANCELLED") return "CANCELLED";
-  if (event.status === "DRAFT") return "DRAFT";
+  // Fail-closed para estados legacy nao publicados.
+  if (event.status === "DRAFT") return "PAST";
   if (event.status === "FINISHED") return "PAST";
 
   const now = Date.now();

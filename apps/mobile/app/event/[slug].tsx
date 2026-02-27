@@ -110,7 +110,7 @@ const formatDateRange = (startsAt?: string, endsAt?: string): string | null => {
 };
 
 const resolveStatusLabel = (
-  status: "ACTIVE" | "CANCELLED" | "PAST" | "DRAFT" | undefined,
+  status: "ACTIVE" | "CANCELLED" | "PAST" | undefined,
   t: (key: string, options?: Record<string, unknown>) => string,
 ) => {
   switch (status) {
@@ -118,8 +118,6 @@ const resolveStatusLabel = (
       return t("events:status.cancelled");
     case "PAST":
       return t("events:status.ended");
-    case "DRAFT":
-      return t("events:status.draft");
     default:
       return t("events:status.active");
   }
@@ -325,6 +323,8 @@ const mapInviteTokenReason = (
       return t("events:invite.tokenEmailOnly");
     case "INVITE_TOKEN_INVALID":
     case "INVITE_TOKEN_NOT_FOUND":
+    case "EVENT_CANCELLED":
+    case "EVENT_CLOSED":
       return t("events:invite.tokenInvalid");
     default:
       return null;

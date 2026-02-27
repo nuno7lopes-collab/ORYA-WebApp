@@ -474,7 +474,7 @@ async function handlePadelRegistrationIntent(req: NextRequest, body: Body) {
       retryable: false,
     });
   }
-  if (pairingEventStatus !== "PUBLISHED") {
+  if (pairingEventStatus !== "PUBLISHED" && pairingEventStatus !== "DATE_CHANGED") {
     return intentError("EVENT_CLOSED", "Evento indisponível para inscrição.", {
       httpStatus: 409,
       status: "FAILED",
@@ -1376,7 +1376,18 @@ async function _POST(req: NextRequest) {
       }
     }
 
-    if (event.is_deleted || event.status !== "PUBLISHED" || event.type !== "ORGANIZATION_EVENT") {
+    const normalizedEventStatus = String(event.status ?? "").toUpperCase();
+    if (event.is_deleted || event.type !== "ORGANIZATION_EVENT") {
+      return intentError("EVENT_CLOSED", "Evento indisponível para compra.", { httpStatus: 400 });
+    }
+    if (normalizedEventStatus === "CANCELLED") {
+      return intentError("EVENT_CANCELLED", "Este evento foi cancelado.", {
+        httpStatus: 409,
+        status: "FAILED",
+        retryable: false,
+      });
+    }
+    if (normalizedEventStatus !== "PUBLISHED" && normalizedEventStatus !== "DATE_CHANGED") {
       return intentError("EVENT_CLOSED", "Evento indisponível para compra.", { httpStatus: 400 });
     }
 

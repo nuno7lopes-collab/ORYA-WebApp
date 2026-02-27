@@ -2252,6 +2252,8 @@ Implementação:
 D04.09 Refunds, cancelamentos e chargebacks (FECHADO)
 Cancelamento de evento:
 - Ao cancelar um evento: **refund automático** para todas as compras elegíveis.
+- `CANCELLED` é estado **terminal e irreversível** para o evento.
+- Evento cancelado mantém visibilidade histórica, mas não permite novas compras, inscrições ou reativações.
 - Stripe Connect (Standard nesta fase):
   - o organizador paga os processing fees (quando Stripe não os devolve)
   - a ORYA devolve a sua `platformFee` (através de entrada de ledger de reversão)
@@ -2281,33 +2283,11 @@ Chargeback / dispute:
 
 #### G05.021 (origem: D04.10)
 
-D04.10) Revenda — state machine e atomicidade (FECHADO)
-- Estado canónico:
-  - `TicketStatus`: `ACTIVE | RESALE_LISTED | TRANSFERRED | REFUNDED | DISPUTED | CHARGEBACK_LOST | CANCELLED`
-  - `ResaleStatus`: `LISTED | SOLD | CANCELLED`
-- Pré-condições de listagem:
-  - só tickets `ACTIVE`;
-  - ticket com `consumedAt != null` não pode entrar em revenda;
-  - para multi-sessão, revenda só é permitida quando todos os entitlements transferíveis ainda não foram consumidos.
-- Atomicidade de compra:
-  - compra de revenda é transação única: `payment succeeded` -> `owner` canónico atualizado -> entitlements do owner antigo revogados/reemitidos para o novo owner -> listing fechado.
-  - falha em qualquer passo implica rollback total.
-- Locks e constraints:
-  - lock transacional obrigatório (`SELECT ... FOR UPDATE`) no `Ticket` e no `TicketResale`;
-  - máximo 1 listing ativo por ticket (constraint única para status ativo).
-- Preço e anti-scalping:
-  - `maxResalePrice` por evento/ticketType (default: preço original);
-  - `resaleFeePolicyVersion` congelada no `Payment`.
-- Disputes/refunds (sem reversão automática):
-  - chargeback/refund do comprador da revenda -> entitlement do novo owner `SUSPENDED` + `Ticket.status=DISPUTED`;
-  - não existe reversão automática de owner;
-  - qualquer reversão de owner é apenas manual/admin com `AuditLog`.
-- Resolução:
-  - `dispute.won` -> entitlement `ACTIVE` + ticket `ACTIVE` (se temporalmente válido);
-  - `dispute.lost` -> `Ticket=CHARGEBACK_LOST` + entitlement `REVOKED`;
-  - refund confirmado -> `Ticket=REFUNDED` + entitlement `REVOKED`.
-- Integração operacional:
-  - jobs idempotentes obrigatórios para `entitlements.suspend_on_dispute_opened` e `ticket.mark_disputed`.
+D04.10) Revenda — descontinuada (FECHADO)
+- A funcionalidade de revenda foi removida do produto e do runtime.
+- Não existe listing/compra secundária de bilhetes na plataforma.
+- Qualquer referência histórica a `resale`/`TicketResale` é considerada legado e não deve ser reativada.
+- O lifecycle canónico de bilhete mantém apenas estados operacionais suportados para compra primária, check-in e refund/dispute.
 
 ⸻
 
@@ -4223,7 +4203,6 @@ Classificação canónica:
 <!-- P0_ENDPOINTS_START -->
 - `app/api/payments/intent/route.ts`
 - `app/api/checkout/status/route.ts`
-- `app/api/checkout/resale/route.ts`
 - `app/api/convites/[token]/checkout/route.ts`
 - `app/api/cobrancas/[token]/checkout/route.ts`
 - `app/api/servicos/[id]/checkout/route.ts`

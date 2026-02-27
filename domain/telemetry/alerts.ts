@@ -290,7 +290,9 @@ export async function listTelemetryAlertRules(
 export type ListTelemetryIncidentsParams = {
   organizationId?: number | null;
   statuses?: TelemetryIncidentStatus[];
+  severities?: TelemetrySeverity[];
   ruleId?: string | null;
+  query?: string | null;
   take?: number;
 };
 
@@ -307,6 +309,20 @@ export async function listTelemetryIncidents(
     ...(params.ruleId ? { ruleId: params.ruleId } : {}),
     ...(params.statuses?.length
       ? { status: { in: params.statuses } }
+      : {}),
+    ...(params.severities?.length
+      ? { severity: { in: params.severities } }
+      : {}),
+    ...(toNullableText(params.query, 120)
+      ? {
+          OR: [
+            { title: { contains: toNullableText(params.query, 120), mode: "insensitive" } },
+            { description: { contains: toNullableText(params.query, 120), mode: "insensitive" } },
+            { dimensionKey: { contains: toNullableText(params.query, 120), mode: "insensitive" } },
+            { dimensionValue: { contains: toNullableText(params.query, 120), mode: "insensitive" } },
+            { rule: { name: { contains: toNullableText(params.query, 120), mode: "insensitive" } } },
+          ],
+        }
       : {}),
   };
 
@@ -348,6 +364,130 @@ export async function listTelemetryIncidents(
   });
 
   return rows.map(mapIncident);
+}
+
+function normalizeNumericValue(value: unknown) {
+  if (typeof value === "bigint") return Number(value);
+  if (typeof value === "number") return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+
+function normalizeNullableNumericValue(value: unknown) {
+  if (value === null || value === undefined) return null;
+  const parsed = normalizeNumericValue(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export type TelemetryIncidentKpis = {
+  from: Date;
+  to: Date;
+  windowMinutes: number;
+  totalIncidents: number;
+  openIncidents: number;
+  acknowledgedIncidents: number;
+  resolvedIncidents: number;
+  acknowledgedSamples: number;
+  resolvedSamples: number;
+  mttaMinutes: number | null;
+  mttrMinutes: number | null;
+  ackSlaMinutes: number;
+  resolveSlaMinutes: number;
+  ackSlaBreaches: number;
+  resolveSlaBreaches: number;
+};
+
+export async function getTelemetryIncidentKpis(params: {
+  organizationId?: number | null;
+  from: Date;
+  to: Date;
+  ackSlaMinutes?: number;
+  resolveSlaMinutes?: number;
+}): Promise<TelemetryIncidentKpis> {
+  const from = params.from;
+  const to = params.to;
+  const ackSlaMinutes = toNullableInt(params.ackSlaMinutes, { min: 1, max: 24 * 60 }) ?? 15;
+  const resolveSlaMinutes = toNullableInt(params.resolveSlaMinutes, { min: 1, max: 7 * 24 * 60 }) ?? 120;
+  const env = getAppEnv();
+  const orgFilter =
+    typeof params.organizationId === "number"
+      ? Prisma.sql`AND organization_id = ${params.organizationId}`
+      : Prisma.empty;
+
+  const [row] = await prisma.$queryRaw<
+    Array<{
+      total_incidents: bigint | number | string;
+      open_incidents: bigint | number | string;
+      acknowledged_incidents: bigint | number | string;
+      resolved_incidents: bigint | number | string;
+      acknowledged_samples: bigint | number | string;
+      resolved_samples: bigint | number | string;
+      mtta_minutes: number | string | null;
+      mttr_minutes: number | string | null;
+      ack_sla_breaches: bigint | number | string;
+      resolve_sla_breaches: bigint | number | string;
+    }>
+  >(
+    Prisma.sql`
+      SELECT
+        COUNT(*) AS total_incidents,
+        COUNT(*) FILTER (WHERE status = 'OPEN') AS open_incidents,
+        COUNT(*) FILTER (WHERE status = 'ACKNOWLEDGED') AS acknowledged_incidents,
+        COUNT(*) FILTER (WHERE status = 'RESOLVED') AS resolved_incidents,
+        COUNT(*) FILTER (
+          WHERE acknowledged_at IS NOT NULL
+            AND acknowledged_at >= triggered_at
+        ) AS acknowledged_samples,
+        COUNT(*) FILTER (
+          WHERE resolved_at IS NOT NULL
+            AND resolved_at >= triggered_at
+        ) AS resolved_samples,
+        AVG(EXTRACT(EPOCH FROM (acknowledged_at - triggered_at)) / 60.0) FILTER (
+          WHERE acknowledged_at IS NOT NULL
+            AND acknowledged_at >= triggered_at
+        ) AS mtta_minutes,
+        AVG(EXTRACT(EPOCH FROM (resolved_at - triggered_at)) / 60.0) FILTER (
+          WHERE resolved_at IS NOT NULL
+            AND resolved_at >= triggered_at
+        ) AS mttr_minutes,
+        COUNT(*) FILTER (
+          WHERE acknowledged_at IS NOT NULL
+            AND acknowledged_at >= triggered_at
+            AND EXTRACT(EPOCH FROM (acknowledged_at - triggered_at)) > ${ackSlaMinutes * 60}
+        ) AS ack_sla_breaches,
+        COUNT(*) FILTER (
+          WHERE resolved_at IS NOT NULL
+            AND resolved_at >= triggered_at
+            AND EXTRACT(EPOCH FROM (resolved_at - triggered_at)) > ${resolveSlaMinutes * 60}
+        ) AS resolve_sla_breaches
+      FROM app_v3.telemetry_alert_incidents
+      WHERE env = ${env}
+        AND triggered_at >= ${from}
+        AND triggered_at <= ${to}
+        ${orgFilter}
+    `,
+  );
+
+  return {
+    from,
+    to,
+    windowMinutes: Math.max(1, Math.round((to.getTime() - from.getTime()) / (60 * 1000))),
+    totalIncidents: normalizeNumericValue(row?.total_incidents),
+    openIncidents: normalizeNumericValue(row?.open_incidents),
+    acknowledgedIncidents: normalizeNumericValue(row?.acknowledged_incidents),
+    resolvedIncidents: normalizeNumericValue(row?.resolved_incidents),
+    acknowledgedSamples: normalizeNumericValue(row?.acknowledged_samples),
+    resolvedSamples: normalizeNumericValue(row?.resolved_samples),
+    mttaMinutes: normalizeNullableNumericValue(row?.mtta_minutes),
+    mttrMinutes: normalizeNullableNumericValue(row?.mttr_minutes),
+    ackSlaMinutes,
+    resolveSlaMinutes,
+    ackSlaBreaches: normalizeNumericValue(row?.ack_sla_breaches),
+    resolveSlaBreaches: normalizeNumericValue(row?.resolve_sla_breaches),
+  };
 }
 
 export async function getTelemetryAlertRuleById(

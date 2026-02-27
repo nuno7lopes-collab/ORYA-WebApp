@@ -24,10 +24,13 @@ async function _GET(req: NextRequest) {
     const stale = await prisma.booking.findMany({
       where: {
         status: { in: ["PENDING_CONFIRMATION", "PENDING"] },
-        pendingExpiresAt: { lt: now },
         paymentIntentId: null,
+        OR: [
+          { pendingExpiresAt: { lt: now } },
+          { startsAt: { lt: now } },
+        ],
       },
-      select: { id: true, organizationId: true, serviceId: true, userId: true },
+      select: { id: true, organizationId: true, serviceId: true, userId: true, startsAt: true, pendingExpiresAt: true },
     });
 
     const expired = stale;
@@ -36,6 +39,12 @@ async function _GET(req: NextRequest) {
     await prisma.$transaction(async (tx) => {
       if (bookingIds.length) {
         for (const booking of expired) {
+          const reason =
+            booking.pendingExpiresAt && booking.pendingExpiresAt.getTime() < now.getTime()
+              ? "PENDING_EXPIRED"
+              : booking.startsAt.getTime() < now.getTime()
+                ? "PENDING_PAST_START"
+                : "PENDING_EXPIRED";
           await cancelBooking({
             tx,
             bookingId: booking.id,
@@ -51,7 +60,7 @@ async function _GET(req: NextRequest) {
               bookingId: booking.id,
               serviceId: booking.serviceId,
               userId: booking.userId,
-              reason: "PENDING_EXPIRED",
+              reason,
             },
           });
         }

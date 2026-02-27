@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { logError, logWarn } from "@/lib/observability/logger";
-import { resolveTelemetryContract } from "@/domain/telemetry/catalog";
+import { validateTelemetryContractPayload } from "@/domain/telemetry/catalog";
 import {
   type TelemetryActorType,
   type TelemetrySeverity,
@@ -12,7 +12,6 @@ import {
   buildTelemetryActorKey,
   normalizeTelemetryActorType,
   normalizeTelemetryDate,
-  normalizeTelemetryEventName,
   normalizeTelemetryEventVersion,
   normalizeTelemetryIdempotencyKey,
   normalizeTelemetryOrgId,
@@ -166,7 +165,8 @@ export async function ingestTelemetryEvent(
   input: TelemetryIngestInput,
   defaults: TelemetryIngestDefaults,
 ): Promise<TelemetryIngestResult> {
-  const eventName = normalizeTelemetryEventName(input.eventName);
+  const rawEventName =
+    typeof input.eventName === "string" ? input.eventName.trim() : "";
   const organizationId =
     normalizeTelemetryOrgId(input.organizationId) ??
     normalizeTelemetryOrgId(defaults.defaultOrganizationId);
@@ -175,7 +175,7 @@ export async function ingestTelemetryEvent(
     defaults.defaultSourceType,
   );
 
-  if (!eventName) {
+  if (!rawEventName) {
     await recordIngestError({
       organizationId: organizationId ?? null,
       sourceType,
@@ -195,10 +195,35 @@ export async function ingestTelemetryEvent(
     };
   }
 
-  const contract = resolveTelemetryContract(eventName);
+  const contractValidation = validateTelemetryContractPayload(
+    rawEventName,
+    input.payload,
+  );
+  if (!contractValidation.ok) {
+    await recordIngestError({
+      organizationId: organizationId ?? null,
+      sourceType,
+      eventName: rawEventName,
+      reason: contractValidation.error,
+      requestId: defaults.requestId ?? null,
+      correlationId: defaults.correlationId ?? null,
+      payload: input,
+    });
+    return {
+      ok: false,
+      accepted: false,
+      duplicate: false,
+      eventId: null,
+      eventName: rawEventName,
+      reason: contractValidation.error,
+    };
+  }
+
+  const contract = contractValidation.contract;
+  const eventName = contract.eventName;
   const severity = normalizeTelemetrySeverity(
     input.severity,
-    contract?.defaultSeverity ?? "INFO",
+    contract.defaultSeverity,
   );
 
   const fallbackActorType = defaults.defaultActorUserId
@@ -225,7 +250,32 @@ export async function ingestTelemetryEvent(
     normalizeTelemetryReference(defaults.correlationId, 120) ??
     requestId;
 
-  const eventVersion = normalizeTelemetryEventVersion(input.eventVersion);
+  const eventVersion = normalizeTelemetryEventVersion(
+    input.eventVersion ?? contract.eventVersion,
+  );
+  if (eventVersion !== contract.eventVersion) {
+    await recordIngestError({
+      organizationId: organizationId ?? null,
+      sourceType,
+      eventName,
+      reason: "INVALID_EVENT_VERSION",
+      requestId,
+      correlationId,
+      payload: {
+        providedEventVersion: eventVersion,
+        expectedEventVersion: contract.eventVersion,
+        input,
+      },
+    });
+    return {
+      ok: false,
+      accepted: false,
+      duplicate: false,
+      eventId: null,
+      eventName,
+      reason: "INVALID_EVENT_VERSION",
+    };
+  }
   const idempotencyKey = normalizeTelemetryIdempotencyKey(input.idempotencyKey);
   const occurredAt = normalizeTelemetryDate(input.occurredAt);
   const surface = normalizeTelemetrySurface(input.surface);

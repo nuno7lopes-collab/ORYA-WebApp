@@ -1852,9 +1852,7 @@ model Event {
   /// auth.users.id de quem criou (user base)
   ownerUserId                    String                          @map("owner_user_id") @db.Uuid
   deletedAt                      DateTime?                       @map("deleted_at") @db.Timestamp(6)
-  archivedAt                     DateTime?                       @map("archived_at") @db.Timestamp(6)
   isDeleted                      Boolean                         @default(false) @map("is_deleted")
-  resaleMode                     ResaleMode                      @default(ALWAYS) @map("resale_mode")
   feeMode                        FeeMode                         @default(INCLUDED) @map("fee_mode")
   payoutMode                     PayoutMode                      @default(ORGANIZATION) @map("payout_mode")
   organization                   Organization?                   @relation(fields: [organizationId], references: [id])
@@ -2045,7 +2043,6 @@ model Ticket {
   guestLink             GuestTicketLink?
   notifications         Notification[]   @relation("NotificationTicket")
   entitlement           Entitlement?     @relation("TicketEntitlement")
-  resales               TicketResale[]
   event                 Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
   ticketType            TicketType       @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
   ownerUserId           String?          @map("owner_user_id") @db.Uuid
@@ -2119,25 +2116,6 @@ model TicketReservation {
   @@index([userId])
   @@index([status, expiresAt])
   @@map("ticket_reservations")
-  @@schema("app_v3")
-}
-
-/// Revenda de bilhetes pelo utilizador
-model TicketResale {
-  env          String       @default("prod")
-  id           String       @id @default(cuid())
-  ticketId     String       @map("ticket_id")
-  price        Int
-  currency     String       @default("EUR")
-  status       ResaleStatus @default(LISTED)
-  createdAt    DateTime     @default(now()) @map("created_at")
-  completedAt  DateTime?    @map("completed_at")
-  sellerUserId String       @map("seller_user_id") @db.Uuid
-  ticket       Ticket       @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-
-  @@index([ticketId])
-  @@index([sellerUserId])
-  @@map("ticket_resales")
   @@schema("app_v3")
 }
 
@@ -6840,6 +6818,46 @@ model TelemetryIngestError {
   @@schema("app_v3")
 }
 
+model TelemetryFunnelDefinition {
+  env             String                 @default("prod")
+  id              String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId  Int?                   @map("organization_id")
+  name            String                 @map("name") @db.Text
+  description     String?                @map("description") @db.Text
+  steps           Json                   @default("[]")
+  isActive        Boolean                @default(true) @map("is_active")
+  createdByUserId String?                @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  results         TelemetryFunnelResult[]
+
+  @@index([env, organizationId, isActive], map: "telemetry_funnel_definitions_org_active_idx")
+  @@map("telemetry_funnel_definitions")
+  @@schema("app_v3")
+}
+
+model TelemetryFunnelResult {
+  env               String                    @default("prod")
+  id                Int                       @id @default(autoincrement())
+  funnelId          String                    @map("funnel_id") @db.Uuid
+  organizationId    Int?                      @map("organization_id")
+  bucketStart       DateTime                  @map("bucket_start") @db.Timestamptz(6)
+  bucketUnit        TelemetryBucketUnit       @map("bucket_unit")
+  stepKey           String                    @map("step_key")
+  enteredCount      Int                       @map("entered_count")
+  convertedCount    Int                       @map("converted_count")
+  conversionRateBps Int                       @map("conversion_rate_bps")
+  createdAt         DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime                  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  funnel            TelemetryFunnelDefinition @relation(fields: [funnelId], references: [id], onDelete: Cascade)
+
+  @@unique([env, funnelId, organizationId, bucketStart, bucketUnit, stepKey], map: "telemetry_funnel_results_unique")
+  @@index([env, organizationId, bucketStart], map: "telemetry_funnel_results_org_bucket_idx")
+  @@index([env, funnelId, bucketStart], map: "telemetry_funnel_results_funnel_bucket_idx")
+  @@map("telemetry_funnel_results")
+  @@schema("app_v3")
+}
+
 enum StoreStatus {
   DRAFT
   CLOSED
@@ -6995,14 +7013,6 @@ enum EventParticipantAccessMode {
   TICKET
   INSCRIPTION
   INVITE
-
-  @@schema("app_v3")
-}
-
-enum ResaleMode {
-  ALWAYS
-  AFTER_SOLD_OUT
-  DISABLED
 
   @@schema("app_v3")
 }
@@ -7463,7 +7473,6 @@ enum TicketStatus {
   ACTIVE
   REFUNDED
   TRANSFERRED
-  RESALE_LISTED
   DISPUTED
   CHARGEBACK_LOST
   CANCELLED
@@ -7476,14 +7485,6 @@ enum ReservationStatus {
   COMPLETED
   EXPIRED
   CANCELED
-
-  @@schema("app_v3")
-}
-
-enum ResaleStatus {
-  LISTED
-  SOLD
-  CANCELLED
 
   @@schema("app_v3")
 }

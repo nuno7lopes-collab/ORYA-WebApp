@@ -19,7 +19,7 @@ type PrismaReadClient = Prisma.TransactionClient | typeof prisma;
 
 const ORGANIZATION_MODULE_SET = new Set<OrganizationModule>(ORGANIZATION_MODULES);
 
-const ACTIVE_EVENT_STATUSES = [EventStatus.DRAFT, EventStatus.PUBLISHED, EventStatus.DATE_CHANGED];
+const ACTIVE_EVENT_STATUSES = [EventStatus.PUBLISHED, EventStatus.DATE_CHANGED];
 const ACTIVE_BOOKING_STATUSES = [
   BookingStatus.PENDING_CONFIRMATION,
   BookingStatus.PENDING,
@@ -134,7 +134,7 @@ async function resolveEventosDeactivationBlocker(params: {
     reasonCode: "EVENTOS_ACTIVE_ITEMS",
     activeCount: activeEvents,
     message:
-      "Nao podes desativar a ferramenta de Eventos enquanto existirem eventos ativos ou em preparacao.",
+      "Nao podes desativar a ferramenta de Eventos enquanto existirem eventos ativos.",
   };
 }
 

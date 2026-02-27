@@ -13,6 +13,7 @@ export async function listPublicAgenda(params: {
   courtId?: number | null;
 }) {
   const { organizationId, from, to, limit = 200, cursorId, sourceTypes, padelClubId, courtId } = params;
+  const now = new Date();
   const rangeFilter = buildAgendaOverlapFilter({ from, to });
   return prisma.agendaItem.findMany({
     where: {
@@ -25,6 +26,11 @@ export async function listPublicAgenda(params: {
       ...(padelClubId ? { padelClubId } : {}),
       ...(courtId ? { courtId } : {}),
       status: { not: "DELETED" },
+      NOT: {
+        sourceType: SourceType.BOOKING,
+        status: { in: ["PENDING_CONFIRMATION", "PENDING"] },
+        startsAt: { lt: now },
+      },
     },
     orderBy: { startsAt: "asc" },
     take: Math.min(limit, 500),

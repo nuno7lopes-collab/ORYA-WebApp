@@ -450,6 +450,7 @@ async function _POST(
             : { guestEmail: "__invalid__" }),
         status: { in: ["PENDING_CONFIRMATION", "PENDING"] },
         pendingExpiresAt: { gt: now },
+        startsAt: { gt: now },
       },
     });
     if (pendingCount >= MAX_PENDING_PER_USER) {
@@ -660,7 +661,7 @@ async function _POST(
     const activeBookingStateFilter: Prisma.BookingWhereInput = {
       OR: [
         { status: { in: [...activeBookedStates] as any } },
-        { status: { in: [...activePendingStates] as any }, pendingExpiresAt: { gt: now } },
+        { status: { in: [...activePendingStates] as any }, pendingExpiresAt: { gt: now }, startsAt: { gt: now } },
       ],
     };
     const [schedules, overrides, blockingBookings, classSessions] = await Promise.all([

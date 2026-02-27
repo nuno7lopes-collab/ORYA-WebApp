@@ -44,10 +44,23 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ slug: str
 
   const event = await prisma.event.findUnique({
     where: { slug: resolved.slug },
-    select: { id: true },
+    select: { id: true, status: true, endsAt: true, isDeleted: true },
   });
   if (!event) {
     return respondOk(ctx, { allow: false, reason: "EVENT_NOT_FOUND" });
+  }
+  if (event.isDeleted) {
+    return respondOk(ctx, { allow: false, reason: "EVENT_CLOSED" });
+  }
+  const normalizedEventStatus = String(event.status ?? "").toUpperCase();
+  if (normalizedEventStatus === "CANCELLED") {
+    return respondOk(ctx, { allow: false, reason: "EVENT_CANCELLED" });
+  }
+  if (normalizedEventStatus !== "PUBLISHED" && normalizedEventStatus !== "DATE_CHANGED") {
+    return respondOk(ctx, { allow: false, reason: "EVENT_CLOSED" });
+  }
+  if (event.endsAt && event.endsAt.getTime() <= Date.now()) {
+    return respondOk(ctx, { allow: false, reason: "EVENT_CLOSED" });
   }
 
   const grantResult = await resolveInviteTokenGrant(

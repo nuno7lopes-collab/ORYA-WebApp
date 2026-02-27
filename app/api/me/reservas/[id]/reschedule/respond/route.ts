@@ -21,6 +21,7 @@ import { notifyOrganizationBookingChangeResponse } from "@/lib/reservas/bookingC
 import { ProcessorFeesStatus, SourceType } from "@prisma/client";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 import { requiresOrganizationStripe } from "@/domain/finance/payoutModePolicy";
+import { validateBookingChangeApply } from "@/lib/reservas/bookingChangeApplyValidation";
 
 function parseId(value: string) {
   const parsed = Number(value);
@@ -371,23 +372,37 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       });
     }
 
-    const resolvedProposedResourceId = request.proposedResourceId ?? booking.resourceId;
-    let resolvedProposedCourtId = request.proposedCourtId ?? booking.courtId;
-    if (resolvedProposedResourceId) {
-      const linkedResource = await prisma.reservationResource.findFirst({
-        where: {
-          id: resolvedProposedResourceId,
-          organizationId: booking.organizationId,
-        },
-        select: { courtId: true },
-      });
-      if (linkedResource?.courtId) {
-        resolvedProposedCourtId = linkedResource.courtId;
-      }
-    }
-
     const { ip, userAgent } = getRequestMeta(req);
-    const result = await prisma.$transaction(async (tx) => {
+    const transactionResult = await prisma.$transaction(async (tx) => {
+      const validation = await validateBookingChangeApply({
+        tx,
+        bookingId: booking.id,
+        requestId: request.id,
+        now,
+      });
+      if (!validation.ok) {
+        if (validation.code === "REQUEST_EXPIRED") {
+          await tx.bookingChangeRequest.updateMany({
+            where: { id: request.id, status: "PENDING" },
+            data: {
+              status: "EXPIRED",
+              respondedAt: now,
+              respondedByUserId: user.id,
+            },
+          });
+        } else if (validation.code === "BOOKING_CLOSED") {
+          await tx.bookingChangeRequest.updateMany({
+            where: { id: request.id, status: "PENDING" },
+            data: {
+              status: "CANCELLED",
+              respondedAt: now,
+              respondedByUserId: user.id,
+            },
+          });
+        }
+        return { status: "BLOCKED" as const, validation };
+      }
+
       const newPriceCents = Math.max(0, Math.round((booking.price ?? 0) + priceDeltaCents));
       const updatedResult = (await updateBooking({
         tx,
@@ -395,11 +410,11 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         actorUserId: user.id,
         bookingId: booking.id,
         data: {
-          startsAt: request.proposedStartsAt,
+          startsAt: validation.startsAt,
           price: newPriceCents,
-          courtId: resolvedProposedCourtId,
-          professionalId: request.proposedProfessionalId ?? booking.professionalId,
-          resourceId: resolvedProposedResourceId,
+          courtId: validation.courtId,
+          professionalId: validation.professionalId,
+          resourceId: validation.resourceId,
         },
         select: {
           id: true,
@@ -495,22 +510,51 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         metadata: {
           bookingId: booking.id,
           requestId: request.id,
-          proposedStartsAt: request.proposedStartsAt.toISOString(),
+          proposedStartsAt: validation.startsAt.toISOString(),
           priceDeltaCents,
         },
         ip,
         userAgent,
       });
 
-      return { updated, request: { id: request.id, status: "ACCEPTED" as const } };
+      return {
+        status: "ACCEPTED" as const,
+        updated,
+        request: { id: request.id, status: "ACCEPTED" as const },
+        proposedStartsAt: validation.startsAt,
+      };
     });
+
+    if (transactionResult.status === "BLOCKED") {
+      const blocked = transactionResult.validation;
+      if (blocked.code === "REQUEST_NOT_PENDING") {
+        return fail(409, "CHANGE_REQUEST_NOT_PENDING", "Pedido já processado.");
+      }
+      if (blocked.code === "REQUEST_EXPIRED") {
+        return fail(409, "CHANGE_REQUEST_EXPIRED", blocked.message);
+      }
+      if (blocked.code === "BOOKING_CLOSED") {
+        return fail(409, "BOOKING_NOT_CONFIRMED", "Apenas reservas confirmadas podem ser reagendadas.");
+      }
+      if (blocked.code === "NOT_FOUND") {
+        return fail(404, "CHANGE_REQUEST_NOT_FOUND", blocked.message);
+      }
+      if (blocked.code === "AGENDA_CONFLICT") {
+        const conflictCode =
+          typeof blocked.details?.errorCode === "string" ? blocked.details.errorCode : "AGENDA_CONFLICT";
+        return fail(409, conflictCode, "AGENDA_CONFLICT", blocked.details);
+      }
+      return fail(409, blocked.code, blocked.message, blocked.details);
+    }
+
+    const result = transactionResult;
 
     await notifyOrganizationBookingChangeResponse({
       organizationId: booking.organizationId,
       bookingId: booking.id,
       requestId: request.id,
       status: "ACCEPTED",
-      proposedStartsAt: request.proposedStartsAt,
+      proposedStartsAt: result.proposedStartsAt,
       priceDeltaCents,
       actorUserId: user.id,
     });

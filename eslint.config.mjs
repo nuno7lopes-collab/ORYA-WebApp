@@ -51,6 +51,24 @@ const eslintConfig = defineConfig([
     },
   },
   {
+    files: [
+      "domain/telemetry/**/*.{ts,tsx,js,jsx}",
+      "app/api/**/telemetry/**/*.{ts,tsx,js,jsx}",
+      "lib/analytics.ts",
+      "apps/mobile/lib/analytics.ts",
+      "lib/auth/rateLimit.ts",
+    ],
+    rules: {
+      "no-console": "error",
+    },
+  },
+  {
+    files: ["lib/observability/logger.ts"],
+    rules: {
+      "no-console": "off",
+    },
+  },
+  {
     // React Native / Expo (apps/mobile) doesn't map 1:1 to web a11y rules (e.g. alt on <Image />),
     // and some React compiler rules are too strict/noisy for RN animation patterns.
     files: ["apps/mobile/**/*.{ts,tsx,js,jsx}"],
