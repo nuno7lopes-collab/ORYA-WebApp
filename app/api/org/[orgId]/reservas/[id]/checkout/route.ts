@@ -28,6 +28,7 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { finalizeFreeServiceBooking } from "@/domain/finance/freeServiceCheckout";
+import { PaymentSubject } from "@/lib/payments/kernel";
 
 const HOLD_MINUTES = 10;
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
@@ -165,9 +166,10 @@ async function _POST(
       return fail("SPLIT_ACTIVE", "Pagamento dividido ativo.", 409);
     }
 
+    const now = new Date();
     const pendingExpiry =
       booking.pendingExpiresAt ?? new Date(booking.createdAt.getTime() + HOLD_MINUTES * 60 * 1000);
-    if (pendingExpiry < new Date()) {
+    if (booking.startsAt <= now || pendingExpiry < now) {
       await cancelBooking({
         bookingId: booking.id,
         organizationId: booking.organizationId,
@@ -327,6 +329,7 @@ async function _POST(
         orgId: booking.organizationId,
         sourceType: SourceType.BOOKING,
         sourceId,
+        paymentSubject: PaymentSubject.BOOKING,
         amountCents: totalCents,
         currency,
         intentParams: {

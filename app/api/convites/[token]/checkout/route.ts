@@ -24,6 +24,7 @@ import {
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 import { getBookingState } from "@/lib/reservas/bookingState";
 import { BOOKING_SPLIT_CANONICAL_MODE, emitSplitRuntimeAlert } from "@/domain/bookings/splitGarantido";
+import { PaymentSubject } from "@/lib/payments/kernel";
 
 const SHARE_ACTION_WINDOW_MS = Math.max(
   60_000,
@@ -379,6 +380,7 @@ async function _POST(
         orgId: booking.organizationId,
         sourceType: SourceType.BOOKING,
         sourceId,
+        paymentSubject: PaymentSubject.BOOKING,
         amountCents: totalCents,
         currency,
         intentParams: {

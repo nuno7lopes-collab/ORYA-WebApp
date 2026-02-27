@@ -77,7 +77,7 @@ beforeEach(async () => {
 });
 
 describe("POST /api/stripe/webhook idempotência", () => {
-  it("ignora replay do mesmo stripe event.id sem duplicar outbox", async () => {
+  it("ignora replay do mesmo stripe event.id para flow BOOKING", async () => {
     const first = await POST(makeReq());
     const firstBody = await first.json();
     const second = await POST(makeReq());

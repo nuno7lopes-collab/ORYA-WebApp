@@ -48,6 +48,7 @@ import {
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { finalizeFreeServiceBooking } from "@/domain/finance/freeServiceCheckout";
 import { getStripeEnv, tryGetStripePublishableKeyForEnv } from "@/lib/stripeKeys";
+import { PaymentSubject } from "@/lib/payments/kernel";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -278,10 +279,11 @@ async function _POST(
       return fail("SPLIT_ACTIVE", "Pagamento dividido ativo.", 409);
     }
 
+    const now = new Date();
     const pendingExpiry =
       booking.pendingExpiresAt ??
       new Date(booking.createdAt.getTime() + HOLD_MINUTES * 60 * 1000);
-    if (pendingExpiry < new Date()) {
+    if (booking.startsAt <= now || pendingExpiry < now) {
       await cancelBooking({
         bookingId: booking.id,
         organizationId: booking.organizationId,
@@ -556,6 +558,7 @@ async function _POST(
         orgId: booking.organizationId,
         sourceType: SourceType.BOOKING,
         sourceId,
+        paymentSubject: PaymentSubject.BOOKING,
         amountCents: totalCents,
         currency,
         intentParams: {
