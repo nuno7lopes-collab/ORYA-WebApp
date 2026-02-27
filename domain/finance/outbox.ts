@@ -16,6 +16,7 @@ import { makeOutboxDedupeKey } from "@/domain/outbox/dedupe";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { logError, logInfo, logWarn } from "@/lib/observability/logger";
 import { enqueueOperation } from "@/lib/operations/enqueue";
+import { buildPaymentFulfillmentDedupeKey } from "@/lib/payments/kernel";
 import { upsertPadelPlayerProfile } from "@/domain/padel/playerProfile";
 import { fulfillPadelRegistrationIntent } from "@/lib/operations/fulfillPadelRegistration";
 import { shouldNotify, createNotification } from "@/lib/notifications";
@@ -446,6 +447,12 @@ export async function consumeStripeWebhookEvent(event: Stripe.Event) {
         typeof intent.metadata?.purchaseId === "string" && intent.metadata.purchaseId.trim() !== ""
           ? intent.metadata.purchaseId.trim()
           : intent.id;
+      const fulfillmentDedupeKey = buildPaymentFulfillmentDedupeKey({
+        sourceType: typeof intent.metadata?.sourceType === "string" ? intent.metadata.sourceType : null,
+        sourceId: typeof intent.metadata?.sourceId === "string" ? intent.metadata.sourceId : null,
+        purchaseId: purchaseAnchor,
+        paymentIntentId: intent.id,
+      });
       const paymentId = resolvePaymentIdFromMetadata(intent.metadata, purchaseAnchor);
       // Registar PaymentEvent ingest-only (tolerante a PI múltiplos para o mesmo purchaseId)
       try {
@@ -528,7 +535,7 @@ export async function consumeStripeWebhookEvent(event: Stripe.Event) {
 
       await enqueueOperation({
         operationType: "FULFILL_PAYMENT",
-        dedupeKey: intent.id,
+        dedupeKey: fulfillmentDedupeKey,
         correlations: { paymentIntentId: intent.id, stripeEventId: event.id, purchaseId: purchaseAnchor },
         payload: { paymentIntentId: intent.id, stripeEventType: event.type, stripeEventId: event.id },
       });

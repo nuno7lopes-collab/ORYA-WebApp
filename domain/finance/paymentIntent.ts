@@ -12,6 +12,10 @@ import {
   type StripeOrgContext,
 } from "@/domain/finance/gateway/stripeGateway";
 import { checkoutKey, clampIdempotencyKey } from "@/lib/stripe/idempotency";
+import {
+  buildPaymentSubjectIdempotencyKey,
+  type PaymentSubject,
+} from "@/lib/payments/kernel";
 import { paymentEventRepo } from "@/domain/finance/readModelConsumer";
 import { PaymentEventSource, PaymentStatus } from "@prisma/client";
 import { type FinanceSourceType } from "@/domain/sourceType";
@@ -114,6 +118,7 @@ export type EnsurePaymentIntentInput = {
     amountCents?: number | null;
     platformFeeCents?: number | null;
   };
+  paymentSubject?: PaymentSubject | null;
 };
 
 export type EnsurePaymentIntentResult = {
@@ -140,7 +145,12 @@ export async function ensurePaymentIntent(
     throw new Error("ORG_ID_REQUIRED");
   }
   const purchaseId = normalizePurchaseId(input.purchaseId);
-  const checkoutIdempotencyKey = checkoutKey(purchaseId);
+  const checkoutIdempotencyKey = input.paymentSubject
+    ? buildPaymentSubjectIdempotencyKey({
+        subject: input.paymentSubject,
+        purchaseId,
+      })
+    : checkoutKey(purchaseId);
   const requestedAmount = Math.max(0, input.amountCents);
   const stripeDestination = await resolveStripeDestination(input.requireStripe, input.orgContext ?? null);
 
@@ -276,6 +286,9 @@ export async function ensurePaymentIntent(
     sourceId: input.sourceId,
     idempotencyKey: checkoutIdempotencyKey,
   };
+  if (input.paymentSubject) {
+    metadata.paymentSubject = input.paymentSubject;
+  }
   if (input.clientIdempotencyKey?.trim()) {
     metadata.clientIdempotencyKey = input.clientIdempotencyKey.trim();
   }

@@ -59,6 +59,7 @@ import { makeOutboxDedupeKey } from "@/domain/outbox/dedupe";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { checkPadelCategoryLimit } from "@/domain/padelCategoryLimit";
 import { checkoutKey } from "@/lib/stripe/idempotency";
+import { buildPaymentSubjectIdempotencyKey, PaymentSubject } from "@/lib/payments/kernel";
 import { logFinanceError } from "@/lib/observability/finance";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 import { requiresOrganizationStripe } from "@/domain/finance/payoutModePolicy";
@@ -2279,7 +2280,10 @@ async function _POST(req: NextRequest) {
     // Dedupe determinístico por carrinho: evita loops 409 quando o FE reutiliza uma idempotencyKey inválida.
     // Mantemos a key enviada pelo FE para diferenciar intents e evitar reaproveitar PI terminal.
     const clientIdempotencyKey = idempotencyKey;
-    const checkoutIdempotencyKey = checkoutKey(purchaseId);
+    const checkoutIdempotencyKey = buildPaymentSubjectIdempotencyKey({
+      subject: PaymentSubject.EVENT_TICKET,
+      purchaseId,
+    });
     const effectiveDedupeKey = checkoutIdempotencyKey;
 
     const feePolicyVersion = computeFeePolicyVersion({
@@ -2723,6 +2727,7 @@ async function _POST(req: NextRequest) {
       recipientConnectAccountId: recipientConnectAccountId ?? "",
       sourceType: SourceType.TICKET_ORDER,
       sourceId: String(event.id),
+      paymentSubject: PaymentSubject.EVENT_TICKET,
       currency: currency.toUpperCase(),
       feeMode: pricing.feeMode,
       paymentMethod,
