@@ -31,6 +31,35 @@ describe("payment kernel - flow PADEL_REGISTRATION", () => {
     expect(first).toContain("PADEL_REGISTRATION");
   });
 
+  it("gera idempotency key canónica para PADEL_REGISTRATION", () => {
+    const first = buildPaymentSubjectIdempotencyKey({
+      orgId: 18,
+      subjectType: PaymentSubject.PADEL_REGISTRATION,
+      subjectId: "padel:99:slot:1",
+      amount: 3200,
+      currency: "eur",
+      extra: {
+        pairingId: 99,
+        slotId: 1,
+        scenario: "GROUP_SPLIT",
+      },
+    });
+    const second = buildPaymentSubjectIdempotencyKey({
+      orgId: 18,
+      subjectType: PaymentSubject.PADEL_REGISTRATION,
+      subjectId: "padel:99:slot:1",
+      amount: 3200,
+      currency: "EUR",
+      extra: {
+        scenario: "GROUP_SPLIT",
+        slotId: 1,
+        pairingId: 99,
+      },
+    });
+    expect(first).toBe(second);
+    expect(first).toContain("checkout:pk:PADEL_REGISTRATION:padel:99:slot:1:");
+  });
+
   it("gera dedupe key estável para fulfillment de PADEL_REGISTRATION", () => {
     const dedupe = buildPaymentFulfillmentDedupeKey({
       sourceType: SourceType.PADEL_REGISTRATION,

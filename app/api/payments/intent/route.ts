@@ -809,10 +809,24 @@ async function handlePadelRegistrationIntent(req: NextRequest, body: Body) {
   const purchaseId =
     purchaseIdFromBody ||
     `padel:${pairing.id}:${scenario === "GROUP_FULL" ? "full" : `slot:${targetSlot.id}`}`;
-  const checkoutIdempotencyKey = buildPaymentSubjectIdempotencyKey({
-    subject: PaymentSubject.PADEL_REGISTRATION,
-    purchaseId,
-  });
+  const checkoutIdempotencyKey = isPaymentKernelEnabled()
+    ? buildPaymentSubjectIdempotencyKey({
+        orgId: pairing.organizationId,
+        subjectType: PaymentSubject.PADEL_REGISTRATION,
+        subjectId: purchaseId,
+        amount: pricing.totalCents,
+        currency,
+        version: "padel-registration-v1",
+        extra: {
+          pairingId: pairing.id,
+          slotId: targetSlot.id,
+          scenario,
+        },
+      })
+    : buildPaymentSubjectIdempotencyKey({
+        subject: PaymentSubject.PADEL_REGISTRATION,
+        purchaseId,
+      });
 
   const snapshotLines = payableLines.map((line) => ({
     quantity: line.qty,
@@ -923,6 +937,21 @@ async function handlePadelRegistrationIntent(req: NextRequest, body: Body) {
       sourceType: SourceType.PADEL_REGISTRATION,
       sourceId: registration.id,
       paymentSubject: PaymentSubject.PADEL_REGISTRATION,
+      paymentKernelInput: isPaymentKernelEnabled()
+        ? {
+            orgId: pairing.organizationId,
+            subjectType: PaymentSubject.PADEL_REGISTRATION,
+            subjectId: purchaseId,
+            amount: pricing.totalCents,
+            currency,
+            version: "padel-registration-v1",
+            extra: {
+              pairingId: pairing.id,
+              slotId: targetSlot.id,
+              scenario,
+            },
+          }
+        : null,
       amountCents: pricing.totalCents,
       currency,
       intentParams: {
