@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AgendaResourceClaimType } from "@prisma/client";
 
 vi.mock("@/lib/reservas/access", () => ({
   ensureReservasModuleAccess: vi.fn(async () => ({ ok: true })),
@@ -80,7 +81,7 @@ function makeBooking(overrides?: Partial<any>) {
   };
 }
 
-describe("confirmPendingBooking class session conflicts", () => {
+describe("confirmPendingBooking event claim conflicts", () => {
   let tx: any;
 
   beforeEach(() => {
@@ -117,16 +118,18 @@ describe("confirmPendingBooking class session conflicts", () => {
         findMany: vi.fn().mockResolvedValue([]),
       },
       classSession: {
-        findMany: vi.fn().mockResolvedValue([
-          {
-            startsAt: new Date("2026-01-12T10:00:00.000Z"),
-            endsAt: new Date("2026-01-12T11:00:00.000Z"),
-            professionalId: 10,
-          },
-        ]),
+        findMany: vi.fn().mockResolvedValue([]),
       },
       agendaResourceClaim: {
-        findMany: vi.fn().mockResolvedValue([]),
+        findMany: vi.fn().mockResolvedValue([
+          {
+            sourceId: "99",
+            startsAt: new Date("2026-01-12T10:00:00.000Z"),
+            endsAt: new Date("2026-01-12T11:00:00.000Z"),
+            resourceType: AgendaResourceClaimType.PROFESSIONAL,
+            resourceId: "10",
+          },
+        ]),
       },
       weeklyAvailabilityTemplate: {
         findMany: vi.fn().mockResolvedValue([
@@ -147,7 +150,7 @@ describe("confirmPendingBooking class session conflicts", () => {
     };
   });
 
-  it("recusa confirmação quando existe ClassSession sobreposta do mesmo profissional", async () => {
+  it("recusa confirmação quando existe claim de evento no mesmo profissional", async () => {
     const result = await confirmPendingBooking({
       tx,
       bookingId: 1,
@@ -160,7 +163,7 @@ describe("confirmPendingBooking class session conflicts", () => {
       expect(result.code).toBe("SLOT_TAKEN");
       expect(result.message).toBe("Horário já ocupado.");
     }
-    expect(tx.classSession.findMany).toHaveBeenCalledTimes(1);
+    expect(tx.agendaResourceClaim.findMany).toHaveBeenCalledTimes(1);
     expect(tx.booking.update).not.toHaveBeenCalled();
     expect(getAvailableSlotsForScopeMock).toHaveBeenCalledTimes(1);
     const firstCall = getAvailableSlotsForScopeMock.mock.calls[0]?.[0];

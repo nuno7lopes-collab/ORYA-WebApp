@@ -145,6 +145,9 @@ function buildTransaction(
     classSession: {
       findMany: vi.fn(async () => []),
     },
+    agendaResourceClaim: {
+      findMany: vi.fn(async () => []),
+    },
     weeklyAvailabilityTemplate: {
       findMany: vi.fn(async () => [
         {

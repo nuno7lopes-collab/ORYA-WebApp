@@ -24,6 +24,12 @@ import {
   validateDurationAgainstPolicy,
   validateStartAtAgainstPolicy,
 } from "@/lib/reservas/gridPolicy";
+import {
+  buildEventClaimCandidatesForProfessional,
+  buildEventClaimCandidatesForResource,
+  buildEventClaimConflictBlocks,
+  loadActiveEventClaimBlocks,
+} from "@/lib/reservas/eventClaims";
 
 type ConfirmBookingResult =
   | { ok: true; bookingId: number; alreadyConfirmed: boolean; professionalId: number | null; resourceId: number | null }
@@ -471,6 +477,13 @@ export async function confirmPendingBooking({
       : availabilityMode === "RESOURCE"
         ? candidateScopes.map((scope) => scope.scopeId)
         : [];
+  const scopedCourtIds = Array.from(
+    new Set(
+      resourceScopeIds
+        .map((resourceScopeId) => resourceCourtById.get(resourceScopeId) ?? null)
+        .filter((courtCandidate): courtCandidate is number => typeof courtCandidate === "number" && courtCandidate > 0),
+    ),
+  );
   const conflictScopeIds =
     availabilityMode === "RESOURCE" ? resourceScopeIds : professionalScopeIds;
   const scopedConflictFilter =
@@ -506,7 +519,7 @@ export async function confirmPendingBooking({
           { scopeType: "ORGANIZATION" as const, scopeId: 0 },
           { scopeType, scopeId: { in: conflictScopeIds } },
         ];
-  const [schedules, overrides, blocking, classSessions] = await Promise.all([
+  const [schedules, overrides, blocking, classSessions, eventClaimBlocks] = await Promise.all([
     tx.availabilitySchedule.findMany({
       where: {
         organizationId: booking.organizationId,
@@ -544,6 +557,15 @@ export async function confirmPendingBooking({
           },
           select: { startsAt: true, endsAt: true, professionalId: true },
         }),
+    loadActiveEventClaimBlocks({
+      tx: tx as any,
+      organizationId: booking.organizationId,
+      rangeStart: conflictWindowStart,
+      rangeEnd: bookingEndsAt,
+      professionalIds: professionalScopeIds,
+      resourceIds: resourceScopeIds,
+      courtIds: scopedCourtIds,
+    }),
   ]);
 
   const scheduleIds = schedules.map((schedule) => schedule.id);
@@ -557,7 +579,19 @@ export async function confirmPendingBooking({
   const orgOverrides = overrides.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
   const schedulesByScope = groupByScope(schedules);
   const overridesByScope = groupByScope(overrides);
-  const blocks = [...buildBlocks(blocking), ...buildSessionBlocks(classSessions)];
+  const courtToResourceIds = new Map<number, number[]>();
+  for (const resourceScopeId of resourceScopeIds) {
+    const mappedCourtId = resourceCourtById.get(resourceScopeId);
+    if (!mappedCourtId) continue;
+    const bucket = courtToResourceIds.get(mappedCourtId) ?? [];
+    bucket.push(resourceScopeId);
+    courtToResourceIds.set(mappedCourtId, bucket);
+  }
+  const blocks = [
+    ...buildBlocks(blocking),
+    ...buildSessionBlocks(classSessions),
+    ...buildEventClaimConflictBlocks({ claims: eventClaimBlocks, courtToResourceIds }),
+  ];
   const slotKey = booking.startsAt.toISOString();
 
   let allowed = false;
@@ -619,6 +653,12 @@ export async function confirmPendingBooking({
         endsAt: session.endsAt,
       });
     });
+    professionalExisting.push(
+      ...buildEventClaimCandidatesForProfessional({
+        claims: eventClaimBlocks,
+        professionalId: assignedProfessionalId,
+      }),
+    );
     const resourceExisting: AgendaCandidate[] = blocking
       .filter((entry) => entry.resourceId === assignedResourceId)
       .map((entry) => ({
@@ -627,6 +667,13 @@ export async function confirmPendingBooking({
         startsAt: entry.startsAt,
         endsAt: new Date(entry.startsAt.getTime() + entry.durationMinutes * 60 * 1000),
       }));
+    resourceExisting.push(
+      ...buildEventClaimCandidatesForResource({
+        claims: eventClaimBlocks,
+        resourceId: assignedResourceId,
+        courtId: assignedCourtId ?? null,
+      }),
+    );
     const proDecision = evaluateCandidate({ candidate, existing: professionalExisting });
     const resourceDecision = evaluateCandidate({ candidate, existing: resourceExisting });
     if (proDecision.allowed && resourceDecision.allowed) {
@@ -718,6 +765,26 @@ export async function confirmPendingBooking({
           endsAt: session.endsAt,
         });
       });
+    }
+    for (const scopeId of conflictScopeIds) {
+      const bucket = existingByScope.get(scopeId);
+      if (!bucket) continue;
+      if (availabilityMode === "RESOURCE") {
+        bucket.push(
+          ...buildEventClaimCandidatesForResource({
+            claims: eventClaimBlocks,
+            resourceId: scopeId,
+            courtId: resourceCourtById.get(scopeId) ?? null,
+          }),
+        );
+      } else {
+        bucket.push(
+          ...buildEventClaimCandidatesForProfessional({
+            claims: eventClaimBlocks,
+            professionalId: scopeId,
+          }),
+        );
+      }
     }
     for (const scopeId of conflictScopeIds) {
       const existing = existingByScope.get(scopeId) ?? [];

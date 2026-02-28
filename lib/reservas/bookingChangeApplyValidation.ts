@@ -27,6 +27,12 @@ import {
 } from "@/lib/reservas/serviceAssignment";
 import { resolveServicePartySizeRules, validateRequestedPartySize } from "@/lib/reservas/servicePartySize";
 import { resolveAllowedServiceScopeIds } from "@/lib/reservas/serviceScopes";
+import {
+  buildEventClaimCandidatesForProfessional,
+  buildEventClaimCandidatesForResource,
+  buildEventClaimConflictBlocks,
+  loadActiveEventClaimBlocks,
+} from "@/lib/reservas/eventClaims";
 
 const ACTIVE_BOOKED_STATUSES: BookingStatus[] = ["CONFIRMED", "DISPUTED", "NO_SHOW"];
 const ACTIVE_PENDING_STATUSES: BookingStatus[] = ["PENDING_CONFIRMATION", "PENDING"];
@@ -428,8 +434,12 @@ export async function validateBookingChangeApply(params: {
           { scopeType: "ORGANIZATION" as const, scopeId: 0 },
           { scopeType, scopeId: { in: scopeIds } },
         ];
+  const courtToResourceIds = new Map<number, number[]>();
+  if (selectedResource?.id && selectedResource.courtId) {
+    courtToResourceIds.set(selectedResource.courtId, [selectedResource.id]);
+  }
 
-  const [schedules, overrides, blockingBookings, classSessions] = await Promise.all([
+  const [schedules, overrides, blockingBookings, classSessions, eventClaimBlocks] = await Promise.all([
     tx.availabilitySchedule.findMany({
       where: {
         organizationId: booking.organizationId,
@@ -475,6 +485,15 @@ export async function validateBookingChangeApply(params: {
           },
           select: { id: true, startsAt: true, endsAt: true, professionalId: true },
         }),
+    loadActiveEventClaimBlocks({
+      tx: tx as any,
+      organizationId: booking.organizationId,
+      rangeStart: conflictWindowStart,
+      rangeEnd: bookingEndsAt,
+      professionalIds: professionalId != null ? [professionalId] : [],
+      resourceIds: resourceId != null ? [resourceId] : [],
+      courtIds: courtId != null ? [courtId] : [],
+    }),
   ]);
 
   const scheduleIds = schedules.map((schedule) => schedule.id);
@@ -492,6 +511,7 @@ export async function validateBookingChangeApply(params: {
   const blocks = [
     ...buildBookingConflictBlocks(blockingBookings),
     ...buildSessionConflictBlocks(classSessions),
+    ...buildEventClaimConflictBlocks({ claims: eventClaimBlocks, courtToResourceIds }),
   ];
 
   const slotKey = startsAt.toISOString();
@@ -551,6 +571,12 @@ export async function validateBookingChangeApply(params: {
         endsAt: session.endsAt,
       });
     });
+    existingProfessional.push(
+      ...buildEventClaimCandidatesForProfessional({
+        claims: eventClaimBlocks,
+        professionalId,
+      }),
+    );
 
     const existingResource: AgendaCandidate[] = blockingBookings
       .filter((item) => item.resourceId === resourceId)
@@ -560,6 +586,13 @@ export async function validateBookingChangeApply(params: {
         startsAt: item.startsAt,
         endsAt: new Date(item.startsAt.getTime() + item.durationMinutes * 60 * 1000),
       }));
+    existingResource.push(
+      ...buildEventClaimCandidatesForResource({
+        claims: eventClaimBlocks,
+        resourceId,
+        courtId,
+      }),
+    );
 
     const proDecision = evaluateCandidate({ candidate, existing: existingProfessional });
     if (!proDecision.allowed) {
@@ -646,6 +679,22 @@ export async function validateBookingChangeApply(params: {
         endsAt: session.endsAt,
       });
     });
+    if (availabilityMode === "RESOURCE") {
+      existing.push(
+        ...buildEventClaimCandidatesForResource({
+          claims: eventClaimBlocks,
+          resourceId: selectedScopeId,
+          courtId,
+        }),
+      );
+    } else {
+      existing.push(
+        ...buildEventClaimCandidatesForProfessional({
+          claims: eventClaimBlocks,
+          professionalId: selectedScopeId,
+        }),
+      );
+    }
 
     const conflictDecision = evaluateCandidate({ candidate, existing });
     if (!conflictDecision.allowed) {

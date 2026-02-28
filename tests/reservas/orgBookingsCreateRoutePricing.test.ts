@@ -25,6 +25,7 @@ const prisma = vi.hoisted(() => ({
   weeklyAvailabilityTemplate: { findMany: vi.fn() },
   availabilityOverride: { findMany: vi.fn() },
   booking: { findMany: vi.fn() },
+  agendaResourceClaim: { findMany: vi.fn() },
   classSession: { findMany: vi.fn() },
   address: { findUnique: vi.fn() },
   serviceDurationPrice: { findFirst: vi.fn() },
@@ -83,6 +84,7 @@ beforeEach(async () => {
   prisma.weeklyAvailabilityTemplate.findMany.mockReset();
   prisma.availabilityOverride.findMany.mockReset();
   prisma.booking.findMany.mockReset();
+  prisma.agendaResourceClaim.findMany.mockReset();
   prisma.classSession.findMany.mockReset();
   prisma.address.findUnique.mockReset();
   prisma.serviceDurationPrice.findFirst.mockReset();
@@ -121,6 +123,7 @@ beforeEach(async () => {
   prisma.weeklyAvailabilityTemplate.findMany.mockResolvedValue([]);
   prisma.availabilityOverride.findMany.mockResolvedValue([]);
   prisma.booking.findMany.mockResolvedValue([]);
+  prisma.agendaResourceClaim.findMany.mockResolvedValue([]);
   prisma.classSession.findMany.mockResolvedValue([]);
   prisma.address.findUnique.mockResolvedValue({ sourceProvider: "APPLE_MAPS" });
   prisma.serviceDurationPrice.findFirst.mockResolvedValue({

@@ -48,6 +48,12 @@ import { resolveCourtDurationPrice } from "@/lib/reservas/serviceDurationPrices"
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { ensureReservasOperationalOpen } from "@/lib/reservas/operationalState";
 import { resolveAllowedServiceScopeIds } from "@/lib/reservas/serviceScopes";
+import {
+  buildEventClaimCandidatesForProfessional,
+  buildEventClaimCandidatesForResource,
+  buildEventClaimConflictBlocks,
+  loadActiveEventClaimBlocks,
+} from "@/lib/reservas/eventClaims";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -666,7 +672,14 @@ async function _POST(
         { status: { in: [...activePendingStates] as any }, pendingExpiresAt: { gt: now }, startsAt: { gt: now } },
       ],
     };
-    const [schedules, overrides, blockingBookings, classSessions] = await Promise.all([
+    const scopedCourtIds = Array.from(
+      new Set(
+        resourceScopeIds
+          .map((resourceScopeId) => resourceCourtById.get(resourceScopeId) ?? null)
+          .filter((courtCandidate): courtCandidate is number => typeof courtCandidate === "number" && courtCandidate > 0),
+      ),
+    );
+    const [schedules, overrides, blockingBookings, classSessions, eventClaimBlocks] = await Promise.all([
       prisma.availabilitySchedule.findMany({
         where: {
           organizationId: service.organizationId,
@@ -703,6 +716,15 @@ async function _POST(
             },
             select: { id: true, startsAt: true, endsAt: true, professionalId: true },
           }),
+      loadActiveEventClaimBlocks({
+        tx: prisma as any,
+        organizationId: service.organizationId,
+        rangeStart: conflictWindowStart,
+        rangeEnd: bookingEndsAt,
+        professionalIds: professionalScopeIds,
+        resourceIds: resourceScopeIds,
+        courtIds: scopedCourtIds,
+      }),
     ]);
 
     const scheduleIds = schedules.map((schedule) => schedule.id);
@@ -716,7 +738,19 @@ async function _POST(
     const orgOverrides = overrides.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
     const schedulesByScope = groupByScope(schedules);
     const overridesByScope = groupByScope(overrides);
-    const blocks = [...buildBlocks(blockingBookings), ...buildSessionBlocks(classSessions)];
+    const courtToResourceIds = new Map<number, number[]>();
+    for (const resourceScopeId of resourceScopeIds) {
+      const mappedCourtId = resourceCourtById.get(resourceScopeId);
+      if (!mappedCourtId) continue;
+      const bucket = courtToResourceIds.get(mappedCourtId) ?? [];
+      bucket.push(resourceScopeId);
+      courtToResourceIds.set(mappedCourtId, bucket);
+    }
+    const blocks = [
+      ...buildBlocks(blockingBookings),
+      ...buildSessionBlocks(classSessions),
+      ...buildEventClaimConflictBlocks({ claims: eventClaimBlocks, courtToResourceIds }),
+    ];
     const slotKey = startsAt.toISOString();
 
     let allowed = false;
@@ -776,6 +810,12 @@ async function _POST(
           endsAt: session.endsAt,
         });
       });
+      professionalExisting.push(
+        ...buildEventClaimCandidatesForProfessional({
+          claims: eventClaimBlocks,
+          professionalId,
+        }),
+      );
       const resourceExisting: AgendaCandidate[] = blockingBookings
         .filter((booking) => booking.resourceId === resourceId)
         .map((booking) => ({
@@ -784,6 +824,13 @@ async function _POST(
           startsAt: booking.startsAt,
           endsAt: new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000),
         }));
+      resourceExisting.push(
+        ...buildEventClaimCandidatesForResource({
+          claims: eventClaimBlocks,
+          resourceId,
+          courtId: courtId ?? null,
+        }),
+      );
       const professionalDecision = evaluateCandidate({ candidate, existing: professionalExisting });
       const resourceDecision = evaluateCandidate({ candidate, existing: resourceExisting });
       if (!professionalDecision.allowed) {
@@ -865,6 +912,26 @@ async function _POST(
             endsAt: session.endsAt,
           });
         });
+      }
+      for (const scopeId of localScopeIds) {
+        const bucket = existingByScope.get(scopeId);
+        if (!bucket) continue;
+        if (availabilityMode === "RESOURCE") {
+          bucket.push(
+            ...buildEventClaimCandidatesForResource({
+              claims: eventClaimBlocks,
+              resourceId: scopeId,
+              courtId: resourceCourtById.get(scopeId) ?? null,
+            }),
+          );
+        } else {
+          bucket.push(
+            ...buildEventClaimCandidatesForProfessional({
+              claims: eventClaimBlocks,
+              professionalId: scopeId,
+            }),
+          );
+        }
       }
       for (const scopeId of localScopeIds) {
         const existing = existingByScope.get(scopeId) ?? [];
@@ -1004,7 +1071,17 @@ async function _POST(
           durationMinutes: true,
           professionalId: true,
           resourceId: true,
+          courtId: true,
         },
+      });
+      const lockedEventClaimBlocks = await loadActiveEventClaimBlocks({
+        tx: tx as any,
+        organizationId: service.organizationId,
+        rangeStart: conflictWindowStart,
+        rangeEnd: bookingEndsAt,
+        professionalIds: professionalId != null ? [professionalId] : [],
+        resourceIds: resourceId != null ? [resourceId] : [],
+        courtIds: courtId != null ? [courtId] : [],
       });
       const lockedConflict = lockedBookings.some((item) => {
         const itemEndsAt = new Date(item.startsAt.getTime() + item.durationMinutes * 60 * 1000);
@@ -1018,10 +1095,27 @@ async function _POST(
         }
         return (
           (professionalId != null && item.professionalId === professionalId) ||
-          (resourceId != null && item.resourceId === resourceId)
+          (resourceId != null && item.resourceId === resourceId) ||
+          (courtId != null && item.courtId === courtId)
         );
       });
-      if (lockedConflict) {
+      const lockedEventConflict = lockedEventClaimBlocks.some((claim) => {
+        if (availabilityMode === "RESOURCE") {
+          return (
+            (resourceId != null && claim.resourceId === resourceId) ||
+            (courtId != null && claim.courtId === courtId)
+          );
+        }
+        if (availabilityMode === "PROFESSIONAL") {
+          return professionalId != null && claim.professionalId === professionalId;
+        }
+        return (
+          (professionalId != null && claim.professionalId === professionalId) ||
+          (resourceId != null && claim.resourceId === resourceId) ||
+          (courtId != null && claim.courtId === courtId)
+        );
+      });
+      if (lockedConflict || lockedEventConflict) {
         throw new Error("AGENDA_CONFLICT_LOCKED");
       }
 
