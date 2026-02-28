@@ -14,6 +14,11 @@ import {
 export { PaymentSubject, buildPaymentSubjectIdempotencyKey };
 export type { AppError, PaymentSubjectIdempotencyInput, Result };
 
+export function isPaymentKernelEnabled() {
+  const raw = (process.env.FEATURE_PAYMENT_KERNEL ?? "true").trim().toLowerCase();
+  return raw !== "0" && raw !== "false" && raw !== "off" && raw !== "no";
+}
+
 type CreatePaymentIntentForSubjectInput = {
   orgId: number;
   subjectType: PaymentSubjectType;

@@ -31,6 +31,33 @@ describe("payment kernel - flow EVENT_TICKET", () => {
     expect(first).toContain("TICKET_ORDER");
   });
 
+  it("gera idempotency key canónica para rollout do kernel", () => {
+    const first = buildPaymentSubjectIdempotencyKey({
+      orgId: 22,
+      subjectType: PaymentSubject.EVENT_TICKET,
+      subjectId: "pur_event_123",
+      amount: 1200,
+      currency: "eur",
+      extra: {
+        totalQuantity: 2,
+        scenario: "SINGLE",
+      },
+    });
+    const second = buildPaymentSubjectIdempotencyKey({
+      orgId: 22,
+      subjectType: PaymentSubject.EVENT_TICKET,
+      subjectId: "pur_event_123",
+      amount: 1200,
+      currency: "EUR",
+      extra: {
+        scenario: "SINGLE",
+        totalQuantity: 2,
+      },
+    });
+    expect(first).toBe(second);
+    expect(first).toContain("checkout:pk:EVENT_TICKET:pur_event_123:");
+  });
+
   it("gera dedupe key estável para fulfillment de EVENT_TICKET", () => {
     const dedupe = buildPaymentFulfillmentDedupeKey({
       sourceType: SourceType.TICKET_ORDER,
