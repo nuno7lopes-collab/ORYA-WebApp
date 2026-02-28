@@ -1,23 +1,50 @@
+import type Stripe from "stripe";
 import { SourceType } from "@prisma/client";
-import { checkoutKey } from "@/lib/stripe/idempotency";
+import {
+  buildPaymentSubjectIdempotencyKey,
+  type PaymentSubjectIdempotencyInput,
+} from "@/lib/payments/idempotency";
+import {
+  PaymentSubject,
+  type AppError,
+  type PaymentSubject as PaymentSubjectType,
+  type Result,
+} from "@/lib/payments/types";
 
-export const PaymentSubject = {
-  BOOKING: "BOOKING",
-  EVENT_TICKET: "EVENT_TICKET",
-  STORE_ORDER: "STORE_ORDER",
-  PADEL_REGISTRATION: "PADEL_REGISTRATION",
-} as const;
+export { PaymentSubject, buildPaymentSubjectIdempotencyKey };
+export type { AppError, PaymentSubjectIdempotencyInput, Result };
 
-export type PaymentSubject = (typeof PaymentSubject)[keyof typeof PaymentSubject];
+type CreatePaymentIntentForSubjectInput = {
+  orgId: number;
+  subjectType: PaymentSubjectType;
+  subjectId: string;
+  amountCents: number;
+  currency: string;
+  metadata?: Record<string, string>;
+  customerId?: string | null;
+  existingPaymentIntentId?: string | null;
+};
 
-const SUBJECT_TO_SOURCE_TYPE: Record<PaymentSubject, SourceType> = {
+type CreatePaymentIntentForSubjectOutput = {
+  idempotencyKey: string;
+  paymentIntent: Stripe.PaymentIntent;
+  reused: boolean;
+};
+
+export interface CreatePaymentIntentForSubjectUseCase {
+  execute(
+    input: CreatePaymentIntentForSubjectInput,
+  ): Promise<Result<CreatePaymentIntentForSubjectOutput, AppError>>;
+}
+
+const SUBJECT_TO_SOURCE_TYPE: Record<PaymentSubjectType, SourceType> = {
   BOOKING: SourceType.BOOKING,
   EVENT_TICKET: SourceType.TICKET_ORDER,
   STORE_ORDER: SourceType.STORE_ORDER,
   PADEL_REGISTRATION: SourceType.PADEL_REGISTRATION,
 };
 
-const SOURCE_TYPE_TO_SUBJECT = new Map<SourceType, PaymentSubject>([
+const SOURCE_TYPE_TO_SUBJECT = new Map<SourceType, PaymentSubjectType>([
   [SourceType.BOOKING, PaymentSubject.BOOKING],
   [SourceType.TICKET_ORDER, PaymentSubject.EVENT_TICKET],
   [SourceType.STORE_ORDER, PaymentSubject.STORE_ORDER],
@@ -30,28 +57,16 @@ function normalizeSegment(value: string | number | null | undefined) {
   return "";
 }
 
-export function resolveSourceTypeFromPaymentSubject(subject: PaymentSubject): SourceType {
+export function resolveSourceTypeFromPaymentSubject(subject: PaymentSubjectType): SourceType {
   return SUBJECT_TO_SOURCE_TYPE[subject];
 }
 
 export function resolvePaymentSubjectFromSourceType(
   sourceType: string | null | undefined,
-): PaymentSubject | null {
+): PaymentSubjectType | null {
   if (!sourceType) return null;
   const normalized = sourceType.trim().toUpperCase();
   return SOURCE_TYPE_TO_SUBJECT.get(normalized as SourceType) ?? null;
-}
-
-export function buildPaymentSubjectIdempotencyKey(params: {
-  subject: PaymentSubject;
-  purchaseId: string;
-}) {
-  const purchaseId = normalizeSegment(params.purchaseId);
-  if (!purchaseId) {
-    throw new Error("PURCHASE_ID_REQUIRED");
-  }
-  const sourceType = resolveSourceTypeFromPaymentSubject(params.subject);
-  return checkoutKey(`${sourceType}:${purchaseId}`);
 }
 
 export function buildPaymentFulfillmentDedupeKey(params: {

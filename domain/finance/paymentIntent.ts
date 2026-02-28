@@ -12,10 +12,8 @@ import {
   type StripeOrgContext,
 } from "@/domain/finance/gateway/stripeGateway";
 import { checkoutKey, clampIdempotencyKey } from "@/lib/stripe/idempotency";
-import {
-  buildPaymentSubjectIdempotencyKey,
-  type PaymentSubject,
-} from "@/lib/payments/kernel";
+import { buildPaymentSubjectIdempotencyKey } from "@/lib/payments/kernel";
+import type { PaymentSubject } from "@/lib/payments/types";
 import { paymentEventRepo } from "@/domain/finance/readModelConsumer";
 import { PaymentEventSource, PaymentStatus } from "@prisma/client";
 import { type FinanceSourceType } from "@/domain/sourceType";
