@@ -2,6 +2,13 @@ import { prisma } from "@/lib/prisma";
 import { logInfo, logWarn } from "@/lib/observability/logger";
 import { Prisma } from "@prisma/client";
 import crypto from "crypto";
+import { appendEventLog } from "@/domain/eventLog/append";
+import {
+  defaultUnknownHandler,
+  isUnknownOutboxDeadLetterEnabled,
+  resolveOutboxHandler,
+  type OutboxHandlerDecision,
+} from "@/domain/outbox/handlerRegistry";
 
 export const OUTBOX_MAX_ATTEMPTS = 5;
 const DEFAULT_BATCH_SIZE = 50;
@@ -90,6 +97,26 @@ function summarizeError(err: unknown) {
   return { message, errorClass, reasonCode, stackSummary };
 }
 
+function emitOutboxMetric(metric: string, payload: Record<string, unknown>) {
+  console.log(JSON.stringify({ kind: "outbox_metric", metric, ...payload }));
+}
+
+function isLegacyWorkerSupportedOutboxEventType(eventType: string) {
+  if (eventType === "CRM_INGEST_REQUESTED") return true;
+  if (eventType === "AGENDA_ITEM_UPSERT_REQUESTED") return true;
+  if (eventType.startsWith("payment.")) return true;
+  if (eventType.startsWith("PADREG_")) return true;
+  if (eventType.startsWith("LOYALTY_")) return true;
+  if (eventType.startsWith("TOURNAMENT_")) return true;
+  if (eventType.startsWith("PADEL_")) return true;
+  if (eventType.startsWith("search.index.")) return true;
+  if (eventType.startsWith("organization.owner_transfer.")) return true;
+  if (eventType.startsWith("event.")) return true;
+  if (eventType.startsWith("tournament.")) return true;
+  if (eventType.startsWith("reservation.")) return true;
+  return false;
+}
+
 export function buildFairOutboxBatch(events: OutboxCandidate[], batchSize: number) {
   if (events.length <= batchSize) return [...events];
   const buckets = new Map<string, OutboxCandidate[]>();
@@ -119,6 +146,82 @@ export function buildFairOutboxBatch(events: OutboxCandidate[], batchSize: numbe
     }
   }
   return result;
+}
+
+async function applyUnknownEventDecision(params: {
+  event: OutboxCandidate;
+  processingToken: string;
+  now: Date;
+  decision: OutboxHandlerDecision;
+}): Promise<OutboxOutcome> {
+  const { event, processingToken, now, decision } = params;
+  if (decision.action !== "DEAD_LETTER") {
+    return { eventId: event.eventId, status: "SKIPPED" };
+  }
+
+  const firstSeenAt = event.firstSeenAt ?? now;
+  const eventLogOrganizationId = decision.eventLogOrganizationId ?? null;
+  const eventLogType = decision.eventLogType ?? "outbox.event.unsupported.dead_lettered";
+  const eventLogPayload =
+    decision.eventLogPayload ??
+    ({
+      eventId: event.eventId,
+      eventType: event.eventType,
+      reasonCode: decision.reasonCode,
+      payload: event.payload,
+    } satisfies Prisma.InputJsonObject);
+
+  const result = await prisma.$transaction(async (tx) => {
+    if (eventLogOrganizationId && eventLogOrganizationId > 0) {
+      await appendEventLog(
+        {
+          organizationId: eventLogOrganizationId,
+          eventType: eventLogType,
+          idempotencyKey: `outbox.unknown:${event.eventId}`,
+          payload: eventLogPayload,
+          subjectType: decision.eventLogSubjectType ?? "OUTBOX_EVENT",
+          subjectId: decision.eventLogSubjectId ?? event.eventId,
+          correlationId: event.correlationId ?? null,
+          causationId: event.causationId ?? event.eventId,
+        },
+        tx,
+      );
+    }
+
+    const update = await tx.outboxEvent.updateMany({
+      where: { eventId: event.eventId, processingToken },
+      data: {
+        deadLetteredAt: now,
+        nextAttemptAt: null,
+        reasonCode: decision.reasonCode,
+        errorClass: decision.errorClass,
+        errorStack: decision.errorStack ?? null,
+        firstSeenAt,
+        lastSeenAt: now,
+      },
+    });
+    return update.count;
+  }, { timeout: resolveTxTimeoutMs(), maxWait: resolveTxMaxWaitMs() });
+
+  if (result === 0) return { eventId: event.eventId, status: "SKIPPED" };
+
+  emitOutboxMetric("outbox_event_unsupported_total", {
+    eventType: event.eventType,
+    eventId: event.eventId,
+  });
+  logWarn(
+    "outbox.unsupported_event.dead_lettered",
+    {
+      eventId: event.eventId,
+      eventType: event.eventType,
+      reasonCode: decision.reasonCode,
+      metric: "outbox_event_unsupported_total",
+      correlationId: event.correlationId ?? null,
+      causationId: event.causationId ?? null,
+    },
+    { fallbackToRequestContext: false },
+  );
+  return { eventId: event.eventId, status: "DEAD_LETTER" };
 }
 
 async function processClaimedOutboxEvent(params: {
@@ -175,6 +278,46 @@ async function processClaimedOutboxEvent(params: {
       : typeof event.attempts === "number"
         ? event.attempts
         : 0;
+
+  const explicitHandler = resolveOutboxHandler(event.eventType);
+  const shouldUseDefaultUnknownHandler =
+    !explicitHandler &&
+    isUnknownOutboxDeadLetterEnabled() &&
+    !isLegacyWorkerSupportedOutboxEventType(event.eventType);
+  const resolvedHandler = explicitHandler ?? (shouldUseDefaultUnknownHandler ? defaultUnknownHandler : null);
+  if (resolvedHandler) {
+    try {
+      const decision = await resolvedHandler({
+        eventId: event.eventId,
+        eventType: event.eventType,
+        payload: event.payload,
+        createdAt: event.createdAt,
+        causationId: event.causationId ?? null,
+        correlationId: event.correlationId ?? null,
+      });
+      const handled = await applyUnknownEventDecision({
+        event,
+        processingToken,
+        now,
+        decision,
+      });
+      if (handled.status !== "SKIPPED") return handled;
+    } catch (err) {
+      const { message, errorClass, reasonCode } = summarizeError(err);
+      logWarn(
+        "outbox.handler.failed",
+        {
+          eventId: event.eventId,
+          eventType: event.eventType,
+          attempts,
+          errorClass,
+          reasonCode,
+          error: message,
+        },
+        { fallbackToRequestContext: false },
+      );
+    }
+  }
 
   const handleExistingOperation = async (existingOp: { status: string; updatedAt: Date | null }) => {
     if (existingOp.status === "SUCCEEDED") {

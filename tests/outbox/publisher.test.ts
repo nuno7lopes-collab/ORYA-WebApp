@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { publishOutboxBatch, OUTBOX_MAX_ATTEMPTS, buildFairOutboxBatch } from "@/domain/outbox/publisher";
 import { prisma } from "@/lib/prisma";
@@ -110,6 +110,7 @@ const prismaMock = vi.mocked(prisma);
 
 describe("Outbox publisher", () => {
   beforeEach(() => {
+    process.env.OUTBOX_UNKNOWN_DEFAULT_HANDLER_ENABLED = "false";
     outboxEvents = [];
     operations = [];
     currentNow = new Date("2024-01-01T00:00:00Z");
@@ -119,6 +120,10 @@ describe("Outbox publisher", () => {
     prismaMock.outboxEvent.update.mockClear();
     prismaMock.outboxEvent.updateMany.mockClear();
     prismaMock.outboxEvent.findUnique.mockClear();
+  });
+
+  afterEach(() => {
+    delete process.env.OUTBOX_UNKNOWN_DEFAULT_HANDLER_ENABLED;
   });
 
   it("enfileira operação e mantém publishedAt null até sucesso", async () => {
