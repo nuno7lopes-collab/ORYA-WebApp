@@ -177,4 +177,26 @@ describe("organization events create route schedule invariants", () => {
     expect(body.errorCode).toBe("PADEL_CREATE_MOVED");
     expect(body.details?.target).toBe("/org/12/padel/tournaments/create");
   });
+
+  it("rejects resource payload when consumesResources=false", async () => {
+    const req = new NextRequest("http://localhost/api/org/1/events/create", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Evento recursos invalido",
+        startsAt: "2026-03-01T10:00:00.000Z",
+        endsAt: "2026-03-01T11:00:00.000Z",
+        addressId: "addr-1",
+        consumesResources: false,
+        resourceIds: [1],
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode).toBe("EVENT_RESOURCES_REQUIRES_CONSUMES_FLAG");
+  });
 });

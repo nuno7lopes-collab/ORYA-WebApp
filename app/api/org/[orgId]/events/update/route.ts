@@ -44,6 +44,12 @@ import { resolveRequiredOrganizationIdFromRequest } from "@/lib/organizationId";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 import { refundKey } from "@/lib/stripe/idempotency";
 import { isEventCancelledStatus } from "@/domain/events/lifecycle";
+import {
+  normalizeEventResourceInput,
+  persistEventResourceSelection,
+  readEventResourceSelection,
+  validateEventResourceSelection,
+} from "@/lib/events/resources";
 
 const canonicalize = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -98,6 +104,9 @@ type UpdateEventBody = {
   ticketTypeUpdates?: TicketTypeUpdate[];
   newTicketTypes?: NewTicketType[];
   payoutMode?: string | null;
+  consumesResources?: boolean | string;
+  resourceIds?: unknown[];
+  professionalIds?: unknown[];
   accessPolicy?: {
     mode: EventAccessMode;
     guestCheckoutAllowed: boolean;
@@ -113,6 +122,17 @@ type UpdateEventBody = {
     undoWindowMinutes?: number | null;
   } | null;
 };
+
+class EventResourceInputError extends Error {
+  code: string;
+  details?: Record<string, unknown>;
+
+  constructor(code: string, message: string, details?: Record<string, unknown>) {
+    super(message);
+    this.code = code;
+    this.details = details;
+  }
+}
 
 function slugify(input: string): string {
   return input
@@ -216,6 +236,7 @@ async function _POST(req: NextRequest) {
       organizationId: number | null;
       pricingMode: EventPricingMode | null;
       templateType: EventTemplateType | null;
+      consumesResources: boolean;
       interestTags: string[];
       payoutMode: PayoutMode | null;
       addressId?: string | null;
@@ -252,6 +273,7 @@ async function _POST(req: NextRequest) {
               organizationId: true,
               pricingMode: true,
               templateType: true,
+              consumesResources: true,
               interestTags: true,
               payoutMode: true,
               addressId: true,
@@ -298,11 +320,12 @@ async function _POST(req: NextRequest) {
                 payout_mode: PayoutMode | null;
                 pricing_mode: EventPricingMode | null;
                 template_type: EventTemplateType | null;
+                consumes_resources: boolean;
                 address_id: string | null;
                 interest_tags: string[] | null;
               }[]
             >(
-              Prisma.sql`SELECT id, slug, title, starts_at, ends_at, status, organization_id, payout_mode, pricing_mode, template_type, address_id, interest_tags FROM app_v3.events WHERE id = ${eventId} LIMIT 1`,
+              Prisma.sql`SELECT id, slug, title, starts_at, ends_at, status, organization_id, payout_mode, pricing_mode, template_type, consumes_resources, address_id, interest_tags FROM app_v3.events WHERE id = ${eventId} LIMIT 1`,
             );
             const row = rows[0];
             if (!row) return null;
@@ -344,6 +367,7 @@ async function _POST(req: NextRequest) {
               organizationId: row.organization_id,
               pricingMode: row.pricing_mode ?? null,
               templateType: row.template_type ?? null,
+              consumesResources: row.consumes_resources ?? false,
               interestTags: row.interest_tags ?? [],
               payoutMode: row.payout_mode,
               addressId: row.address_id,
@@ -450,6 +474,25 @@ async function _POST(req: NextRequest) {
 
     const requestedStatus =
       typeof body.status === "string" ? body.status.trim().toUpperCase() : null;
+    const normalizedResources = normalizeEventResourceInput({
+      consumesResources: body.consumesResources,
+      resourceIds: body.resourceIds,
+      professionalIds: body.professionalIds,
+    });
+    const hasResourceSelectionPayload =
+      normalizedResources.resourceIds.length > 0 || normalizedResources.professionalIds.length > 0;
+    if (normalizedResources.consumesResources === false && hasResourceSelectionPayload) {
+      return fail(
+        400,
+        "EVENT_RESOURCES_REQUIRES_CONSUMES_FLAG",
+        "EVENT_RESOURCES_REQUIRES_CONSUMES_FLAG",
+        false,
+      );
+    }
+    const consumesResourcesTouched = normalizedResources.consumesResources !== null || hasResourceSelectionPayload;
+    const nextConsumesResources =
+      normalizedResources.consumesResources ??
+      (hasResourceSelectionPayload ? true : event.consumesResources);
     if ((body as Record<string, unknown> | null)?.archive === true) {
       return fail(400, "ARCHIVE_REMOVED_USE_STATUS_OR_DELETE");
     }
@@ -493,6 +536,7 @@ async function _POST(req: NextRequest) {
         body.pricingMode !== undefined ||
         body.coverImageUrl !== undefined ||
         body.payoutMode !== undefined ||
+        consumesResourcesTouched ||
         body.accessPolicy !== undefined ||
         hasTicketTypeUpdatesPayload ||
         hasNewTicketTypesPayload ||
@@ -580,6 +624,9 @@ async function _POST(req: NextRequest) {
     const dataUpdate: Partial<Prisma.EventUncheckedUpdateInput> = {};
     if (shouldCancelEvent) {
       dataUpdate.status = "CANCELLED" as any;
+    }
+    if (consumesResourcesTouched) {
+      dataUpdate.consumesResources = nextConsumesResources;
     }
     if (body.title !== undefined) {
       const nextTitle = body.title?.trim() ?? "";
@@ -862,6 +909,37 @@ async function _POST(req: NextRequest) {
         await Promise.all(txOps);
       }
 
+      if (consumesResourcesTouched) {
+        if (nextConsumesResources) {
+          const selectedResources = hasResourceSelectionPayload
+            ? {
+                resourceIds: normalizedResources.resourceIds,
+                professionalIds: normalizedResources.professionalIds,
+              }
+            : await readEventResourceSelection({ tx, eventId });
+          const resourceValidation = await validateEventResourceSelection({
+            tx,
+            organizationId: event.organizationId!,
+            selection: selectedResources,
+            requireNonEmpty: true,
+          });
+          if (!resourceValidation.ok) {
+            throw new EventResourceInputError(
+              resourceValidation.code,
+              resourceValidation.message,
+              resourceValidation.details,
+            );
+          }
+          await persistEventResourceSelection({
+            tx,
+            eventId,
+            selection: resourceValidation.selection,
+          });
+        } else {
+          await tx.eventResource.deleteMany({ where: { eventId } });
+        }
+      }
+
       if (searchIndexRelevantUpdate && event.organizationId && eventLogId) {
         const nextTitle = (dataUpdate.title ?? event.title) as string;
         const nextStartsAt = (dataUpdate.startsAt ?? event.startsAt) as Date;
@@ -977,6 +1055,15 @@ async function _POST(req: NextRequest) {
     }
     if (message === "INVALID_PADEL_CATEGORY_LINK") {
       return fail(400, "Categoria Padel inválida para este evento.");
+    }
+    if (err instanceof EventResourceInputError) {
+      return fail(
+        400,
+        err.message || "Recursos do evento inválidos.",
+        err.code || "EVENT_RESOURCES_INVALID",
+        false,
+        err.details,
+      );
     }
     if (isUnauthenticatedError(err)) {
       return fail(401, "Não autenticado.");

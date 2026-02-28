@@ -34,6 +34,11 @@ import {
   OrganizationModule,
 } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import {
+  normalizeEventResourceInput,
+  persistEventResourceSelection,
+  validateEventResourceSelection,
+} from "@/lib/events/resources";
 
 // Tipos esperados no body do pedido
 type TicketTypeInput = {
@@ -63,7 +68,21 @@ type CreateOrganizationEventBody = {
   platformFeeFixedCents?: number;
   accessPolicy?: Record<string, unknown> | null;
   padel?: Record<string, unknown> | null;
+  consumesResources?: boolean | string;
+  resourceIds?: unknown[];
+  professionalIds?: unknown[];
 };
+
+class EventResourceInputError extends Error {
+  code: string;
+  details?: Record<string, unknown>;
+
+  constructor(code: string, message: string, details?: Record<string, unknown>) {
+    super(message);
+    this.code = code;
+    this.details = details;
+  }
+}
 
 function slugify(input: string): string {
   return input
@@ -306,6 +325,26 @@ async function _POST(req: NextRequest) {
         target: `/org/${organization.id}/padel/tournaments/create`,
       });
     }
+
+    const normalizedResources = normalizeEventResourceInput({
+      consumesResources: body.consumesResources,
+      resourceIds: body.resourceIds,
+      professionalIds: body.professionalIds,
+    });
+    const hasResourceSelectionPayload =
+      normalizedResources.resourceIds.length > 0 || normalizedResources.professionalIds.length > 0;
+    const consumesResources =
+      normalizedResources.consumesResources === true ||
+      (normalizedResources.consumesResources === null && hasResourceSelectionPayload);
+    if (normalizedResources.consumesResources === false && hasResourceSelectionPayload) {
+      return fail(
+        400,
+        "EVENT_RESOURCES_REQUIRES_CONSUMES_FLAG",
+        "EVENT_RESOURCES_REQUIRES_CONSUMES_FLAG",
+        false,
+      );
+    }
+
     const templateType: EventTemplateType =
       templateTypeRaw === "VOLUNTEERING" ? EventTemplateType.VOLUNTEERING : EventTemplateType.OTHER;
 
@@ -428,6 +467,7 @@ async function _POST(req: NextRequest) {
           addressId: addressRecord.id,
           pricingMode,
           status: eventStatus,
+          consumesResources,
           ...(timezone ? { timezone } : {}),
           coverImageUrl,
           payoutMode,
@@ -435,6 +475,29 @@ async function _POST(req: NextRequest) {
       });
 
       await createEventAccessPolicyVersion(created.id, accessPolicyInput, tx);
+      if (consumesResources) {
+        const resourceValidation = await validateEventResourceSelection({
+          tx,
+          organizationId: organization.id,
+          selection: {
+            resourceIds: normalizedResources.resourceIds,
+            professionalIds: normalizedResources.professionalIds,
+          },
+          requireNonEmpty: true,
+        });
+        if (!resourceValidation.ok) {
+          throw new EventResourceInputError(
+            resourceValidation.code,
+            resourceValidation.message,
+            resourceValidation.details,
+          );
+        }
+        await persistEventResourceSelection({
+          tx,
+          eventId: created.id,
+          selection: resourceValidation.selection,
+        });
+      }
 
       if (created.organizationId) {
         const eventIdLog = crypto.randomUUID();
@@ -536,6 +599,15 @@ async function _POST(req: NextRequest) {
       return fail(401, "Não autenticado.");
     }
     const message = err instanceof Error ? err.message : "";
+    if (err instanceof EventResourceInputError) {
+      return fail(
+        400,
+        err.message || "Recursos do evento inválidos.",
+        err.code || "EVENT_RESOURCES_INVALID",
+        false,
+        err.details,
+      );
+    }
     if (message === "INVITE_TOKEN_REQUIRES_EMAIL") {
       return fail(400, "INVITE_TOKEN_REQUIRES_EMAIL");
     }

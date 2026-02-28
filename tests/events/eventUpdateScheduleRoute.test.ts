@@ -115,4 +115,42 @@ describe("organization events update route schedule invariants", () => {
     expect(body.ok).toBe(false);
     expect(JSON.stringify(body)).toContain("data/hora de fim em falta");
   });
+
+  it("rejects resource payload when consumesResources=false", async () => {
+    prisma.event.findUnique.mockResolvedValueOnce({
+      id: 77,
+      slug: "evento-77",
+      title: "Evento 77",
+      startsAt: new Date("2026-03-01T10:00:00.000Z"),
+      endsAt: new Date("2026-03-01T12:00:00.000Z"),
+      status: "PUBLISHED",
+      organizationId: 1,
+      pricingMode: "STANDARD",
+      templateType: "OTHER",
+      consumesResources: false,
+      interestTags: [],
+      payoutMode: "ORGANIZATION",
+      addressId: "addr-1",
+      ticketTypes: [],
+      organization: null,
+      _count: { tickets: 0, reservations: 0, saleLines: 0 },
+    });
+
+    const req = new NextRequest("http://localhost/api/org/1/events/update", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        eventId: 77,
+        consumesResources: false,
+        resourceIds: [4],
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode).toBe("EVENT_RESOURCES_REQUIRES_CONSUMES_FLAG");
+  });
 });
