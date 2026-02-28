@@ -55,6 +55,7 @@ import {
   releaseEventResourceClaims,
   syncEventResourceClaims,
 } from "@/lib/events/resourceClaims";
+import { emitEventConsumesResourcesMetric, extractConflictsCount } from "@/lib/events/metrics";
 
 const canonicalize = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -194,6 +195,8 @@ async function generateUniqueSlug(baseSlug: string, eventId?: number) {
 
 async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
+  let metricOrganizationId: number | null = null;
+  let metricEventId: number | null = null;
   const fail = (
     status: number,
     message: string,
@@ -422,6 +425,8 @@ async function _POST(req: NextRequest) {
     if (!event) {
       return fail(404, "Evento não encontrado.");
     }
+    metricOrganizationId = event.organizationId ?? null;
+    metricEventId = event.id;
     if (event.organizationId !== requestOrganizationId) {
       return fail(404, "Evento não encontrado.");
     }
@@ -580,6 +585,12 @@ async function _POST(req: NextRequest) {
       await prisma.$transaction(async (tx) => {
         await releaseEventResourceClaims({ tx, eventId });
         await tx.event.delete({ where: { id: eventId } });
+      });
+      emitEventConsumesResourcesMetric("event_consumes_resources.delete", {
+        operation: "delete",
+        organizationId: event.organizationId,
+        eventId,
+        status: "success",
       });
       return respondOk(ctx, { deleted: true }, { status: 200 });
     }
@@ -886,6 +897,8 @@ async function _POST(req: NextRequest) {
       return fail(400, "Nada para atualizar.");
     }
 
+    let syncApplied = false;
+    let syncClaimsCreated = 0;
     await prisma.$transaction(async (tx) => {
       const txOps: Prisma.PrismaPromise<unknown>[] = [];
       if (hasDataUpdate) {
@@ -958,7 +971,7 @@ async function _POST(req: NextRequest) {
       }
 
       if (shouldSyncEventResourceClaims) {
-        await syncEventResourceClaims({
+        const syncResult = await syncEventResourceClaims({
           tx,
           organizationId: event.organizationId!,
           eventId,
@@ -967,6 +980,8 @@ async function _POST(req: NextRequest) {
           status: nextEventStatus,
           consumesResources: nextConsumesResources,
         });
+        syncApplied = syncResult.applied === true;
+        syncClaimsCreated = syncResult.applied === true ? syncResult.claimsCreated : 0;
       }
 
       if (searchIndexRelevantUpdate && event.organizationId && eventLogId) {
@@ -1042,6 +1057,15 @@ async function _POST(req: NextRequest) {
         );
       }
     });
+    emitEventConsumesResourcesMetric("event_consumes_resources.update", {
+      operation: shouldCancelEvent ? "publish" : "update",
+      organizationId: event.organizationId,
+      eventId,
+      status: "success",
+      applied: syncApplied,
+      claimsCreated: syncClaimsCreated,
+      reason: shouldCancelEvent ? "event_cancelled" : "event_updated",
+    });
 
     if (shouldCancelEvent) {
       const summaries = await prisma.saleSummary.findMany({
@@ -1086,6 +1110,13 @@ async function _POST(req: NextRequest) {
       return fail(400, "Categoria Padel inválida para este evento.");
     }
     if (err instanceof EventResourceInputError) {
+      emitEventConsumesResourcesMetric("event_consumes_resources.update", {
+        operation: "update",
+        organizationId: metricOrganizationId,
+        eventId: metricEventId,
+        status: "failure",
+        reason: err.code || "EVENT_RESOURCES_INVALID",
+      });
       return fail(
         400,
         err.message || "Recursos do evento inválidos.",
@@ -1095,6 +1126,23 @@ async function _POST(req: NextRequest) {
       );
     }
     if (err instanceof EventResourceClaimsError) {
+      const conflictsCount = extractConflictsCount(err.details);
+      if (conflictsCount > 0) {
+        emitEventConsumesResourcesMetric("event_consumes_resources.conflict", {
+          operation: "update",
+          organizationId: metricOrganizationId,
+          eventId: metricEventId,
+          conflictsCount,
+        });
+      }
+      emitEventConsumesResourcesMetric("event_consumes_resources.update", {
+        operation: "update",
+        organizationId: metricOrganizationId,
+        eventId: metricEventId,
+        status: "failure",
+        reason: err.code || "EVENT_RESOURCES_CONFLICT",
+        conflictsCount,
+      });
       return fail(
         err.status,
         err.message || "Conflito de agenda de recursos do evento.",

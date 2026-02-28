@@ -40,6 +40,7 @@ import {
   validateEventResourceSelection,
 } from "@/lib/events/resources";
 import { EventResourceClaimsError, syncEventResourceClaims } from "@/lib/events/resourceClaims";
+import { emitEventConsumesResourcesMetric, extractConflictsCount } from "@/lib/events/metrics";
 
 // Tipos esperados no body do pedido
 type TicketTypeInput = {
@@ -138,6 +139,8 @@ async function generateUniqueSlug(baseSlug: string) {
 
 async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
+  let metricOrganizationId: number | null = null;
+  let metricEventId: number | null = null;
   const fail = (
     status: number,
     message: string,
@@ -194,6 +197,7 @@ async function _POST(req: NextRequest) {
       organizationId,
       roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
     });
+    metricOrganizationId = organization?.id ?? null;
     if (!organization || !membership) {
       return fail(403, "FORBIDDEN");
     }
@@ -452,6 +456,8 @@ async function _POST(req: NextRequest) {
     const slug = await generateUniqueSlug(baseSlug);
 
     // Criar o evento + EventLog/Outbox na mesma tx
+    let claimsApplied = false;
+    let claimsCreated = 0;
     const event = await prisma.$transaction(async (tx) => {
       const created = await tx.event.create({
         data: {
@@ -498,7 +504,7 @@ async function _POST(req: NextRequest) {
           eventId: created.id,
           selection: resourceValidation.selection,
         });
-        await syncEventResourceClaims({
+        const claimSync = await syncEventResourceClaims({
           tx,
           organizationId: organization.id,
           eventId: created.id,
@@ -507,6 +513,8 @@ async function _POST(req: NextRequest) {
           status: created.status,
           consumesResources,
         });
+        claimsApplied = claimSync.applied === true;
+        claimsCreated = claimSync.applied === true ? claimSync.claimsCreated : 0;
       }
 
       if (created.organizationId) {
@@ -592,6 +600,16 @@ async function _POST(req: NextRequest) {
         select: { id: true },
       });
     }
+    metricEventId = event.id;
+    emitEventConsumesResourcesMetric("event_consumes_resources.create", {
+      operation: "create",
+      organizationId: event.organizationId ?? metricOrganizationId,
+      eventId: event.id,
+      status: "success",
+      reason: consumesResources ? "consumes_resources_enabled" : "consumes_resources_disabled",
+      applied: claimsApplied,
+      claimsCreated,
+    });
 
     return respondOk(
       ctx,
@@ -610,6 +628,13 @@ async function _POST(req: NextRequest) {
     }
     const message = err instanceof Error ? err.message : "";
     if (err instanceof EventResourceInputError) {
+      emitEventConsumesResourcesMetric("event_consumes_resources.create", {
+        operation: "create",
+        organizationId: metricOrganizationId,
+        eventId: metricEventId,
+        status: "failure",
+        reason: err.code || "EVENT_RESOURCES_INVALID",
+      });
       return fail(
         400,
         err.message || "Recursos do evento inválidos.",
@@ -619,6 +644,23 @@ async function _POST(req: NextRequest) {
       );
     }
     if (err instanceof EventResourceClaimsError) {
+      const conflictsCount = extractConflictsCount(err.details);
+      if (conflictsCount > 0) {
+        emitEventConsumesResourcesMetric("event_consumes_resources.conflict", {
+          operation: "create",
+          organizationId: metricOrganizationId,
+          eventId: metricEventId,
+          conflictsCount,
+        });
+      }
+      emitEventConsumesResourcesMetric("event_consumes_resources.create", {
+        operation: "create",
+        organizationId: metricOrganizationId,
+        eventId: metricEventId,
+        status: "failure",
+        reason: err.code || "EVENT_RESOURCES_CONFLICT",
+        conflictsCount,
+      });
       return fail(
         err.status,
         err.message || "Conflito de recursos do evento.",

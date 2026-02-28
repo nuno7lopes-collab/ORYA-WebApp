@@ -14,6 +14,7 @@ import { appendEventLog } from "@/domain/eventLog/append";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { recordSearchIndexOutbox } from "@/domain/searchIndex/outbox";
 import { EventResourceClaimsError, syncEventResourceClaims } from "@/lib/events/resourceClaims";
+import { emitEventConsumesResourcesMetric, extractConflictsCount } from "@/lib/events/metrics";
 
 function fail(
   ctx: { requestId: string; correlationId: string },
@@ -42,6 +43,8 @@ function errorCodeForStatus(status: number) {
 
 async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
+  let metricOrganizationId: number | null = null;
+  let metricEventId: number | null = null;
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -79,6 +82,8 @@ async function _POST(req: NextRequest) {
     if (!event || !event.organizationId || event.organizationId !== orgResolution.organizationId) {
       return fail(ctx, 404, "EVENT_NOT_FOUND", "EVENT_NOT_FOUND", false);
     }
+    metricOrganizationId = event.organizationId;
+    metricEventId = event.id;
     if (!event.endsAt || Number.isNaN(event.endsAt.getTime())) {
       return fail(ctx, 409, "EVENT_ENDS_AT_REQUIRED", "EVENT_ENDS_AT_REQUIRED", false);
     }
@@ -106,6 +111,8 @@ async function _POST(req: NextRequest) {
     const nextStatus = EventStatus.PUBLISHED;
     const statusChanged = event.status !== nextStatus;
 
+    let syncApplied = false;
+    let syncClaimsCreated = 0;
     await prisma.$transaction(async (tx) => {
       if (statusChanged) {
         await tx.event.update({
@@ -114,7 +121,7 @@ async function _POST(req: NextRequest) {
         });
       }
 
-      await syncEventResourceClaims({
+      const syncResult = await syncEventResourceClaims({
         tx,
         organizationId: event.organizationId!,
         eventId,
@@ -123,6 +130,8 @@ async function _POST(req: NextRequest) {
         status: nextStatus,
         consumesResources: event.consumesResources,
       });
+      syncApplied = syncResult.applied === true;
+      syncClaimsCreated = syncResult.applied === true ? syncResult.claimsCreated : 0;
 
       const eventLogId = crypto.randomUUID();
       const idempotencyKey = `event.published:${eventId}:${statusChanged ? "1" : "0"}`;
@@ -175,6 +184,15 @@ async function _POST(req: NextRequest) {
         tx,
       );
     });
+    emitEventConsumesResourcesMetric("event_consumes_resources.update", {
+      operation: "publish",
+      organizationId: event.organizationId,
+      eventId,
+      status: "success",
+      applied: syncApplied,
+      claimsCreated: syncClaimsCreated,
+      reason: statusChanged ? "published" : "publish_noop_status",
+    });
 
     return respondOk(ctx, { published: true, eventId, status: nextStatus });
   } catch (err) {
@@ -182,6 +200,23 @@ async function _POST(req: NextRequest) {
       return fail(ctx, 401, "Não autenticado.");
     }
     if (err instanceof EventResourceClaimsError) {
+      const conflictsCount = extractConflictsCount(err.details);
+      if (conflictsCount > 0) {
+        emitEventConsumesResourcesMetric("event_consumes_resources.conflict", {
+          operation: "publish",
+          organizationId: metricOrganizationId,
+          eventId: metricEventId,
+          conflictsCount,
+        });
+      }
+      emitEventConsumesResourcesMetric("event_consumes_resources.update", {
+        operation: "publish",
+        organizationId: metricOrganizationId,
+        eventId: metricEventId,
+        status: "failure",
+        reason: err.code || "EVENT_RESOURCES_CONFLICT",
+        conflictsCount,
+      });
       return fail(
         ctx,
         err.status,
