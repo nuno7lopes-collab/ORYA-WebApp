@@ -48,7 +48,7 @@ import {
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { finalizeFreeServiceBooking } from "@/domain/finance/freeServiceCheckout";
 import { getStripeEnv, tryGetStripePublishableKeyForEnv } from "@/lib/stripeKeys";
-import { PaymentSubject } from "@/lib/payments/kernel";
+import { isPaymentKernelEnabled, PaymentSubject } from "@/lib/payments/kernel";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -559,6 +559,21 @@ async function _POST(
         sourceType: SourceType.BOOKING,
         sourceId,
         paymentSubject: PaymentSubject.BOOKING,
+        paymentKernelInput: isPaymentKernelEnabled()
+          ? {
+              orgId: booking.organizationId,
+              subjectType: PaymentSubject.BOOKING,
+              subjectId: purchaseId,
+              amount: totalCents,
+              currency,
+              version: "booking-service-v1",
+              extra: {
+                bookingId: booking.id,
+                serviceId: booking.serviceId,
+                paymentMethod,
+              },
+            }
+          : null,
         amountCents: totalCents,
         currency,
         intentParams: {

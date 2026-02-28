@@ -10,7 +10,7 @@ import { getPaidSalesGate, formatPaidSalesGateMessage } from "@/lib/organization
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
-import { PaymentSubject } from "@/lib/payments/kernel";
+import { isPaymentKernelEnabled, PaymentSubject } from "@/lib/payments/kernel";
 
 function parseChargeSourceId(chargeId: number) {
   return `booking_charge:${chargeId}`;
@@ -191,6 +191,21 @@ async function _POST(
         sourceType: SourceType.BOOKING,
         sourceId,
         paymentSubject: PaymentSubject.BOOKING,
+        paymentKernelInput: isPaymentKernelEnabled()
+          ? {
+              orgId: charge.booking.organization.id,
+              subjectType: PaymentSubject.BOOKING,
+              subjectId: purchaseId,
+              amount: totalCents,
+              currency,
+              version: "booking-charge-v1",
+              extra: {
+                bookingId: charge.booking.id,
+                bookingChargeId: charge.id,
+                bookingChargeKind: charge.kind,
+              },
+            }
+          : null,
         amountCents: totalCents,
         currency,
         intentParams: {

@@ -28,7 +28,7 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { finalizeFreeServiceBooking } from "@/domain/finance/freeServiceCheckout";
-import { PaymentSubject } from "@/lib/payments/kernel";
+import { isPaymentKernelEnabled, PaymentSubject } from "@/lib/payments/kernel";
 
 const HOLD_MINUTES = 10;
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
@@ -330,6 +330,21 @@ async function _POST(
         sourceType: SourceType.BOOKING,
         sourceId,
         paymentSubject: PaymentSubject.BOOKING,
+        paymentKernelInput: isPaymentKernelEnabled()
+          ? {
+              orgId: booking.organizationId,
+              subjectType: PaymentSubject.BOOKING,
+              subjectId: purchaseId,
+              amount: totalCents,
+              currency,
+              version: "booking-org-v1",
+              extra: {
+                bookingId: booking.id,
+                serviceId: booking.serviceId,
+                paymentMethod,
+              },
+            }
+          : null,
         amountCents: totalCents,
         currency,
         intentParams: {

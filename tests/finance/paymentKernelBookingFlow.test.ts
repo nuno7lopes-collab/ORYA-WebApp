@@ -27,6 +27,36 @@ describe("payment kernel - flow BOOKING", () => {
     expect(first).toContain("BOOKING");
   });
 
+  it("gera idempotency key canónica para BOOKING", () => {
+    const first = buildPaymentSubjectIdempotencyKey({
+      orgId: 77,
+      subjectType: PaymentSubject.BOOKING,
+      subjectId: "booking_321_v1",
+      amount: 5600,
+      currency: "eur",
+      extra: {
+        bookingId: 321,
+        serviceId: 88,
+        paymentMethod: "card",
+      },
+    });
+    const second = buildPaymentSubjectIdempotencyKey({
+      orgId: 77,
+      subjectType: PaymentSubject.BOOKING,
+      subjectId: "booking_321_v1",
+      amount: 5600,
+      currency: "EUR",
+      extra: {
+        paymentMethod: "card",
+        serviceId: 88,
+        bookingId: 321,
+      },
+    });
+
+    expect(first).toBe(second);
+    expect(first).toContain("checkout:pk:BOOKING:booking_321_v1:");
+  });
+
   it("gera dedupe key estável para fulfillment de BOOKING", () => {
     const dedupe = buildPaymentFulfillmentDedupeKey({
       sourceType: SourceType.BOOKING,

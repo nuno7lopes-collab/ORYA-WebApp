@@ -22,7 +22,7 @@ import { ProcessorFeesStatus, SourceType } from "@prisma/client";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 import { requiresOrganizationStripe } from "@/domain/finance/payoutModePolicy";
 import { validateBookingChangeApply } from "@/lib/reservas/bookingChangeApplyValidation";
-import { PaymentSubject } from "@/lib/payments/kernel";
+import { isPaymentKernelEnabled, PaymentSubject } from "@/lib/payments/kernel";
 
 function parseId(value: string) {
   const parsed = Number(value);
@@ -309,6 +309,20 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
           sourceType: SourceType.BOOKING,
           sourceId,
           paymentSubject: PaymentSubject.BOOKING,
+          paymentKernelInput: isPaymentKernelEnabled()
+            ? {
+                orgId: booking.organizationId,
+                subjectType: PaymentSubject.BOOKING,
+                subjectId: purchaseId,
+                amount: totalCents,
+                currency,
+                version: "booking-reschedule-v1",
+                extra: {
+                  bookingId: booking.id,
+                  bookingChangeRequestId: request.id,
+                },
+              }
+            : null,
           amountCents: totalCents,
           currency,
           intentParams: {

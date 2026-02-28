@@ -24,7 +24,7 @@ import {
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 import { getBookingState } from "@/lib/reservas/bookingState";
 import { BOOKING_SPLIT_CANONICAL_MODE, emitSplitRuntimeAlert } from "@/domain/bookings/splitGarantido";
-import { PaymentSubject } from "@/lib/payments/kernel";
+import { isPaymentKernelEnabled, PaymentSubject } from "@/lib/payments/kernel";
 
 const SHARE_ACTION_WINDOW_MS = Math.max(
   60_000,
@@ -381,6 +381,22 @@ async function _POST(
         sourceType: SourceType.BOOKING,
         sourceId,
         paymentSubject: PaymentSubject.BOOKING,
+        paymentKernelInput: isPaymentKernelEnabled()
+          ? {
+              orgId: booking.organizationId,
+              subjectType: PaymentSubject.BOOKING,
+              subjectId: purchaseId,
+              amount: totalCents,
+              currency,
+              version: "booking-invite-v1",
+              extra: {
+                bookingId: booking.id,
+                splitId: split.id,
+                participantId: participant.id,
+                inviteId: invite.id,
+              },
+            }
+          : null,
         amountCents: totalCents,
         currency,
         intentParams: {
