@@ -27,7 +27,7 @@ import { getStripeEnv, tryGetStripePublishableKeyForEnv } from "@/lib/stripeKeys
 import { resolveStorePolicy } from "@/lib/store/policySettings";
 import { buildStorePolicySnapshot, STORE_POLICY_SNAPSHOT_VERSION } from "@/lib/store/policySnapshot";
 import { isPaymentKernelEnabled, PaymentSubject } from "@/lib/payments/kernel";
-import { buildInventoryHoldFingerprint } from "@orya/shared";
+import { buildInventoryHoldFingerprint } from "@orya/shared/holds/inventoryFingerprint";
 import { isInventoryHoldContractEnabled } from "@/lib/holds/config";
 import {
   releaseInventoryHold,

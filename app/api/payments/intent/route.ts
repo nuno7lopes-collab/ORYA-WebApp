@@ -71,7 +71,7 @@ import { getStripeEnv, tryGetStripePublishableKeyForEnv } from "@/lib/stripeKeys
 import { paymentEventRepo } from "@/domain/finance/readModelConsumer";
 import { resolveInviteTokenGrant } from "@/lib/invites/inviteTokens";
 import { isEventCancelledStatus, isEventOperationalStatus } from "@/domain/events/lifecycle";
-import { buildInventoryHoldFingerprint } from "@orya/shared";
+import { buildInventoryHoldFingerprint } from "@orya/shared/holds/inventoryFingerprint";
 import { isInventoryHoldContractEnabled } from "@/lib/holds/config";
 import {
   releaseInventoryHold,

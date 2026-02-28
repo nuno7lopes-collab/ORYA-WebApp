@@ -7,7 +7,7 @@ import { Prisma } from "@prisma/client";
 import {
   buildInventoryHoldFingerprint,
   type InventoryHoldSubjectType,
-} from "@orya/shared";
+} from "@orya/shared/holds/inventoryFingerprint";
 import { prisma } from "@/lib/prisma";
 import { HOLD_TTL_MS } from "@/lib/holds/config";
 import { buildClientSessionHash } from "@/lib/holds/fingerprint";

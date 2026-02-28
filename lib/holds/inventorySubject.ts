@@ -4,7 +4,7 @@ import {
   StoreStockPolicy,
   type Prisma,
 } from "@prisma/client";
-import { buildInventoryHoldFingerprint } from "@orya/shared";
+import { buildInventoryHoldFingerprint } from "@orya/shared/holds/inventoryFingerprint";
 import { prisma } from "@/lib/prisma";
 
 type DbClient = Prisma.TransactionClient | typeof prisma;
