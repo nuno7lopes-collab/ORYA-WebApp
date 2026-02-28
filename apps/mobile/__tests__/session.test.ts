@@ -1,16 +1,18 @@
 const mockGetSession = jest.fn();
 const mockRefreshSession = jest.fn();
+const mockSignOut = jest.fn();
 
 jest.mock("../lib/supabase", () => ({
   supabase: {
     auth: {
       getSession: (...args: unknown[]) => mockGetSession(...args),
       refreshSession: (...args: unknown[]) => mockRefreshSession(...args),
+      signOut: (...args: unknown[]) => mockSignOut(...args),
     },
   },
 }));
 
-import { getActiveSession } from "../lib/session";
+import { getActiveSession, refreshSessionIfPossible } from "../lib/session";
 
 type SessionLike = {
   access_token: string;
@@ -35,6 +37,7 @@ describe("getActiveSession", () => {
     jest.spyOn(Date, "now").mockReturnValue(fixedNow);
     mockGetSession.mockReset();
     mockRefreshSession.mockReset();
+    mockSignOut.mockReset();
   });
 
   it("não tenta refresh quando não há sessão e refreshIfNearExpiry=false", async () => {
@@ -115,6 +118,60 @@ describe("getActiveSession", () => {
     const result = await getActiveSession({ minTtlMs: 60_000, refreshIfNearExpiry: true });
 
     expect(result).toBeNull();
+  });
+
+  it("limpa sessão local quando o refresh token é inválido", async () => {
+    const current = buildSession(Math.floor((fixedNow + 10_000) / 1000));
+    mockRefreshSession.mockResolvedValue({
+      data: { session: null },
+      error: { message: "Invalid Refresh Token: Refresh Token Not Found" },
+    });
+
+    const result = await refreshSessionIfPossible(
+      current as Parameters<typeof refreshSessionIfPossible>[0],
+    );
+
+    expect(result).toBeNull();
+    expect(mockSignOut).toHaveBeenCalledWith({ scope: "local" });
+  });
+
+  it("serializa refresh concorrente para evitar race de refresh token", async () => {
+    const current = buildSession(Math.floor((fixedNow + 10_000) / 1000));
+    let resolveRefresh:
+      | ((value: { data: { session: SessionLike }; error?: null }) => void)
+      | null = null;
+    const pendingRefresh = new Promise<{ data: { session: SessionLike }; error?: null }>(
+      (resolve) => {
+        resolveRefresh = resolve;
+      },
+    );
+    mockRefreshSession.mockReturnValue(pendingRefresh);
+
+    const first = refreshSessionIfPossible(
+      current as Parameters<typeof refreshSessionIfPossible>[0],
+    );
+    const second = refreshSessionIfPossible(
+      current as Parameters<typeof refreshSessionIfPossible>[0],
+    );
+
+    expect(mockRefreshSession).toHaveBeenCalledTimes(1);
+
+    resolveRefresh?.({ data: { session: current }, error: null });
+
+    await expect(first).resolves.toEqual(current);
+    await expect(second).resolves.toEqual(current);
+  });
+
+  it("limpa sessão local quando getSession devolve refresh token inválido", async () => {
+    mockGetSession.mockResolvedValue({
+      data: { session: null },
+      error: { message: "Invalid Refresh Token: Refresh Token Not Found" },
+    });
+
+    const result = await getActiveSession();
+
+    expect(result).toBeNull();
+    expect(mockSignOut).toHaveBeenCalledWith({ scope: "local" });
   });
 
   it("devolve null em erro inesperado", async () => {

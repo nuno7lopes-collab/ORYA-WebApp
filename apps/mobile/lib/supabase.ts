@@ -95,7 +95,8 @@ export const supabase = createClient(supabaseUrl ?? "", supabaseAnonKey ?? "", {
   auth: {
     storage: secureStorage,
     persistSession: true,
-    autoRefreshToken: true,
+    // Refresh manual para evitar corridas de token no cliente mobile.
+    autoRefreshToken: false,
     detectSessionInUrl: false,
     flowType: "pkce",
   },

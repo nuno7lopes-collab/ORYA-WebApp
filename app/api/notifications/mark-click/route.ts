@@ -6,7 +6,9 @@ import { markNotificationRead } from "@/domain/notifications/consumer";
 import { prisma } from "@/lib/prisma";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
-  buildOrganizationRelationFilter,
+  buildOrganizationRelationFilterForMany,
+  isMobileNotificationClient,
+  listAccessibleOrganizationIdsForUser,
   ORGANIZATION_NOTIFICATION_TYPES,
   parseNotificationScope,
   parseOrganizationId,
@@ -21,10 +23,23 @@ async function _POST(req: NextRequest) {
       organizationId?: number | null;
       scope?: string;
     };
-    const scope = parseNotificationScope(rawScope);
+    const requestedScope = parseNotificationScope(rawScope);
+    const explicitOrganizationScope = rawScope === "organization";
+    const scope = isMobileNotificationClient(req.headers) ? requestedScope : "organization";
     const orgId = parseOrganizationId(organizationId);
+    const allowLegacyOrganizationFilter = scope !== "organization" && Boolean(orgId);
+    const accessibleOrganizationIds =
+      scope === "organization" ? await listAccessibleOrganizationIdsForUser(user.id) : [];
+    const organizationScopeIds =
+      scope === "organization"
+        ? orgId
+          ? accessibleOrganizationIds.includes(orgId)
+            ? [orgId]
+            : []
+          : accessibleOrganizationIds
+        : [];
 
-    if (scope === "organization" && !orgId) {
+    if (explicitOrganizationScope && !orgId) {
       return jsonWrap(
         {
           ok: false,
@@ -46,11 +61,19 @@ async function _POST(req: NextRequest) {
       id: notificationId,
       userId: user.id,
     };
-    if (scope === "organization" && orgId) {
+    if (scope === "organization") {
+      if (!organizationScopeIds.length) {
+        return jsonWrap(
+          { ok: false, code: "NOT_FOUND", message: "Notificação não existe" },
+          { status: 404 },
+        );
+      }
       where.AND = [
         { type: { in: ORGANIZATION_NOTIFICATION_TYPES } },
-        buildOrganizationRelationFilter(orgId),
+        buildOrganizationRelationFilterForMany(organizationScopeIds),
       ];
+    } else if (allowLegacyOrganizationFilter) {
+      where.AND = [buildOrganizationRelationFilterForMany([orgId])];
     }
 
     const notif = await prisma.notification.findFirst({

@@ -6,27 +6,96 @@ type GetActiveSessionOptions = {
   refreshIfNearExpiry?: boolean;
 };
 
+const INVALID_REFRESH_TOKEN_PATTERNS = [
+  "invalid refresh token",
+  "refresh token not found",
+  "refresh token has been revoked",
+  "already used",
+];
+
+const getErrorMessage = (error: unknown) => {
+  if (!error) return "";
+  if (typeof error === "string") return error;
+  if (typeof error === "object") {
+    const candidate = error as { message?: unknown; error_description?: unknown };
+    if (typeof candidate.message === "string") return candidate.message;
+    if (typeof candidate.error_description === "string") {
+      return candidate.error_description;
+    }
+  }
+  return String(error);
+};
+
+const isInvalidRefreshTokenError = (error: unknown) => {
+  const message = getErrorMessage(error).toLowerCase();
+  return INVALID_REFRESH_TOKEN_PATTERNS.some((pattern) =>
+    message.includes(pattern),
+  );
+};
+
+let clearSessionInFlight: Promise<void> | null = null;
+const clearLocalSession = async () => {
+  if (clearSessionInFlight) return clearSessionInFlight;
+  clearSessionInFlight = supabase.auth
+    .signOut({ scope: "local" })
+    .catch(() => undefined)
+    .then(() => undefined)
+    .finally(() => {
+      clearSessionInFlight = null;
+    });
+  return clearSessionInFlight;
+};
+
 const hasRefreshToken = (session: Session | null | undefined) => {
   const refreshToken = session?.refresh_token;
   return typeof refreshToken === "string" && refreshToken.trim().length > 0;
 };
 
+let refreshInFlight: Promise<Session | null> | null = null;
+
 export const refreshSessionIfPossible = async (
   currentSession?: Session | null,
 ): Promise<Session | null> => {
-  try {
-    const sessionCandidate =
-      currentSession === undefined
-        ? (await supabase.auth.getSession()).data.session ?? null
-        : currentSession;
-    if (!hasRefreshToken(sessionCandidate)) {
+  if (refreshInFlight) return refreshInFlight;
+
+  refreshInFlight = (async () => {
+    try {
+      let sessionCandidate = currentSession;
+
+      if (sessionCandidate === undefined) {
+        const { data, error } = await supabase.auth.getSession();
+        if (error) {
+          if (isInvalidRefreshTokenError(error)) {
+            await clearLocalSession();
+          }
+          return null;
+        }
+        sessionCandidate = data.session ?? null;
+      }
+
+      if (!hasRefreshToken(sessionCandidate)) {
+        return null;
+      }
+
+      const { data, error } = await supabase.auth.refreshSession();
+      if (error) {
+        if (isInvalidRefreshTokenError(error)) {
+          await clearLocalSession();
+        }
+        return null;
+      }
+      return data.session ?? null;
+    } catch (error) {
+      if (isInvalidRefreshTokenError(error)) {
+        await clearLocalSession();
+      }
       return null;
     }
-    const refreshed = await supabase.auth.refreshSession();
-    return refreshed.data.session ?? null;
-  } catch {
-    return null;
-  }
+  })().finally(() => {
+    refreshInFlight = null;
+  });
+
+  return refreshInFlight;
 };
 
 export const getActiveSession = async (
@@ -37,7 +106,13 @@ export const getActiveSession = async (
   const refreshIfNearExpiry =
     typeof options === "number" ? true : options.refreshIfNearExpiry ?? true;
   try {
-    const { data } = await supabase.auth.getSession();
+    const { data, error } = await supabase.auth.getSession();
+    if (error) {
+      if (isInvalidRefreshTokenError(error)) {
+        await clearLocalSession();
+      }
+      return null;
+    }
     let session = data.session ?? null;
     if (!session) return null;
     if (!refreshIfNearExpiry) return session;
@@ -56,7 +131,10 @@ export const getActiveSession = async (
     }
 
     return session;
-  } catch {
+  } catch (error) {
+    if (isInvalidRefreshTokenError(error)) {
+      await clearLocalSession();
+    }
     return null;
   }
 };

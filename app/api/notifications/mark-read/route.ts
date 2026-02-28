@@ -8,7 +8,9 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logInfo } from "@/lib/observability/logger";
 import { NOTIFICATION_TYPES_BY_CATEGORY } from "@/domain/notifications/registry";
 import {
-  buildOrganizationRelationFilter,
+  buildOrganizationRelationFilterForMany,
+  isMobileNotificationClient,
+  listAccessibleOrganizationIdsForUser,
   ORGANIZATION_NOTIFICATION_TYPES,
   parseNotificationScope,
   parseOrganizationId,
@@ -24,10 +26,23 @@ async function _POST(req: NextRequest) {
       organizationId?: number | null;
       scope?: string;
     };
-    const scope = parseNotificationScope(rawScope);
+    const requestedScope = parseNotificationScope(rawScope);
+    const explicitOrganizationScope = rawScope === "organization";
+    const scope = isMobileNotificationClient(req.headers) ? requestedScope : "organization";
     const orgId = parseOrganizationId(organizationId);
+    const allowLegacyOrganizationFilter = scope !== "organization" && Boolean(orgId);
+    const accessibleOrganizationIds =
+      scope === "organization" ? await listAccessibleOrganizationIdsForUser(user.id) : [];
+    const organizationScopeIds =
+      scope === "organization"
+        ? orgId
+          ? accessibleOrganizationIds.includes(orgId)
+            ? [orgId]
+            : []
+          : accessibleOrganizationIds
+        : [];
 
-    if (scope === "organization" && !orgId) {
+    if (explicitOrganizationScope && !orgId) {
       return jsonWrap(
         {
           ok: false,
@@ -40,11 +55,14 @@ async function _POST(req: NextRequest) {
 
     if (markAll) {
       const andFilters: Prisma.NotificationWhereInput[] = [];
-      if (scope === "organization" && orgId) {
-        andFilters.push(buildOrganizationRelationFilter(orgId));
-      } else if (orgId) {
-        // Compatibilidade com clientes antigos que enviam apenas organizationId
-        andFilters.push(buildOrganizationRelationFilter(orgId));
+      if (scope === "organization") {
+        if (!organizationScopeIds.length) {
+          return jsonWrap({ ok: true, updated: "all" });
+        }
+        andFilters.push(buildOrganizationRelationFilterForMany(organizationScopeIds));
+      } else if (allowLegacyOrganizationFilter) {
+        // Compatibilidade com clientes antigos da app que enviam apenas organizationId.
+        andFilters.push(buildOrganizationRelationFilterForMany([orgId]));
       }
       const where: Prisma.NotificationWhereInput = {
         userId: user.id,
@@ -149,10 +167,16 @@ async function _POST(req: NextRequest) {
       id: notificationId,
       userId: user.id,
     };
-    if (scope === "organization" && orgId) {
+    if (scope === "organization") {
+      if (!organizationScopeIds.length) {
+        return jsonWrap(
+          { ok: false, code: "NOT_FOUND", message: "Notificação não existe" },
+          { status: 404 },
+        );
+      }
       singleWhere.AND = [
         { type: { in: ORGANIZATION_NOTIFICATION_TYPES } },
-        buildOrganizationRelationFilter(orgId),
+        buildOrganizationRelationFilterForMany(organizationScopeIds),
       ];
     }
 

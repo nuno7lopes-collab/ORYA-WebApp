@@ -13,6 +13,7 @@ const crmCampaignDeliveryUpdateMany = vi.hoisted(() => vi.fn());
 const crmCampaignDeliveryUpdate = vi.hoisted(() => vi.fn());
 const crmCampaignUpdate = vi.hoisted(() => vi.fn());
 const prismaTransaction = vi.hoisted(() => vi.fn());
+const listEffectiveOrganizationMembershipsForUser = vi.hoisted(() => vi.fn());
 
 const prisma = vi.hoisted(() => ({
   notification: {
@@ -44,6 +45,9 @@ vi.mock("@/domain/notifications/consumer", () => ({
 vi.mock("@/lib/observability/logger", () => ({
   logInfo,
 }));
+vi.mock("@/lib/organizationMembers", () => ({
+  listEffectiveOrganizationMembershipsForUser,
+}));
 vi.mock("@/lib/prisma", () => ({ prisma }));
 
 let markReadPost: typeof import("@/app/api/notifications/mark-read/route").POST;
@@ -62,6 +66,7 @@ beforeEach(async () => {
   crmCampaignDeliveryUpdate.mockReset();
   crmCampaignUpdate.mockReset();
   prismaTransaction.mockReset();
+  listEffectiveOrganizationMembershipsForUser.mockReset();
 
   requireUser.mockResolvedValue({ id: "u1" });
   markNotificationRead.mockResolvedValue({ ok: true });
@@ -69,6 +74,7 @@ beforeEach(async () => {
   notificationUpdateMany.mockResolvedValue({ count: 1 });
   crmCampaignDeliveryFindMany.mockResolvedValue([]);
   crmCampaignDeliveryFindFirst.mockResolvedValue(null);
+  listEffectiveOrganizationMembershipsForUser.mockResolvedValue([{ organizationId: 7 }, { organizationId: 9 }, { organizationId: 12 }]);
   prismaTransaction.mockImplementation(async (callback: any) =>
     callback({
       crmCampaignDelivery: {
@@ -114,6 +120,27 @@ describe("notification scoped action routes", () => {
     });
     expect(where.AND).toContainEqual({
       OR: [{ organizationId: 9 }, { event: { organizationId: 9 } }],
+    });
+  });
+
+  it("força escopo organização na web para mark-all e usa memberships", async () => {
+    listEffectiveOrganizationMembershipsForUser.mockResolvedValueOnce([{ organizationId: 7 }, { organizationId: 9 }]);
+    const req = new NextRequest("http://localhost/api/notifications/mark-read", {
+      method: "POST",
+      body: JSON.stringify({ markAll: true, scope: "user" }),
+    });
+
+    const res = await markReadPost(req);
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.ok).toBe(true);
+
+    const where = notificationUpdateMany.mock.calls[0][0].where;
+    expect(where.type).toEqual({
+      in: expect.arrayContaining(["CRM_CAMPAIGN", "EVENT_SALE", "SYSTEM_ANNOUNCE"]),
+    });
+    expect(where.AND).toContainEqual({
+      OR: [{ organizationId: { in: [7, 9] } }, { event: { organizationId: { in: [7, 9] } } }],
     });
   });
 

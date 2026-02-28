@@ -48,6 +48,9 @@ Arquivo.zip
 .tmp/
 .dev-all.lock
 .vercel/
+tmp/proc_probe_*.log
+tmp/event_probe_*.log
+tmp/lsof_probe_*.log
 
 # typescript
 *.tsbuildinfo

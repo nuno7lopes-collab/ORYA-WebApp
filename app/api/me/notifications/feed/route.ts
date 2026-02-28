@@ -17,7 +17,9 @@ import {
   validateNotificationInput,
 } from "@/domain/notifications/registry";
 import {
-  buildOrganizationRelationFilter,
+  buildOrganizationRelationFilterForMany,
+  isMobileNotificationClient,
+  listAccessibleOrganizationIdsForUser,
   ORGANIZATION_NOTIFICATION_TYPES,
   parseNotificationScope,
   parseOrganizationId,
@@ -100,6 +102,7 @@ async function _GET(req: NextRequest) {
   let userId: string | null = null;
   let scope: NotificationScope = "user";
   let organizationId: number | null = null;
+  let organizationScopeIds: number[] = [];
   let tab: "all" | "network" = "all";
   let limit = 30;
   let cursorRaw: string | null = null;
@@ -107,12 +110,13 @@ async function _GET(req: NextRequest) {
     const user = await requireUser();
     userId = user.id;
     const url = new URL(req.url);
-    scope = parseNotificationScope(url.searchParams.get("scope"));
-    organizationId =
-      scope === "organization"
-        ? parseOrganizationId(url.searchParams.get("organizationId"))
-        : null;
-    if (scope === "organization" && !organizationId) {
+    const rawScope = url.searchParams.get("scope");
+    const requestedScope = parseNotificationScope(rawScope);
+    const explicitOrganizationScope = rawScope === "organization";
+    const requestedOrganizationId = parseOrganizationId(url.searchParams.get("organizationId"));
+    scope = isMobileNotificationClient(req.headers) ? requestedScope : "organization";
+    organizationId = scope === "organization" ? requestedOrganizationId : null;
+    if (explicitOrganizationScope && !organizationId) {
       return jsonWrap(
         {
           ok: false,
@@ -151,6 +155,18 @@ async function _GET(req: NextRequest) {
       ? allowedTypesAll.filter((type) => NETWORK_TYPES.includes(type))
       : allowedTypesAll;
 
+    if (scope === "organization") {
+      const accessibleOrganizationIds = await listAccessibleOrganizationIdsForUser(user.id);
+      organizationScopeIds = organizationId
+        ? accessibleOrganizationIds.includes(organizationId)
+          ? [organizationId]
+          : []
+        : accessibleOrganizationIds;
+      if (!organizationScopeIds.length) {
+        return jsonWrap({ ok: true, items: [], nextCursor: null, unreadCount: 0 });
+      }
+    }
+
     const muteFilters: Prisma.NotificationWhereInput[] = [];
     if (scope === "user") {
       let mutes: Array<{ organizationId: number | null; eventId: number | null }> = [];
@@ -183,8 +199,8 @@ async function _GET(req: NextRequest) {
       }
     }
     const scopeFilters: Prisma.NotificationWhereInput[] =
-      scope === "organization" && organizationId
-        ? [buildOrganizationRelationFilter(organizationId)]
+      scope === "organization"
+        ? [buildOrganizationRelationFilterForMany(organizationScopeIds)]
         : [];
     const commonFilters = [...muteFilters, ...scopeFilters];
 

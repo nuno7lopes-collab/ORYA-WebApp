@@ -339,7 +339,7 @@ export const api = {
         }
         if (isUnauthorizedError(retryErr)) {
           try {
-            await supabase.auth.signOut();
+            await supabase.auth.signOut({ scope: "local" });
           } catch {
             // ignore sign out errors
           }
@@ -416,7 +416,7 @@ export const api = {
       clearOffline();
       if (retryResult.status === 401) {
         try {
-          await supabase.auth.signOut();
+          await supabase.auth.signOut({ scope: "local" });
         } catch {
           // ignore sign out errors
         }

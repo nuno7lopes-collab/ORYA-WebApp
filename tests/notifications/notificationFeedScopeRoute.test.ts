@@ -8,6 +8,7 @@ const notificationCount = vi.hoisted(() => vi.fn());
 const notificationFindMany = vi.hoisted(() => vi.fn());
 const entitlementFindMany = vi.hoisted(() => vi.fn());
 const followRequestsFindMany = vi.hoisted(() => vi.fn());
+const listEffectiveOrganizationMembershipsForUser = vi.hoisted(() => vi.fn());
 
 const prisma = vi.hoisted(() => ({
   notificationMute: {
@@ -34,6 +35,9 @@ vi.mock("@/lib/auth/requireUser", () => ({
 vi.mock("@/lib/notifications", () => ({
   getNotificationPrefs,
 }));
+vi.mock("@/lib/organizationMembers", () => ({
+  listEffectiveOrganizationMembershipsForUser,
+}));
 vi.mock("@/lib/prisma", () => ({ prisma }));
 
 let feedGet: typeof import("@/app/api/me/notifications/feed/route").GET;
@@ -46,6 +50,7 @@ beforeEach(async () => {
   notificationFindMany.mockReset();
   entitlementFindMany.mockReset();
   followRequestsFindMany.mockReset();
+  listEffectiveOrganizationMembershipsForUser.mockReset();
 
   requireUser.mockResolvedValue({ id: "u1" });
   getNotificationPrefs.mockResolvedValue({
@@ -59,6 +64,7 @@ beforeEach(async () => {
   notificationFindMany.mockResolvedValue([]);
   entitlementFindMany.mockResolvedValue([]);
   followRequestsFindMany.mockResolvedValue([]);
+  listEffectiveOrganizationMembershipsForUser.mockResolvedValue([{ organizationId: 9 }]);
 
   vi.resetModules();
   feedGet = (await import("@/app/api/me/notifications/feed/route")).GET;
@@ -101,12 +107,31 @@ describe("me notifications feed scope", () => {
   });
 
   it("mantem comportamento user scope com mutes", async () => {
-    const req = new NextRequest("http://localhost/api/me/notifications/feed?scope=user&limit=5");
+    const req = new NextRequest("http://localhost/api/me/notifications/feed?scope=user&limit=5", {
+      headers: { "x-client-platform": "mobile" },
+    });
     const res = await feedGet(req);
     const body = await res.json();
 
     expect(res.status).toBe(200);
     expect(body.ok).toBe(true);
     expect(notificationMuteFindMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("força escopo organização na web e usa memberships do utilizador", async () => {
+    listEffectiveOrganizationMembershipsForUser.mockResolvedValueOnce([{ organizationId: 7 }, { organizationId: 9 }]);
+
+    const req = new NextRequest("http://localhost/api/me/notifications/feed?scope=user&limit=5");
+    const res = await feedGet(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(notificationMuteFindMany).not.toHaveBeenCalled();
+
+    const countWhere = notificationCount.mock.calls[0][0].where;
+    expect(countWhere.AND).toContainEqual({
+      OR: [{ organizationId: { in: [7, 9] } }, { event: { organizationId: { in: [7, 9] } } }],
+    });
   });
 });

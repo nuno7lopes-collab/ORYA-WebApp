@@ -21,6 +21,7 @@ import { upsertPadelPlayerProfile } from "@/domain/padel/playerProfile";
 import { fulfillPadelRegistrationIntent } from "@/lib/operations/fulfillPadelRegistration";
 import { shouldNotify, createNotification } from "@/lib/notifications";
 import { listEffectiveOrganizationMemberUserIdsByRoles } from "@/lib/organizationMembers";
+import { buildOrgHref } from "@/lib/organizationIdUtils";
 
 export async function handleFinanceOutboxEvent(params: {
   eventType: string;
@@ -832,7 +833,7 @@ async function notifyOrganizationOwners(input: { organizationId: number; eventId
             type: NotificationType.EVENT_SALE,
             title: "Nova reserva gratuita",
             body: `Recebeste uma reserva para ${input.eventTitle}.`,
-            ctaUrl: `/org/${input.organizationId}/analytics?tab=vendas&eventId=${input.eventId}`,
+            ctaUrl: buildOrgHref(input.organizationId, "/analytics", { view: "buyers", eventId: input.eventId }),
             ctaLabel: "Ver vendas",
             payload: { eventId: input.eventId, title: input.eventTitle },
           });

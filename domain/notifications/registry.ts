@@ -141,14 +141,50 @@ export const NOTIFICATION_TYPES_BY_CATEGORY = {
 
 export const isChatNotificationType = (type: NotificationType) => NOTIFICATION_CATEGORY_BY_TYPE[type] === "chat";
 
+const normalizeLegacyOrganizationDashboardCta = (href: string) => {
+  try {
+    const isAbsolute = /^[a-z][a-z0-9+.-]*:/i.test(href);
+    const parsed = new URL(href, isAbsolute ? undefined : "https://orya.local");
+    const isOrganizationDashboardPath =
+      /^\/org\/[^/]+\/(analytics|finance)$/i.test(parsed.pathname) || /^\/org\/(analytics|finance)$/i.test(parsed.pathname);
+    if (!isOrganizationDashboardPath) return href;
+
+    const view = parsed.searchParams.get("view")?.trim().toLowerCase() ?? "";
+    const tab = parsed.searchParams.get("tab")?.trim().toLowerCase() ?? "";
+    const section = parsed.searchParams.get("section")?.trim().toLowerCase() ?? "";
+    const shouldCanonicalizeBuyers =
+      view === "buyers" ||
+      tab === "vendas" ||
+      tab === "sales" ||
+      tab === "buyers" ||
+      section === "vendas" ||
+      section === "sales" ||
+      section === "buyers";
+    if (!shouldCanonicalizeBuyers) return href;
+
+    if (/\/finance$/i.test(parsed.pathname)) {
+      parsed.pathname = parsed.pathname.replace(/\/finance$/i, "/analytics");
+    }
+    parsed.searchParams.set("view", "buyers");
+    parsed.searchParams.delete("tab");
+    parsed.searchParams.delete("section");
+
+    if (isAbsolute) return parsed.toString();
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return href;
+  }
+};
+
 export const safeCtaUrl = (value?: string | null) => {
   if (!value || typeof value !== "string") return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
-  const normalized = trimmed.replace(/\/+$/, "");
+  const normalizedCta = normalizeLegacyOrganizationDashboardCta(trimmed);
+  const normalized = normalizedCta.replace(/\/+$/, "");
   if (normalized === "/notifications" || normalized.endsWith("/notifications")) return null;
   if (normalized.includes("tab=notifications")) return null;
-  return trimmed;
+  return normalizedCta;
 };
 
 export const resolvePayloadKind = (payload: Record<string, unknown> | null | undefined) => {
