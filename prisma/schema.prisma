@@ -1843,6 +1843,7 @@ model Event {
   addressId                      String?                         @map("address_id") @db.Uuid
   pricingMode                    EventPricingMode                @default(STANDARD) @map("pricing_mode")
   status                         EventStatus                     @default(DRAFT)
+  consumesResources              Boolean                         @default(false) @map("consumes_resources")
   timezone                       String                          @default("Europe/Lisbon")
   coverImageUrl                  String?                         @map("cover_image_url")
   createdAt                      DateTime                        @default(now()) @map("created_at")
@@ -1879,6 +1880,7 @@ model Event {
   reservations                   TicketReservation[]
   ticketTypes                    TicketType[]
   tickets                        Ticket[]
+  eventResources                 EventResource[]
   accessPolicies                 EventAccessPolicy[]
   inviteTokens                   InviteToken[]
   padelRegistrations             PadelRegistration[]
@@ -1894,6 +1896,23 @@ model Event {
   @@index([organizationId, status, isDeleted, createdAt(sort: Desc)], map: "events_org_status_deleted_created_idx")
   @@index([addressId], map: "events_address_idx")
   @@map("events")
+  @@schema("app_v3")
+}
+
+model EventResource {
+  env       String                @default("prod")
+  id        Int                   @id @default(autoincrement())
+  eventId   Int                   @map("event_id")
+  scopeType AvailabilityScopeType @map("scope_type")
+  scopeId   Int                   @map("scope_id")
+  createdAt DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  event     Event                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, scopeType, scopeId], map: "event_resources_event_scope_unique")
+  @@index([eventId], map: "event_resources_event_idx")
+  @@index([scopeType, scopeId], map: "event_resources_scope_idx")
+  @@map("event_resources")
   @@schema("app_v3")
 }
 
