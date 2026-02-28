@@ -50,6 +50,11 @@ import {
   readEventResourceSelection,
   validateEventResourceSelection,
 } from "@/lib/events/resources";
+import {
+  EventResourceClaimsError,
+  releaseEventResourceClaims,
+  syncEventResourceClaims,
+} from "@/lib/events/resourceClaims";
 
 const canonicalize = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -572,7 +577,10 @@ async function _POST(req: NextRequest) {
       ) {
         return fail(409, "DRAFT_DELETE_BLOCKED_HAS_OPERATIONS");
       }
-      await prisma.event.delete({ where: { id: eventId } });
+      await prisma.$transaction(async (tx) => {
+        await releaseEventResourceClaims({ tx, eventId });
+        await tx.event.delete({ where: { id: eventId } });
+      });
       return respondOk(ctx, { deleted: true }, { status: 200 });
     }
 
@@ -865,6 +873,15 @@ async function _POST(req: NextRequest) {
       return fail(400, guard.error);
     }
 
+    const nextEventStartsAt = (dataUpdate.startsAt ?? event.startsAt) as Date;
+    const nextEventEndsAt = (dataUpdate.endsAt ?? event.endsAt) as Date | null;
+    const nextEventStatus = (typeof dataUpdate.status === "string" ? dataUpdate.status : event.status) as EventStatus;
+    const shouldSyncEventResourceClaims =
+      consumesResourcesTouched || scheduleTouched || shouldCancelEvent || event.consumesResources || nextConsumesResources;
+    if (shouldSyncEventResourceClaims && (!nextEventEndsAt || Number.isNaN(nextEventEndsAt.getTime()))) {
+      return fail(409, "EVENT_ENDS_AT_REQUIRED_FOR_RESOURCES");
+    }
+
     if (!hasDataUpdate && !hasTicketUpdates && !hasNewTickets) {
       return fail(400, "Nada para atualizar.");
     }
@@ -938,6 +955,18 @@ async function _POST(req: NextRequest) {
         } else {
           await tx.eventResource.deleteMany({ where: { eventId } });
         }
+      }
+
+      if (shouldSyncEventResourceClaims) {
+        await syncEventResourceClaims({
+          tx,
+          organizationId: event.organizationId!,
+          eventId,
+          startsAt: nextEventStartsAt,
+          endsAt: nextEventEndsAt as Date,
+          status: nextEventStatus,
+          consumesResources: nextConsumesResources,
+        });
       }
 
       if (searchIndexRelevantUpdate && event.organizationId && eventLogId) {
@@ -1061,6 +1090,15 @@ async function _POST(req: NextRequest) {
         400,
         err.message || "Recursos do evento inválidos.",
         err.code || "EVENT_RESOURCES_INVALID",
+        false,
+        err.details,
+      );
+    }
+    if (err instanceof EventResourceClaimsError) {
+      return fail(
+        err.status,
+        err.message || "Conflito de agenda de recursos do evento.",
+        err.code || "EVENT_RESOURCES_CONFLICT",
         false,
         err.details,
       );

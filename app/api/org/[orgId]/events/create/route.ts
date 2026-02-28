@@ -39,6 +39,7 @@ import {
   persistEventResourceSelection,
   validateEventResourceSelection,
 } from "@/lib/events/resources";
+import { EventResourceClaimsError, syncEventResourceClaims } from "@/lib/events/resourceClaims";
 
 // Tipos esperados no body do pedido
 type TicketTypeInput = {
@@ -497,6 +498,15 @@ async function _POST(req: NextRequest) {
           eventId: created.id,
           selection: resourceValidation.selection,
         });
+        await syncEventResourceClaims({
+          tx,
+          organizationId: organization.id,
+          eventId: created.id,
+          startsAt: created.startsAt,
+          endsAt: created.endsAt,
+          status: created.status,
+          consumesResources,
+        });
       }
 
       if (created.organizationId) {
@@ -604,6 +614,15 @@ async function _POST(req: NextRequest) {
         400,
         err.message || "Recursos do evento inválidos.",
         err.code || "EVENT_RESOURCES_INVALID",
+        false,
+        err.details,
+      );
+    }
+    if (err instanceof EventResourceClaimsError) {
+      return fail(
+        err.status,
+        err.message || "Conflito de recursos do evento.",
+        err.code || "EVENT_RESOURCES_CONFLICT",
         false,
         err.details,
       );
