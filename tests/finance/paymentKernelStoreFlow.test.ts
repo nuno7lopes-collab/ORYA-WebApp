@@ -31,6 +31,35 @@ describe("payment kernel - flow STORE_ORDER", () => {
     expect(first).toContain("STORE_ORDER");
   });
 
+  it("gera idempotency key canónica para STORE_ORDER", () => {
+    const first = buildPaymentSubjectIdempotencyKey({
+      orgId: 31,
+      subjectType: PaymentSubject.STORE_ORDER,
+      subjectId: "store_order_123",
+      amount: 4500,
+      currency: "eur",
+      extra: {
+        cartId: "cart_7",
+        shippingZoneId: 4,
+        shippingMethodId: 2,
+      },
+    });
+    const second = buildPaymentSubjectIdempotencyKey({
+      orgId: 31,
+      subjectType: PaymentSubject.STORE_ORDER,
+      subjectId: "store_order_123",
+      amount: 4500,
+      currency: "EUR",
+      extra: {
+        shippingMethodId: 2,
+        cartId: "cart_7",
+        shippingZoneId: 4,
+      },
+    });
+    expect(first).toBe(second);
+    expect(first).toContain("checkout:pk:STORE_ORDER:store_order_123:");
+  });
+
   it("gera dedupe key estável para fulfillment de STORE_ORDER", () => {
     const dedupe = buildPaymentFulfillmentDedupeKey({
       sourceType: SourceType.STORE_ORDER,

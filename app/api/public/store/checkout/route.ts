@@ -26,7 +26,7 @@ import { isValidPhone, normalizePhone, resolvePhoneNormalizationOptions } from "
 import { getStripeEnv, tryGetStripePublishableKeyForEnv } from "@/lib/stripeKeys";
 import { resolveStorePolicy } from "@/lib/store/policySettings";
 import { buildStorePolicySnapshot, STORE_POLICY_SNAPSHOT_VERSION } from "@/lib/store/policySnapshot";
-import { PaymentSubject } from "@/lib/payments/kernel";
+import { isPaymentKernelEnabled, PaymentSubject } from "@/lib/payments/kernel";
 import { buildInventoryHoldFingerprint } from "@orya/shared";
 import { isInventoryHoldContractEnabled } from "@/lib/holds/config";
 import {
@@ -1048,6 +1048,22 @@ async function _POST(req: NextRequest) {
         sourceType: SourceType.STORE_ORDER,
         sourceId: String(order.id),
         paymentSubject: PaymentSubject.STORE_ORDER,
+        paymentKernelInput: isPaymentKernelEnabled()
+          ? {
+              orgId: organizationId,
+              subjectType: PaymentSubject.STORE_ORDER,
+              subjectId: purchaseId,
+              amount: totalCents,
+              currency: store.currency,
+              version: "store-order-v1",
+              extra: {
+                orderId: order.id,
+                cartId: cart.cart.id,
+                shippingMethodId: shippingMethodId ?? null,
+                shippingZoneId: shippingZoneId ?? null,
+              },
+            }
+          : null,
         amountCents: totalCents,
         currency: store.currency,
         intentParams: {

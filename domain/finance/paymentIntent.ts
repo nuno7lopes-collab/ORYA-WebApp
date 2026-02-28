@@ -12,7 +12,10 @@ import {
   type StripeOrgContext,
 } from "@/domain/finance/gateway/stripeGateway";
 import { checkoutKey, clampIdempotencyKey } from "@/lib/stripe/idempotency";
-import { buildPaymentSubjectIdempotencyKey } from "@/lib/payments/kernel";
+import {
+  buildPaymentSubjectIdempotencyKey,
+  type PaymentSubjectIdempotencyInput,
+} from "@/lib/payments/kernel";
 import type { PaymentSubject } from "@/lib/payments/types";
 import { paymentEventRepo } from "@/domain/finance/readModelConsumer";
 import { PaymentEventSource, PaymentStatus } from "@prisma/client";
@@ -117,6 +120,7 @@ export type EnsurePaymentIntentInput = {
     platformFeeCents?: number | null;
   };
   paymentSubject?: PaymentSubject | null;
+  paymentKernelInput?: PaymentSubjectIdempotencyInput | null;
 };
 
 export type EnsurePaymentIntentResult = {
@@ -143,12 +147,14 @@ export async function ensurePaymentIntent(
     throw new Error("ORG_ID_REQUIRED");
   }
   const purchaseId = normalizePurchaseId(input.purchaseId);
-  const checkoutIdempotencyKey = input.paymentSubject
-    ? buildPaymentSubjectIdempotencyKey({
-        subject: input.paymentSubject,
-        purchaseId,
-      })
-    : checkoutKey(purchaseId);
+  const checkoutIdempotencyKey = input.paymentKernelInput
+    ? buildPaymentSubjectIdempotencyKey(input.paymentKernelInput)
+    : input.paymentSubject
+      ? buildPaymentSubjectIdempotencyKey({
+          subject: input.paymentSubject,
+          purchaseId,
+        })
+      : checkoutKey(purchaseId);
   const requestedAmount = Math.max(0, input.amountCents);
   const stripeDestination = await resolveStripeDestination(input.requireStripe, input.orgContext ?? null);
 
