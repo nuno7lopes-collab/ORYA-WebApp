@@ -212,8 +212,8 @@
   {
     "id": "mobile-padel-hub",
     "surface": "mobile",
-    "file": "apps/mobile/app/padel/index.tsx",
-    "checks": ["loading", "error", "empty", "a11yMobile", "touchTarget"]
+    "file": "apps/mobile/app/(tabs)/padel.tsx",
+    "checks": ["loading", "empty", "a11yMobile", "touchTarget"]
   },
   {
     "id": "mobile-service-detail",

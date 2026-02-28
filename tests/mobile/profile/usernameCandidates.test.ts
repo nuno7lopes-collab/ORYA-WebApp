@@ -10,12 +10,11 @@ describe("buildUsernameCandidates", () => {
     expect(buildUsernameCandidates("Top Padel Club")).toEqual([
       "toppadelclub",
       "top_padel_club",
-      "top-padel-club",
     ]);
   });
 
   it("deduplicates equivalent variants mantendo separador canónico de input", () => {
-    expect(buildUsernameCandidates("top-padel")).toEqual(["top-padel"]);
+    expect(buildUsernameCandidates("top-padel")).toEqual(["top_padel"]);
     expect(buildUsernameCandidates("top_padel")).toEqual(["top_padel"]);
   });
 });

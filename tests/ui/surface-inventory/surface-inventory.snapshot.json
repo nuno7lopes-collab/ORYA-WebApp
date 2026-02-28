@@ -232,7 +232,6 @@
     "apps/mobile/app/messages/requests.tsx",
     "apps/mobile/app/notifications/index.tsx",
     "apps/mobile/app/onboarding/index.tsx",
-    "apps/mobile/app/padel/index.tsx",
     "apps/mobile/app/reservas/index.tsx",
     "apps/mobile/app/search/index.tsx",
     "apps/mobile/app/service/[id].tsx",
@@ -465,7 +464,7 @@
   },
   "counts": {
     "webTotal": 201,
-    "mobileTotal": 45,
+    "mobileTotal": 44,
     "org": 78,
     "admin": 18,
     "user": 20,
