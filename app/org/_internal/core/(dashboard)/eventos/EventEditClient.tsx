@@ -119,6 +119,9 @@ type EventEditClientProps = {
       validationStatus: string | null;
     } | null;
     templateType: string | null;
+    consumesResources?: boolean | null;
+    selectedResourceIds?: number[] | null;
+    selectedProfessionalIds?: number[] | null;
     isGratis: boolean;
     coverImageUrl: string | null;
     accessPolicy?: {
@@ -136,12 +139,31 @@ type EventEditClientProps = {
   eventHasTickets?: boolean;
 };
 
+type ReservasResourceItem = {
+  id: number;
+  label?: string | null;
+  isActive?: boolean;
+};
+
+type ReservasProfessionalItem = {
+  id: number;
+  name?: string | null;
+  isActive?: boolean;
+};
+
 type EventAccessPolicyUI = NonNullable<EventEditClientProps["event"]["accessPolicy"]>;
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 const normalizeIntegerInput = (value: string) => {
   const match = value.trim().match(/^\d+/);
   return match ? match[0] : "";
+};
+
+const toggleSelectionId = (current: number[], id: number, enabled: boolean) => {
+  if (enabled) {
+    return Array.from(new Set([...current, id])).sort((a, b) => a - b);
+  }
+  return current.filter((value) => value !== id);
 };
 
 export function EventEditClient({ event, tickets }: EventEditClientProps) {
@@ -178,6 +200,13 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   );
   const [locationLat, setLocationLat] = useState<number | null>(event.addressRef?.latitude ?? null);
   const [locationLng, setLocationLng] = useState<number | null>(event.addressRef?.longitude ?? null);
+  const [consumesResources, setConsumesResources] = useState(event.consumesResources === true);
+  const [selectedResourceIds, setSelectedResourceIds] = useState<number[]>(
+    Array.isArray(event.selectedResourceIds) ? event.selectedResourceIds : [],
+  );
+  const [selectedProfessionalIds, setSelectedProfessionalIds] = useState<number[]>(
+    Array.isArray(event.selectedProfessionalIds) ? event.selectedProfessionalIds : [],
+  );
   const [templateType] = useState(event.templateType ?? "OTHER");
   const isPadel = templateType === "PADEL";
   const ticketLabel = isPadel ? "inscrição" : "bilhete";
@@ -238,6 +267,19 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     isPadel && organizationId ? `/api/padel/categories/my?organizationId=${organizationId}` : null,
     fetcher,
   );
+  const { data: resourcesData } = useSWR<{ ok?: boolean; items?: ReservasResourceItem[] }>(
+    organizationId ? `/api/org/${organizationId}/reservas/recursos?includeCourts=1` : null,
+    fetcher,
+  );
+  const { data: professionalsData } = useSWR<{ ok?: boolean; items?: ReservasProfessionalItem[] }>(
+    organizationId ? `/api/org/${organizationId}/reservas/profissionais` : null,
+    fetcher,
+  );
+  const resourceOptions = Array.isArray(resourcesData?.items) ? resourcesData.items.filter((item) => item.isActive !== false) : [];
+  const professionalOptions = Array.isArray(professionalsData?.items)
+    ? professionalsData.items.filter((item) => item.isActive !== false)
+    : [];
+  const hasResourceSelectionsAvailable = resourceOptions.length > 0 || professionalOptions.length > 0;
   const padelCategoryLinks = Array.isArray(padelEventCategories?.items) ? padelEventCategories?.items ?? [] : [];
   const activePadelCategoryLinks = padelCategoryLinks.filter((link) => link.isEnabled);
   const padelCategories = Array.isArray(padelCategoriesData?.items) ? padelCategoriesData?.items ?? [] : [];
@@ -249,7 +291,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const [ticketList, setTicketList] = useState<TicketTypeUI[]>(tickets);
   const [currentStep, setCurrentStep] = useState(0);
   const [fieldErrors, setFieldErrors] = useState<
-    Partial<Record<"title" | "startsAt" | "endsAt" | "location", string>>
+    Partial<Record<"title" | "startsAt" | "endsAt" | "location" | "resources", string>>
   >({});
   const [errorSummary, setErrorSummary] = useState<{ field: string; message: string }[]>([]);
   const [visibilityUpdates, setVisibilityUpdates] = useState<Record<number, boolean>>({});
@@ -302,6 +344,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const startsRef = useRef<HTMLDivElement | null>(null);
   const endsRef = useRef<HTMLDivElement | null>(null);
   const locationSearchRef = useRef<HTMLInputElement | null>(null);
+  const resourcesRef = useRef<HTMLDivElement | null>(null);
   const errorSummaryRef = useRef<HTMLDivElement | null>(null);
   const pushToast = (message: string, tone: "success" | "error" = "error") => {
     publishToast(message, { variant: tone === "success" ? "success" : "error" });
@@ -327,6 +370,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const inputClass = (invalid: boolean) =>
     `w-full rounded-md border ${invalid ? "border-amber-400/60 focus:border-amber-300" : "border-white/15 focus:border-white/60"} bg-black/20 px-3 py-2 text-sm outline-none`;
   const locationError = fieldErrors.location ?? null;
+  const resourcesError = fieldErrors.resources ?? null;
   const locationSummary = useMemo(() => {
     if (locationFormattedAddress) return locationFormattedAddress;
     const trimmed = locationQuery.trim();
@@ -505,7 +549,9 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
           ? (endsRef.current?.querySelector("button") as HTMLElement | null)
         : field === "location"
           ? locationSearchRef.current
-        : null;
+          : field === "resources"
+            ? (resourcesRef.current?.querySelector("button,input") as HTMLElement | null)
+          : null;
     target?.scrollIntoView({ behavior: "smooth", block: "center" });
     target?.focus({ preventScroll: true });
   };
@@ -543,6 +589,9 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
         if (!locationAddressId) {
           issues.push({ field: "location", message: "Seleciona uma morada válida da lista de sugestões." });
         }
+        if (consumesResources && selectedResourceIds.length === 0 && selectedProfessionalIds.length === 0) {
+          issues.push({ field: "resources", message: "Seleciona pelo menos um recurso ou profissional." });
+        }
       }
       if (idx === 1) {
         if (!startsAt) issues.push({ field: "startsAt", message: "Data/hora de início obrigatória." });
@@ -564,7 +613,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
       setError(issues[0]?.message ?? null);
       return false;
     }
-    clearErrorsForFields(step === 0 ? ["title", "location"] : ["startsAt", "endsAt"]);
+    clearErrorsForFields(step === 0 ? ["title", "location", "resources"] : ["startsAt", "endsAt"]);
     setValidationAlert(null);
     setError(null);
     return true;
@@ -579,6 +628,12 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
       clearErrorsForFields(["location"]);
     }
   }, [locationAddressId]);
+
+  useEffect(() => {
+    if (!consumesResources || selectedResourceIds.length > 0 || selectedProfessionalIds.length > 0) {
+      clearErrorsForFields(["resources"]);
+    }
+  }, [consumesResources, selectedProfessionalIds, selectedResourceIds]);
 
   useEffect(() => {
     if (startsAt) clearErrorsForFields(["startsAt"]);
@@ -666,7 +721,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
       setError(issues[0]?.message ?? null);
       return;
     }
-    clearErrorsForFields(["title", "location", "startsAt", "endsAt"]);
+    clearErrorsForFields(["title", "location", "startsAt", "endsAt", "resources"]);
 
     if (hasPaidTicket && paymentsStatus !== "READY") {
       setStripeAlert(
@@ -779,6 +834,9 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
           addressId: resolvedAddressId,
           templateType,
           interestTags,
+          consumesResources,
+          resourceIds: selectedResourceIds,
+          professionalIds: selectedProfessionalIds,
           isGratis,
           coverImageUrl: coverUrl,
           ticketTypeUpdates,
@@ -1033,6 +1091,96 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
             <p className="flex items-center gap-2 text-xs font-semibold text-amber-100">
               <span aria-hidden>⚠️</span>
               {locationError}
+            </p>
+          )}
+        </div>
+        <div ref={resourcesRef} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 sm:px-5 sm:py-5 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Consome recursos</label>
+              <p className="text-[11px] text-white/60">
+                Quando ativo, este evento bloqueia os recursos/profissionais escolhidos no calendário.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setConsumesResources((prev) => !prev)}
+              disabled={!hasResourceSelectionsAvailable}
+              className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${
+                consumesResources
+                  ? "border-emerald-300/60 bg-emerald-500/20 text-emerald-50"
+                  : "border-white/20 bg-black/20 text-white/75"
+              } disabled:opacity-50`}
+            >
+              {consumesResources ? "Ativo" : "Inativo"}
+            </button>
+          </div>
+
+          {!hasResourceSelectionsAvailable ? (
+            <p className="text-[11px] text-white/60">
+              Não existem recursos/profissionais ativos nesta organização.
+            </p>
+          ) : consumesResources ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <p className="text-[11px] uppercase tracking-wide text-white/60">Profissionais</p>
+                <div className="max-h-36 space-y-2 overflow-auto pr-1">
+                  {professionalOptions.map((professional) => {
+                    const checked = selectedProfessionalIds.includes(professional.id);
+                    return (
+                      <label
+                        key={`pro-${professional.id}`}
+                        className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-[12px] text-white/80"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) =>
+                            setSelectedProfessionalIds((prev) =>
+                              toggleSelectionId(prev, professional.id, e.target.checked),
+                            )
+                          }
+                          className="h-4 w-4 rounded border-white/30 bg-black/20"
+                        />
+                        <span>{professional.name || `Profissional #${professional.id}`}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <p className="text-[11px] uppercase tracking-wide text-white/60">Recursos</p>
+                <div className="max-h-36 space-y-2 overflow-auto pr-1">
+                  {resourceOptions.map((resource) => {
+                    const checked = selectedResourceIds.includes(resource.id);
+                    return (
+                      <label
+                        key={`res-${resource.id}`}
+                        className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-[12px] text-white/80"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) =>
+                            setSelectedResourceIds((prev) =>
+                              toggleSelectionId(prev, resource.id, e.target.checked),
+                            )
+                          }
+                          className="h-4 w-4 rounded border-white/30 bg-black/20"
+                        />
+                        <span>{resource.label || `Recurso #${resource.id}`}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {resourcesError && (
+            <p className="flex items-center gap-2 text-xs font-semibold text-amber-100">
+              <span aria-hidden>⚠️</span>
+              {resourcesError}
             </p>
           )}
         </div>
@@ -1455,6 +1603,15 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
                   Vagas/inscrições: {freeCapacity != null ? freeCapacity : "Sem limite definido"}.
                 </p>
               )}
+            </div>
+            <div className="rounded-xl border border-white/10 bg-black/20 p-3 space-y-1">
+              <p className="text-[11px] uppercase tracking-wide text-white/60">Bloqueio de recursos</p>
+              <p className="font-semibold">{consumesResources ? "Ativo" : "Inativo"}</p>
+              <p className="text-white/70">
+                {consumesResources
+                  ? `${selectedProfessionalIds.length} profissionais · ${selectedResourceIds.length} recursos`
+                  : "Sem recursos bloqueados"}
+              </p>
             </div>
           </div>
         </div>

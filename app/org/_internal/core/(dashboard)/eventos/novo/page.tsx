@@ -48,6 +48,7 @@ type FieldKey =
   | "startsAt"
   | "endsAt"
   | "location"
+  | "resources"
   | "tickets"
   | "padel";
 
@@ -112,10 +113,27 @@ type PadelPublicClub = {
   courts?: Array<{ id: number; name: string; indoor: boolean; surface: string | null }>;
 };
 type PadelPublicClubsResponse = { ok: boolean; items?: PadelPublicClub[]; error?: string };
+type ReservasResourceItem = {
+  id: number;
+  label?: string | null;
+  isActive?: boolean;
+};
+type ReservasProfessionalItem = {
+  id: number;
+  name?: string | null;
+  isActive?: boolean;
+};
 
 const normalizeIntegerInput = (value: string) => {
   const match = value.trim().match(/^\d+/);
   return match ? match[0] : "";
+};
+
+const toggleSelectionId = (current: number[], id: number, enabled: boolean) => {
+  if (enabled) {
+    return Array.from(new Set([...current, id])).sort((a, b) => a - b);
+  }
+  return current.filter((value) => value !== id);
 };
 
 const pickCanonicalField = (canonical: Prisma.JsonValue | null | undefined, keys: string[]) => {
@@ -235,6 +253,9 @@ export function NewOrganizationEventPage({
   const [locationFormattedAddress, setLocationFormattedAddress] = useState<string | null>(null);
   const [locationLat, setLocationLat] = useState<number | null>(null);
   const [locationLng, setLocationLng] = useState<number | null>(null);
+  const [consumesResources, setConsumesResources] = useState(false);
+  const [selectedResourceIds, setSelectedResourceIds] = useState<number[]>([]);
+  const [selectedProfessionalIds, setSelectedProfessionalIds] = useState<number[]>([]);
   const [ticketTypes, setTicketTypes] = useState<TicketTypeRow[]>([]);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [uploadingCover, setUploadingCover] = useState(false);
@@ -301,6 +322,7 @@ export function NewOrganizationEventPage({
   const endsAtFieldRef = useRef<HTMLDivElement | null>(null);
   const scheduleInitializedRef = useRef(false);
   const locationSectionRef = useRef<HTMLDivElement | null>(null);
+  const resourcesSectionRef = useRef<HTMLDivElement | null>(null);
   const locationSearchRef = useRef<HTMLInputElement | null>(null);
   const descriptionModalRef = useRef<HTMLDivElement | null>(null);
   const coverModalRef = useRef<HTMLDivElement | null>(null);
@@ -533,6 +555,21 @@ export function NewOrganizationEventPage({
     fetcher,
     { revalidateOnFocus: false },
   );
+  const { data: resourcesData } = useSWR<{ ok?: boolean; items?: ReservasResourceItem[] }>(
+    organizationIdFromStatus ? `/api/org/${organizationIdFromStatus}/reservas/recursos?includeCourts=1` : null,
+    fetcher,
+    { revalidateOnFocus: false },
+  );
+  const { data: professionalsData } = useSWR<{ ok?: boolean; items?: ReservasProfessionalItem[] }>(
+    organizationIdFromStatus ? `/api/org/${organizationIdFromStatus}/reservas/profissionais` : null,
+    fetcher,
+    { revalidateOnFocus: false },
+  );
+  const resourceOptions = Array.isArray(resourcesData?.items) ? resourcesData.items.filter((item) => item.isActive !== false) : [];
+  const professionalOptions = Array.isArray(professionalsData?.items)
+    ? professionalsData.items.filter((item) => item.isActive !== false)
+    : [];
+  const hasResourceSelectionsAvailable = resourceOptions.length > 0 || professionalOptions.length > 0;
   const padelCategoryItems = padelCategories?.items ?? [];
   const padelDirectoryClubs = padelDirectoryRes?.items ?? [];
   const padelClubItems = padelClubs?.items ?? [];
@@ -573,6 +610,9 @@ export function NewOrganizationEventPage({
         freeTicketName: string;
         freeTicketPublicAccess: boolean;
         freeCapacity: string;
+        consumesResources: boolean;
+        selectedResourceIds: number[];
+        selectedProfessionalIds: number[];
         savedAt: number;
       }>;
       setTitle(draft.title ?? "");
@@ -605,6 +645,21 @@ export function NewOrganizationEventPage({
       setFreeTicketName(draft.freeTicketName || freeTicketPlaceholder);
       setFreeTicketPublicAccess(draft.freeTicketPublicAccess ?? true);
       setFreeCapacity(normalizeIntegerInput(draft.freeCapacity || ""));
+      setConsumesResources(draft.consumesResources === true);
+      setSelectedResourceIds(
+        Array.isArray(draft.selectedResourceIds)
+          ? draft.selectedResourceIds
+              .map((value) => Number(value))
+              .filter((value) => Number.isInteger(value) && value > 0)
+          : [],
+      );
+      setSelectedProfessionalIds(
+        Array.isArray(draft.selectedProfessionalIds)
+          ? draft.selectedProfessionalIds
+              .map((value) => Number(value))
+              .filter((value) => Number.isInteger(value) && value > 0)
+          : [],
+      );
     } catch (err) {
       console.warn("Falha ao carregar rascunho local", err);
     } finally {
@@ -1649,6 +1704,9 @@ export function NewOrganizationEventPage({
     if (!locationAddressId) {
       issues.push({ field: "location", message: "Seleciona uma morada válida da lista de sugestões." });
     }
+    if (consumesResources && selectedResourceIds.length === 0 && selectedProfessionalIds.length === 0) {
+      issues.push({ field: "resources", message: "Seleciona pelo menos um recurso ou profissional." });
+    }
     if (endsAt && startsAt && new Date(endsAt).getTime() <= new Date(startsAt).getTime()) {
       issues.push({ field: "endsAt", message: "A data/hora de fim tem de ser depois do início." });
     }
@@ -1813,6 +1871,16 @@ export function NewOrganizationEventPage({
       }, 120);
       return;
     }
+    if (field === "resources") {
+      if (resourcesSectionRef.current) {
+        resourcesSectionRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+        setTimeout(() => {
+          const focusable = resourcesSectionRef.current?.querySelector("button,input") as HTMLElement | null;
+          focusable?.focus({ preventScroll: true });
+        }, 120);
+      }
+      return;
+    }
     if (field === "title") {
       if (titleRef.current) {
         titleRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1912,6 +1980,12 @@ export function NewOrganizationEventPage({
       clearErrorsForFields(["location"]);
     }
   }, [locationAddressId]);
+
+  useEffect(() => {
+    if (!consumesResources || selectedResourceIds.length > 0 || selectedProfessionalIds.length > 0) {
+      clearErrorsForFields(["resources"]);
+    }
+  }, [consumesResources, selectedProfessionalIds, selectedResourceIds]);
 
   useEffect(() => {
     if (endsAt && startsAt && new Date(endsAt).getTime() > new Date(startsAt).getTime()) {
@@ -2128,6 +2202,9 @@ export function NewOrganizationEventPage({
           templateType: templateToSend,
           interestTags,
           addressId: resolvedAddressId,
+          consumesResources,
+          resourceIds: selectedResourceIds,
+          professionalIds: selectedProfessionalIds,
           ticketTypes: preparedTickets,
           coverImageUrl: coverUrl,
           accessPolicy,
@@ -2189,6 +2266,9 @@ export function NewOrganizationEventPage({
     setLocationFormattedAddress(null);
     setLocationLat(null);
     setLocationLng(null);
+    setConsumesResources(false);
+    setSelectedResourceIds([]);
+    setSelectedProfessionalIds([]);
     setTicketTypes([]);
     setIsFreeEvent(false);
     setFreeTicketName(freeTicketPlaceholder);
@@ -3407,6 +3487,99 @@ export function NewOrganizationEventPage({
               <div className="grid gap-2">
                 <div ref={locationSectionRef}>
                   {renderLocationPanel()}
+                </div>
+                <div
+                  ref={resourcesSectionRef}
+                  className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3 space-y-3"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className={labelClass}>Bloqueio de recursos</p>
+                      <p className="text-[11px] text-white/60">
+                        Ativa para bloquear profissionais/recursos no calendário quando o evento for publicado.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setConsumesResources((prev) => !prev)}
+                      disabled={!hasResourceSelectionsAvailable}
+                      className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${
+                        consumesResources
+                          ? "border-emerald-300/60 bg-emerald-500/20 text-emerald-50"
+                          : "border-white/20 bg-black/20 text-white/75"
+                      } disabled:opacity-50`}
+                    >
+                      {consumesResources ? "Ativo" : "Inativo"}
+                    </button>
+                  </div>
+
+                  {!hasResourceSelectionsAvailable ? (
+                    <p className="text-[11px] text-white/60">
+                      Não existem recursos/profissionais ativos para seleção.
+                    </p>
+                  ) : consumesResources ? (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <p className="text-[11px] uppercase tracking-wide text-white/60">Profissionais</p>
+                        <div className="max-h-32 space-y-2 overflow-auto pr-1">
+                          {professionalOptions.map((professional) => {
+                            const checked = selectedProfessionalIds.includes(professional.id);
+                            return (
+                              <label
+                                key={`new-pro-${professional.id}`}
+                                className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-[12px] text-white/80"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={(e) =>
+                                    setSelectedProfessionalIds((prev) =>
+                                      toggleSelectionId(prev, professional.id, e.target.checked),
+                                    )
+                                  }
+                                  className="h-4 w-4 rounded border-white/30 bg-black/20"
+                                />
+                                <span>{professional.name || `Profissional #${professional.id}`}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <p className="text-[11px] uppercase tracking-wide text-white/60">Recursos</p>
+                        <div className="max-h-32 space-y-2 overflow-auto pr-1">
+                          {resourceOptions.map((resource) => {
+                            const checked = selectedResourceIds.includes(resource.id);
+                            return (
+                              <label
+                                key={`new-res-${resource.id}`}
+                                className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-[12px] text-white/80"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={(e) =>
+                                    setSelectedResourceIds((prev) =>
+                                      toggleSelectionId(prev, resource.id, e.target.checked),
+                                    )
+                                  }
+                                  className="h-4 w-4 rounded border-white/30 bg-black/20"
+                                />
+                                <span>{resource.label || `Recurso #${resource.id}`}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {fieldErrors.resources && (
+                    <p className={errorTextClass}>
+                      <span aria-hidden>⚠️</span>
+                      {fieldErrors.resources}
+                    </p>
+                  )}
                 </div>
                 <button
                   type="button"

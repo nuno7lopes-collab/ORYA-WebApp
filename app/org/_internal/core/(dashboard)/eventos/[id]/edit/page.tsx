@@ -64,6 +64,12 @@ export default async function OrganizationEventEditPage({ params }: PageProps) {
           validationStatus: true,
         },
       },
+      eventResources: {
+        select: {
+          scopeType: true,
+          scopeId: true,
+        },
+      },
     },
   });
 
@@ -113,6 +119,12 @@ export default async function OrganizationEventEditPage({ params }: PageProps) {
     padelEventCategoryLinkId: t.padelEventCategoryLinkId ?? null,
     padelCategoryLabel: t.padelEventCategoryLink?.category?.label ?? null,
   }));
+  const selectedResourceIds = event.eventResources
+    .filter((item) => item.scopeType === "RESOURCE")
+    .map((item) => item.scopeId);
+  const selectedProfessionalIds = event.eventResources
+    .filter((item) => item.scopeType === "PROFESSIONAL")
+    .map((item) => item.scopeId);
 
   return (
     <div className={cn("w-full py-8 space-y-6 text-white")}>
@@ -158,6 +170,9 @@ export default async function OrganizationEventEditPage({ params }: PageProps) {
               }
             : null,
           templateType: event.templateType,
+          consumesResources: event.consumesResources,
+          selectedResourceIds,
+          selectedProfessionalIds,
           interestTags: event.interestTags ?? [],
           isGratis: isGratis,
           coverImageUrl: event.coverImageUrl,
