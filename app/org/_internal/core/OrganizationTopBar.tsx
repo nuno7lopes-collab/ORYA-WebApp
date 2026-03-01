@@ -120,7 +120,6 @@ const ROLE_BADGE_ROLE_SET: ReadonlySet<RoleBadgeRole> = new Set([
   "CO_OWNER",
   "ADMIN",
   "STAFF",
-  "PROMOTER",
 ]);
 
 export default function OrganizationTopBar({

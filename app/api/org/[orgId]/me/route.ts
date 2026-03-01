@@ -21,6 +21,7 @@ import { validateOrgRescheduleWindowMinutes } from "@/lib/policies/bookingPolicy
 import { getOrganizationSuspensionSnapshot } from "@/lib/organizationSuspension";
 import {
   DEFAULT_PRIMARY_MODULE,
+  ORGANIZATION_MODULES,
   parsePrimaryModule,
 } from "@/lib/organizationCategories";
 import { AddressSourceProvider, MediaOwnerType, OrganizationStatus } from "@prisma/client";
@@ -219,11 +220,7 @@ async function _GET(req: NextRequest) {
             })
           : Promise.resolve(null),
         organization
-          ? prisma.organizationModuleEntry.findMany({
-              where: { organizationId: organization.id, enabled: true },
-              select: { moduleKey: true },
-              orderBy: { moduleKey: "asc" },
-            })
+          ? Promise.resolve(ORGANIZATION_MODULES.map((moduleKey) => ({ moduleKey })))
           : Promise.resolve([]),
         organization
           ? prisma.organizationOfficialEmailRequest.findFirst({
@@ -524,8 +521,8 @@ async function _PATCH(req: NextRequest) {
       return fail(
         400,
         legacyUsed
-          ? "Campo legado 'modules' descontinuado. Usa o endpoint de ferramentas por acao direta."
-          : "A gestão de ferramentas usa o endpoint /api/org/:orgId/tools/:toolKey.",
+          ? "Campo legado 'modules' descontinuado."
+          : "A gestão de ferramentas por ativação/desativação foi removida.",
       );
     }
     let orgRescheduleWindowMinutesValidated: number | null = null;
@@ -889,13 +886,7 @@ async function _PATCH(req: NextRequest) {
       );
     }
 
-    const nextToolsRaw = (
-      await prisma.organizationModuleEntry.findMany({
-        where: { organizationId: organization.id, enabled: true },
-        select: { moduleKey: true },
-        orderBy: { moduleKey: "asc" },
-      })
-    ).map((module) => module.moduleKey);
+    const nextToolsRaw = ORGANIZATION_MODULES;
     const nextTools = Array.from(
       new Set(
         nextToolsRaw

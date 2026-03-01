@@ -554,7 +554,22 @@ async function executeAction(params: {
 }): Promise<ActionOutcome> {
   const channelToken =
     typeof params.config.channel === "string" ? params.config.channel.trim().toUpperCase() : "IN_APP";
-  const channel = channelToken === "EMAIL" ? CrmCampaignDeliveryChannel.EMAIL : CrmCampaignDeliveryChannel.IN_APP;
+  const fallbackChannel = channelToken === "EMAIL" ? "EMAIL" : "IN_APP";
+
+  const abTestConfig = normalizeCrmAbTestConfig(params.config.abTest);
+  const abAssignment = resolveCrmAbAssignment({
+    scope: "journey",
+    entityId: `${params.journeyId}:${params.stepKey}`,
+    contactId: params.contact.id,
+    config: abTestConfig,
+  });
+  if (abAssignment.holdout) {
+    return {
+      state: "SKIPPED",
+      detail: "Run em holdout do A/B test.",
+      abTest: abAssignment,
+    };
+  }
 
   const deferUntil = resolveQuietHoursDeferral({
     now: params.now,
@@ -567,6 +582,7 @@ async function executeAction(params: {
       state: "DEFERRED",
       detail: `Diferido por quiet hours até ${deferUntil.toISOString()}.`,
       scheduledFor: deferUntil,
+      abTest: abAssignment.enabled ? abAssignment : null,
     };
   }
 
@@ -577,35 +593,63 @@ async function executeAction(params: {
   });
 
   if (caps.day >= params.policy.capPerDay) {
-    return { state: "SKIPPED", detail: "Cap diário atingido." };
+    return { state: "SKIPPED", detail: "Cap diário atingido.", abTest: abAssignment.enabled ? abAssignment : null };
   }
   if (caps.week >= params.policy.capPerWeek) {
-    return { state: "SKIPPED", detail: "Cap semanal atingido." };
+    return { state: "SKIPPED", detail: "Cap semanal atingido.", abTest: abAssignment.enabled ? abAssignment : null };
   }
   if (caps.month >= params.policy.capPerMonth) {
-    return { state: "SKIPPED", detail: "Cap mensal atingido." };
+    return { state: "SKIPPED", detail: "Cap mensal atingido.", abTest: abAssignment.enabled ? abAssignment : null };
   }
 
-  const title =
+  const baseTitle =
     typeof params.config.title === "string" && params.config.title.trim()
       ? params.config.title.trim()
       : "Atualização ORYA Padel";
-  const body =
+  const baseBody =
     typeof params.config.body === "string" && params.config.body.trim()
       ? params.config.body.trim()
       : "Temos novidades para ti.";
-  const ctaLabel =
+  const baseCtaLabel =
     typeof params.config.ctaLabel === "string" && params.config.ctaLabel.trim()
       ? params.config.ctaLabel.trim()
       : "Ver detalhes";
-  const ctaUrl =
+  const baseCtaUrl =
     typeof params.config.ctaUrl === "string" && params.config.ctaUrl.trim()
       ? params.config.ctaUrl.trim()
       : "/me";
+  const resolvedMessage = resolveCrmAbMessage({
+    base: {
+      title: baseTitle,
+      body: baseBody,
+      ctaLabel: baseCtaLabel,
+      ctaUrl: baseCtaUrl,
+      emailSubject: baseTitle,
+    },
+    assignment: abAssignment,
+    fallbackChannel,
+  });
+  const resolvedChannel =
+    resolvedMessage.channel === "EMAIL"
+      ? CrmCampaignDeliveryChannel.EMAIL
+      : CrmCampaignDeliveryChannel.IN_APP;
 
-  if (channel === CrmCampaignDeliveryChannel.IN_APP) {
+  if (resolvedMessage.delayMinutes > 0 && params.attempt === 1) {
+    return {
+      state: "DEFERRED",
+      detail: `Diferido por variante A/B (${resolvedMessage.delayMinutes} min).`,
+      scheduledFor: new Date(params.now.getTime() + resolvedMessage.delayMinutes * 60 * 1000),
+      abTest: abAssignment.enabled ? abAssignment : null,
+    };
+  }
+
+  if (resolvedChannel === CrmCampaignDeliveryChannel.IN_APP) {
     if (!params.contact.userId) {
-      return { state: "SKIPPED", detail: "Contacto sem userId para notificação in-app." };
+      return {
+        state: "SKIPPED",
+        detail: "Contacto sem userId para notificação in-app.",
+        abTest: abAssignment.enabled ? abAssignment : null,
+      };
     }
 
     await createNotification({
@@ -613,22 +657,29 @@ async function executeAction(params: {
       organizationId: params.organizationId,
       type: NotificationType.CRM_CAMPAIGN,
       dedupeKey: `crm-journey:${params.runId}:${params.stepKey}:${params.attempt}`,
-      title,
-      body,
-      ctaLabel,
-      ctaUrl,
+      title: resolvedMessage.title,
+      body: resolvedMessage.body,
+      ctaLabel: resolvedMessage.ctaLabel,
+      ctaUrl: resolvedMessage.ctaUrl,
       payload: {
         journeyId: params.journeyId,
         journeyRunId: params.runId,
         stepKey: params.stepKey,
         channel: "IN_APP",
+        abTest: {
+          enabled: abAssignment.enabled,
+          key: abAssignment.key,
+          bucket: abAssignment.bucket,
+          variantId: abAssignment.variantId,
+        },
       } as Prisma.InputJsonValue,
     });
 
     return {
       state: "COMPLETED",
       detail: "Notificação in-app enviada.",
-      channel,
+      channel: resolvedChannel,
+      abTest: abAssignment.enabled ? abAssignment : null,
     };
   }
 
@@ -636,6 +687,7 @@ async function executeAction(params: {
     return {
       state: "SKIPPED",
       detail: "Contacto sem email elegível (consentimento/email).",
+      abTest: abAssignment.enabled ? abAssignment : null,
     };
   }
 
@@ -651,20 +703,21 @@ async function executeAction(params: {
 
     await sendCrmCampaignEmail({
       to: params.contact.contactEmail,
-      subject: title,
+      subject: resolvedMessage.emailSubject,
       organizationName,
-      title,
-      body,
-      ctaLabel,
-      ctaUrl,
-      previewText: body,
+      title: resolvedMessage.title,
+      body: resolvedMessage.body,
+      ctaLabel: resolvedMessage.ctaLabel,
+      ctaUrl: resolvedMessage.ctaUrl,
+      previewText: resolvedMessage.body,
       replyTo,
     });
 
     return {
       state: "COMPLETED",
       detail: "Email de journey enviado.",
-      channel,
+      channel: resolvedChannel,
+      abTest: abAssignment.enabled ? abAssignment : null,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Falha no envio de email";
@@ -672,6 +725,7 @@ async function executeAction(params: {
       state: "FAILED",
       detail: message,
       code: "ACTION_EMAIL_FAILED",
+      abTest: abAssignment.enabled ? abAssignment : null,
     };
   }
 }
@@ -1015,6 +1069,15 @@ async function processJourneyRun(runId: string, now: Date): Promise<RunProcessRe
             metadata: {
               reason: "QUIET_HOURS",
               detail: actionResult.detail,
+              ...(actionResult.abTest
+                ? {
+                    abTest: {
+                      key: actionResult.abTest.key,
+                      bucket: actionResult.abTest.bucket,
+                      variantId: actionResult.abTest.variantId,
+                    },
+                  }
+                : {}),
             } as Prisma.InputJsonValue,
           },
         });
@@ -1029,6 +1092,15 @@ async function processJourneyRun(runId: string, now: Date): Promise<RunProcessRe
             executedAt: now,
             metadata: {
               detail: actionResult.detail,
+              ...(actionResult.abTest
+                ? {
+                    abTest: {
+                      key: actionResult.abTest.key,
+                      bucket: actionResult.abTest.bucket,
+                      variantId: actionResult.abTest.variantId,
+                    },
+                  }
+                : {}),
             } as Prisma.InputJsonValue,
           },
         });
@@ -1045,6 +1117,15 @@ async function processJourneyRun(runId: string, now: Date): Promise<RunProcessRe
             metadata: {
               detail: actionResult.detail,
               channel: actionResult.channel,
+              ...(actionResult.abTest
+                ? {
+                    abTest: {
+                      key: actionResult.abTest.key,
+                      bucket: actionResult.abTest.bucket,
+                      variantId: actionResult.abTest.variantId,
+                    },
+                  }
+                : {}),
             } as Prisma.InputJsonValue,
           },
         });
@@ -1078,6 +1159,15 @@ async function processJourneyRun(runId: string, now: Date): Promise<RunProcessRe
             metadata: {
               reason: "ACTION_RETRY",
               backoffMinutes,
+              ...(actionResult.abTest
+                ? {
+                    abTest: {
+                      key: actionResult.abTest.key,
+                      bucket: actionResult.abTest.bucket,
+                      variantId: actionResult.abTest.variantId,
+                    },
+                  }
+                : {}),
             } as Prisma.InputJsonValue,
           },
         });

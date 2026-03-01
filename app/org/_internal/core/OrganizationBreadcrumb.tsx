@@ -36,7 +36,6 @@ const SECTION_LABELS: Record<string, string> = {
   settings: "Definições",
   marketing: "Marketing",
   promos: "Códigos promocionais",
-  promoters: "Promotores e parcerias",
   content: "Conteúdos e kits",
   vendas: "Vendas",
   financas: "Finanças",

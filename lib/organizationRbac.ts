@@ -43,7 +43,7 @@ export const MODULE_LABELS: Record<OrganizationModule, string> = {
   INSCRICOES: "Inscricoes",
 };
 
-const ROLE_BASE_ACCESS: Record<OrganizationMemberRole, Partial<Record<OrganizationModule, ModuleAccessLevel>>> = {
+const ROLE_BASE_ACCESS: Partial<Record<OrganizationMemberRole, Partial<Record<OrganizationModule, ModuleAccessLevel>>>> = {
   OWNER: {
     EVENTOS: "EDIT",
     RESERVAS: "EDIT",
@@ -97,8 +97,6 @@ const ROLE_BASE_ACCESS: Record<OrganizationMemberRole, Partial<Record<Organizati
     LOJA: "EDIT",
     INSCRICOES: "EDIT",
   },
-  // PROMOTER existe como role top-level, mas sem poderes default por agora.
-  PROMOTER: {},
 };
 
 type RolePackAccess = {
@@ -150,12 +148,11 @@ const ROLE_PACK_ACCESS: Record<OrganizationRolePack, RolePackAccess> = {
   },
 };
 
-const ROLE_CHECKIN_ACCESS: Record<OrganizationMemberRole, CheckinAccessLevel> = {
+const ROLE_CHECKIN_ACCESS: Partial<Record<OrganizationMemberRole, CheckinAccessLevel>> = {
   OWNER: "EDIT",
   CO_OWNER: "EDIT",
   ADMIN: "EDIT",
   STAFF: "EDIT",
-  PROMOTER: "NONE",
 };
 
 const ADMIN_ROLE_SET = new Set<OrganizationMemberRole>(["OWNER", "CO_OWNER", "ADMIN"]);

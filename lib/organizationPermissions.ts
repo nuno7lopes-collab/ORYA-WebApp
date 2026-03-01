@@ -1,24 +1,21 @@
 import { OrganizationMemberRole } from "@prisma/client";
 
-const ROLE_WEIGHT: Record<OrganizationMemberRole, number> = {
-  [OrganizationMemberRole.PROMOTER]: 0,
-  [OrganizationMemberRole.STAFF]: 1,
-  [OrganizationMemberRole.ADMIN]: 2,
-  [OrganizationMemberRole.CO_OWNER]: 3,
-  [OrganizationMemberRole.OWNER]: 4,
+const ROLE_WEIGHT: Partial<Record<OrganizationMemberRole, number>> = {
+  [OrganizationMemberRole.STAFF]: 0,
+  [OrganizationMemberRole.ADMIN]: 1,
+  [OrganizationMemberRole.CO_OWNER]: 2,
+  [OrganizationMemberRole.OWNER]: 3,
 };
 
 const ADMIN_MANAGEABLE = new Set<OrganizationMemberRole>([
   OrganizationMemberRole.ADMIN,
   OrganizationMemberRole.STAFF,
-  OrganizationMemberRole.PROMOTER,
 ]);
 
 const CO_OWNER_MANAGEABLE = new Set<OrganizationMemberRole>([
   OrganizationMemberRole.CO_OWNER,
   OrganizationMemberRole.ADMIN,
   OrganizationMemberRole.STAFF,
-  OrganizationMemberRole.PROMOTER,
 ]);
 
 export function isOrgOwner(role: OrganizationMemberRole | null | undefined) {
@@ -26,11 +23,11 @@ export function isOrgOwner(role: OrganizationMemberRole | null | undefined) {
 }
 
 export function isOrgCoOwnerOrAbove(role: OrganizationMemberRole | null | undefined) {
-  return role ? ROLE_WEIGHT[role] >= ROLE_WEIGHT[OrganizationMemberRole.CO_OWNER] : false;
+  return role ? (ROLE_WEIGHT[role] ?? -1) >= (ROLE_WEIGHT[OrganizationMemberRole.CO_OWNER] ?? 0) : false;
 }
 
 export function isOrgAdminOrAbove(role: OrganizationMemberRole | null | undefined) {
-  return role ? ROLE_WEIGHT[role] >= ROLE_WEIGHT[OrganizationMemberRole.ADMIN] : false;
+  return role ? (ROLE_WEIGHT[role] ?? -1) >= (ROLE_WEIGHT[OrganizationMemberRole.ADMIN] ?? 0) : false;
 }
 
 export function canManageMembers(

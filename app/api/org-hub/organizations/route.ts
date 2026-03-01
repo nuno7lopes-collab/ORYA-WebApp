@@ -8,7 +8,7 @@ import { createOrganizationAtomic } from "@/lib/domain/groupGovernance";
 import { listEffectiveOrganizationMembershipsForUser } from "@/lib/organizationMembers";
 import { becomeOrganizationSchema } from "@/lib/validation/organization";
 import { UsernameTakenError } from "@/lib/globalUsernames";
-import { DEFAULT_PRIMARY_MODULE } from "@/lib/organizationCategories";
+import { DEFAULT_PRIMARY_MODULE, ORGANIZATION_MODULES } from "@/lib/organizationCategories";
 
 function errorCodeForStatus(status: number) {
   if (status === 400) return "BAD_REQUEST";
@@ -45,31 +45,7 @@ async function _GET() {
       listEffectiveOrganizationMembershipsForUser({ userId: user.id }),
     ]);
 
-    const organizationIds = memberships.map((membership) => membership.organizationId);
-    const toolsRows =
-      organizationIds.length > 0
-        ? await prisma.organizationModuleEntry.findMany({
-            where: {
-              organizationId: { in: organizationIds },
-              enabled: true,
-            },
-            select: {
-              organizationId: true,
-              moduleKey: true,
-            },
-            orderBy: { moduleKey: "asc" },
-          })
-        : [];
-
-    const toolsByOrg = new Map<number, string[]>();
-    for (const moduleRow of toolsRows) {
-      const bucket = toolsByOrg.get(moduleRow.organizationId);
-      if (bucket) {
-        bucket.push(moduleRow.moduleKey);
-      } else {
-        toolsByOrg.set(moduleRow.organizationId, [moduleRow.moduleKey]);
-      }
-    }
+    const defaultTools = [...ORGANIZATION_MODULES];
 
     const items = memberships
       .map((membership) => ({
@@ -84,7 +60,7 @@ async function _GET() {
           entityType: membership.organization.entityType,
           status: membership.organization.status,
           primaryModule: membership.organization.primaryModule,
-          tools: toolsByOrg.get(membership.organizationId) ?? [],
+          tools: defaultTools,
         },
       }))
       .sort((a, b) => {

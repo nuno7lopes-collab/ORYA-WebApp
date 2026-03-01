@@ -18,7 +18,7 @@ import { parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
 import { resolveInviteActionFeedback } from "@/lib/invites/actionFeedback";
 import type { OrganizationModule, OrganizationRolePack } from "@prisma/client";
 
-type MemberRole = "OWNER" | "CO_OWNER" | "ADMIN" | "STAFF" | "PROMOTER";
+type MemberRole = "OWNER" | "CO_OWNER" | "ADMIN" | "STAFF";
 type StaffTabKey = "membros" | "permissoes" | "auditoria";
 
 type Member = {
@@ -100,7 +100,6 @@ const roleLabels: Record<MemberRole, string> = {
   CO_OWNER: "Co-dono",
   ADMIN: "Administrador",
   STAFF: "Colaborador",
-  PROMOTER: "Promotor",
 };
 
 const roleOrder: Record<MemberRole, number> = {
@@ -108,7 +107,6 @@ const roleOrder: Record<MemberRole, number> = {
   CO_OWNER: 1,
   ADMIN: 2,
   STAFF: 3,
-  PROMOTER: 4,
 };
 
 const rolePackLabels: Record<OrganizationRolePack, string> = {
@@ -173,7 +171,7 @@ function canManageMember(actorRole: MemberRole | null, targetRole: MemberRole) {
   if (actorRole === "OWNER") return true;
   if (actorRole === "CO_OWNER") return targetRole !== "OWNER";
   if (actorRole === "ADMIN") {
-    return targetRole === "ADMIN" || targetRole === "STAFF" || targetRole === "PROMOTER";
+    return targetRole === "ADMIN" || targetRole === "STAFF";
   }
   return false;
 }
@@ -186,7 +184,7 @@ function canAssignRole(actorRole: MemberRole | null, targetRole: MemberRole, des
     return targetRole !== "OWNER";
   }
   if (actorRole === "ADMIN") {
-    const allowed = desiredRole === "ADMIN" || desiredRole === "STAFF" || desiredRole === "PROMOTER";
+    const allowed = desiredRole === "ADMIN" || desiredRole === "STAFF";
     return allowed && targetRole !== "OWNER" && targetRole !== "CO_OWNER";
   }
   return false;
@@ -1320,7 +1318,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
             <div>
               <h2 className="text-sm font-semibold">Membros</h2>
               <p className="text-[12px] text-white/60">
-                Papéis: Dono, Co-dono, Administrador, Colaborador e Promotor.
+                Papéis: Dono, Co-dono, Administrador e Colaborador.
               </p>
             </div>
             <div className="text-[11px] text-white/60">
@@ -1417,9 +1415,6 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                         </option>
                         <option value="STAFF" disabled={!canAssignRole(viewerRole, m.role, "STAFF")}>
                           Colaborador
-                        </option>
-                        <option value="PROMOTER" disabled={!canAssignRole(viewerRole, m.role, "PROMOTER")}>
-                          Promotor
                         </option>
                       </select>
                       {hasRolePackOptions && (
@@ -1671,9 +1666,6 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                   </option>
                   <option value="STAFF" disabled={!canAssignRole(viewerRole, inviteRole, "STAFF")}>
                     Colaborador
-                  </option>
-                  <option value="PROMOTER" disabled={!canAssignRole(viewerRole, inviteRole, "PROMOTER")}>
-                    Promotor
                   </option>
                 </select>
               </div>

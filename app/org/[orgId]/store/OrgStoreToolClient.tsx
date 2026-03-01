@@ -122,19 +122,9 @@ function resolveErrorCode(payload: unknown, fallbackStatus: number) {
   return `HTTP_${fallbackStatus}`;
 }
 
-function isLojaUnavailableError(errorCode: string | null) {
-  if (!errorCode) return false;
-  return (
-    errorCode === "LOJA_UNAVAILABLE" ||
-    errorCode.toUpperCase() === "LOJA_UNAVAILABLE" ||
-    errorCode.toLowerCase() === "loja indisponível para esta organização.".toLowerCase() ||
-    errorCode.toLowerCase() === "loja indisponivel para esta organizacao."
-  );
-}
-
 function formatStoreError(errorCode: string | null) {
   if (!errorCode) return null;
-  if (isLojaUnavailableError(errorCode)) {
+  if (errorCode.toUpperCase() === "LOJA_UNAVAILABLE") {
     return "Ferramenta Loja inativa para esta organização.";
   }
   if (errorCode === "OFFICIAL_EMAIL_REQUIRED") {
@@ -203,7 +193,6 @@ export default function OrgStoreToolClient({ orgId }: OrgStoreToolClientProps) {
   const [previewCounts, setPreviewCounts] = useState<StorePreviewCounts | null>(null);
   const [loadingStore, setLoadingStore] = useState(false);
   const [storeError, setStoreError] = useState<StoreUiError | null>(null);
-  const [activatingLoja, setActivatingLoja] = useState(false);
 
   const loadStore = useCallback(async () => {
     setLoadingStore(true);
@@ -265,42 +254,6 @@ export default function OrgStoreToolClient({ orgId }: OrgStoreToolClientProps) {
     }
   }, [endpoints.base, orgId]);
 
-  const activateLojaModule = useCallback(async () => {
-    setActivatingLoja(true);
-    setStoreError(null);
-    try {
-      const patchRes = await fetch(`/api/org/${orgId}/tools/LOJA`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "enable" }),
-      });
-      const patchPayload = await patchRes.json().catch(() => null);
-      const patchUnwrapped = unwrapEnvelope(patchPayload);
-      const patchTopLevel =
-        patchPayload && typeof patchPayload === "object" ? (patchPayload as Record<string, unknown>) : null;
-      const patchBody =
-        patchUnwrapped && typeof patchUnwrapped === "object"
-          ? (patchUnwrapped as Record<string, unknown>)
-          : null;
-      const patchHasError = patchTopLevel?.ok === false || patchBody?.ok === false;
-      if (!patchRes.ok || patchHasError) {
-        setStoreError(buildStoreUiError(patchPayload, patchRes.status, orgId));
-        return;
-      }
-
-      await loadStore();
-    } catch (err) {
-      setStoreError({
-        code: null,
-        message: err instanceof Error ? err.message : "Nao foi possivel ativar a ferramenta Loja.",
-        ctaHref: null,
-        ctaLabel: null,
-      });
-    } finally {
-      setActivatingLoja(false);
-    }
-  }, [orgId, loadStore]);
-
   useEffect(() => {
     void loadStore();
   }, [loadStore]);
@@ -319,7 +272,6 @@ export default function OrgStoreToolClient({ orgId }: OrgStoreToolClientProps) {
 
   const storeLocked = Boolean(store?.catalogLocked);
   const hasStore = Boolean(store);
-  const lojaUnavailable = isLojaUnavailableError(storeError?.code ?? null);
   const storeErrorMessage = storeError?.message ?? null;
 
   const renderPanel = () => {
@@ -447,16 +399,6 @@ export default function OrgStoreToolClient({ orgId }: OrgStoreToolClientProps) {
             >
               {storeError.ctaLabel}
             </a>
-          ) : null}
-          {lojaUnavailable ? (
-            <button
-              type="button"
-              onClick={() => void activateLojaModule()}
-              disabled={activatingLoja}
-              className="mt-3 rounded-lg border border-rose-200/50 bg-rose-200/20 px-3 py-1.5 text-xs font-semibold text-rose-50 transition hover:bg-rose-200/35 disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {activatingLoja ? "A ativar ferramenta Loja..." : "Ativar ferramenta Loja"}
-            </button>
           ) : null}
         </div>
       ) : null}

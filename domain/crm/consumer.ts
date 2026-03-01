@@ -915,6 +915,22 @@ export async function consumeCrmEventLog(eventLogId: string) {
   }
 
   if (resolvedUserId) {
+    const loyaltyContactSnapshot = await prisma.crmContact.findUnique({
+      where: { id: contactId },
+      select: {
+        tags: true,
+        padelProfile: {
+          select: {
+            matches30d: true,
+            noShowRate90d: true,
+            winRate90d: true,
+            activityStatus: true,
+            competitiveTier: true,
+          },
+        },
+      },
+    });
+
     await applyLoyaltyForInteraction({
       organizationId: log.organizationId,
       userId: resolvedUserId,
@@ -929,7 +945,12 @@ export async function consumeCrmEventLog(eventLogId: string) {
         totalAttendances: contactTotals?.totals.totalAttendances ?? 0,
         totalTournaments: contactTotals?.totals.totalTournaments ?? 0,
         totalStoreOrders: contactTotals?.totals.totalStoreOrders ?? 0,
-        tags: [],
+        tags: loyaltyContactSnapshot?.tags ?? [],
+        matches30d: loyaltyContactSnapshot?.padelProfile?.matches30d ?? null,
+        noShowRate90d: loyaltyContactSnapshot?.padelProfile?.noShowRate90d ?? null,
+        winRate90d: loyaltyContactSnapshot?.padelProfile?.winRate90d ?? null,
+        activityStatus: loyaltyContactSnapshot?.padelProfile?.activityStatus ?? null,
+        competitiveTier: loyaltyContactSnapshot?.padelProfile?.competitiveTier ?? null,
       },
     });
   }

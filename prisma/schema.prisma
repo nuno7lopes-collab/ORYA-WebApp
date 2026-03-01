@@ -133,7 +133,6 @@ model Profile {
   storeOrders                                                     StoreOrder[]
   storeDigitalGrants                                              StoreDigitalGrant[]
   dsarCases                                                       DsarCase[]
-  promoCodesPromoted                                              PromoCode[]                      @relation("PromoCodePromoter")
   activeOrganization                                              Organization?                    @relation("ProfileActiveOrganization", fields: [activeOrganizationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([activeOrganizationId], map: "profiles_active_org_idx")
@@ -2571,7 +2570,6 @@ model PromoCode {
   type           PromoType
   value          Int
   organizationId Int?              @map("organization_id")
-  promoterUserId String?           @map("promoter_user_id") @db.Uuid
   maxUses        Int?              @map("max_uses")
   perUserLimit   Int?              @map("per_user_limit")
   validFrom      DateTime?         @map("valid_from") @db.Timestamptz(6)
@@ -2585,14 +2583,12 @@ model PromoCode {
   minTotalCents  Int?              @map("min_total_cents")
   event          Event?            @relation(fields: [eventId], references: [id], onUpdate: NoAction, map: "promo_codes_event_fk")
   organization   Organization?     @relation(fields: [organizationId], references: [id], onUpdate: NoAction)
-  promoter       Profile?          @relation("PromoCodePromoter", fields: [promoterUserId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   redemptions    PromoRedemption[]
   saleSummaries  SaleSummary[]
   saleLines      SaleLine[]
 
   @@index([eventId])
   @@index([organizationId])
-  @@index([promoterUserId], map: "promo_codes_promoter_idx")
   @@index([eventId, active], map: "promo_codes_event_active_idx")
   @@index([validFrom, validUntil], map: "promo_codes_valid_idx")
   @@map("promo_codes")
@@ -6519,7 +6515,6 @@ enum OrganizationMemberRole {
   CO_OWNER
   ADMIN
   STAFF
-  PROMOTER
 
   @@schema("app_v3")
 }

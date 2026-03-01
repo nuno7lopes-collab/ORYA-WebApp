@@ -62,6 +62,12 @@ function formatDate(value: string | null) {
   return formatDateTime(date);
 }
 
+function parseNumber(value: string, fallback: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return parsed;
+}
+
 export default function CrmCampanhasPage() {
   const { data, isLoading, mutate } = useSWR<CampaignListResponse>(
     resolveCanonicalOrgApiPath("/api/org/[orgId]/crm/campanhas"),
@@ -85,6 +91,18 @@ export default function CrmCampanhasPage() {
   const [channelInApp, setChannelInApp] = useState(true);
   const [channelEmail, setChannelEmail] = useState(false);
   const [emailSubject, setEmailSubject] = useState("");
+  const [abEnabled, setAbEnabled] = useState(false);
+  const [abHoldoutPercent, setAbHoldoutPercent] = useState("10");
+  const [abVariantAWeight, setAbVariantAWeight] = useState("50");
+  const [abVariantATitle, setAbVariantATitle] = useState("");
+  const [abVariantABody, setAbVariantABody] = useState("");
+  const [abVariantAEmailSubject, setAbVariantAEmailSubject] = useState("");
+  const [abVariantAChannel, setAbVariantAChannel] = useState<"BOTH" | "IN_APP" | "EMAIL">("BOTH");
+  const [abVariantBWeight, setAbVariantBWeight] = useState("50");
+  const [abVariantBTitle, setAbVariantBTitle] = useState("");
+  const [abVariantBBody, setAbVariantBBody] = useState("");
+  const [abVariantBEmailSubject, setAbVariantBEmailSubject] = useState("");
+  const [abVariantBChannel, setAbVariantBChannel] = useState<"BOTH" | "IN_APP" | "EMAIL">("BOTH");
   const [saving, setSaving] = useState(false);
   const [sendingId, setSendingId] = useState<string | null>(null);
   const [actioningId, setActioningId] = useState<string | null>(null);
@@ -123,6 +141,35 @@ export default function CrmCampanhasPage() {
           ctaUrl: ctaUrl.trim() || undefined,
           emailSubject: emailSubject.trim() || undefined,
           channels: { inApp: channelInApp, email: channelEmail },
+          ...(abEnabled
+            ? {
+                abTest: {
+                  enabled: true,
+                  key: `campanha-${name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-") || "ab"}`,
+                  holdoutPercent: Math.max(0, Math.min(95, parseNumber(abHoldoutPercent, 10))),
+                  variants: [
+                    {
+                      id: "A",
+                      label: "Variante A",
+                      weight: Math.max(1, parseNumber(abVariantAWeight, 50)),
+                      title: abVariantATitle.trim() || undefined,
+                      body: abVariantABody.trim() || undefined,
+                      emailSubject: abVariantAEmailSubject.trim() || undefined,
+                      channel: abVariantAChannel,
+                    },
+                    {
+                      id: "B",
+                      label: "Variante B",
+                      weight: Math.max(1, parseNumber(abVariantBWeight, 50)),
+                      title: abVariantBTitle.trim() || undefined,
+                      body: abVariantBBody.trim() || undefined,
+                      emailSubject: abVariantBEmailSubject.trim() || undefined,
+                      channel: abVariantBChannel,
+                    },
+                  ],
+                },
+              }
+            : {}),
         },
       };
       const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/crm/campanhas"), {
@@ -142,6 +189,18 @@ export default function CrmCampanhasPage() {
       setChannelInApp(true);
       setChannelEmail(false);
       setEmailSubject("");
+      setAbEnabled(false);
+      setAbHoldoutPercent("10");
+      setAbVariantAWeight("50");
+      setAbVariantATitle("");
+      setAbVariantABody("");
+      setAbVariantAEmailSubject("");
+      setAbVariantAChannel("BOTH");
+      setAbVariantBWeight("50");
+      setAbVariantBTitle("");
+      setAbVariantBBody("");
+      setAbVariantBEmailSubject("");
+      setAbVariantBChannel("BOTH");
       await mutate();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao criar campanha");
@@ -343,6 +402,132 @@ export default function CrmCampanhasPage() {
               <span className="mt-1 block text-[10px] text-white/45">Se vazio, usa o título.</span>
             </label>
           ) : null}
+          <div className="rounded-2xl border border-white/12 bg-white/5 px-3 py-3 md:col-span-2">
+            <label className="flex items-center gap-2 text-[12px] text-white/80">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-white"
+                checked={abEnabled}
+                onChange={(event) => setAbEnabled(event.target.checked)}
+              />
+              Ativar A/B testing (mensagem/canal)
+            </label>
+            {abEnabled ? (
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <label className="text-[12px] text-white/70 md:col-span-2">
+                  Holdout (%)
+                  <input
+                    type="number"
+                    min={0}
+                    max={95}
+                    className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                    value={abHoldoutPercent}
+                    onChange={(event) => setAbHoldoutPercent(event.target.value)}
+                  />
+                </label>
+
+                <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-3">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Variante A</p>
+                  <label className="mt-2 block text-[12px] text-white/70">
+                    Peso
+                    <input
+                      type="number"
+                      min={1}
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                      value={abVariantAWeight}
+                      onChange={(event) => setAbVariantAWeight(event.target.value)}
+                    />
+                  </label>
+                  <label className="mt-2 block text-[12px] text-white/70">
+                    Canal
+                    <select
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                      value={abVariantAChannel}
+                      onChange={(event) => setAbVariantAChannel(event.target.value as "BOTH" | "IN_APP" | "EMAIL")}
+                    >
+                      <option value="BOTH">BOTH</option>
+                      <option value="IN_APP">IN_APP</option>
+                      <option value="EMAIL">EMAIL</option>
+                    </select>
+                  </label>
+                  <label className="mt-2 block text-[12px] text-white/70">
+                    Título (override)
+                    <input
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                      value={abVariantATitle}
+                      onChange={(event) => setAbVariantATitle(event.target.value)}
+                    />
+                  </label>
+                  <label className="mt-2 block text-[12px] text-white/70">
+                    Mensagem (override)
+                    <textarea
+                      className="mt-1 min-h-[72px] w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                      value={abVariantABody}
+                      onChange={(event) => setAbVariantABody(event.target.value)}
+                    />
+                  </label>
+                  <label className="mt-2 block text-[12px] text-white/70">
+                    Assunto email (override)
+                    <input
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                      value={abVariantAEmailSubject}
+                      onChange={(event) => setAbVariantAEmailSubject(event.target.value)}
+                    />
+                  </label>
+                </div>
+
+                <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-3">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Variante B</p>
+                  <label className="mt-2 block text-[12px] text-white/70">
+                    Peso
+                    <input
+                      type="number"
+                      min={1}
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                      value={abVariantBWeight}
+                      onChange={(event) => setAbVariantBWeight(event.target.value)}
+                    />
+                  </label>
+                  <label className="mt-2 block text-[12px] text-white/70">
+                    Canal
+                    <select
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                      value={abVariantBChannel}
+                      onChange={(event) => setAbVariantBChannel(event.target.value as "BOTH" | "IN_APP" | "EMAIL")}
+                    >
+                      <option value="BOTH">BOTH</option>
+                      <option value="IN_APP">IN_APP</option>
+                      <option value="EMAIL">EMAIL</option>
+                    </select>
+                  </label>
+                  <label className="mt-2 block text-[12px] text-white/70">
+                    Título (override)
+                    <input
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                      value={abVariantBTitle}
+                      onChange={(event) => setAbVariantBTitle(event.target.value)}
+                    />
+                  </label>
+                  <label className="mt-2 block text-[12px] text-white/70">
+                    Mensagem (override)
+                    <textarea
+                      className="mt-1 min-h-[72px] w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                      value={abVariantBBody}
+                      onChange={(event) => setAbVariantBBody(event.target.value)}
+                    />
+                  </label>
+                  <label className="mt-2 block text-[12px] text-white/70">
+                    Assunto email (override)
+                    <input
+                      className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                      value={abVariantBEmailSubject}
+                      onChange={(event) => setAbVariantBEmailSubject(event.target.value)}
+                    />
+                  </label>
+                </div>
+              </div>
+            ) : null}
+          </div>
         </div>
         <button type="button" className={CTA_PRIMARY} onClick={handleCreate} disabled={!canSubmit || saving}>
           {saving ? "A guardar..." : "Criar campanha"}

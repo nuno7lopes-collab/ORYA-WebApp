@@ -53,15 +53,6 @@ export default async function PublicFormPage({ params }: { params: Promise<Param
     notFound();
   }
 
-  const moduleEnabled = await prisma.organizationModuleEntry.findFirst({
-    where: { organizationId: form.organization.id, moduleKey: "INSCRICOES", enabled: true },
-    select: { organizationId: true },
-  });
-
-  if (!moduleEnabled) {
-    notFound();
-  }
-
   const organizationName =
     form.organization.publicName ||
     form.organization.businessName ||

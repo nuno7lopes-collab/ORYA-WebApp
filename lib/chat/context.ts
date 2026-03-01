@@ -1,5 +1,4 @@
 import type { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
@@ -36,15 +35,6 @@ export async function requireChatContext(req: NextRequest) {
 
   if (!organization || !membership) {
     throw new ChatContextError("Sem permissões.", 403, "FORBIDDEN");
-  }
-
-  const moduleEnabled = await prisma.organizationModuleEntry.findFirst({
-    where: { organizationId: organization.id, moduleKey: "MENSAGENS", enabled: true },
-    select: { moduleKey: true },
-  });
-
-  if (!moduleEnabled) {
-    throw new ChatContextError("Chat interno desativado.", 403, "MODULE_DISABLED");
   }
 
   return { user, organization, membership };

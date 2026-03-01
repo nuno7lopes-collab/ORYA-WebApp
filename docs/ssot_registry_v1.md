@@ -3870,7 +3870,7 @@ Matriz canónica final (web):
 - Trainers canónico final: `/org/:orgId/team/trainers` (qualquer alias `treinadores` é legacy hard-cut).
 - Padel Club: `/org/:orgId/padel/clubs` (`clubs`, `courts`, `players`, `community`, `trainers`, `lessons`)
 - Padel Tournaments: `/org/:orgId/padel/tournaments` (`tournaments`, `create`, `calendar`, `categories`, `teams`, `players`)
-- Marketing: `/org/:orgId/marketing` (`overview`, `promos`, `promoters`, `content`)
+- Marketing: `/org/:orgId/marketing` (`overview`, `promos`, `content`)
 - Profile legacy: `/org/:orgId/profile*` removido com `404 Not Found` (sem redirect)
 - Settings: `/org/:orgId/settings` (`general`)
 - Settings verify route: `/org/:orgId/settings/verify` existe para confirmação por token, sem item dedicado na subnav.
@@ -4036,13 +4036,13 @@ Hard-cut de slugs legacy em `/org/:orgId/*`:
 
 11.1 Roles “reais”
 
-OWNER, CO_OWNER, ADMIN, STAFF, PROMOTER
+OWNER, CO_OWNER, ADMIN, STAFF
 
 11.1.1 Contrato canónico `role` + `rolePack` (FECHADO)
 - `role` define hierarquia e poder de decisão.
 - `rolePack` define o perfil operacional do dia a dia.
 - Regras obrigatórias:
-  - OWNER, CO_OWNER, ADMIN e PROMOTER: `rolePack = null` (sem pack).
+  - OWNER, CO_OWNER e ADMIN: `rolePack = null` (sem pack).
   - STAFF: `rolePack` obrigatório e compatível com:
     - CLUB_MANAGER, TOURNAMENT_DIRECTOR, FRONT_DESK, COACH, REFEREE
 - A mesma validação aplica-se em:
@@ -4054,10 +4054,10 @@ OWNER, CO_OWNER, ADMIN, STAFF, PROMOTER
 - `TRAINER` é role legado removido; qualquer fluxo novo com `TRAINER` é inválido.
 
 11.1.2 Matriz hierárquica canónica (convite + mudança de papel)
-- `OWNER` pode atribuir: `OWNER`, `CO_OWNER`, `ADMIN`, `STAFF`, `PROMOTER`.
-- `CO_OWNER` pode atribuir: `CO_OWNER`, `ADMIN`, `STAFF`, `PROMOTER`.
-- `ADMIN` pode atribuir: `ADMIN`, `STAFF`, `PROMOTER`.
-- `STAFF` e `PROMOTER` não podem convidar nem promover.
+- `OWNER` pode atribuir: `OWNER`, `CO_OWNER`, `ADMIN`, `STAFF`.
+- `CO_OWNER` pode atribuir: `CO_OWNER`, `ADMIN`, `STAFF`.
+- `ADMIN` pode atribuir: `ADMIN`, `STAFF`.
+- `STAFF` não pode convidar nem promover.
 - Regra global: sem auto-promoção fora da matriz acima.
 
 11.1.3 Perfis profissionais

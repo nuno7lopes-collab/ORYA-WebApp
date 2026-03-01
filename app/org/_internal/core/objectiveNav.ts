@@ -349,11 +349,6 @@ export function getObjectiveSections(
       href: `${baseHref}promos`,
     });
     sections.push({
-      id: "promoters",
-      label: "Promotores e parcerias",
-      href: `${baseHref}promoters`,
-    });
-    sections.push({
       id: "content",
       label: "Conteúdos e kits",
       href: `${baseHref}content`,

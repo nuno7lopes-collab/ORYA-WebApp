@@ -153,6 +153,7 @@ export default function CrmLoyaltyPage() {
   const [rewardCode, setRewardCode] = useState("");
   const [rewardValue, setRewardValue] = useState("");
   const [rewardSaving, setRewardSaving] = useState(false);
+  const [presetLoading, setPresetLoading] = useState(false);
 
   const [composerMode, setComposerMode] = useState<ComposerMode>("rule");
   const [error, setError] = useState<string | null>(null);
@@ -310,6 +311,29 @@ export default function CrmLoyaltyPage() {
     }
   };
 
+  const handleApplyPadelPresets = async () => {
+    setPresetLoading(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/loyalty/padel-presets"), {
+        method: "POST",
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.message ?? json?.error ?? "Falha ao aplicar presets padel.");
+      }
+      setSuccess(
+        `Presets padel aplicados: +${json?.createdRules ?? 0} regras e +${json?.createdRewards ?? 0} recompensas.`,
+      );
+      await mutate();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao aplicar presets padel.");
+    } finally {
+      setPresetLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <header className="space-y-2">
@@ -331,7 +355,17 @@ export default function CrmLoyaltyPage() {
       ) : null}
 
       <section className={cn(DASHBOARD_CARD, "space-y-4 p-4")}>
-        <h2 className="text-sm font-semibold text-white">Programa</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-white">Programa</h2>
+          <button
+            type="button"
+            className={CTA_NEUTRAL}
+            onClick={handleApplyPadelPresets}
+            disabled={presetLoading}
+          >
+            {presetLoading ? "A aplicar presets..." : "Aplicar presets padel-first"}
+          </button>
+        </div>
         <div className="grid gap-3 md:grid-cols-2">
           <label className="text-[12px] text-white/70">
             Nome

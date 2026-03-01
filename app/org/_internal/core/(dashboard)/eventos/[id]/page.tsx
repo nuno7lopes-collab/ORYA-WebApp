@@ -1362,7 +1362,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
 
                   <p className="mt-1 text-[10px] text-white/40">
                     Funcionalidades avançadas como lista de compras por
-                    utilizador, links de promotores e tracking detalhado por
+                    utilizador, links de campanhas e tracking detalhado por
                     wave podem ser geridas na área de gestão avançada do {primaryLabel}.
                   </p>
                 </article>

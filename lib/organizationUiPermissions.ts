@@ -2,8 +2,7 @@ export type OrganizationUiRole =
   | "OWNER"
   | "CO_OWNER"
   | "ADMIN"
-  | "STAFF"
-  | "PROMOTER";
+  | "STAFF";
 
 type OrganizationUiRolePack =
   | "CLUB_MANAGER"
@@ -17,7 +16,6 @@ const ROLE_SET = new Set<OrganizationUiRole>([
   "CO_OWNER",
   "ADMIN",
   "STAFF",
-  "PROMOTER",
 ]);
 
 const ROLE_PACK_SET = new Set<OrganizationUiRolePack>([
@@ -43,10 +41,8 @@ export function getOrganizationRoleFlags(role?: string | null, rolePack?: string
   const isCoOwner = normalized === "CO_OWNER";
   const isAdmin = normalized === "ADMIN";
   const isStaff = normalized === "STAFF";
-  const isPromoter = normalized === "PROMOTER";
   const isAdminOrAbove = isOwner || isCoOwner || isAdmin;
   const isManager = isAdminOrAbove;
-  const isPromoterOnly = isPromoter && !isAdminOrAbove;
   const isCoach = normalized === "STAFF" && normalizedPack === "COACH";
   return {
     role: normalized,
@@ -57,16 +53,13 @@ export function getOrganizationRoleFlags(role?: string | null, rolePack?: string
     isStaff,
     isTrainer: false,
     isCoach,
-    isPromoter,
     isAdminOrAbove,
-    isPromoterOnly,
     canViewFinance: isManager,
     canManageMembers: isManager,
     canEditOrg: isManager,
     canViewOperationalSettings: isManager,
     canViewTrainerHub: isCoach || isManager,
-    // "Promote" aqui significa acesso a ferramenta/flows de marketing (nao "ser promotor").
-    // PROMOTER nao tem comportamento/permissoes especiais por agora.
+    // "Promote" aqui significa acesso a ferramenta/flows de marketing.
     canPromote: isAdminOrAbove,
   };
 }

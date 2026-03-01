@@ -28,8 +28,6 @@ type PromoCodeDto = {
   validUntil: string | null;
   active: boolean;
   eventId: number | null;
-  promoterUserId?: string | null;
-  promoter?: { id: string; fullName: string | null; username: string | null; avatarUrl: string | null } | null;
   minCartValueCents?: number | null;
   createdAt: string;
   updatedAt: string;
@@ -41,7 +39,6 @@ type PromoCodeDto = {
 
 type ListResponse = {
   ok: boolean;
-  viewerRole?: string | null;
   promoCodes: PromoCodeDto[];
   events: { id: number; title: string; slug: string }[];
   promoStats?: {
@@ -55,14 +52,6 @@ type ListResponse = {
     usersUnique?: number;
   }[];
   error?: string;
-};
-
-type MemberLite = {
-  userId: string;
-  role: string;
-  fullName: string | null;
-  username: string | null;
-  avatarUrl: string | null;
 };
 
 type PromoDetailResponse =
@@ -114,7 +103,6 @@ const EMPTY_FORM = {
   validFrom: "",
   validUntil: "",
   eventId: "global",
-  promoterUserId: "none",
   active: true,
   autoApply: false,
   minQuantity: "",
@@ -144,12 +132,6 @@ export default function PromoCodesClient() {
   const orgId = parseOrganizationId(searchParams?.get("organizationId")) ?? getOrganizationIdFromBrowser();
   const loginRedirectHref = orgId ? buildOrgHref(orgId, "/marketing/promos") : buildOrgHubHref("/organizations");
   const { data, mutate } = useSWR<ListResponse>(user ? resolveCanonicalOrgApiPath("/api/org/[orgId]/promo") : null, fetcher);
-  const viewerRole = data?.viewerRole ?? null;
-  const isPromoterOnly = viewerRole === "PROMOTER";
-  const { data: membersData } = useSWR<{ ok: boolean; items: MemberLite[] }>(
-    user && !isPromoterOnly ? "/api/org-hub/organizations/members" : null,
-    fetcher,
-  );
 
   const [filters, setFilters] = useState({
     eventId: "all",
@@ -205,13 +187,7 @@ export default function PromoCodesClient() {
       ),
     [promoStats],
   );
-  const promoters = useMemo(
-    () =>
-      membersData?.items?.filter((member) => member.role === "PROMOTER") ?? [],
-    [membersData?.items],
-  );
-  const canManagePromos = !isPromoterOnly;
-  const showPromoterColumn = canManagePromos;
+  const canManagePromos = true;
 
   const filteredPromos = useMemo(() => {
     return promos.filter((p) => {
@@ -230,7 +206,6 @@ export default function PromoCodesClient() {
   }, [promos, filters]);
 
   const handleSubmit = async () => {
-    if (isPromoterOnly) return;
     setSaving(true);
     setError(null);
     setSuccess(null);
@@ -267,7 +242,6 @@ export default function PromoCodesClient() {
         minQuantity: form.minQuantity ? Number(form.minQuantity) : null,
         minTotalCents: form.minTotal ? Math.round(Number(form.minTotal) * 100) : null,
         minCartValueCents: form.minCart ? Math.round(Number(form.minCart) * 100) : null,
-        promoterUserId: form.promoterUserId === "none" ? null : form.promoterUserId,
       };
       const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/promo"), {
         method: editingId ? "PATCH" : "POST",
@@ -308,7 +282,6 @@ export default function PromoCodesClient() {
       validFrom: promo.validFrom ?? "",
       validUntil: promo.validUntil ?? "",
       eventId: promo.eventId == null ? "global" : String(promo.eventId),
-      promoterUserId: promo.promoterUserId ?? "none",
       active: promo.active,
       autoApply: !!promo.autoApply,
       minQuantity: promo.minQuantity != null ? String(promo.minQuantity) : "",
@@ -621,7 +594,6 @@ export default function PromoCodesClient() {
                 <tr>
                   <th className="px-3 py-2">Código</th>
                   <th className="px-3 py-2">Nome</th>
-                  {showPromoterColumn && <th className="px-3 py-2">Promoter</th>}
                   <th className="px-3 py-2">Evento</th>
                   <th className="px-3 py-2">Valor</th>
                   <th className="px-3 py-2">Usos</th>
@@ -650,11 +622,6 @@ export default function PromoCodesClient() {
                         </div>
                       </td>
                       <td className="px-3 py-2 text-white/80">{promo.name ?? "—"}</td>
-                      {showPromoterColumn && (
-                        <td className="px-3 py-2 text-white/70">
-                          {promo.promoter?.fullName || promo.promoter?.username || "—"}
-                        </td>
-                      )}
                       <td className="px-3 py-2">
                         {promo.eventId == null
                           ? "Global"
@@ -799,24 +766,6 @@ export default function PromoCodesClient() {
                     />
                     <span className={helperText}>Sem espaços.</span>
                   </label>
-                  {promoters.length > 0 && (
-                    <label className={labelBase}>
-                      <span>Promoter</span>
-                      <select
-                        value={form.promoterUserId}
-                        onChange={(e) => setForm((p) => ({ ...p, promoterUserId: e.target.value }))}
-                        className={inputBase}
-                      >
-                        <option value="none">Sem promoter</option>
-                        {promoters.map((promoter) => (
-                          <option key={promoter.userId} value={promoter.userId}>
-                            {promoter.fullName || promoter.username || "Promoter"}
-                          </option>
-                        ))}
-                      </select>
-                      <span className={helperText}>Atribui este código ao promoter.</span>
-                    </label>
-                  )}
                 </div>
               </div>
 

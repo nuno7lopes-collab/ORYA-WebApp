@@ -222,7 +222,6 @@ type PromoCodeRow = {
   autoApply?: boolean;
   minQuantity?: number | null;
   minTotalCents?: number | null;
-  promoterUserId?: string | null;
 };
 
 type PromoListResponse = {
@@ -387,7 +386,6 @@ type ObjectiveTab = "create" | "manage" | "promote" | "analyze";
 const MARKETING_TABS = [
   { key: "overview", label: "Visão geral" },
   { key: "promos", label: "Códigos promocionais" },
-  { key: "promoters", label: "Promotores e parcerias" },
   { key: "content", label: "Conteúdos e kits" },
 ] as const;
 type MarketingSectionKey = (typeof MARKETING_TABS)[number]["key"];
@@ -913,11 +911,8 @@ function OrganizacaoPageInner({
   }, [organizationError, organizationData, organization?.id, organizationId]);
   const marketingTabs = useMemo(() => {
     if (!canUseMarketing) return [];
-    if (roleFlags.isPromoterOnly) {
-      return MARKETING_TABS.filter((tab) => tab.key === "promoters");
-    }
     return MARKETING_TABS;
-  }, [canUseMarketing, roleFlags]);
+  }, [canUseMarketing]);
   const salesUnitHint = isReservasOrg
     ? "Reservas confirmadas nos últimos 30 dias"
     : "Inscrições registadas nos últimos 30 dias";
@@ -1276,7 +1271,6 @@ function OrganizacaoPageInner({
   const { data: marketingOverview } = useSWR<MarketingOverviewResponse>(
     organization?.status === "ACTIVE" &&
       activeObjective === "promote" &&
-      !roleFlags.isPromoterOnly &&
       canUseMarketing &&
       orgApiBase
       ? `${orgApiBase}/marketing/overview${eventsScopeSuffix}`
@@ -1752,40 +1746,11 @@ function OrganizacaoPageInner({
 
   const marketingPromos = useMemo(() => promoData?.promoCodes ?? [], [promoData]);
   const promoEvents = useMemo(() => promoData?.events ?? [], [promoData]);
-  const promoStats = useMemo(() => promoData?.promoStats ?? [], [promoData]);
   const marketingKpis = useMemo(() => {
     const activePromos = marketingPromos.filter((p) => p.active).length;
     const fallbackTop = [...marketingPromos].sort(
       (a, b) => (b.redemptionsCount ?? 0) - (a.redemptionsCount ?? 0)
     )[0];
-    const promoTotals = promoStats.reduce(
-      (acc, stat) => {
-        acc.tickets += stat.tickets ?? 0;
-        acc.grossCents += stat.grossCents ?? 0;
-        acc.netCents += stat.netCents ?? 0;
-        acc.discountCents += stat.discountCents ?? 0;
-        acc.uses += stat.usesTotal ?? 0;
-        return acc;
-      },
-      { tickets: 0, grossCents: 0, netCents: 0, discountCents: 0, uses: 0 },
-    );
-    if (roleFlags.isPromoterOnly) {
-      return {
-        totalTickets: promoTotals.tickets,
-        ticketsWithPromo: promoTotals.tickets,
-        guestTickets: 0,
-        marketingRevenueCents: promoTotals.netCents,
-        activePromos,
-        topPromo: fallbackTop
-          ? {
-              id: fallbackTop.id,
-              code: fallbackTop.code,
-              redemptionsCount: fallbackTop.redemptionsCount ?? 0,
-              revenueCents: 0,
-            }
-          : null,
-      };
-    }
     return {
       totalTickets: marketingOverview?.totalTickets ?? overview?.totalTickets ?? 0,
       ticketsWithPromo: marketingOverview?.ticketsWithPromo ?? marketingPromos.reduce((sum, p) => sum + (p.redemptionsCount ?? 0), 0),
@@ -1801,7 +1766,7 @@ function OrganizacaoPageInner({
           }
         : null),
     };
-  }, [marketingOverview, marketingPromos, overview, promoStats, roleFlags.isPromoterOnly]);
+  }, [marketingOverview, marketingPromos, overview]);
   const buyersItems = buyers && buyers.ok !== false ? buyers.items : [];
   const salesLoading = !!salesEventId && !salesSeries;
   const buyersLoading = !!salesEventId && !buyers;
@@ -2282,7 +2247,7 @@ function OrganizacaoPageInner({
               iconKey: "TOOL_PROMOCOES",
               title: "Marketing",
               summary: "Promoções e parcerias.",
-              bullets: ["Códigos promocionais", "Promotores e parceiros", "Links e QR"],
+              bullets: ["Códigos promocionais", "Campanhas", "Links e QR"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/marketing` : undefined,
               flow: resolveClubDashboardAreaByToolId("marketing"),
             }
@@ -4791,95 +4756,6 @@ function OrganizacaoPageInner({
         {canUseMarketing && marketingSection === "promos" && (
           <div className={cn("mt-4", fadeClass)}>
             <PromoCodesPage />
-          </div>
-        )}
-
-        {canUseMarketing && marketingSection === "promoters" && (
-          <div className={cn("mt-4 space-y-3", fadeClass)}>
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-xl font-semibold text-white">Promotores &amp; Parcerias</h3>
-                <p className="text-[12px] text-white/65">
-                  {roleFlags.isPromoterOnly ? "O teu desempenho por código." : "Pessoas e parceiros."}
-                </p>
-              </div>
-              {!roleFlags.isPromoterOnly && (
-                <button
-                  type="button"
-                  className="rounded-full border border-white/20 px-4 py-2 text-sm font-semibold text-white/70 cursor-not-allowed"
-                  disabled
-                >
-                  Em breve
-                </button>
-              )}
-            </div>
-            {roleFlags.isPromoterOnly ? (
-              <div className="rounded-3xl border border-white/10 bg-black/35 p-4 text-sm text-white/70 space-y-4">
-                {marketingPromos.length === 0 ? (
-                  <p className="text-[12px] text-white/65">
-                    Ainda não tens códigos atribuídos. Pede ao clube para criar um código com o teu nome.
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    {marketingPromos.map((promo) => {
-                      const stats = promoStats.find((s) => s.promoCodeId === promo.id);
-                      const event = promo.eventId
-                        ? promoEvents.find((e) => e.id === promo.eventId) ?? null
-                        : null;
-                      const promoLink = event?.slug
-                        ? `${window.location.origin}/eventos/${event.slug}?promo=${encodeURIComponent(promo.code)}&checkout=1`
-                        : null;
-                      return (
-                        <div
-                          key={promo.id}
-                          className="rounded-2xl border border-white/10 bg-white/5 p-4 shadow-[0_16px_45px_rgba(0,0,0,0.35)]"
-                        >
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div>
-                              <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Código</p>
-                              <p className="text-lg font-semibold text-white">{promo.code}</p>
-                              <p className="text-[12px] text-white/60">
-                                {event?.title ?? "Código global"}
-                              </p>
-                            </div>
-                            {promoLink && (
-                              <button
-                                type="button"
-                                onClick={() => navigator.clipboard.writeText(promoLink)}
-                                className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-[11px] uppercase tracking-[0.2em] text-white/70 hover:border-white/40"
-                              >
-                                Copiar link
-                              </button>
-                            )}
-                          </div>
-                          <div className="mt-3 grid gap-2 text-[12px] text-white/70 sm:grid-cols-3">
-                            <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2">
-                              <p className="text-[10px] uppercase tracking-[0.18em] text-white/50">Usos</p>
-                              <p className="text-sm font-semibold text-white">{stats?.usesTotal ?? promo.redemptionsCount ?? 0}</p>
-                            </div>
-                            <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2">
-                              <p className="text-[10px] uppercase tracking-[0.18em] text-white/50">{salesUnitLabel}</p>
-                              <p className="text-sm font-semibold text-white">{stats?.tickets ?? 0}</p>
-                            </div>
-                            <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2">
-                              <p className="text-[10px] uppercase tracking-[0.18em] text-white/50">Receita líquida</p>
-                              <p className="text-sm font-semibold text-white">
-                                {stats?.netCents ? `${(stats.netCents / 100).toFixed(2)} €` : "—"}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="rounded-3xl border border-white/10 bg-black/35 p-4 text-sm text-white/70 space-y-3">
-                <p className="text-white/80 font-semibold">Em breve</p>
-                <p className="text-[12px] text-white/65">Painel por promotor.</p>
-              </div>
-            )}
           </div>
         )}
 

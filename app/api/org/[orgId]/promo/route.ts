@@ -6,7 +6,6 @@ import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { OrganizationModule } from "@prisma/client";
-import { getEffectiveOrganizationMember } from "@/lib/organizationMembers";
 import crypto from "crypto";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
@@ -29,7 +28,6 @@ type AutoPromoCodeInput = {
   validUntil: Date | null;
   minQuantity: number | null;
   minTotalCents: number | null;
-  promoterUserId: string | null;
   active: boolean;
   autoApply: boolean;
 };
@@ -47,7 +45,6 @@ const buildAutoPromoCode = (input: AutoPromoCodeInput) => {
     iso(input.validUntil),
     input.minQuantity ?? "",
     input.minTotalCents ?? "",
-    input.promoterUserId ?? "",
     input.active ? "1" : "0",
     input.autoApply ? "1" : "0",
   ].join("|");
@@ -157,44 +154,26 @@ async function _GET(req: NextRequest) {
       return fail(ctx, 500, "Promo codes indisponíveis nesta instância do Prisma.");
     }
 
-    const isPromoter = orgCtx.membership.role === "PROMOTER";
-
     let organizationEvents: { id: number; title: string; slug: string }[] = [];
     let eventIds: number[] = [];
-
-    if (!isPromoter) {
-      organizationEvents = await prisma.event.findMany({
-        where: { organizationId: orgCtx.organization.id },
-        select: { id: true, title: true, slug: true },
-      });
-      eventIds = organizationEvents.map((e) => e.id);
-    }
+    organizationEvents = await prisma.event.findMany({
+      where: { organizationId: orgCtx.organization.id },
+      select: { id: true, title: true, slug: true },
+    });
+    eventIds = organizationEvents.map((e) => e.id);
 
     const promoCodes = await prisma.promoCode.findMany({
-      where: isPromoter
-        ? { promoterUserId: orgCtx.profile.id }
-        : {
-            OR: [
-              { organizationId: orgCtx.organization.id },
-              ...(eventIds.length ? [{ eventId: { in: eventIds } }] : []),
-            ],
-          },
+      where: {
+        OR: [
+          { organizationId: orgCtx.organization.id },
+          ...(eventIds.length ? [{ eventId: { in: eventIds } }] : []),
+        ],
+      },
       orderBy: { createdAt: "desc" },
       include: {
         redemptions: true,
-        promoter: { select: { id: true, fullName: true, username: true, avatarUrl: true } },
       },
     });
-
-    if (isPromoter) {
-      eventIds = promoCodes
-        .map((promo) => promo.eventId)
-        .filter((id): id is number => typeof id === "number" && Number.isFinite(id));
-      organizationEvents = await prisma.event.findMany({
-        where: { organizationId: orgCtx.organization.id, ...(eventIds.length ? { id: { in: eventIds } } : {}) },
-        select: { id: true, title: true, slug: true },
-      });
-    }
 
     const promoIds = promoCodes.map((p) => p.id);
     const promoCodesList = promoCodes.map((p) => p.code);
@@ -265,8 +244,6 @@ async function _GET(req: NextRequest) {
       viewerRole: orgCtx.membership.role,
       promoCodes: promoCodes.map((p) => ({
         ...p,
-        promoterUserId: p.promoterUserId ?? null,
-        promoter: p.promoter ?? null,
         status:
           !p.active
             ? "INACTIVE"
@@ -372,7 +349,6 @@ async function _POST(req: NextRequest) {
       autoApply,
       minQuantity,
       minTotalCents,
-      promoterUserId,
     } = body as {
       code?: string;
       type?: "PERCENTAGE" | "FIXED";
@@ -386,7 +362,6 @@ async function _POST(req: NextRequest) {
       autoApply?: boolean;
       minQuantity?: number | null;
       minTotalCents?: number | null;
-      promoterUserId?: string | null;
     };
 
     const cleanCode = (code || "").trim();
@@ -423,18 +398,6 @@ async function _POST(req: NextRequest) {
     const normalizedValidFrom = parseDate(validFrom);
     const normalizedValidUntil = parseDate(validUntil);
 
-    let resolvedPromoterId: string | null = null;
-    if (typeof promoterUserId === "string") {
-      const promoterMember = await getEffectiveOrganizationMember({
-        organizationId: orgCtx.organization.id,
-        userId: promoterUserId,
-      });
-      if (!promoterMember || promoterMember.role !== "PROMOTER") {
-        return fail(ctx, 400, "Promoter inválido.");
-      }
-      resolvedPromoterId = promoterUserId;
-    }
-
     const resolvedActive = active ?? true;
     const finalCode =
       auto && !cleanCode
@@ -449,7 +412,6 @@ async function _POST(req: NextRequest) {
             validUntil: normalizedValidUntil,
             minQuantity: minQuantity ?? null,
             minTotalCents: minTotalCents ?? null,
-            promoterUserId: resolvedPromoterId,
             active: resolvedActive,
             autoApply: auto,
           })
@@ -473,7 +435,6 @@ async function _POST(req: NextRequest) {
         autoApply: auto,
         minQuantity: minQuantity ?? null,
         minTotalCents: minTotalCents ?? null,
-        promoterUserId: resolvedPromoterId,
       },
     });
 
@@ -573,7 +534,6 @@ async function _PATCH(req: NextRequest) {
       minCartValueCents,
       name,
       description,
-      promoterUserId,
     } = body as {
       active?: boolean;
       autoApply?: boolean;
@@ -590,7 +550,6 @@ async function _PATCH(req: NextRequest) {
       minCartValueCents?: number | null;
       name?: string | null;
       description?: string | null;
-      promoterUserId?: string | null;
     };
 
     let targetEventId: number | null | undefined = undefined;
@@ -634,17 +593,6 @@ async function _PATCH(req: NextRequest) {
     if (minCartValueCents !== undefined) dataUpdate.minCartValueCents = minCartValueCents;
     if (typeof name === "string") dataUpdate.name = name.trim() || null;
     if (typeof description === "string") dataUpdate.description = description.trim() || null;
-    if (typeof promoterUserId === "string") {
-      const promoterMember = await getEffectiveOrganizationMember({
-        organizationId: orgCtx.organization.id,
-        userId: promoterUserId,
-      });
-      if (!promoterMember || promoterMember.role !== "PROMOTER") {
-        return fail(ctx, 400, "Promoter inválido.");
-      }
-      dataUpdate.promoterUserId = promoterUserId;
-    }
-    if (promoterUserId === null) dataUpdate.promoterUserId = null;
 
     const updated = await prisma.promoCode.update({
       where: { id: promo.id },

@@ -15,6 +15,7 @@ import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { getPlatformOfficialEmail } from "@/lib/platformSettings";
 import { listEffectiveOrganizationMembershipsForUser } from "@/lib/organizationMembers";
 import { buildOrgHubHref } from "@/lib/organizationIdUtils";
+import { ORGANIZATION_MODULES } from "@/lib/organizationCategories";
 
 type OrganizationSwitcherOption = {
   organizationId: number;
@@ -54,7 +55,7 @@ export default async function OrganizationDashboardLayout({
   let orgOptions: OrganizationSwitcherOption[] = [];
   let activeOrganization: OrganizationSwitcherOption["organization"] | null = null;
   let activeRole: string | null = null;
-  let activeModules: string[] = [];
+  let activeModules: string[] = [...ORGANIZATION_MODULES];
   let activePendingOfficialEmail: string | null = null;
   let profile:
     | { fullName: string | null; username: string | null; avatarUrl: string | null; updatedAt: Date | null }
@@ -117,22 +118,14 @@ export default async function OrganizationDashboardLayout({
 
     if (activeOrganization) {
       try {
-        const [modulesRows, pendingRequest] = await Promise.all([
-          prisma.organizationModuleEntry.findMany({
-            where: { organizationId: activeOrganization.id, enabled: true },
-            select: { moduleKey: true },
-            orderBy: { moduleKey: "asc" },
-          }),
-          prisma.organizationOfficialEmailRequest.findFirst({
-            where: { organizationId: activeOrganization.id, status: "PENDING" },
-            select: { newEmail: true },
-            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-          }),
-        ]);
-        activeModules = modulesRows.map((row) => row.moduleKey);
+        const pendingRequest = await prisma.organizationOfficialEmailRequest.findFirst({
+          where: { organizationId: activeOrganization.id, status: "PENDING" },
+          select: { newEmail: true },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        });
         activePendingOfficialEmail = normalizeOfficialEmail(pendingRequest?.newEmail ?? null);
       } catch {
-        activeModules = [];
+        activeModules = [...ORGANIZATION_MODULES];
         activePendingOfficialEmail = null;
       }
     }

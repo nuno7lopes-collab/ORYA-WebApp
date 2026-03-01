@@ -84,9 +84,9 @@ const INVITE_TYPE_LABEL: Record<InviteType, string> = {
   TEAM_MEMBER: "Equipa",
 };
 
-type OrgBadgeRole = "OWNER" | "CO_OWNER" | "ADMIN" | "STAFF" | "PROMOTER";
+type OrgBadgeRole = "OWNER" | "CO_OWNER" | "ADMIN" | "STAFF";
 const isOrganizationBadgeRole = (role: string): role is OrgBadgeRole =>
-  ["OWNER", "CO_OWNER", "ADMIN", "STAFF", "PROMOTER"].includes(role);
+  ["OWNER", "CO_OWNER", "ADMIN", "STAFF"].includes(role);
 
 const resolveInviteContextLabel = (invite: InviteItem) => {
   const inviteType = invite.inviteType ?? "ORGANIZATION_MEMBER";

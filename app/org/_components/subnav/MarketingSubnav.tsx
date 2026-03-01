@@ -9,7 +9,7 @@ export default function MarketingSubnav({ orgId, className }: { orgId: number | 
   const resolveMarketingTab = (searchParams: URLSearchParams) => {
     const value = searchParams.get("marketing");
     if (!value) return "overview";
-    if (value === "promos" || value === "promoters" || value === "content") return value;
+    if (value === "promos" || value === "content") return value;
     return "overview";
   };
 
@@ -28,12 +28,6 @@ export default function MarketingSubnav({ orgId, className }: { orgId: number | 
           label: "Promoções",
           href: buildOrgHref(orgId, "/marketing", { marketing: "promos" }),
           isActive: ({ searchParams }) => resolveMarketingTab(searchParams) === "promos",
-        },
-        {
-          id: "promoters",
-          label: "Promotores",
-          href: buildOrgHref(orgId, "/marketing", { marketing: "promoters" }),
-          isActive: ({ searchParams }) => resolveMarketingTab(searchParams) === "promoters",
         },
         {
           id: "content",

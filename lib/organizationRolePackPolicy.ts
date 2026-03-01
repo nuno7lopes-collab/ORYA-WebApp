@@ -1,6 +1,6 @@
 import { OrganizationMemberRole, OrganizationRolePack } from "@prisma/client";
 
-const ROLE_PACKS_BY_ROLE: Record<OrganizationMemberRole, readonly OrganizationRolePack[]> = {
+const ROLE_PACKS_BY_ROLE: Partial<Record<OrganizationMemberRole, readonly OrganizationRolePack[]>> = {
   OWNER: [],
   CO_OWNER: [],
   ADMIN: [],
@@ -11,7 +11,6 @@ const ROLE_PACKS_BY_ROLE: Record<OrganizationMemberRole, readonly OrganizationRo
     OrganizationRolePack.COACH,
     OrganizationRolePack.REFEREE,
   ],
-  PROMOTER: [],
 };
 
 const DEFAULT_ROLE_PACK_BY_ROLE: Partial<Record<OrganizationMemberRole, OrganizationRolePack>> = {

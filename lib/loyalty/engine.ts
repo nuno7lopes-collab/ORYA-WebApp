@@ -23,6 +23,11 @@ export type CustomerSnapshot = {
   totalTournaments: number;
   totalStoreOrders: number;
   tags: string[];
+  matches30d?: number | null;
+  noShowRate90d?: number | null;
+  winRate90d?: number | null;
+  activityStatus?: string | null;
+  competitiveTier?: string | null;
 };
 
 type ApplyInput = {
@@ -42,7 +47,15 @@ const INTERACTION_TO_TRIGGER: Partial<Record<CrmInteractionType, LoyaltyRuleTrig
   BOOKING_COMPLETED: LoyaltyRuleTrigger.BOOKING_COMPLETED,
   BOOKING_CONFIRMED: LoyaltyRuleTrigger.BOOKING_COMPLETED,
   EVENT_CHECKIN: LoyaltyRuleTrigger.EVENT_CHECKIN,
+  PADEL_BOOKING_CONFIRMED: LoyaltyRuleTrigger.BOOKING_COMPLETED,
+  PADEL_MATCH_PLAYED: LoyaltyRuleTrigger.BOOKING_COMPLETED,
+  PADEL_MATCH_WIN: LoyaltyRuleTrigger.BOOKING_COMPLETED,
+  PADEL_MATCH_LOSS: LoyaltyRuleTrigger.BOOKING_COMPLETED,
+  PADEL_CLASS_ATTENDED: LoyaltyRuleTrigger.EVENT_CHECKIN,
   PADEL_TOURNAMENT_ENTRY: LoyaltyRuleTrigger.TOURNAMENT_PARTICIPATION,
+  PADEL_TOURNAMENT_REGISTERED: LoyaltyRuleTrigger.TOURNAMENT_PARTICIPATION,
+  PADEL_TOURNAMENT_PLAYED: LoyaltyRuleTrigger.TOURNAMENT_PARTICIPATION,
+  PADEL_TOURNAMENT_PODIUM: LoyaltyRuleTrigger.TOURNAMENT_PARTICIPATION,
   MEMBERSHIP_RENEWED: LoyaltyRuleTrigger.MEMBERSHIP_RENEWAL,
 };
 
@@ -51,9 +64,25 @@ const INTERACTION_TO_SOURCE: Partial<Record<CrmInteractionType, LoyaltySourceTyp
   BOOKING_COMPLETED: LoyaltySourceType.BOOKING,
   BOOKING_CONFIRMED: LoyaltySourceType.BOOKING,
   EVENT_CHECKIN: LoyaltySourceType.CHECKIN,
+  PADEL_BOOKING_CONFIRMED: LoyaltySourceType.BOOKING,
+  PADEL_MATCH_PLAYED: LoyaltySourceType.BOOKING,
+  PADEL_MATCH_WIN: LoyaltySourceType.BOOKING,
+  PADEL_MATCH_LOSS: LoyaltySourceType.BOOKING,
+  PADEL_CLASS_ATTENDED: LoyaltySourceType.CHECKIN,
   PADEL_TOURNAMENT_ENTRY: LoyaltySourceType.TOURNAMENT,
+  PADEL_TOURNAMENT_REGISTERED: LoyaltySourceType.TOURNAMENT,
+  PADEL_TOURNAMENT_PLAYED: LoyaltySourceType.TOURNAMENT,
+  PADEL_TOURNAMENT_PODIUM: LoyaltySourceType.TOURNAMENT,
   MEMBERSHIP_RENEWED: LoyaltySourceType.MEMBERSHIP,
 };
+
+export function resolveLoyaltyTriggerForInteraction(interactionType: CrmInteractionType) {
+  return INTERACTION_TO_TRIGGER[interactionType] ?? null;
+}
+
+export function resolveLoyaltySourceForInteraction(interactionType: CrmInteractionType) {
+  return INTERACTION_TO_SOURCE[interactionType] ?? null;
+}
 
 function startOfDayUtc(date: Date) {
   const utc = new Date(date.getTime());
@@ -81,7 +110,10 @@ function normalizeStringArray(value: unknown): string[] {
   return [];
 }
 
-function matchesConditions(conditions: Prisma.JsonValue | null | undefined, input: ApplyInput): boolean {
+export function matchesLoyaltyConditions(
+  conditions: Prisma.JsonValue | null | undefined,
+  input: ApplyInput,
+): boolean {
   if (!conditions || typeof conditions !== "object") return true;
   const data = conditions as Record<string, unknown>;
 
@@ -108,9 +140,78 @@ function matchesConditions(conditions: Prisma.JsonValue | null | undefined, inpu
 
   const requiredTags = normalizeStringArray(data.requiredTags);
   if (requiredTags.length) {
-    const tagSet = new Set(input.customerSnapshot.tags);
+    const tagSet = new Set(input.customerSnapshot.tags.map((tag) => tag.trim().toLowerCase()));
     const hasAny = requiredTags.some((tag) => tagSet.has(tag));
     if (!hasAny) return false;
+  }
+
+  const requiredInteractionTypes = normalizeStringArray(data.requiredInteractionTypes).map((entry) =>
+    entry.trim().toUpperCase(),
+  );
+  if (requiredInteractionTypes.length && !requiredInteractionTypes.includes(input.interactionType)) {
+    return false;
+  }
+
+  const excludedInteractionTypes = normalizeStringArray(data.excludedInteractionTypes).map((entry) =>
+    entry.trim().toUpperCase(),
+  );
+  if (excludedInteractionTypes.includes(input.interactionType)) {
+    return false;
+  }
+
+  const minMatches30d = parseNumber(data.minMatches30d);
+  if (minMatches30d !== null && (input.customerSnapshot.matches30d ?? 0) < minMatches30d) {
+    return false;
+  }
+
+  const maxNoShowRate90d = parseNumber(data.maxNoShowRate90d);
+  if (
+    maxNoShowRate90d !== null &&
+    typeof input.customerSnapshot.noShowRate90d === "number" &&
+    Number.isFinite(input.customerSnapshot.noShowRate90d) &&
+    input.customerSnapshot.noShowRate90d > maxNoShowRate90d
+  ) {
+    return false;
+  }
+
+  const minWinRate90d = parseNumber(data.minWinRate90d);
+  if (
+    minWinRate90d !== null &&
+    typeof input.customerSnapshot.winRate90d === "number" &&
+    Number.isFinite(input.customerSnapshot.winRate90d) &&
+    input.customerSnapshot.winRate90d < minWinRate90d
+  ) {
+    return false;
+  }
+
+  const requiredActivityStatuses = normalizeStringArray(data.requiredActivityStatuses).map((entry) =>
+    entry.trim().toUpperCase(),
+  );
+  if (requiredActivityStatuses.length) {
+    const activityStatus = (input.customerSnapshot.activityStatus ?? "").trim().toUpperCase();
+    if (!requiredActivityStatuses.includes(activityStatus)) {
+      return false;
+    }
+  }
+
+  const requiredCompetitiveTiers = normalizeStringArray(data.requiredCompetitiveTiers).map((entry) =>
+    entry.trim().toUpperCase(),
+  );
+  if (requiredCompetitiveTiers.length) {
+    const competitiveTier = (input.customerSnapshot.competitiveTier ?? "").trim().toUpperCase();
+    if (!requiredCompetitiveTiers.includes(competitiveTier)) {
+      return false;
+    }
+  }
+
+  const requireFairPlay = data.requireFairPlay === true;
+  if (
+    requireFairPlay &&
+    typeof input.customerSnapshot.noShowRate90d === "number" &&
+    Number.isFinite(input.customerSnapshot.noShowRate90d) &&
+    input.customerSnapshot.noShowRate90d > 0.05
+  ) {
+    return false;
   }
 
   return true;
@@ -141,8 +242,8 @@ export async function applyLoyaltyForInteraction(
   input: ApplyInput,
   options?: { tx?: Prisma.TransactionClient },
 ): Promise<{ entries: number }> {
-  const trigger = INTERACTION_TO_TRIGGER[input.interactionType];
-  const sourceType = INTERACTION_TO_SOURCE[input.interactionType];
+  const trigger = resolveLoyaltyTriggerForInteraction(input.interactionType);
+  const sourceType = resolveLoyaltySourceForInteraction(input.interactionType);
   if (!trigger || !sourceType) return { entries: 0 };
 
   const client: PrismaClientLike = options?.tx ?? prisma;
@@ -173,7 +274,7 @@ export async function applyLoyaltyForInteraction(
 
   for (const rule of rules) {
     if (!rule.points || rule.points <= 0) continue;
-    if (!matchesConditions(rule.conditions as Prisma.JsonValue, input)) continue;
+    if (!matchesLoyaltyConditions(rule.conditions as Prisma.JsonValue, input)) continue;
 
     let pointsToGrant = clampLoyaltyRulePoints(rule.points);
 
