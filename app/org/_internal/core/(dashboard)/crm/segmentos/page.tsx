@@ -20,7 +20,7 @@ import {
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
-const DATE_FIELDS = new Set(["firstInteractionAt", "lastActivityAt", "lastPurchaseAt"]);
+const DATE_FIELDS = new Set(["firstInteractionAt", "lastActivityAt", "lastPurchaseAt", "padel.lastMatchAt"]);
 const NUMBER_FIELDS = new Set([
   "totalSpentCents",
   "totalOrders",
@@ -30,6 +30,12 @@ const NUMBER_FIELDS = new Set([
   "totalStoreOrders",
   "padel.tournamentsCount",
   "padel.noShowCount",
+  "padel.matches30d",
+  "padel.winRate90d",
+  "padel.noShowRate90d",
+  "padel.rfmScore",
+  "padel.churnRiskScore",
+  "padel.reactivationPropensityScore",
 ]);
 
 const FIELD_OPTIONS = [
@@ -46,8 +52,17 @@ const FIELD_OPTIONS = [
   { value: "padel.level", label: "Padel nível" },
   { value: "padel.preferredSide", label: "Padel lado preferido" },
   { value: "padel.clubName", label: "Padel clube" },
+  { value: "padel.lastMatchAt", label: "Padel último jogo" },
   { value: "padel.tournamentsCount", label: "Padel torneios (contagem)" },
   { value: "padel.noShowCount", label: "Padel no-shows (contagem)" },
+  { value: "padel.matches30d", label: "Padel jogos 30d" },
+  { value: "padel.winRate90d", label: "Padel win rate 90d" },
+  { value: "padel.noShowRate90d", label: "Padel no-show rate 90d" },
+  { value: "padel.activityStatus", label: "Padel estado de atividade" },
+  { value: "padel.competitiveTier", label: "Padel tier competitivo" },
+  { value: "padel.rfmScore", label: "Padel score RFM" },
+  { value: "padel.churnRiskScore", label: "Padel risco de churn" },
+  { value: "padel.reactivationPropensityScore", label: "Padel propensão reativação" },
   { value: "tag", label: "Tag" },
   { value: "interactionType", label: "Tipo de interação" },
   { value: "marketingOptIn", label: "Marketing opt-in" },
@@ -85,6 +100,17 @@ const INTERACTION_TYPES = [
   "EVENT_CHECKIN",
   "PADEL_TOURNAMENT_ENTRY",
   "PADEL_MATCH_PAYMENT",
+  "PADEL_BOOKING_CONFIRMED",
+  "PADEL_BOOKING_CANCELLED",
+  "PADEL_BOOKING_NO_SHOW",
+  "PADEL_MATCH_PLAYED",
+  "PADEL_MATCH_WIN",
+  "PADEL_MATCH_LOSS",
+  "PADEL_CLASS_ATTENDED",
+  "PADEL_CLASS_MISSED",
+  "PADEL_TOURNAMENT_REGISTERED",
+  "PADEL_TOURNAMENT_PLAYED",
+  "PADEL_TOURNAMENT_PODIUM",
   "BOOKING_CONFIRMED",
   "BOOKING_CANCELLED",
   "BOOKING_COMPLETED",
@@ -193,6 +219,8 @@ function resolveValueHint(field: string, op: string) {
   if (field === "interactionType") return INTERACTION_TYPES.join(", ");
   if (field === "contactType" && op === "in") return CONTACT_TYPES.join(", ");
   if (field === "sourceType") return "Ex.: EVENT, BOOKING, STORE";
+  if (field === "padel.activityStatus") return "Ex.: ACTIVE, WARM, COLD, DORMANT";
+  if (field === "padel.competitiveTier") return "Ex.: RECREATIONAL, INTERMEDIATE, ADVANCED, COMPETITIVE";
   if (field === "tag" && (op === "in" || op === "not_in")) return "VIP, premium";
   return "Ex.: valor";
 }

@@ -36,6 +36,8 @@ export const ENV_MODELS = new Set([
   'CrmContactPadel',
   'CrmInteraction',
   'CrmJourney',
+  'CrmJourneyRun',
+  'CrmJourneyStepLog',
   'CrmJourneyStep',
   'CrmOrganizationPolicy',
   'CrmCampaignApproval',

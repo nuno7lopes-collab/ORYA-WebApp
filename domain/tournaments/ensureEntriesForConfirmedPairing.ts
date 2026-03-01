@@ -80,6 +80,7 @@ export async function ensureEntriesForConfirmedPairing(pairingId: number) {
           type: CrmInteractionType.PADEL_TOURNAMENT_ENTRY,
           sourceType: CrmInteractionSource.TOURNAMENT_ENTRY,
           sourceId: String(entryId),
+          externalId: `padel-entry:${entryId}`,
           occurredAt: now,
           metadata: {
             eventId: pairing.eventId,

@@ -191,6 +191,25 @@ export default function CrmCampanhasPage() {
     }
   };
 
+  const handleDuplicateCampaign = async (campaignId: string) => {
+    setActioningId(campaignId);
+    setError(null);
+    try {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/crm/campanhas/${campaignId}/duplicate`), {
+        method: "POST",
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.message ?? json?.error ?? "Falha ao duplicar campanha");
+      }
+      await mutate();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao duplicar campanha");
+    } finally {
+      setActioningId(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <header className="space-y-2">
@@ -405,6 +424,14 @@ export default function CrmCampanhasPage() {
                       {actioningId === campaign.id ? "A cancelar..." : "Cancelar"}
                     </button>
                   ) : null}
+                  <button
+                    type="button"
+                    className={CTA_NEUTRAL}
+                    onClick={() => handleDuplicateCampaign(campaign.id)}
+                    disabled={actioningId === campaign.id}
+                  >
+                    {actioningId === campaign.id ? "A duplicar..." : "Duplicar"}
+                  </button>
                   {canSend ? (
                     <button
                       type="button"

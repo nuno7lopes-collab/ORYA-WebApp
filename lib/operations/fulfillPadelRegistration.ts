@@ -480,6 +480,7 @@ export async function fulfillPadelRegistrationIntent(
           type: "PADEL_MATCH_PAYMENT",
           sourceType: CrmInteractionSource.EVENT,
           sourceId: purchaseId,
+          externalId: `padel-match-payment:${purchaseId}`,
           occurredAt: new Date(),
           amountCents: intent.amount ?? 0,
           currency: (snapshot?.currency ?? registration.currency ?? "EUR").toUpperCase(),

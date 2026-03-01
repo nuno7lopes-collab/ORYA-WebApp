@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { CrmJourneyStatus } from "@prisma/client";
+import { CrmJourneyRunLifecycleStatus, CrmJourneyStatus } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondOk } from "@/lib/http/envelope";
@@ -51,6 +51,20 @@ async function _POST(req: NextRequest, context: { params: Promise<{ id: string }
   if (!journey) {
     return crmFail(req, 404, "Journey não encontrada.");
   }
+
+  await prisma.crmJourneyRun.create({
+    data: {
+      organizationId: access.organization.id,
+      journeyId: existing.id,
+      status: CrmJourneyRunLifecycleStatus.SKIPPED,
+      startedAt: pauseAt,
+      completedAt: pauseAt,
+      metadata: {
+        action: "PAUSE",
+        actorUserId: access.user.id,
+      },
+    },
+  });
 
   return respondOk(ctx, { journey });
 }

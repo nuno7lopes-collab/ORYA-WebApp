@@ -13,6 +13,10 @@ import { ensureEmailIdentity, resolveIdentityForUser } from "@/lib/ownership/ide
 import { normalizeEmail } from "@/lib/utils/email";
 import { applyLoyaltyForInteraction } from "@/lib/loyalty/engine";
 import { isValidPhone, normalizePhone } from "@/lib/phone";
+import {
+  PADEL_ACTIVITY_INTERACTION_TYPES,
+  recomputePadelProjectionForContact,
+} from "@/lib/crm/padelProjection";
 
 const CRM_EVENT_TYPE_SET = new Set(["crm.interaction", "crm.padel_profile"]);
 
@@ -21,6 +25,7 @@ const SPEND_TYPES = new Set<CrmInteractionType>([
   "EVENT_TICKET",
   "BOOKING_CONFIRMED",
   "PADEL_MATCH_PAYMENT",
+  "PADEL_BOOKING_CONFIRMED",
 ]);
 
 const PURCHASE_TYPES = new Set<CrmInteractionType>([
@@ -28,6 +33,7 @@ const PURCHASE_TYPES = new Set<CrmInteractionType>([
   "EVENT_TICKET",
   "BOOKING_CONFIRMED",
   "PADEL_MATCH_PAYMENT",
+  "PADEL_BOOKING_CONFIRMED",
 ]);
 
 const CUSTOMER_UPGRADE_TYPES = new Set<CrmInteractionType>([
@@ -36,7 +42,10 @@ const CUSTOMER_UPGRADE_TYPES = new Set<CrmInteractionType>([
   "BOOKING_CONFIRMED",
   "PADEL_MATCH_PAYMENT",
   "PADEL_TOURNAMENT_ENTRY",
+  "PADEL_TOURNAMENT_REGISTERED",
 ]);
+
+const PADEL_ACTIVITY_SET = new Set<CrmInteractionType>(PADEL_ACTIVITY_INTERACTION_TYPES);
 
 type ContactPayload = {
   userId?: string | null;
@@ -102,14 +111,24 @@ function parseCrmInteractionPayload(raw: Record<string, unknown>) {
   const contactRaw =
     raw.contact && typeof raw.contact === "object" ? (raw.contact as Record<string, unknown>) : {};
 
+  const kindRaw = typeof raw.kind === "string" ? raw.kind.trim().toUpperCase() : null;
+  const sourceRaw = raw.source && typeof raw.source === "object" ? (raw.source as Record<string, unknown>) : null;
   const type =
-    typeof interactionRaw.type === "string" && (Object.values(CrmInteractionType) as string[]).includes(interactionRaw.type)
-      ? (interactionRaw.type as CrmInteractionType)
+    typeof interactionRaw.type === "string" &&
+    (Object.values(CrmInteractionType) as string[]).includes(interactionRaw.type.trim().toUpperCase())
+      ? (interactionRaw.type.trim().toUpperCase() as CrmInteractionType)
+      : kindRaw && (Object.values(CrmInteractionType) as string[]).includes(kindRaw)
+        ? (kindRaw as CrmInteractionType)
       : null;
+  const sourceTypeRaw =
+    typeof interactionRaw.sourceType === "string"
+      ? interactionRaw.sourceType.trim().toUpperCase()
+      : typeof sourceRaw?.type === "string"
+        ? sourceRaw.type.trim().toUpperCase()
+        : null;
   const sourceType =
-    typeof interactionRaw.sourceType === "string" &&
-    (Object.values(CrmInteractionSource) as string[]).includes(interactionRaw.sourceType)
-      ? (interactionRaw.sourceType as CrmInteractionSource)
+    sourceTypeRaw && (Object.values(CrmInteractionSource) as string[]).includes(sourceTypeRaw)
+      ? (sourceTypeRaw as CrmInteractionSource)
       : null;
 
   if (!type || !sourceType) return null;
@@ -117,15 +136,35 @@ function parseCrmInteractionPayload(raw: Record<string, unknown>) {
   const interaction: InteractionPayload = {
     type,
     sourceType,
-    sourceId: typeof interactionRaw.sourceId === "string" ? interactionRaw.sourceId : null,
-    externalId: typeof interactionRaw.externalId === "string" ? interactionRaw.externalId : null,
-    occurredAt: typeof interactionRaw.occurredAt === "string" ? interactionRaw.occurredAt : null,
+    sourceId:
+      typeof interactionRaw.sourceId === "string"
+        ? interactionRaw.sourceId
+        : typeof sourceRaw?.id === "string"
+          ? sourceRaw.id
+          : null,
+    externalId:
+      typeof interactionRaw.externalId === "string"
+        ? interactionRaw.externalId
+        : typeof sourceRaw?.externalId === "string"
+          ? sourceRaw.externalId
+          : null,
+    occurredAt:
+      typeof interactionRaw.occurredAt === "string"
+        ? interactionRaw.occurredAt
+        : typeof raw.occurredAt === "string"
+          ? raw.occurredAt
+          : null,
     amountCents: typeof interactionRaw.amountCents === "number" ? interactionRaw.amountCents : null,
     currency: typeof interactionRaw.currency === "string" ? interactionRaw.currency : null,
-    metadata:
-      interactionRaw.metadata && typeof interactionRaw.metadata === "object" && !Array.isArray(interactionRaw.metadata)
-        ? (interactionRaw.metadata as Record<string, unknown>)
-        : null,
+    metadata: (() => {
+      if (interactionRaw.metadata && typeof interactionRaw.metadata === "object" && !Array.isArray(interactionRaw.metadata)) {
+        return interactionRaw.metadata as Record<string, unknown>;
+      }
+      if (raw.metadata && typeof raw.metadata === "object" && !Array.isArray(raw.metadata)) {
+        return raw.metadata as Record<string, unknown>;
+      }
+      return null;
+    })(),
   };
 
   const contact: ContactPayload = {
@@ -482,9 +521,17 @@ async function updateContactReadModel(params: {
   }
   if (interaction.type === "STORE_ORDER_PAID") updates.totalStoreOrders = { increment: 1 };
   if (interaction.type === "EVENT_TICKET") updates.totalOrders = { increment: 1 };
-  if (interaction.type === "BOOKING_CONFIRMED") updates.totalBookings = { increment: 1 };
+  if (interaction.type === "BOOKING_CONFIRMED" || interaction.type === "PADEL_BOOKING_CONFIRMED") {
+    updates.totalBookings = { increment: 1 };
+  }
   if (interaction.type === "EVENT_CHECKIN") updates.totalAttendances = { increment: 1 };
-  if (interaction.type === "PADEL_TOURNAMENT_ENTRY") updates.totalTournaments = { increment: 1 };
+  if (interaction.type === "PADEL_CLASS_ATTENDED") updates.totalAttendances = { increment: 1 };
+  if (
+    interaction.type === "PADEL_TOURNAMENT_ENTRY" ||
+    interaction.type === "PADEL_TOURNAMENT_REGISTERED"
+  ) {
+    updates.totalTournaments = { increment: 1 };
+  }
 
   if (params.contactEmail !== undefined) {
     updates.contactEmail = params.contactEmail;
@@ -517,9 +564,15 @@ async function updateContactReadModel(params: {
       totalSpentCents:
         existing.totalSpentCents + (SPEND_TYPES.has(interaction.type) && amountCents ? amountCents : 0),
       totalOrders: existing.totalOrders + (interaction.type === "EVENT_TICKET" ? 1 : 0),
-      totalBookings: existing.totalBookings + (interaction.type === "BOOKING_CONFIRMED" ? 1 : 0),
-      totalAttendances: existing.totalAttendances + (interaction.type === "EVENT_CHECKIN" ? 1 : 0),
-      totalTournaments: existing.totalTournaments + (interaction.type === "PADEL_TOURNAMENT_ENTRY" ? 1 : 0),
+      totalBookings:
+        existing.totalBookings +
+        (interaction.type === "BOOKING_CONFIRMED" || interaction.type === "PADEL_BOOKING_CONFIRMED" ? 1 : 0),
+      totalAttendances:
+        existing.totalAttendances +
+        (interaction.type === "EVENT_CHECKIN" || interaction.type === "PADEL_CLASS_ATTENDED" ? 1 : 0),
+      totalTournaments:
+        existing.totalTournaments +
+        (interaction.type === "PADEL_TOURNAMENT_ENTRY" || interaction.type === "PADEL_TOURNAMENT_REGISTERED" ? 1 : 0),
       totalStoreOrders: existing.totalStoreOrders + (interaction.type === "STORE_ORDER_PAID" ? 1 : 0),
     },
   };
@@ -636,20 +689,10 @@ async function handlePadelProfileEvent(log: { id: string; organizationId: number
   const tournamentsCount = pairingIds.length;
   const noShowCount = await computePadelNoShows(pairingIds);
 
-  await prisma.crmContactPadel.upsert({
-    where: { contactId: contactResult.contact.id },
-    update: {
-      organizationId: profile.organizationId,
-      playerProfileId: profile.id,
-      level: profile.level ?? null,
-      preferredSide: profile.preferredSide ?? null,
-      clubName: profile.clubName ?? null,
-      tournamentsCount,
-      noShowCount,
-    },
-    create: {
-      organizationId: profile.organizationId,
-      contactId: contactResult.contact.id,
+  await recomputePadelProjectionForContact({
+    organizationId: profile.organizationId,
+    contactId: contactResult.contact.id,
+    seed: {
       playerProfileId: profile.id,
       level: profile.level ?? null,
       preferredSide: profile.preferredSide ?? null,
@@ -879,6 +922,13 @@ export async function consumeCrmEventLog(eventLogId: string) {
         totalStoreOrders: contactTotals?.totals.totalStoreOrders ?? 0,
         tags: [],
       },
+    });
+  }
+
+  if (PADEL_ACTIVITY_SET.has(interaction.type)) {
+    await recomputePadelProjectionForContact({
+      organizationId: log.organizationId,
+      contactId,
     });
   }
 

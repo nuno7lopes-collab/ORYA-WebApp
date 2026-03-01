@@ -59,6 +59,37 @@ async function _GET(req: NextRequest, context: { params: Promise<{ id: string }>
         select: { id: true, stepKey: true, position: true, stepType: true, config: true },
         orderBy: { position: "asc" },
       },
+      runs: {
+        select: {
+          id: true,
+          status: true,
+          startedAt: true,
+          completedAt: true,
+          failedAt: true,
+          errorCode: true,
+          errorMessage: true,
+          createdAt: true,
+          stepLogs: {
+            select: {
+              id: true,
+              stepKey: true,
+              stepType: true,
+              status: true,
+              attempt: true,
+              scheduledFor: true,
+              executedAt: true,
+              errorCode: true,
+              errorMessage: true,
+            },
+            orderBy: { createdAt: "asc" },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+      },
+      _count: {
+        select: { runs: true, steps: true },
+      },
     },
   });
 

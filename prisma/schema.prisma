@@ -5750,6 +5750,7 @@ model CrmContact {
   notes               CrmContactNote[]
   padelProfile        CrmContactPadel?
   campaignDeliveries  CrmCampaignDelivery[]
+  journeyRuns         CrmJourneyRun[]
   padelPlayerProfiles PadelPlayerProfile[]
 
   @@unique([organizationId, userId], map: "crm_contacts_org_user_unique")
@@ -5814,6 +5815,15 @@ model CrmContactPadel {
   clubName         String?             @map("club_name")
   tournamentsCount Int                 @default(0) @map("tournaments_count")
   noShowCount      Int                 @default(0) @map("no_show_count")
+  lastMatchAt      DateTime?           @map("last_match_at") @db.Timestamptz(6)
+  matches30d       Int                 @default(0) @map("matches_30d")
+  winRate90d       Float               @default(0) @map("win_rate_90d")
+  noShowRate90d    Float               @default(0) @map("no_show_rate_90d")
+  activityStatus   String?             @map("activity_status")
+  competitiveTier  String?             @map("competitive_tier")
+  rfmScore         Int                 @default(0) @map("rfm_score")
+  churnRiskScore   Int                 @default(0) @map("churn_risk_score")
+  reactivationPropensityScore Int      @default(0) @map("reactivation_propensity_score")
   updatedAt        DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   createdAt        DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -5961,6 +5971,7 @@ model CrmJourney {
   organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   creator      Profile?         @relation("CrmJourneyCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
   steps        CrmJourneyStep[]
+  runs         CrmJourneyRun[]
 
   @@index([organizationId, status], map: "crm_journeys_org_status_idx")
   @@map("crm_journeys")
@@ -5981,11 +5992,68 @@ model CrmJourneyStep {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   journey      CrmJourney   @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  logs         CrmJourneyStepLog[]
 
   @@unique([journeyId, stepKey], map: "crm_journey_steps_journey_step_key_uq")
   @@unique([journeyId, position], map: "crm_journey_steps_journey_position_uq")
   @@index([organizationId, journeyId], map: "crm_journey_steps_org_journey_idx")
   @@map("crm_journey_steps")
+  @@schema("app_v3")
+}
+
+model CrmJourneyRun {
+  env            String                       @default("prod")
+  id             String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId Int                          @map("organization_id")
+  journeyId      String                       @map("journey_id") @db.Uuid
+  contactId      String?                      @map("contact_id") @db.Uuid
+  triggerEventId String?                      @map("trigger_event_id") @db.Uuid
+  status         CrmJourneyRunLifecycleStatus @default(PENDING)
+  startedAt      DateTime?                    @map("started_at") @db.Timestamptz(6)
+  completedAt    DateTime?                    @map("completed_at") @db.Timestamptz(6)
+  failedAt       DateTime?                    @map("failed_at") @db.Timestamptz(6)
+  errorCode      String?                      @map("error_code")
+  errorMessage   String?                      @map("error_message")
+  metadata       Json                         @default("{}")
+  createdAt      DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime                     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  journey      CrmJourney        @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  contact      CrmContact?       @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  stepLogs     CrmJourneyStepLog[]
+
+  @@index([organizationId, journeyId, status], map: "crm_journey_runs_v2_org_journey_status_idx")
+  @@index([contactId, createdAt], map: "crm_journey_runs_v2_contact_created_idx")
+  @@map("crm_journey_runs_v2")
+  @@schema("app_v3")
+}
+
+model CrmJourneyStepLog {
+  env            String               @default("prod")
+  id             String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId Int                  @map("organization_id")
+  journeyRunId   String               @map("journey_run_id") @db.Uuid
+  journeyStepId  String?              @map("journey_step_id") @db.Uuid
+  stepKey        String               @map("step_key")
+  stepType       CrmJourneyStepType   @map("step_type")
+  status         CrmJourneyStepLogStatus @default(PENDING)
+  attempt        Int                  @default(1)
+  scheduledFor   DateTime?            @map("scheduled_for") @db.Timestamptz(6)
+  executedAt     DateTime?            @map("executed_at") @db.Timestamptz(6)
+  errorCode      String?              @map("error_code")
+  errorMessage   String?              @map("error_message")
+  metadata       Json                 @default("{}")
+  createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  journeyRun   CrmJourneyRun @relation(fields: [journeyRunId], references: [id], onDelete: Cascade)
+  journeyStep  CrmJourneyStep? @relation(fields: [journeyStepId], references: [id], onDelete: SetNull)
+
+  @@index([journeyRunId, status], map: "crm_journey_step_logs_run_status_idx")
+  @@index([organizationId, createdAt], map: "crm_journey_step_logs_org_created_idx")
+  @@map("crm_journey_step_logs")
   @@schema("app_v3")
 }
 
@@ -8111,6 +8179,17 @@ enum CrmInteractionType {
   EVENT_CHECKIN
   PADEL_TOURNAMENT_ENTRY
   PADEL_MATCH_PAYMENT
+  PADEL_BOOKING_CONFIRMED
+  PADEL_BOOKING_CANCELLED
+  PADEL_BOOKING_NO_SHOW
+  PADEL_MATCH_PLAYED
+  PADEL_MATCH_WIN
+  PADEL_MATCH_LOSS
+  PADEL_CLASS_ATTENDED
+  PADEL_CLASS_MISSED
+  PADEL_TOURNAMENT_REGISTERED
+  PADEL_TOURNAMENT_PLAYED
+  PADEL_TOURNAMENT_PODIUM
   BOOKING_CONFIRMED
   BOOKING_CANCELLED
   BOOKING_COMPLETED
@@ -8215,6 +8294,26 @@ enum CrmJourneyStepType {
   CONDITION
   DELAY
   ACTION
+
+  @@schema("app_v3")
+}
+
+enum CrmJourneyRunLifecycleStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  SKIPPED
+  FAILED
+
+  @@schema("app_v3")
+}
+
+enum CrmJourneyStepLogStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  SKIPPED
+  FAILED
 
   @@schema("app_v3")
 }

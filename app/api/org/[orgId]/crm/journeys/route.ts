@@ -61,7 +61,7 @@ async function _GET(req: NextRequest) {
       pausedAt: true,
       createdAt: true,
       updatedAt: true,
-      _count: { select: { steps: true } },
+      _count: { select: { steps: true, runs: true } },
     },
   });
 
@@ -69,7 +69,7 @@ async function _GET(req: NextRequest) {
     items: items.map((journey) => ({
       ...journey,
       stepsCount: journey._count.steps,
-      enrollmentsCount: 0,
+      enrollmentsCount: journey._count.runs,
     })),
   });
 }

@@ -29,7 +29,21 @@ const CATEGORY_CONFIG = [
   {
     id: "padel",
     label: "Padel",
-    types: [CrmInteractionType.PADEL_TOURNAMENT_ENTRY, CrmInteractionType.PADEL_MATCH_PAYMENT],
+    types: [
+      CrmInteractionType.PADEL_TOURNAMENT_ENTRY,
+      CrmInteractionType.PADEL_MATCH_PAYMENT,
+      CrmInteractionType.PADEL_BOOKING_CONFIRMED,
+      CrmInteractionType.PADEL_BOOKING_CANCELLED,
+      CrmInteractionType.PADEL_BOOKING_NO_SHOW,
+      CrmInteractionType.PADEL_MATCH_PLAYED,
+      CrmInteractionType.PADEL_MATCH_WIN,
+      CrmInteractionType.PADEL_MATCH_LOSS,
+      CrmInteractionType.PADEL_CLASS_ATTENDED,
+      CrmInteractionType.PADEL_CLASS_MISSED,
+      CrmInteractionType.PADEL_TOURNAMENT_REGISTERED,
+      CrmInteractionType.PADEL_TOURNAMENT_PLAYED,
+      CrmInteractionType.PADEL_TOURNAMENT_PODIUM,
+    ],
   },
   {
     id: "loja",

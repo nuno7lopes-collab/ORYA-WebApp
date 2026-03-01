@@ -51,8 +51,18 @@ const NUMBER_FIELDS = new Set([
   "totalStoreOrders",
 ]);
 const STRING_FIELDS = new Set(["displayName", "contactEmail", "contactPhone", "sourceType"]);
-const PADEL_STRING_FIELDS = new Set(["level", "preferredSide", "clubName"]);
-const PADEL_NUMBER_FIELDS = new Set(["tournamentsCount", "noShowCount"]);
+const PADEL_STRING_FIELDS = new Set(["level", "preferredSide", "clubName", "activityStatus", "competitiveTier"]);
+const PADEL_NUMBER_FIELDS = new Set([
+  "tournamentsCount",
+  "noShowCount",
+  "matches30d",
+  "winRate90d",
+  "noShowRate90d",
+  "rfmScore",
+  "churnRiskScore",
+  "reactivationPropensityScore",
+]);
+const PADEL_DATE_FIELDS = new Set(["lastMatchAt"]);
 
 function parseNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -305,6 +315,15 @@ export function buildContactWhereFromRule(rule: SegmentRuleNode): Prisma.CrmCont
 
   if (field.startsWith("padel.")) {
     const padelField = field.slice(6);
+    if (PADEL_DATE_FIELDS.has(padelField)) {
+      const dateValue = parseDateValue(rule.value);
+      if (!dateValue) return null;
+      if (op === "gte" || op === "after") return { padelProfile: { is: { [padelField]: { gte: dateValue } } } };
+      if (op === "lte" || op === "before") return { padelProfile: { is: { [padelField]: { lte: dateValue } } } };
+      if (op === "gt") return { padelProfile: { is: { [padelField]: { gt: dateValue } } } };
+      if (op === "lt") return { padelProfile: { is: { [padelField]: { lt: dateValue } } } };
+      return { padelProfile: { is: { [padelField]: dateValue } } };
+    }
     if (PADEL_STRING_FIELDS.has(padelField)) {
       if (typeof rule.value !== "string" || !rule.value.trim()) return null;
       if (op === "neq") {

@@ -54,22 +54,36 @@ export async function ingestCrmInteraction(
   const occurredAt = input.occurredAt ?? new Date();
   const currency = input.currency ? input.currency.toUpperCase() : "EUR";
   const metadata = input.metadata && typeof input.metadata === "object" ? input.metadata : {};
+  const typeValue = String(input.type).toUpperCase();
+  const defaultPadelExternalId =
+    typeValue.startsWith("PADEL_") && input.sourceId ? `padel:${typeValue}:${input.sourceType}:${input.sourceId}` : null;
+  const externalId = input.externalId?.trim() || defaultPadelExternalId;
 
   const eventId = input.eventId ?? crypto.randomUUID();
   const idempotencyKey =
     input.idempotencyKey?.trim() ||
-    input.externalId?.trim() ||
+    externalId ||
     (input.sourceId ? `${input.type}:${input.sourceType}:${input.sourceId}` : eventId);
   const contactPhoneRaw = typeof input.contactPhone === "string" ? input.contactPhone.trim() : "";
   const normalizedContactPhone =
     contactPhoneRaw && isValidPhone(contactPhoneRaw) ? normalizePhone(contactPhoneRaw) : null;
 
   const payload = {
+    kind: input.type,
+    occurredAt: occurredAt.toISOString(),
+    source: {
+      type: input.sourceType,
+      id: input.sourceId ?? null,
+      externalId: externalId ?? null,
+    },
+    actorType: input.userId ? "USER" : "CONTACT",
+    actorId: input.userId ?? input.emailIdentityId ?? null,
+    metadata,
     interaction: {
       type: input.type,
       sourceType: input.sourceType,
       sourceId: input.sourceId ?? null,
-      externalId: input.externalId ?? null,
+      externalId: externalId ?? null,
       occurredAt: occurredAt.toISOString(),
       amountCents: input.amountCents ?? null,
       currency,

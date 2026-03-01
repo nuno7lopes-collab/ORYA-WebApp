@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { recomputePadelProjectionForContact } from "@/lib/crm/padelProjection";
 
 type RebuildResult = {
   consentReset: number;
@@ -8,6 +9,7 @@ type RebuildResult = {
   contactTotalsUpdated: number;
   contactNotesUpdated: number;
   contactNotesZeroed: number;
+  padelProfilesRecomputed: number;
 };
 
 export async function rebuildCrmContacts(options?: { organizationId?: number | null }): Promise<RebuildResult> {
@@ -100,6 +102,7 @@ export async function rebuildCrmContacts(options?: { organizationId?: number | n
             'STORE_ORDER_PAID'::app_v3."CrmInteractionType",
             'EVENT_TICKET'::app_v3."CrmInteractionType",
             'BOOKING_CONFIRMED'::app_v3."CrmInteractionType",
+            'PADEL_BOOKING_CONFIRMED'::app_v3."CrmInteractionType",
             'PADEL_MATCH_PAYMENT'::app_v3."CrmInteractionType"
           ) THEN occurred_at
         END) AS last_purchase_at,
@@ -108,12 +111,25 @@ export async function rebuildCrmContacts(options?: { organizationId?: number | n
             'STORE_ORDER_PAID'::app_v3."CrmInteractionType",
             'EVENT_TICKET'::app_v3."CrmInteractionType",
             'BOOKING_CONFIRMED'::app_v3."CrmInteractionType",
+            'PADEL_BOOKING_CONFIRMED'::app_v3."CrmInteractionType",
             'PADEL_MATCH_PAYMENT'::app_v3."CrmInteractionType"
           ) THEN amount_cents ELSE 0 END), 0) AS total_spent_cents,
         COUNT(CASE WHEN type = 'EVENT_TICKET'::app_v3."CrmInteractionType" THEN 1 END) AS total_orders,
-        COUNT(CASE WHEN type = 'BOOKING_CONFIRMED'::app_v3."CrmInteractionType" THEN 1 END) AS total_bookings,
-        COUNT(CASE WHEN type = 'EVENT_CHECKIN'::app_v3."CrmInteractionType" THEN 1 END) AS total_attendances,
-        COUNT(CASE WHEN type = 'PADEL_TOURNAMENT_ENTRY'::app_v3."CrmInteractionType" THEN 1 END) AS total_tournaments,
+        COUNT(CASE
+          WHEN type IN (
+            'BOOKING_CONFIRMED'::app_v3."CrmInteractionType",
+            'PADEL_BOOKING_CONFIRMED'::app_v3."CrmInteractionType"
+          ) THEN 1 END) AS total_bookings,
+        COUNT(CASE
+          WHEN type IN (
+            'EVENT_CHECKIN'::app_v3."CrmInteractionType",
+            'PADEL_CLASS_ATTENDED'::app_v3."CrmInteractionType"
+          ) THEN 1 END) AS total_attendances,
+        COUNT(CASE
+          WHEN type IN (
+            'PADEL_TOURNAMENT_ENTRY'::app_v3."CrmInteractionType",
+            'PADEL_TOURNAMENT_REGISTERED'::app_v3."CrmInteractionType"
+          ) THEN 1 END) AS total_tournaments,
         COUNT(CASE WHEN type = 'STORE_ORDER_PAID'::app_v3."CrmInteractionType" THEN 1 END) AS total_store_orders
       FROM app_v3.crm_interactions
       WHERE contact_id IS NOT NULL
@@ -146,6 +162,54 @@ export async function rebuildCrmContacts(options?: { organizationId?: number | n
       )
   `);
 
+  let padelProfilesRecomputed = 0;
+  let cursorContactId: string | null = null;
+  const batchSize = 200;
+  while (true) {
+    const rows = await prisma.crmContactPadel.findMany({
+      where: {
+        ...(organizationId ? { organizationId } : {}),
+      },
+      orderBy: { contactId: "asc" },
+      take: batchSize,
+      ...(cursorContactId
+        ? {
+            cursor: { contactId: cursorContactId },
+            skip: 1,
+          }
+        : {}),
+      select: {
+        contactId: true,
+        organizationId: true,
+        playerProfileId: true,
+        level: true,
+        preferredSide: true,
+        clubName: true,
+        tournamentsCount: true,
+        noShowCount: true,
+      },
+    });
+    if (!rows.length) break;
+
+    for (const row of rows) {
+      await recomputePadelProjectionForContact({
+        organizationId: row.organizationId,
+        contactId: row.contactId,
+        seed: {
+          playerProfileId: row.playerProfileId ?? null,
+          level: row.level ?? null,
+          preferredSide: row.preferredSide ?? null,
+          clubName: row.clubName ?? null,
+          tournamentsCount: row.tournamentsCount,
+          noShowCount: row.noShowCount,
+        },
+      });
+      padelProfilesRecomputed += 1;
+    }
+
+    cursorContactId = rows[rows.length - 1]?.contactId ?? null;
+  }
+
   return {
     consentReset: Number(consentReset),
     consentUpdated: Number(consentUpdated),
@@ -153,5 +217,6 @@ export async function rebuildCrmContacts(options?: { organizationId?: number | n
     contactTotalsUpdated: Number(contactTotalsUpdated),
     contactNotesUpdated: Number(contactNotesUpdated),
     contactNotesZeroed: Number(contactNotesZeroed),
+    padelProfilesRecomputed,
   };
 }

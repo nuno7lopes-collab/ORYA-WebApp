@@ -48,6 +48,7 @@ type InteractionRow = {
   occurredAt: string;
   amountCents: number | null;
   currency: string | null;
+  metadata?: Record<string, unknown> | null;
 };
 
 type NoteRow = {
@@ -86,6 +87,37 @@ type CustomerDetailResponse = {
   notes: NoteRow[];
 };
 
+type CustomerPadelResponse = {
+  ok: boolean;
+  contactId: string;
+  padel: {
+    id: string;
+    playerProfileId: number | null;
+    level: string | null;
+    preferredSide: string | null;
+    clubName: string | null;
+    tournamentsCount: number;
+    noShowCount: number;
+    lastMatchAt: string | null;
+    matches30d: number;
+    winRate90d: number;
+    noShowRate90d: number;
+    activityStatus: string | null;
+    competitiveTier: string | null;
+    rfmScore: number;
+    churnRiskScore: number;
+    reactivationPropensityScore: number;
+    updatedAt: string;
+  } | null;
+};
+
+type CustomerTimelineResponse = {
+  ok: boolean;
+  domain: "all" | "padel";
+  total: number;
+  items: InteractionRow[];
+};
+
 function formatDate(value: string | null) {
   if (!value) return "—";
   const date = new Date(value);
@@ -98,6 +130,17 @@ export default function CrmCustomerDetailPage() {
   const customerId = typeof params?.customerId === "string" ? params.customerId : "";
   const { data, isLoading, mutate } = useSWR<CustomerDetailResponse>(
     customerId ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/crm/clientes/${customerId}`) : null,
+    fetcher,
+  );
+  const [timelineDomain, setTimelineDomain] = useState<"all" | "padel">("all");
+  const { data: timelineData } = useSWR<CustomerTimelineResponse>(
+    customerId
+      ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/crm/clientes/${customerId}/timeline?domain=${timelineDomain}`)
+      : null,
+    fetcher,
+  );
+  const { data: padelData } = useSWR<CustomerPadelResponse>(
+    customerId ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/crm/clientes/${customerId}/padel`) : null,
     fetcher,
   );
 
@@ -115,8 +158,12 @@ export default function CrmCustomerDetailPage() {
     }
   }, [customer?.id, customer?.tags]);
 
-  const interactions = useMemo(() => data?.interactions ?? [], [data]);
+  const interactions = useMemo(
+    () => timelineData?.items ?? data?.interactions ?? [],
+    [data?.interactions, timelineData?.items],
+  );
   const notes = useMemo(() => data?.notes ?? [], [data]);
+  const padel = padelData?.padel ?? null;
 
   const handleSaveTags = async () => {
     if (!customer) return;
@@ -291,12 +338,60 @@ export default function CrmCustomerDetailPage() {
         </section>
       ) : null}
 
+      {customer ? (
+        <section className={cn(DASHBOARD_CARD, "p-4 space-y-3")}>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-white">Ficha 360 Padel</h2>
+            <span className="text-[11px] text-white/50">{padel ? "Projeção ativa" : "Sem perfil padel"}</span>
+          </div>
+          {padel ? (
+            <div className="grid gap-2 text-[12px] text-white/75 md:grid-cols-3">
+              <span>Estado: {padel.activityStatus ?? "—"}</span>
+              <span>Tier: {padel.competitiveTier ?? "—"}</span>
+              <span>RFM: {padel.rfmScore}</span>
+              <span>Risco churn: {padel.churnRiskScore}</span>
+              <span>Propensão reativação: {padel.reactivationPropensityScore}</span>
+              <span>Último jogo: {formatDate(padel.lastMatchAt)}</span>
+              <span>Jogos 30d: {padel.matches30d}</span>
+              <span>Win rate 90d: {(padel.winRate90d * 100).toFixed(1)}%</span>
+              <span>No-show rate 90d: {(padel.noShowRate90d * 100).toFixed(1)}%</span>
+              <span>Nível: {padel.level ?? "—"}</span>
+              <span>Lado: {padel.preferredSide ?? "—"}</span>
+              <span>Clube: {padel.clubName ?? "—"}</span>
+              <span>Torneios: {padel.tournamentsCount}</span>
+              <span>No-shows: {padel.noShowCount}</span>
+              <span>Atualizado: {formatDate(padel.updatedAt)}</span>
+            </div>
+          ) : (
+            <p className="text-[12px] text-white/55">
+              Ainda sem dados de atividade padel suficientes para projeção.
+            </p>
+          )}
+        </section>
+      ) : null}
+
       <section className="grid gap-4 lg:grid-cols-[1fr_1fr]">
         <div className={cn(DASHBOARD_CARD, "p-4 space-y-3")}
         >
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-white">Timeline</h2>
-            <span className="text-[11px] text-white/50">{interactions.length} interações</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className={cn(CTA_NEUTRAL, timelineDomain === "all" ? "border-white/30" : "")}
+                onClick={() => setTimelineDomain("all")}
+              >
+                Geral
+              </button>
+              <button
+                type="button"
+                className={cn(CTA_NEUTRAL, timelineDomain === "padel" ? "border-white/30" : "")}
+                onClick={() => setTimelineDomain("padel")}
+              >
+                Padel
+              </button>
+              <span className="text-[11px] text-white/50">{interactions.length} interações</span>
+            </div>
           </div>
           <div className="space-y-2">
             {interactions.map((interaction) => (

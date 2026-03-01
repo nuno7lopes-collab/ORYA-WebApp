@@ -22,6 +22,10 @@ const TRIGGER_OPTIONS = [
   "BOOKING_COMPLETED",
   "EVENT_CHECKIN",
   "PADEL_TOURNAMENT_ENTRY",
+  "PADEL_MATCH_PLAYED",
+  "PADEL_BOOKING_NO_SHOW",
+  "PADEL_CLASS_ATTENDED",
+  "PADEL_TOURNAMENT_PODIUM",
   "ORG_FOLLOWED",
 ] as const;
 
@@ -30,6 +34,9 @@ const CONDITION_FIELDS = [
   { value: "totalSpentCents", label: "Gasto total (cêntimos)" },
   { value: "marketingOptIn", label: "Marketing opt-in" },
   { value: "contactType", label: "Tipo de contacto" },
+  { value: "churnRiskScore", label: "Risco de churn" },
+  { value: "reactivationPropensityScore", label: "Propensão de reativação" },
+  { value: "padelActivityStatus", label: "Estado de atividade padel" },
   { value: "tag", label: "Tag" },
 ] as const;
 
@@ -136,6 +143,9 @@ type JourneySimulationContact = {
   totalSpentCents: string;
   marketingOptIn: "true" | "false";
   contactType: string;
+  churnRiskScore: string;
+  reactivationPropensityScore: string;
+  padelActivityStatus: string;
   tags: string;
 };
 
@@ -325,6 +335,48 @@ function evaluateCondition(step: JourneyConditionStep, contact: JourneySimulatio
     };
   }
 
+  if (step.field === "churnRiskScore") {
+    const current = parseIntSafe(contact.churnRiskScore, 0);
+    const threshold = parseIntSafe(value, Number.NaN);
+    if (!Number.isFinite(threshold)) {
+      return { matched: false, detail: "Risco de churn inválido." };
+    }
+    let matched = false;
+    if (op === "gte") matched = current >= threshold;
+    else if (op === "lte") matched = current <= threshold;
+    else matched = current === threshold;
+    return {
+      matched,
+      detail: matched ? `Risco ${current} cumpre condição.` : `Risco ${current} não cumpre condição.`,
+    };
+  }
+
+  if (step.field === "reactivationPropensityScore") {
+    const current = parseIntSafe(contact.reactivationPropensityScore, 0);
+    const threshold = parseIntSafe(value, Number.NaN);
+    if (!Number.isFinite(threshold)) {
+      return { matched: false, detail: "Propensão de reativação inválida." };
+    }
+    let matched = false;
+    if (op === "gte") matched = current >= threshold;
+    else if (op === "lte") matched = current <= threshold;
+    else matched = current === threshold;
+    return {
+      matched,
+      detail: matched ? `Propensão ${current} cumpre condição.` : `Propensão ${current} não cumpre condição.`,
+    };
+  }
+
+  if (step.field === "padelActivityStatus") {
+    const current = contact.padelActivityStatus.trim().toLowerCase();
+    const expected = value.trim().toLowerCase();
+    const matched = op === "in" ? parseTokens(value).includes(current) : current === expected;
+    return {
+      matched,
+      detail: matched ? `Estado ${contact.padelActivityStatus} compatível.` : `Estado ${contact.padelActivityStatus} incompatível.`,
+    };
+  }
+
   if (step.field === "tag") {
     const contactTags = parseTags(contact.tags);
     const expected = parseTokens(value);
@@ -378,6 +430,9 @@ export default function CrmJourneysPage() {
     totalSpentCents: "15000",
     marketingOptIn: "true",
     contactType: "CUSTOMER",
+    churnRiskScore: "62",
+    reactivationPropensityScore: "71",
+    padelActivityStatus: "COLD",
     tags: "vip,padel",
   });
 
@@ -1044,7 +1099,7 @@ export default function CrmJourneysPage() {
             </p>
           </div>
 
-          <div className="mt-3 grid gap-3 md:grid-cols-5">
+          <div className="mt-3 grid gap-3 md:grid-cols-4">
             <label className="text-[11px] text-white/70">
               Última atividade (dias)
               <input
@@ -1088,6 +1143,41 @@ export default function CrmJourneysPage() {
                 value={simulationContact.contactType}
                 onChange={(event) => setSimulationContact((prev) => ({ ...prev, contactType: event.target.value.toUpperCase() }))}
                 placeholder="CUSTOMER"
+              />
+            </label>
+            <label className="text-[11px] text-white/70">
+              Risco de churn
+              <input
+                type="number"
+                min={0}
+                max={100}
+                className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-2 py-2 text-sm text-white outline-none focus:border-white/40"
+                value={simulationContact.churnRiskScore}
+                onChange={(event) => setSimulationContact((prev) => ({ ...prev, churnRiskScore: event.target.value }))}
+              />
+            </label>
+            <label className="text-[11px] text-white/70">
+              Propensão reativação
+              <input
+                type="number"
+                min={0}
+                max={100}
+                className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-2 py-2 text-sm text-white outline-none focus:border-white/40"
+                value={simulationContact.reactivationPropensityScore}
+                onChange={(event) =>
+                  setSimulationContact((prev) => ({ ...prev, reactivationPropensityScore: event.target.value }))
+                }
+              />
+            </label>
+            <label className="text-[11px] text-white/70">
+              Estado atividade padel
+              <input
+                className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-2 py-2 text-sm text-white outline-none focus:border-white/40"
+                value={simulationContact.padelActivityStatus}
+                onChange={(event) =>
+                  setSimulationContact((prev) => ({ ...prev, padelActivityStatus: event.target.value.toUpperCase() }))
+                }
+                placeholder="ACTIVE"
               />
             </label>
             <label className="text-[11px] text-white/70">

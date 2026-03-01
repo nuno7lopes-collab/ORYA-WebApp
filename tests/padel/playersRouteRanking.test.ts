@@ -108,4 +108,57 @@ describe("GET /api/padel/players ranking payload", () => {
       }),
     );
   });
+
+  it("faz fallback seguro quando schema de rating global ainda não existe", async () => {
+    prisma.padelPlayerProfile.findMany.mockResolvedValue([
+      {
+        id: 202,
+        organizationId: 22,
+        userId: "user-202",
+        crmContactId: null,
+        fullName: "Jogador B",
+        email: null,
+        phone: null,
+        gender: null,
+        level: null,
+        preferredSide: null,
+        clubName: null,
+        notes: null,
+        displayName: "Jogador B",
+        birthDate: null,
+        isActive: true,
+        createdAt: new Date("2026-01-03T10:00:00Z"),
+        updatedAt: new Date("2026-01-04T10:00:00Z"),
+      },
+    ]);
+
+    const err = Object.assign(new Error("The table `app_v3.padel_global_rating_profiles` does not exist"), {
+      code: "P2021",
+      meta: { table: "app_v3.padel_global_rating_profiles" },
+    });
+    prisma.padelGlobalRatingProfile.findMany.mockRejectedValueOnce(err);
+
+    prisma.padelPairingSlot.findMany.mockResolvedValue([]);
+    prisma.padelPairingSlot.groupBy.mockResolvedValue([]);
+
+    const req = new NextRequest("http://localhost/api/padel/players?organizationId=22", { method: "GET" });
+    const res = await GET(req);
+    const body = await res.json();
+    const payload =
+      body?.data && typeof body.data === "object" && "ok" in body.data
+        ? body.data
+        : body;
+
+    expect(res.status).toBe(200);
+    expect(payload.ok).toBe(true);
+    expect(payload.items[0].ranking).toEqual(
+      expect.objectContaining({
+        rating: null,
+        orgPosition: null,
+        matchesPlayed: 0,
+        leaderboardEligible: false,
+        blockedNewMatches: false,
+      }),
+    );
+  });
 });
