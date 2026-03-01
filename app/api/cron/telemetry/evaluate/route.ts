@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { parseOrganizationId } from "@/lib/organizationIdUtils";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
@@ -10,13 +11,6 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const JOB_KEY = "telemetry-alerts-evaluate";
-
-function parseOrganizationId(value: string | null): number | null {
-  if (!value) return null;
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed <= 0) return null;
-  return parsed;
-}
 
 function parseMaxRules(value: string | null): number | undefined {
   if (!value) return undefined;

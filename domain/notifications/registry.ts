@@ -313,8 +313,8 @@ const registry: Record<NotificationType, RegistryEntry> = {
     category: "network",
     required: ["fromUserId"],
     build: (ctx) => ({
-      title: ctx.actorLabel || "Pedido para seguir",
-      body: ctx.actorCount > 1 ? "pediram para seguir-te." : "pediu para seguir-te.",
+      title: ctx.actorLabel || "Pedido de amizade",
+      body: ctx.actorCount > 1 ? "enviaram-te pedidos de amizade." : "enviou-te um pedido de amizade.",
       ...buildProfileCta(ctx),
       actions: ctx.followRequestId
         ? [
@@ -341,7 +341,7 @@ const registry: Record<NotificationType, RegistryEntry> = {
     required: ["fromUserId"],
     build: (ctx) => ({
       title: ctx.actorLabel || "Pedido aceite",
-      body: ctx.actorCount > 1 ? "aceitaram o teu pedido." : "aceitou o teu pedido.",
+      body: ctx.actorCount > 1 ? "aceitaram o teu pedido de amizade." : "aceitou o teu pedido de amizade.",
       ...buildProfileCta(ctx),
     }),
   },

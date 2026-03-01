@@ -1,7 +1,6 @@
 import { Prisma, PadelRatingSanctionType } from "@prisma/client";
-import { resolvePadelMatchStats } from "@/domain/padel/score";
+import { rebuildPadelGlobalRatings, syncPadelRankingEntriesForEventFromGlobal } from "@/domain/padel/globalRating";
 import { pickCanonicalField } from "@/lib/location/eventLocation";
-import { normalizePadelRankingFormatWeights, type PadelRankingFormatWeights } from "@/lib/platformSettings";
 
 type DbClient = Prisma.TransactionClient;
 
@@ -11,6 +10,7 @@ const DEFAULT_RATING = 1200;
 const DEFAULT_RD = 350;
 const DEFAULT_SIGMA = 0.06;
 const DEFAULT_TAU = 0.5;
+const COUNTED_STATUSES = ["OFFICIAL", "WALKOVER", "RETIRED"] as const;
 
 const TIER_MULTIPLIERS: Record<string, number> = {
   SOCIAL: 0.5,
@@ -24,8 +24,6 @@ const TIER_MULTIPLIERS: Record<string, number> = {
   MAJOR: 2,
 };
 
-const PADEL_RANKING_WEIGHTS_KEY = "padel.rankingWeightsByFormat";
-
 function normalizeTierContext(rawTier: string | null | undefined) {
   if (!rawTier) return null;
   const normalized = rawTier.trim().toUpperCase();
@@ -36,31 +34,6 @@ function normalizeCityContext(rawCity: string | null | undefined) {
   if (!rawCity) return null;
   const normalized = rawCity.trim().toLowerCase();
   return normalized.length > 0 ? normalized : null;
-}
-
-function parseRankingWeight(value: unknown): number | null {
-  const parsed = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0) return null;
-  return Math.min(2, Math.max(0, parsed));
-}
-
-function toSocialFormatKey(format: string | null | undefined): keyof PadelRankingFormatWeights | null {
-  if (format === "NON_STOP" || format === "AMERICANO" || format === "MEXICANO") return format;
-  return null;
-}
-
-async function getGlobalPadelRankingFormatWeightsTx(tx: DbClient): Promise<PadelRankingFormatWeights> {
-  const stored = await tx.platformSetting.findUnique({
-    where: { key: PADEL_RANKING_WEIGHTS_KEY },
-    select: { value: true },
-  });
-  if (!stored?.value) return normalizePadelRankingFormatWeights({});
-  try {
-    const parsed = JSON.parse(stored.value);
-    return normalizePadelRankingFormatWeights(parsed);
-  } catch {
-    return normalizePadelRankingFormatWeights({});
-  }
 }
 
 export type RatingProfileState = {
@@ -353,268 +326,27 @@ export async function rebuildPadelRatingsForEvent(params: {
 }) {
   const { tx, organizationId, eventId, tier } = params;
   const context = await resolvePadelRatingEventContext({ tx, eventId, tier });
-  const contextTier = context?.tier ?? null;
-  const contextClubId = context?.clubId ?? null;
-  const contextCity = context?.city ?? null;
-  const tournamentConfig = await tx.padelTournamentConfig.findUnique({
-    where: { eventId },
-    select: { format: true, advancedSettings: true },
-  });
-  const eventFormat = tournamentConfig?.format ?? null;
-  const advancedSettings =
-    (tournamentConfig?.advancedSettings as Record<string, unknown> | null) ?? null;
-  const rankingWeightsRaw =
-    advancedSettings?.rankingWeights && typeof advancedSettings.rankingWeights === "object"
-      ? (advancedSettings.rankingWeights as Record<string, unknown>)
-      : null;
-  const rankingWeightsByCategoryRaw =
-    rankingWeightsRaw?.byCategory && typeof rankingWeightsRaw.byCategory === "object"
-      ? (rankingWeightsRaw.byCategory as Record<string, unknown>)
-      : null;
-  const globalFormatWeights = await getGlobalPadelRankingFormatWeightsTx(tx);
-  const eventFormatWeightOverride = (() => {
-    const formatKey = toSocialFormatKey(eventFormat);
-    if (!formatKey || !rankingWeightsRaw) return null;
-    return parseRankingWeight(rankingWeightsRaw[formatKey]);
-  })();
-  const resolveFormatWeight = (categoryId: number | null) => {
-    const formatKey = toSocialFormatKey(eventFormat);
-    if (!formatKey) return 1;
-    if (categoryId != null && rankingWeightsByCategoryRaw) {
-      const categoryConfig = rankingWeightsByCategoryRaw[String(categoryId)];
-      if (categoryConfig && typeof categoryConfig === "object" && !Array.isArray(categoryConfig)) {
-        const perCategory = parseRankingWeight((categoryConfig as Record<string, unknown>)[formatKey]);
-        if (perCategory !== null) return perCategory;
-      }
-    }
-    if (eventFormatWeightOverride !== null) return eventFormatWeightOverride;
-    return globalFormatWeights[formatKey] ?? 1;
-  };
-
-  const matches = await tx.eventMatchSlot.findMany({
-    where: {
-      eventId,
-      status: { in: ["OFFICIAL", "WALKOVER", "RETIRED"] },
-    },
-    select: {
-      id: true,
-      categoryId: true,
-      score: true,
-      scoreSets: true,
-      plannedEndAt: true,
-      actualEndAt: true,
-      updatedAt: true,
-      participants: {
-        orderBy: [{ side: "asc" }, { slotOrder: "asc" }, { id: "asc" }],
-        select: {
-          side: true,
-          participant: {
-            select: {
-              playerProfileId: true,
-            },
-          },
-        },
-      },
-    },
-    orderBy: [{ actualEndAt: "asc" }, { plannedEndAt: "asc" }, { updatedAt: "asc" }, { id: "asc" }],
-  });
-
-  const tierMultiplier = resolveTierMultiplier(contextTier);
-  const playerProfiles = new Map<number, RatingProfileState>();
-  const processedPlayers = new Set<number>();
-  let processedMatches = 0;
-
-  for (const match of matches) {
-    const stats = resolvePadelMatchStats(match.scoreSets, match.score ?? null);
-    if (!stats) continue;
-
-    const sideAPlayers = (match.participants ?? [])
-      .filter((row) => row.side === "A")
-      .map((row) => row.participant?.playerProfileId)
-      .filter((id): id is number => typeof id === "number");
-    const sideBPlayers = (match.participants ?? [])
-      .filter((row) => row.side === "B")
-      .map((row) => row.participant?.playerProfileId)
-      .filter((id): id is number => typeof id === "number");
-
-    if (sideAPlayers.length === 0 || sideBPlayers.length === 0) continue;
-
-    for (const playerId of [...sideAPlayers, ...sideBPlayers]) {
-      if (!playerProfiles.has(playerId)) {
-        const profile = await ensureProfile(tx, organizationId, playerId);
-        playerProfiles.set(playerId, {
-          id: profile.id,
-          organizationId: profile.organizationId,
-          playerId: profile.playerId,
-          rating: profile.rating,
-          rd: profile.rd,
-          sigma: profile.sigma,
-          tau: profile.tau,
-          matchesPlayed: profile.matchesPlayed,
-          lastMatchAt: profile.lastMatchAt,
-          lastActivityAt: profile.lastActivityAt,
-        });
-      }
-    }
-
-    const sideARatingAvg = sideAPlayers.reduce((acc, id) => acc + (playerProfiles.get(id)?.rating ?? DEFAULT_RATING), 0) / sideAPlayers.length;
-    const sideBRatingAvg = sideBPlayers.reduce((acc, id) => acc + (playerProfiles.get(id)?.rating ?? DEFAULT_RATING), 0) / sideBPlayers.length;
-    const sideARdAvg = sideAPlayers.reduce((acc, id) => acc + (playerProfiles.get(id)?.rd ?? DEFAULT_RD), 0) / sideAPlayers.length;
-    const sideBRdAvg = sideBPlayers.reduce((acc, id) => acc + (playerProfiles.get(id)?.rd ?? DEFAULT_RD), 0) / sideBPlayers.length;
-
-    const scoreA = scoreFromGames(stats.aGames, stats.bGames);
-    const scoreB = scoreFromGames(stats.bGames, stats.aGames);
-    const formatWeight = resolveFormatWeight(match.categoryId ?? null);
-
-    const now = match.actualEndAt ?? match.plannedEndAt ?? match.updatedAt;
-
-    const applySide = async (
-      sidePlayers: number[],
-      opponentAvgRating: number,
-      opponentAvgRd: number,
-      sideScore: number,
-      ownAvgRating: number,
-      gamesFor: number,
-      gamesAgainst: number,
-    ) => {
-      for (const playerId of sidePlayers) {
-        const current = playerProfiles.get(playerId)!;
-        const partnerAvg =
-          sidePlayers.length > 1
-            ? sidePlayers
-                .filter((id) => id !== playerId)
-                .reduce((acc, id) => acc + (playerProfiles.get(id)?.rating ?? ownAvgRating), 0) /
-              (sidePlayers.length - 1)
-            : ownAvgRating;
-        const carryMultiplier = resolveCarryMultiplier(current.rating, partnerAvg, sideScore);
-        const multiplierFinal = tierMultiplier * carryMultiplier * formatWeight;
-
-        const updated = glicko2Update({
-          rating: current.rating,
-          rd: current.rd,
-          sigma: current.sigma,
-          tau: current.tau,
-          opponentRating: opponentAvgRating,
-          opponentRd: opponentAvgRd,
-          actualScore: sideScore,
-          multiplier: multiplierFinal,
-        });
-
-        await tx.padelRatingEvent.create({
-          data: {
-            organizationId,
-            eventId,
-            matchId: match.id,
-            playerId,
-            tier: contextTier ?? undefined,
-            clubId: contextClubId ?? undefined,
-            city: contextCity ?? undefined,
-            opponentAvgRating,
-            preRating: current.rating,
-            preRd: current.rd,
-            preSigma: current.sigma,
-            postRating: updated.rating,
-            postRd: updated.rd,
-            postSigma: updated.sigma,
-            expectedScore: updated.expectedScore,
-            actualScore: sideScore,
-            gamesFor,
-            gamesAgainst,
-            tierMultiplier,
-            carryMultiplier,
-            metadata: {
-              contextTier,
-              contextClubId,
-              contextCity,
-              format: eventFormat,
-              formatWeight,
-              multiplierFinal,
-            },
-          },
-        });
-
-        current.rating = updated.rating;
-        current.rd = updated.rd;
-        current.sigma = updated.sigma;
-        current.matchesPlayed += 1;
-        current.lastMatchAt = now;
-        current.lastActivityAt = now;
-        processedPlayers.add(playerId);
-      }
-    };
-
-    await applySide(sideAPlayers, sideBRatingAvg, sideBRdAvg, scoreA, sideARatingAvg, stats.aGames, stats.bGames);
-    await applySide(sideBPlayers, sideARatingAvg, sideARdAvg, scoreB, sideBRatingAvg, stats.bGames, stats.aGames);
-
-    processedMatches += 1;
-  }
-
-  if (playerProfiles.size === 0) {
+  if (!context || context.organizationId !== organizationId) {
     return { processedMatches: 0, processedPlayers: 0, rankingRows: 0 } satisfies RebuildResult;
   }
 
-  const sortedProfiles = Array.from(playerProfiles.values()).sort(
-    (a, b) => b.rating - a.rating || a.playerId - b.playerId,
-  );
-  const leaderRating = sortedProfiles[0]?.rating ?? DEFAULT_RATING;
-
-  for (let idx = 0; idx < sortedProfiles.length; idx += 1) {
-    const profile = sortedProfiles[idx];
-    let levelVisual = computeVisualLevel(profile.rating, leaderRating);
-    if (idx > 0 && levelVisual <= 1) {
-      levelVisual = 1.01;
-    }
-    await tx.padelRatingProfile.update({
-      where: { id: profile.id },
-      data: {
-        rating: profile.rating,
-        rd: profile.rd,
-        sigma: profile.sigma,
-        tau: profile.tau,
-        matchesPlayed: profile.matchesPlayed,
-        levelVisual,
-        lastMatchAt: profile.lastMatchAt,
-        lastActivityAt: profile.lastActivityAt,
-        lastRebuildAt: new Date(),
-      },
-    });
-  }
-
-  const sorted = [...sortedProfiles];
-  let lastPoints: number | null = null;
-  let lastPosition = 0;
-  const rows = sorted.map((profile, idx) => {
-    const points = Math.round(profile.rating);
-    if (lastPoints === null || points !== lastPoints) {
-      lastPoints = points;
-      lastPosition = idx + 1;
-    }
-    const leader = sorted[0]?.rating ?? profile.rating;
-    let levelVisual = applyInactivityToVisual(computeVisualLevel(profile.rating, leader), profile.lastActivityAt ?? null);
-    if (idx > 0 && levelVisual <= 1) {
-      levelVisual = 1.01;
-    }
-    return {
-      organizationId,
-      eventId,
-      playerId: profile.playerId,
-      points,
-      position: lastPosition,
-      level: levelVisual.toFixed(2),
-      season: String(new Date().getUTCFullYear()),
-      year: new Date().getUTCFullYear(),
-    };
+  await rebuildPadelGlobalRatings({ tx });
+  const rankingRows = await syncPadelRankingEntriesForEventFromGlobal({
+    tx,
+    eventId,
+    organizationId,
   });
-
-  await tx.padelRankingEntry.deleteMany({ where: { eventId } });
-  if (rows.length > 0) {
-    await tx.padelRankingEntry.createMany({ data: rows });
-  }
+  const processedMatches = await tx.eventMatchSlot.count({
+    where: {
+      eventId,
+      status: { in: [...COUNTED_STATUSES] },
+    },
+  });
 
   return {
     processedMatches,
-    processedPlayers: processedPlayers.size,
-    rankingRows: rows.length,
+    processedPlayers: rankingRows,
+    rankingRows,
   } satisfies RebuildResult;
 }
 

@@ -60,6 +60,7 @@ export type PublicProfilePayload = {
   };
   viewer?: {
     isFollowing?: boolean;
+    isFriend?: boolean;
     isRequested?: boolean;
     isMutual?: boolean;
   } | null;

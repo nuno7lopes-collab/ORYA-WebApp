@@ -19,8 +19,6 @@ import { sanitizeRedirectPath } from "@/lib/auth/redirects";
 import { useUser } from "@/app/hooks/useUser";
 import { sanitizeUsername, validateUsername, USERNAME_RULES_HINT } from "@/lib/username";
 import { isReservedUsernameAllowed } from "@/lib/reservedUsernames";
-import { INTEREST_MAX_SELECTION, INTEREST_OPTIONS, normalizeInterestSelection, type InterestId } from "@/lib/interests";
-import InterestIcon from "@/app/components/interests/InterestIcon";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const mapAuthErrorMessage = (message: string | null | undefined) => {
@@ -92,7 +90,6 @@ function AuthModalContent({
   const [loading, setLoading] = useState(false);
   const [fullName, setFullName] = useState("");
   const [username, setUsername] = useState("");
-  const [onboardingInterests, setOnboardingInterests] = useState<InterestId[]>([]);
   const [signupCooldown, setSignupCooldown] = useState(0);
   const [usernameHint, setUsernameHint] = useState<string | null>(null);
   const [usernameStatus, setUsernameStatus] = useState<
@@ -177,7 +174,6 @@ function AuthModalContent({
     setLoginOtpSending(false);
     setResetPasswordSending(false);
     setResetEmailSent(false);
-    setOnboardingInterests([]);
     setError(null);
     setMode("login");
   }
@@ -366,14 +362,6 @@ function AuthModalContent({
       window.clearInterval(interval);
     };
   }, [mode, syncPasswordsFromDom]);
-
-  useEffect(() => {
-    if (mode === "onboarding") {
-      setOnboardingInterests(
-        normalizeInterestSelection(profile?.favouriteCategories ?? []),
-      );
-    }
-  }, [mode, profile?.favouriteCategories]);
 
   // Recupera estado pendente apenas no primeiro render do modal.
   useEffect(() => {
@@ -892,7 +880,6 @@ function AuthModalContent({
     setLoading(true);
 
     try {
-      const interestSelection = normalizeInterestSelection(onboardingInterests);
       const trimmedName = fullName.trim();
       const usernameClean = sanitizeUsername(username);
       const validation = validateUsername(usernameClean, { allowReservedForEmail });
@@ -932,7 +919,6 @@ function AuthModalContent({
         body: JSON.stringify({
           fullName: trimmedName,
           username: validation.normalized,
-          favouriteCategories: interestSelection,
         }),
       });
 
@@ -956,7 +942,6 @@ function AuthModalContent({
             profile: {
               ...prev.profile,
               onboardingDone: true,
-              favouriteCategories: interestSelection,
             },
           };
         }
@@ -980,8 +965,7 @@ function AuthModalContent({
   const onboardingValidation = validateUsername(onboardingUsername, { allowReservedForEmail });
   const isOnboardingReady =
     Boolean(fullName.trim()) &&
-    onboardingValidation.valid &&
-    onboardingInterests.length > 0;
+    onboardingValidation.valid;
 
   const title =
     mode === "login"
@@ -1045,7 +1029,6 @@ function AuthModalContent({
     if (mode === "onboarding") {
       if (!fullName.trim()) return "Indica o teu nome completo.";
       if (!onboardingValidation.valid) return onboardingValidation.error ?? "Username inválido.";
-      if (onboardingInterests.length === 0) return "Escolhe pelo menos um interesse.";
     }
     return null;
   })();
@@ -1574,50 +1557,6 @@ function AuthModalContent({
               Podes alterar estes dados nas definições.
             </p>
 
-            <div className="mt-4 space-y-2">
-              <div className="flex items-center justify-between text-xs text-white/70">
-                <span>Interesses</span>
-                <span className="text-[10px] text-white/50">
-                  {onboardingInterests.length}/{INTEREST_MAX_SELECTION}
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {INTEREST_OPTIONS.map((interest) => {
-                  const isActive = onboardingInterests.includes(interest.id);
-                  const isLimitReached =
-                    !isActive && onboardingInterests.length >= INTEREST_MAX_SELECTION;
-                  return (
-                    <button
-                      key={interest.id}
-                      type="button"
-                      disabled={isLimitReached}
-                      onClick={() => {
-                        setOnboardingInterests((prev) => {
-                          if (prev.includes(interest.id)) {
-                            return prev.filter((item) => item !== interest.id);
-                          }
-                          if (prev.length >= INTEREST_MAX_SELECTION) return prev;
-                          return [...prev, interest.id];
-                        });
-                      }}
-                      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold transition ${
-                        isActive
-                          ? "border-[#6BFFFF]/50 bg-[#6BFFFF]/15 text-[#d9ffff]"
-                          : "border-white/15 bg-white/5 text-white/70 hover:bg-white/10"
-                      } ${isLimitReached ? "opacity-50 cursor-not-allowed" : ""}`}
-                    >
-                      <InterestIcon id={interest.id} className="h-3 w-3" />
-                      {interest.label}
-                    </button>
-                  );
-                })}
-              </div>
-              {onboardingInterests.length === 0 && (
-                <p className="text-[10px] text-white/45">
-                  Escolhe pelo menos um interesse para personalizarmos a tua experiência.
-                </p>
-              )}
-            </div>
           </>
         )}
 

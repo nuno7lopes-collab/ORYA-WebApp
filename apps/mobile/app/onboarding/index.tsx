@@ -38,8 +38,6 @@ import { getActiveSession } from "../../lib/session";
 import { sanitizeUsername, validateUsername } from "../../lib/username";
 import { getUserFacingError } from "../../lib/errors";
 import {
-  INTEREST_OPTIONS,
-  InterestId,
   OnboardingStep,
   PADEL_GENDERS,
   PADEL_LEVELS,
@@ -57,43 +55,38 @@ import {
 import type { ProfileSummary } from "../../features/profile/types";
 import { setProfileCache } from "../../lib/profileCache";
 
-const INTEREST_ICONS: Record<InterestId, string> = {
-  padel: "tennisball",
-  concertos: "musical-notes",
-  festas: "sparkles",
-  viagens: "airplane",
-  bem_estar: "leaf",
-  gastronomia: "restaurant",
-  aulas: "book",
-  workshops: "construct",
-};
-
-const MAX_INTERESTS = 6;
+const DEFAULT_FAVOURITE_CATEGORIES = ["padel"] as const;
 const STEP_ICONS: Record<OnboardingStep, string> = {
   basic: "person-circle",
-  interests: "sparkles",
   padel: "tennisball",
+};
+
+const isContactPhoneValid = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (!/^\+?[0-9\s().-]+$/.test(trimmed)) return false;
+  const digits = trimmed.replace(/\D/g, "");
+  return digits.length >= 9 && digits.length <= 15;
 };
 
 const resolveStartStep = (draft: OnboardingDraft | null): OnboardingStep => {
   if (!draft) return "basic";
-  const interests = draft.interests ?? [];
-  const hasPadel = interests.includes("padel");
+  const hasBasicDraft =
+    Boolean(draft.fullName?.trim()) &&
+    Boolean(draft.username?.trim());
+  if (!hasBasicDraft) return "basic";
   switch (draft.step) {
     case 1:
-      return "interests";
     case 2:
-      return hasPadel ? "padel" : "interests";
     case 3:
     case 4:
-      return hasPadel ? "padel" : "interests";
+      return "padel";
     default:
       return "basic";
   }
 };
 
 const NETWORK_TIMEOUT_MS = 10_000;
-type FinalizeMode = "standard" | "padel-skip";
 
 const withTimeout = async <T,>(promise: Promise<T>, ms: number, label = "timeout") => {
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -123,10 +116,10 @@ export default function OnboardingScreen() {
   const [step, setStep] = useState<OnboardingStep>("basic");
   const [fullName, setFullName] = useState("");
   const [username, setUsername] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
   const [usernameStatus, setUsernameStatus] = useState<
     "idle" | "invalid" | "checking" | "available" | "taken" | "reserved" | "error"
   >("idle");
-  const [interests, setInterests] = useState<InterestId[]>([]);
   const [padelGender, setPadelGender] = useState<PadelGender | null>(null);
   const [padelSide, setPadelSide] = useState<PadelPreferredSide | null>(null);
   const [padelLevel, setPadelLevel] = useState<PadelLevel | null>(null);
@@ -209,15 +202,10 @@ export default function OnboardingScreen() {
     }
   };
 
-  const padelSelected = interests.includes("padel");
-  const steps = useMemo<OnboardingStep[]>(
-    () => (padelSelected ? ["basic", "interests", "padel"] : ["basic", "interests"]),
-    [padelSelected],
-  );
+  const steps = useMemo<OnboardingStep[]>(() => ["basic", "padel"], []);
   const stepIndex = Math.max(0, steps.indexOf(step));
   const stepHint = t(`onboarding:stepHints.${step}`);
   const compactLayout = screenWidth < 370;
-  const wideLayout = screenWidth >= 430;
 
   const allowReservedForEmail = session?.user?.email ?? null;
   const usernameValidation = useMemo(
@@ -230,14 +218,6 @@ export default function OnboardingScreen() {
 
   const saveBasicMutation = useMutation({ mutationFn: saveBasicProfile, retry: 1 });
   const savePadelMutation = useMutation({ mutationFn: savePadelOnboarding, retry: 1 });
-
-  useEffect(() => {
-    if (padelSelected) return;
-    if (step === "padel") setStep("interests");
-    setPadelGender(null);
-    setPadelSide(null);
-    setPadelLevel(null);
-  }, [padelSelected, step]);
 
   useEffect(() => {
     if (step !== "basic") {
@@ -269,7 +249,7 @@ export default function OnboardingScreen() {
         if (draft) {
           setFullName(draft.fullName ?? "");
           setUsername(draft.username ?? "");
-          setInterests((draft.interests ?? []) as InterestId[]);
+          setContactPhone(draft.contactPhone ?? "");
           setPadelGender((draft.padel?.gender as PadelGender | null) ?? null);
           setPadelSide((draft.padel?.preferredSide as PadelPreferredSide | null) ?? null);
           setPadelLevel((draft.padel?.level as PadelLevel | null) ?? null);
@@ -287,19 +267,11 @@ export default function OnboardingScreen() {
   useEffect(() => {
     if (!startAtPadel || loadingDraft || didApplyStartRef.current) return;
     didApplyStartRef.current = true;
-    setInterests((prev) => {
-      if (prev.includes("padel")) {
-        setStep("padel");
-        return prev;
-      }
-      if (prev.length >= MAX_INTERESTS) {
-        setStep("interests");
-        return prev;
-      }
-      setStep("padel");
-      return [...prev, "padel"];
-    });
-  }, [loadingDraft, startAtPadel]);
+    const hasBasicDraft =
+      fullName.trim().length >= 2 &&
+      username.trim().length >= 3;
+    setStep(hasBasicDraft ? "padel" : "basic");
+  }, [fullName, loadingDraft, startAtPadel, username]);
 
   useEffect(() => {
     if (loadingDraft || didInitDraftRef.current) return;
@@ -373,9 +345,11 @@ export default function OnboardingScreen() {
   }, [username, usernameValidation, session?.access_token]);
 
   const canContinueBasic =
-    fullName.trim().length >= 2 && usernameValidation.valid && usernameStatus === "available";
-  const canContinueInterests = interests.length > 0;
-  const canContinuePadel = Boolean(padelGender && padelSide);
+    fullName.trim().length >= 2 &&
+    usernameValidation.valid &&
+    usernameStatus === "available" &&
+    (!contactPhone.trim() || isContactPhoneValid(contactPhone));
+  const canContinuePadel = Boolean(padelGender && padelSide && padelLevel);
 
   const persistDraft = async (patch: Partial<OnboardingDraft>) => {
     const userId = session?.user?.id;
@@ -463,7 +437,6 @@ export default function OnboardingScreen() {
   const updateProfileCache = (payload: {
     fullName: string;
     username: string;
-    interests: InterestId[];
     padelLevel?: string | null | undefined;
   }) => {
     const summaryKey = ["profile", "summary", session?.user?.id ?? "anon"];
@@ -478,7 +451,7 @@ export default function OnboardingScreen() {
         payload.padelLevel !== undefined
           ? payload.padelLevel
           : (prev?.padelLevel ?? null),
-      favouriteCategories: payload.interests,
+      favouriteCategories: [...DEFAULT_FAVOURITE_CATEGORIES],
       onboardingDone: true,
     }));
     queryClient.invalidateQueries({ queryKey: ["profile", "summary"] });
@@ -493,7 +466,7 @@ export default function OnboardingScreen() {
     }
   };
 
-  const finalizeOnboarding = async (mode: FinalizeMode = "standard") => {
+  const finalizeOnboarding = async () => {
     try {
       const usernameOk = await ensureUsernameAvailable();
       if (!usernameOk) {
@@ -503,45 +476,33 @@ export default function OnboardingScreen() {
         );
         return;
       }
-      const skipPadelDetails = mode === "padel-skip";
-      const shouldSavePadelDetails =
-        padelSelected && !skipPadelDetails && Boolean(padelGender && padelSide);
-      const shouldMarkOnboardingDoneInBasic = !padelSelected || skipPadelDetails;
       const accessToken = await resolveAccessToken();
       await withTimeout(
         saveBasicMutation.mutateAsync({
           fullName: fullName.trim(),
           username: normalizedUsername,
-          favouriteCategories: interests,
+          contactPhone: contactPhone.trim(),
+          favouriteCategories: [...DEFAULT_FAVOURITE_CATEGORIES],
           accessToken,
-          onboardingDone: shouldMarkOnboardingDoneInBasic,
+          onboardingDone: false,
         }),
         NETWORK_TIMEOUT_MS,
         "save_basic_timeout",
       );
-      if (shouldSavePadelDetails) {
-        await withTimeout(
-          savePadelMutation.mutateAsync({
-            gender: padelGender,
-            preferredSide: padelSide,
-            level: padelLevel,
-            accessToken,
-          }),
-          NETWORK_TIMEOUT_MS,
-          "save_padel_timeout",
-        );
-      }
-      const cachePadelLevel =
-        shouldSavePadelDetails
-          ? (padelLevel ?? null)
-          : skipPadelDetails
-            ? null
-            : undefined;
+      await withTimeout(
+        savePadelMutation.mutateAsync({
+          gender: padelGender,
+          preferredSide: padelSide,
+          level: padelLevel,
+          accessToken,
+        }),
+        NETWORK_TIMEOUT_MS,
+        "save_padel_timeout",
+      );
       updateProfileCache({
         fullName: fullName.trim(),
         username: normalizedUsername,
-        interests,
-        padelLevel: cachePadelLevel,
+        padelLevel: padelLevel ?? null,
       });
       await setOnboardingDone(true);
       await clearOnboardingDraft();
@@ -562,6 +523,11 @@ export default function OnboardingScreen() {
         setStep("basic");
         return;
       }
+      if (raw.toLowerCase().includes("telefone inválido") || raw.toLowerCase().includes("telefone invalido")) {
+        Alert.alert(t("common:labels.error"), t("onboarding:errors.phoneInvalid"));
+        setStep("basic");
+        return;
+      }
       if (raw.includes("API 401") || raw.includes("UNAUTHENTICATED")) {
         await handleAuthError();
         return;
@@ -572,6 +538,10 @@ export default function OnboardingScreen() {
 
   const handleBasicContinue = async () => {
     if (!canContinueBasic) return;
+    if (contactPhone.trim() && !isContactPhoneValid(contactPhone)) {
+      Alert.alert(t("onboarding:errors.missingDataTitle"), t("onboarding:errors.phoneInvalid"));
+      return;
+    }
     if (!(await ensureUsernameAvailable())) return;
     setSavingStep("basic");
     try {
@@ -579,15 +549,15 @@ export default function OnboardingScreen() {
         step: 0,
         fullName: fullName.trim(),
         username: normalizedUsername,
-        interests,
+        contactPhone: contactPhone.trim(),
       });
       await persistDraft({
         step: 1,
         fullName: fullName.trim(),
         username: normalizedUsername,
-        interests,
+        contactPhone: contactPhone.trim(),
       });
-      setStep("interests");
+      setStep("padel");
     } catch (err: unknown) {
       const rawMessage = resolveErrorMessage(err);
       if (
@@ -615,31 +585,6 @@ export default function OnboardingScreen() {
     }
   };
 
-  const handleInterestsContinue = async () => {
-    if (!canContinueInterests) return;
-    setSavingStep("interests");
-    try {
-      await persistDraft({ step: 2, interests });
-      if (padelSelected) {
-        setStep("padel");
-      } else {
-        await finalizeOnboarding("standard");
-      }
-    } catch (err: unknown) {
-      const rawMessage = resolveErrorMessage(err);
-      if (rawMessage.includes("API 401") || rawMessage.includes("UNAUTHENTICATED")) {
-        await handleAuthError();
-        return;
-      }
-      Alert.alert(
-        t("common:labels.error"),
-        getUserFacingError(err, t("onboarding:errors.interestsSaveFailed")),
-      );
-    } finally {
-      setSavingStep(null);
-    }
-  };
-
   const handlePadelContinue = async () => {
     if (!canContinuePadel) {
       Alert.alert(t("onboarding:errors.missingDataTitle"), t("onboarding:errors.padelMissing"));
@@ -648,15 +593,14 @@ export default function OnboardingScreen() {
     setSavingStep("padel");
     try {
       await persistDraft({
-        step: 3,
+        step: 2,
         padel: {
           gender: padelGender,
           preferredSide: padelSide,
           level: padelLevel,
-          skipped: false,
         },
       });
-      await finalizeOnboarding("standard");
+      await finalizeOnboarding();
     } catch (err: unknown) {
       const rawMessage = resolveErrorMessage(err);
       if (rawMessage.includes("API 401") || rawMessage.includes("UNAUTHENTICATED")) {
@@ -670,46 +614,6 @@ export default function OnboardingScreen() {
     } finally {
       setSavingStep(null);
     }
-  };
-
-  const handlePadelSkip = async () => {
-    if (savingStep) return;
-    setSavingStep("padel");
-    try {
-      setPadelGender(null);
-      setPadelSide(null);
-      setPadelLevel(null);
-      await persistDraft({
-        step: 3,
-        padel: {
-          gender: null,
-          preferredSide: null,
-          level: null,
-          skipped: true,
-        },
-      });
-      await finalizeOnboarding("padel-skip");
-    } catch (err: unknown) {
-      const rawMessage = resolveErrorMessage(err);
-      if (rawMessage.includes("API 401") || rawMessage.includes("UNAUTHENTICATED")) {
-        await handleAuthError();
-        return;
-      }
-      Alert.alert(
-        t("common:labels.error"),
-        getUserFacingError(err, t("onboarding:errors.padelSaveFailed")),
-      );
-    } finally {
-      setSavingStep(null);
-    }
-  };
-
-  const toggleInterest = (interest: InterestId) => {
-    setInterests((prev) => {
-      if (prev.includes(interest)) return prev.filter((item) => item !== interest);
-      if (prev.length >= MAX_INTERESTS) return prev;
-      return [...prev, interest];
-    });
   };
 
   const handleBack = () => {
@@ -846,84 +750,40 @@ export default function OnboardingScreen() {
         </View>
         {renderUsernameStatus()}
       </View>
-    </GlassCard>
-  );
 
-  const renderInterestsStep = () => (
-    <GlassCard style={styles.card} contentStyle={styles.cardContent}>
-      <Text style={[styles.cardTitle, styles.interestsTitle]}>
-        {t("onboarding:interests.title")}
-      </Text>
-      <Text style={[styles.cardSubtitle, styles.interestsSubtitle]}>
-        {t("onboarding:interests.subtitle")}
-      </Text>
-
-      <View style={styles.interestGrid}>
-        {INTEREST_OPTIONS.map((interest, idx) => {
-          const active = interests.includes(interest.id);
-          const disabled = !active && interests.length >= MAX_INTERESTS;
-          const isPadel = interest.id === "padel";
-          const interestLabel = t(`common:interests.${interest.id}`);
-          return (
-            <Pressable
-              key={interest.id}
-              onPress={() => {
-                if (disabled) return;
-                toggleInterest(interest.id);
-              }}
-              style={({ pressed }) => [
-                styles.interestChip,
-                compactLayout
-                  ? styles.interestChipCompact
-                  : wideLayout
-                    ? styles.interestChipWide
-                    : styles.interestChipRegular,
-                active ? styles.interestChipActive : styles.interestChipIdle,
-                isPadel ? styles.interestChipPadel : null,
-                disabled ? styles.interestChipDisabled : null,
-                pressed ? styles.interestChipPressed : null,
-                idx === 0 ? styles.interestChipFirst : null,
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel={interestLabel}
-              accessibilityState={{ selected: active, disabled }}
-            >
-              <View style={[styles.interestIcon, active ? styles.interestIconActive : null]}>
-                <Ionicons
-                  name={INTEREST_ICONS[interest.id]}
-                  size={18}
-                  color={active ? "#ffffff" : "rgba(255,255,255,0.75)"}
-                />
-              </View>
-              <Text style={[styles.interestLabel, active ? styles.interestLabelActive : null]}>
-                {interestLabel}
-              </Text>
-            </Pressable>
-          );
-        })}
+      <View style={styles.field}>
+        <Text style={styles.fieldLabel}>{t("onboarding:basic.phoneLabel")}</Text>
+        <View
+          style={[
+            styles.inputShell,
+            contactPhone.trim() && !isContactPhoneValid(contactPhone) ? styles.inputShellError : null,
+          ]}
+        >
+          <TextInput
+            value={contactPhone}
+            onChangeText={setContactPhone}
+            placeholder={t("onboarding:basic.phonePlaceholder")}
+            placeholderTextColor={tokens.colors.textMuted}
+            keyboardType="phone-pad"
+            textContentType="telephoneNumber"
+            autoComplete="tel"
+            returnKeyType="done"
+            style={styles.input}
+            accessibilityLabel={t("onboarding:basic.phoneLabel")}
+          />
+        </View>
+        {contactPhone.trim() && !isContactPhoneValid(contactPhone) ? (
+          <Text style={[styles.helperText, styles.helperError]}>{t("onboarding:errors.phoneInvalid")}</Text>
+        ) : (
+          <Text style={styles.helperHint}>{t("onboarding:basic.phoneHint")}</Text>
+        )}
       </View>
-      <Text style={styles.helperMeta}>
-        {t("onboarding:interests.selectedCount", { count: interests.length, total: MAX_INTERESTS })}
-      </Text>
-      {interests.length >= MAX_INTERESTS ? (
-        <Text style={styles.helperHint}>{t("onboarding:interests.limitReached")}</Text>
-      ) : null}
     </GlassCard>
   );
 
   const renderPadelStep = () => (
     <GlassCard style={styles.card} contentStyle={styles.cardContent}>
-      <View style={styles.cardHeaderRow}>
-        <Text style={styles.cardTitle}>{t("onboarding:padel.title")}</Text>
-        <Pressable
-          onPress={handlePadelSkip}
-          style={styles.skipLink}
-          accessibilityRole="button"
-          accessibilityLabel={t("onboarding:padel.skip")}
-        >
-          <Text style={styles.skipText}>{t("onboarding:padel.skip")}</Text>
-        </Pressable>
-      </View>
+      <Text style={styles.cardTitle}>{t("onboarding:padel.title")}</Text>
 
       <View style={styles.field}>
         <Text style={styles.fieldLabel}>{t("onboarding:padel.gender")}</Text>
@@ -994,7 +854,7 @@ export default function OnboardingScreen() {
       </View>
 
       <View style={styles.field}>
-        <Text style={styles.fieldLabel}>{t("onboarding:padel.levelOptional")}</Text>
+        <Text style={styles.fieldLabel}>{t("onboarding:padel.level")}</Text>
         <View style={styles.levelGrid}>
           {PADEL_LEVELS.map((level) => {
             const active = padelLevel === level;
@@ -1109,11 +969,7 @@ export default function OnboardingScreen() {
                 },
               ]}
             >
-              {step === "basic"
-                ? renderBasicStep()
-                : step === "interests"
-                  ? renderInterestsStep()
-                  : renderPadelStep()}
+              {step === "basic" ? renderBasicStep() : renderPadelStep()}
 
               <View style={styles.actions}>
                 {step === "basic" ? (
@@ -1122,16 +978,6 @@ export default function OnboardingScreen() {
                     onPress={handleBasicContinue}
                     disabled={!canContinueBasic || savingStep === "basic"}
                     loading={savingStep === "basic"}
-                  />
-                ) : null}
-                {step === "interests" ? (
-                  <PrimaryButton
-                    label={
-                      savingStep === "interests" ? t("common:actions.saving") : t("common:actions.continue")
-                    }
-                    onPress={handleInterestsContinue}
-                    disabled={!canContinueInterests || savingStep === "interests"}
-                    loading={savingStep === "interests"}
                   />
                 ) : null}
                 {step === "padel" ? (
@@ -1254,22 +1100,11 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     fontFamily: tokens.typography.fontFamily?.heading ?? "System",
   },
-  interestsTitle: {
-    fontSize: 24,
-    lineHeight: 30,
-    fontFamily: tokens.typography.fontFamily?.headingBold ?? "System",
-    letterSpacing: tokens.typography.letterSpacing?.tight ?? -0.2,
-  },
   cardSubtitle: {
     color: "rgba(255,255,255,0.7)",
     fontSize: 13,
     lineHeight: 19,
     fontFamily: tokens.typography.fontFamily?.body ?? "System",
-  },
-  interestsSubtitle: {
-    color: "rgba(225,236,255,0.88)",
-    fontSize: 15,
-    lineHeight: 22,
   },
   field: {
     gap: 8,
@@ -1349,116 +1184,6 @@ const styles = StyleSheet.create({
   },
   helperError: {
     color: "rgba(252, 165, 165, 0.95)",
-  },
-  helperMeta: {
-    color: "rgba(255,255,255,0.6)",
-    fontSize: 12,
-    marginTop: 10,
-    alignSelf: "center",
-    fontFamily: tokens.typography.fontFamily?.body ?? "System",
-  },
-  interestGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 14,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  interestChip: {
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 12,
-    borderRadius: 20,
-    borderWidth: 1,
-    minHeight: tokens.layout.touchTarget + 6,
-    aspectRatio: 1,
-    position: "relative",
-  },
-  interestChipRegular: {
-    width: "31%",
-    minWidth: 86,
-  },
-  interestChipWide: {
-    width: "23%",
-    minWidth: 86,
-  },
-  interestChipCompact: {
-    width: "47%",
-    minWidth: 118,
-    aspectRatio: 1.18,
-  },
-  interestChipIdle: {
-    borderColor: "rgba(255,255,255,0.12)",
-    backgroundColor: "rgba(255,255,255,0.08)",
-  },
-  interestChipActive: {
-    borderColor: "rgba(170, 220, 255, 0.78)",
-    backgroundColor: "rgba(147, 197, 253, 0.26)",
-    shadowColor: "rgba(130, 190, 255, 0.44)",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.34,
-    shadowRadius: 12,
-  },
-  interestChipDisabled: {
-    opacity: 0.42,
-  },
-  interestChipPadel: {
-    borderColor: "rgba(200, 225, 255, 0.7)",
-    backgroundColor: "rgba(255,255,255,0.14)",
-    shadowColor: "rgba(180, 220, 255, 0.35)",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-  },
-  interestChipPressed: {
-    transform: [{ scale: 0.98 }],
-  },
-  interestChipFirst: {
-    shadowColor: "rgba(255,255,255,0.2)",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 14,
-  },
-  interestIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "rgba(255,255,255,0.08)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  interestIconActive: {
-    backgroundColor: "rgba(255,255,255,0.24)",
-  },
-  interestLabel: {
-    color: "rgba(255,255,255,0.85)",
-    fontSize: 11,
-    fontFamily: tokens.typography.fontFamily?.bodyStrong ?? "System",
-    flexShrink: 1,
-    textAlign: "center",
-    width: "100%",
-  },
-  interestLabelActive: {
-    color: "#ffffff",
-  },
-  cardHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  skipLink: {
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    minHeight: tokens.layout.touchTarget,
-    justifyContent: "center",
-  },
-  skipText: {
-    color: "rgba(200, 220, 255, 0.9)",
-    fontSize: 12,
-    fontFamily: tokens.typography.fontFamily?.bodyStrong ?? "System",
   },
   optionRow: {
     flexDirection: "row",

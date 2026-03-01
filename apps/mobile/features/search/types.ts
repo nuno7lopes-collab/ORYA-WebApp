@@ -4,6 +4,7 @@ export type SearchUser = {
   fullName?: string | null;
   avatarUrl?: string | null;
   isFollowing?: boolean;
+  isFriend?: boolean;
   isRequested?: boolean;
 };
 

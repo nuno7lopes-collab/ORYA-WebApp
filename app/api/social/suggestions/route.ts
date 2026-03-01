@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { getUserFollowingSet } from "@/domain/social/follows";
+import { getUserFriendSet } from "@/domain/social/follows";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
 
@@ -26,8 +26,8 @@ async function _GET(req: NextRequest) {
     return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
   }
 
-  const followingSet = await getUserFollowingSet(user.id);
-  const followingIds = Array.from(followingSet).filter(Boolean);
+  const friendSet = await getUserFriendSet(user.id);
+  const friendIds = Array.from(friendSet).filter(Boolean);
   const now = new Date();
   const windowEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
   const activeEventStatuses = PUBLIC_EVENT_DISCOVER_STATUSES;
@@ -118,7 +118,7 @@ async function _GET(req: NextRequest) {
   ticketRows.forEach((row) => {
     const otherId = row.userId;
     if (!otherId || otherId === user.id) return;
-    if (followingSet.has(otherId)) return;
+    if (friendSet.has(otherId)) return;
     if (reasonMap.has(otherId)) return;
     const event = eventMeta.get(row.eventId);
     if (!event) return;
@@ -128,7 +128,7 @@ async function _GET(req: NextRequest) {
   favoriteRows.forEach((row) => {
     const otherId = row.userId;
     if (!otherId || otherId === user.id) return;
-    if (followingSet.has(otherId)) return;
+    if (friendSet.has(otherId)) return;
     if (reasonMap.has(otherId)) return;
     const event = eventMeta.get(row.eventId);
     if (!event) return;
@@ -142,7 +142,7 @@ async function _GET(req: NextRequest) {
           ...publicWhere,
           id: {
             in: reasonUserIds,
-            notIn: followingIds.length > 0 ? followingIds : undefined,
+            notIn: friendIds.length > 0 ? friendIds : undefined,
             not: user.id,
           },
         },
@@ -190,7 +190,7 @@ async function _GET(req: NextRequest) {
   }));
 
   const reasonIds = reasonSuggestions.map((item) => item.id);
-  const excludedIds = [user.id, ...followingIds, ...reasonIds].filter(Boolean);
+  const excludedIds = [user.id, ...friendIds, ...reasonIds].filter(Boolean);
 
   const baseWhere = {
     ...publicWhere,
@@ -229,12 +229,12 @@ async function _GET(req: NextRequest) {
   const suggestedIds = combined.map((item) => item.id);
 
   const mutualsMap = new Map<string, number>();
-  if (suggestedIds.length > 0 && followingIds.length > 0) {
+  if (suggestedIds.length > 0 && friendIds.length > 0) {
     const mutualRows = await prisma.follows.groupBy({
       by: ["follower_id"],
       where: {
         follower_id: { in: suggestedIds },
-        following_id: { in: followingIds },
+        following_id: { in: friendIds },
       },
       _count: { _all: true },
     });

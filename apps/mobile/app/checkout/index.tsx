@@ -312,12 +312,16 @@ export default function CheckoutScreen() {
   }, [draft?.paymentIntentId, draft?.purchaseId, draft?.bookingId]);
 
   useEffect(() => {
-    if (!checkoutHoldExpiresAt) {
+    const holdExpiresAt =
+      draft?.sourceType === "SERVICE_BOOKING"
+        ? draft?.holdExpiresAt ?? null
+        : draft?.inventoryHoldExpiresAt ?? null;
+    if (!holdExpiresAt) {
       setHoldCountdownLabel(null);
       return;
     }
     const tick = () => {
-      const remaining = new Date(checkoutHoldExpiresAt).getTime() - Date.now();
+      const remaining = new Date(holdExpiresAt).getTime() - Date.now();
       if (!Number.isFinite(remaining) || remaining <= 0) {
         setHoldCountdownLabel(null);
         return;
@@ -327,7 +331,7 @@ export default function CheckoutScreen() {
     tick();
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, [checkoutHoldExpiresAt]);
+  }, [draft?.holdExpiresAt, draft?.inventoryHoldExpiresAt, draft?.sourceType]);
 
   useEffect(() => {
     if (!draft) return;
@@ -380,7 +384,9 @@ export default function CheckoutScreen() {
 
   useEffect(() => {
     if (!draft) return;
-    if (isServiceBooking || isPadelRegistration) return;
+    const isPadelRegistrationDraft = draft.sourceType === "PADEL_REGISTRATION";
+    const isServiceBookingDraft = draft.sourceType === "SERVICE_BOOKING";
+    if (isServiceBookingDraft || isPadelRegistrationDraft) return;
     const clientSessionId =
       typeof draft.inventoryClientSessionId === "string"
         ? draft.inventoryClientSessionId.trim()
@@ -448,7 +454,7 @@ export default function CheckoutScreen() {
       })().catch(() => undefined);
     }, 60_000);
     return () => clearInterval(interval);
-  }, [draft, isPadelRegistration, isServiceBooking, setDraft]);
+  }, [draft, setDraft]);
 
   const allowApplePay = Boolean(merchantId && applePaySupported);
   const isExpoGo =

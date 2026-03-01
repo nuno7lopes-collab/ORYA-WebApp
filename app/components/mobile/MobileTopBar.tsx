@@ -62,7 +62,7 @@ export default function MobileTopBar({
                   className="h-full w-full object-contain"
                 />
               </span>
-              <span className="text-[12px] font-semibold tracking-[0.28em] text-white/85">ORYA</span>
+              <span className="text-[11px] font-semibold tracking-[0.18em] text-white/85">ORYA PADEL</span>
             </Link>
             <div className="flex items-center gap-2">
               {showSearch && (

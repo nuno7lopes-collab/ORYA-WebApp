@@ -18,7 +18,7 @@ export type OrganizationModule = (typeof ORGANIZATION_MODULES)[number];
 export const OPERATION_MODULES = ["EVENTOS", "RESERVAS", "TORNEIOS"] as const;
 export type OperationModule = (typeof OPERATION_MODULES)[number];
 
-export const DEFAULT_PRIMARY_MODULE: OperationModule = "EVENTOS";
+export const DEFAULT_PRIMARY_MODULE: OperationModule = "TORNEIOS";
 export const CORE_ORGANIZATION_MODULES: OrganizationModule[] = [
   "STAFF",
   "FINANCEIRO",
@@ -49,10 +49,14 @@ export const NON_DEACTIVABLE_ORGANIZATION_TOOL_MODULE_SET = new Set<Organization
 const operationModuleSet = new Set<OperationModule>(OPERATION_MODULES);
 const organizationModuleSet = new Set<OrganizationModule>(ORGANIZATION_MODULES);
 
+function normalizeLegacyOperationModule(module: OperationModule): OperationModule {
+  return module === "EVENTOS" ? "TORNEIOS" : module;
+}
+
 export function getDefaultOrganizationModules(
   primaryModule?: OperationModule | null,
 ): OrganizationModule[] {
-  const resolvedPrimary = resolvePrimaryModule(primaryModule, null);
+  const resolvedPrimary = normalizeLegacyOperationModule(resolvePrimaryModule(primaryModule, null));
   const modules = [...CORE_ORGANIZATION_MODULES, resolvedPrimary];
   const unique = new Set<OrganizationModule>();
   const normalized: OrganizationModule[] = [];
@@ -88,13 +92,13 @@ export function resolvePrimaryModule(
   tools?: string[] | null,
 ): OperationModule {
   const parsed = parsePrimaryModule(primaryModule ?? null);
-  if (parsed) return parsed;
+  if (parsed) return normalizeLegacyOperationModule(parsed);
   const fallback =
     Array.isArray(tools) &&
     tools
       .map((tool) => tool.trim().toUpperCase())
       .find((tool) => operationModuleSet.has(tool as OperationModule));
-  return fallback ? (fallback as OperationModule) : DEFAULT_PRIMARY_MODULE;
+  return fallback ? normalizeLegacyOperationModule(fallback as OperationModule) : DEFAULT_PRIMARY_MODULE;
 }
 
 export function parseOrganizationTools(value: unknown): OrganizationModule[] | null {

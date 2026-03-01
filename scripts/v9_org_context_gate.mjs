@@ -34,6 +34,7 @@ const REQUIRED_MARKERS = [
   "ensureGroupMemberModuleAccess",
   "ensureMemberCheckinAccess",
   "ensureGroupMemberCheckinAccess",
+  "requireOrgTelemetryAccess",
   "requireInternalSecret",
   "requireAdminUser",
 ];

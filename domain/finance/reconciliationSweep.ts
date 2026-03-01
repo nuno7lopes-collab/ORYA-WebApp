@@ -12,6 +12,17 @@ type SweepResult = {
   skippedNoFee: number;
 };
 
+function isPaymentIntentIdentifier(value: string) {
+  return /^pi_[A-Za-z0-9]+$/.test(value);
+}
+
+function isMissingPaymentIntentError(error: unknown) {
+  const anyErr = error as { code?: string; statusCode?: number };
+  if (anyErr?.code === "resource_missing" || anyErr?.statusCode === 404) return true;
+  if (!(error instanceof Error)) return false;
+  return error.message.toLowerCase().includes("no such payment_intent");
+}
+
 async function resolveStripeFee(intent: Stripe.PaymentIntent): Promise<{ feeCents: number; balanceTxId: string } | null> {
   const latestCharge =
     typeof intent.latest_charge === "string" ? intent.latest_charge : intent.latest_charge?.id ?? null;
@@ -42,7 +53,7 @@ export async function sweepPendingProcessorFees(limit = 50): Promise<SweepResult
         select: { stripePaymentIntentId: true, stripeEventId: true },
       });
       intentId = paymentEvent?.stripePaymentIntentId ?? null;
-      if (!intentId) {
+      if (!intentId || !isPaymentIntentIdentifier(intentId)) {
         skippedNoIntent += 1;
         continue;
       }
@@ -62,6 +73,10 @@ export async function sweepPendingProcessorFees(limit = 50): Promise<SweepResult
       });
       if (result.status !== "SKIPPED") reconciled += 1;
     } catch (err) {
+      if (isMissingPaymentIntentError(err)) {
+        skippedNoIntent += 1;
+        continue;
+      }
       logError("finance.reconciliation_sweep.failed", err, {
         paymentIntentId: intentId,
         paymentId: payment.id,

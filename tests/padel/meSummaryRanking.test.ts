@@ -6,7 +6,7 @@ const createSupabaseServer = vi.hoisted(() => vi.fn());
 const prisma = vi.hoisted(() => ({
   profile: { findUnique: vi.fn() },
   padelPlayerProfile: { findFirst: vi.fn(), findMany: vi.fn() },
-  padelRatingProfile: { count: vi.fn() },
+  padelGlobalRatingProfile: { findUnique: vi.fn(), findMany: vi.fn(), count: vi.fn() },
   padelPairing: { findMany: vi.fn() },
   padelWaitlistEntry: { findMany: vi.fn() },
   eventMatchSlot: { findMany: vi.fn() },
@@ -23,7 +23,9 @@ beforeEach(async () => {
   prisma.profile.findUnique.mockReset();
   prisma.padelPlayerProfile.findFirst.mockReset();
   prisma.padelPlayerProfile.findMany.mockReset();
-  prisma.padelRatingProfile.count.mockReset();
+  prisma.padelGlobalRatingProfile.findUnique.mockReset();
+  prisma.padelGlobalRatingProfile.findMany.mockReset();
+  prisma.padelGlobalRatingProfile.count.mockReset();
   prisma.padelPairing.findMany.mockReset();
   prisma.padelWaitlistEntry.findMany.mockReset();
   prisma.eventMatchSlot.findMany.mockReset();
@@ -43,35 +45,42 @@ beforeEach(async () => {
     padelClubName: "ORYA Club",
   });
   prisma.padelPlayerProfile.findFirst.mockResolvedValue(null);
-  prisma.padelPlayerProfile.findMany.mockResolvedValue([
-    {
-      id: 501,
-      organizationId: 22,
-      updatedAt: new Date("2026-02-17T09:00:00Z"),
-      ratingProfile: {
-        rating: 1605,
-        matchesPlayed: 24,
-        leaderboardEligible: true,
-        blockedNewMatches: false,
-        lastMatchAt: new Date("2026-02-16T10:00:00Z"),
-        lastRebuildAt: new Date("2026-02-16T10:05:00Z"),
+  prisma.padelPlayerProfile.findMany
+    .mockResolvedValueOnce([
+      {
+        id: 501,
+        organizationId: 22,
+        updatedAt: new Date("2026-02-17T09:00:00Z"),
       },
-    },
-    {
-      id: 502,
-      organizationId: 23,
-      updatedAt: new Date("2026-02-17T08:00:00Z"),
-      ratingProfile: {
-        rating: 1690,
-        matchesPlayed: 12,
-        leaderboardEligible: true,
-        blockedNewMatches: false,
-        lastMatchAt: new Date("2026-02-15T10:00:00Z"),
-        lastRebuildAt: new Date("2026-02-15T10:05:00Z"),
+      {
+        id: 502,
+        organizationId: 23,
+        updatedAt: new Date("2026-02-17T08:00:00Z"),
       },
-    },
+    ])
+    .mockResolvedValueOnce([
+      { userId: "user-a" },
+      { userId: "user-b" },
+      { userId: "user-c" },
+    ]);
+  prisma.padelGlobalRatingProfile.findUnique.mockResolvedValue({
+    id: 701,
+    rating: 1605,
+    rd: 58,
+    sigma: 0.06,
+    matchesPlayed: 24,
+    leaderboardEligible: true,
+    blockedNewMatches: false,
+    lastMatchAt: new Date("2026-02-16T10:00:00Z"),
+    lastActivityAt: new Date("2026-02-16T10:00:00Z"),
+    lastRebuildAt: new Date("2026-02-16T10:05:00Z"),
+  });
+  prisma.padelGlobalRatingProfile.findMany.mockResolvedValue([
+    { userId: "user-a", rating: 1605 },
+    { userId: "user-b", rating: 1702 },
+    { userId: "user-c", rating: 1605 },
   ]);
-  prisma.padelRatingProfile.count.mockResolvedValueOnce(1).mockResolvedValueOnce(3);
+  prisma.padelGlobalRatingProfile.count.mockResolvedValue(3);
   prisma.padelPairing.findMany.mockResolvedValue([]);
   prisma.padelWaitlistEntry.findMany.mockResolvedValue([]);
 
@@ -97,7 +106,8 @@ describe("GET /api/padel/me/summary ranking payload", () => {
         globalPosition: 4,
         matchesPlayed: 24,
         leaderboardEligible: true,
-        sourcePlayerProfileId: 501,
+        blockedNewMatches: false,
+        sourceGlobalProfileId: 701,
       }),
     );
   });

@@ -475,6 +475,7 @@ export async function createOrganizationAtomic(input: {
   tools: string[];
   publicWebsite?: string | null;
   existingGroupId?: number | null;
+  organizationKind?: "CLUBE_PADEL";
 }) {
   const user = await requireUser();
   const emailVerified = Boolean((user as { email_confirmed_at?: string | null }).email_confirmed_at);
@@ -582,6 +583,7 @@ export async function createOrganizationAtomic(input: {
         ...(addressId ? { addressId } : {}),
         username: normalizedUsername.username,
         status: OrganizationStatus.ACTIVE,
+        organizationKind: input.organizationKind ?? "CLUBE_PADEL",
         primaryModule: parsedPrimaryModule,
         publicWebsite: normalizedWebsite,
         officialEmail: creatorEmail,

@@ -143,6 +143,91 @@ describe("padel match result cards commands", () => {
     );
   });
 
+  it("mantém dedupeKey estável no rebuild de rating (independente de requestedAt)", async () => {
+    const buildTx = () =>
+      ({
+        eventMatchSlot: {
+          findUnique: vi.fn(async () => ({ status: "IN_PROGRESS" })),
+          update: vi.fn(async () => ({ id: 58, status: "OFFICIAL", eventId: 7 })),
+        },
+        padelMatchResultCard: {
+          findUnique: vi.fn(async () => null),
+        },
+      }) as any;
+
+    const tx1 = buildTx();
+    await updatePadelMatch({
+      tx: tx1,
+      matchId: 58,
+      eventId: 7,
+      organizationId: 3,
+      actorUserId: "u-admin",
+      data: { status: "OFFICIAL" },
+    });
+
+    const tx2 = buildTx();
+    await updatePadelMatch({
+      tx: tx2,
+      matchId: 58,
+      eventId: 7,
+      organizationId: 3,
+      actorUserId: "u-admin",
+      data: { status: "OFFICIAL" },
+    });
+
+    const ratingCalls = recordOutboxEvent.mock.calls.filter(
+      ([payload]) => payload?.eventType === "PADEL_RATING_REBUILD_REQUESTED",
+    );
+    expect(ratingCalls.length).toBe(2);
+    const firstDedupe = ratingCalls[0]?.[0]?.dedupeKey;
+    const secondDedupe = ratingCalls[1]?.[0]?.dedupeKey;
+    expect(typeof firstDedupe).toBe("string");
+    expect(firstDedupe).toBe(secondDedupe);
+  });
+
+  it("altera dedupeKey quando a correção de resultado muda o payload competitivo", async () => {
+    const buildTx = () =>
+      ({
+        eventMatchSlot: {
+          findUnique: vi.fn(async () => ({ status: "OFFICIAL" })),
+          update: vi.fn(async () => ({ id: 59, status: "OFFICIAL", eventId: 7 })),
+        },
+        padelMatchResultCard: {
+          findUnique: vi.fn(async () => null),
+        },
+      }) as any;
+
+    const tx1 = buildTx();
+    await updatePadelMatch({
+      tx: tx1,
+      matchId: 59,
+      eventId: 7,
+      organizationId: 3,
+      actorUserId: "u-admin",
+      data: { scoreSets: [{ teamA: 6, teamB: 4 }] as any },
+    });
+
+    const tx2 = buildTx();
+    await updatePadelMatch({
+      tx: tx2,
+      matchId: 59,
+      eventId: 7,
+      organizationId: 3,
+      actorUserId: "u-admin",
+      data: { scoreSets: [{ teamA: 7, teamB: 5 }] as any },
+    });
+
+    const ratingCalls = recordOutboxEvent.mock.calls.filter(
+      ([payload]) => payload?.eventType === "PADEL_RATING_REBUILD_REQUESTED",
+    );
+    expect(ratingCalls.length).toBe(2);
+    const firstDedupe = ratingCalls[0]?.[0]?.dedupeKey;
+    const secondDedupe = ratingCalls[1]?.[0]?.dedupeKey;
+    expect(typeof firstDedupe).toBe("string");
+    expect(typeof secondDedupe).toBe("string");
+    expect(firstDedupe).not.toBe(secondDedupe);
+  });
+
   it("emite rebuild de rating em correção de score num jogo oficial", async () => {
     const tx: any = {
       eventMatchSlot: {

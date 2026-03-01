@@ -89,6 +89,8 @@ describe("org-hub organizations create route", () => {
     expect(createOrganizationAtomic).toHaveBeenCalledWith(
       expect.objectContaining({
         existingGroupId: 44,
+        primaryModule: "TORNEIOS",
+        organizationKind: "CLUBE_PADEL",
       }),
     );
   });

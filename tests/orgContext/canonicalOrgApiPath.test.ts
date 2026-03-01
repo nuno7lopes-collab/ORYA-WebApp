@@ -64,6 +64,14 @@ describe("resolveCanonicalOrgApiPath", () => {
     );
   });
 
+  it("maps legacy trainers endpoint to canonical padel trainers namespace", () => {
+    setBrowserContext("/org/2/overview");
+    expect(resolveCanonicalOrgApiPath("/api/org/[orgId]/trainers")).toBe("/api/org/2/padel/trainers");
+    expect(resolveCanonicalOrgApiPath("/api/org/:orgId/trainers?organizationId=9")).toBe(
+      "/api/org/9/padel/trainers",
+    );
+  });
+
   it("passes through legacy padel/tournaments routes unchanged", () => {
     setBrowserContext("/org/11/overview");
     expect(resolveCanonicalOrgApiPath("/api/organizacao/padel/waitlist?eventId=90&organizationId=11")).toBe(

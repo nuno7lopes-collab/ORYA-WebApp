@@ -122,9 +122,10 @@ export default function MePage() {
       orgPosition?: number | null;
       matchesPlayed?: number;
       leaderboardEligible?: boolean;
+      blockedNewMatches?: boolean;
       lastMatchAt?: string | null;
       lastRebuildAt?: string | null;
-      sourcePlayerProfileId?: number | null;
+      sourceGlobalProfileId?: number | null;
     };
   }>(user ? "/api/padel/me/summary" : null, fetcher);
   const padelMatchesUrl = useMemo(() => {

@@ -5,6 +5,7 @@ export type OnboardingDraft = {
   step: 0 | 1 | 2 | 3 | 4;
   fullName?: string;
   username?: string;
+  contactPhone?: string;
   interests?: string[];
   padel?: {
     gender?: string | null;

@@ -11,6 +11,7 @@ import { toPublicEventCard } from "@/domain/events/publicEventCard";
 import { PUBLIC_EVENT_STATUSES } from "@/domain/events/publicStatus";
 import { normalizeUsernameInput } from "@/lib/username";
 import { resolveUsernameOwner } from "@/lib/username/resolveUsernameOwner";
+import { isSocialFriendsOnlyEnabled } from "@/domain/social/features";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const MAX_LIMIT = 12;
@@ -28,6 +29,24 @@ const withAbsoluteCoverUrl = <T extends { coverImageUrl?: string | null }>(event
   const normalizedPath = rawCover.startsWith("/") ? rawCover : `/${rawCover}`;
   return { ...event, coverImageUrl: `${normalizedOrigin}${normalizedPath}` };
 };
+
+function canViewPrivateUserProfile(params: {
+  isPrivate: boolean;
+  isSelf: boolean;
+  viewerStatus:
+    | {
+        isFriend?: boolean;
+        isMutual?: boolean;
+        isFollowing?: boolean;
+      }
+    | null;
+}) {
+  if (!params.isPrivate || params.isSelf) return true;
+  const isFriend = Boolean(params.viewerStatus?.isFriend ?? params.viewerStatus?.isMutual);
+  if (isFriend) return true;
+  if (isSocialFriendsOnlyEnabled()) return false;
+  return Boolean(params.viewerStatus?.isFollowing);
+}
 
 function parseLimit(raw: string | null) {
   if (!raw) return 6;
@@ -122,7 +141,11 @@ async function _GET(req: NextRequest) {
     const isPrivate = profile.visibility !== "PUBLIC";
     const isSelf = viewerId === profile.id;
     const viewerStatus = viewerId ? await getUserFollowStatus(viewerId, profile.id) : null;
-    const canView = !isPrivate || isSelf || Boolean(viewerStatus?.isFollowing);
+    const canView = canViewPrivateUserProfile({
+      isPrivate,
+      isSelf,
+      viewerStatus,
+    });
     if (!canView) {
       return jsonWrap({
         type: "user",
@@ -207,7 +230,11 @@ async function _GET(req: NextRequest) {
       const isPrivate = visibility !== "PUBLIC";
       const isSelf = viewerId === prismaSelfProfile.id;
       const viewerStatus = viewerId ? await getUserFollowStatus(viewerId, prismaSelfProfile.id) : null;
-      const canView = !isPrivate || isSelf || Boolean(viewerStatus?.isFollowing);
+      const canView = canViewPrivateUserProfile({
+        isPrivate,
+        isSelf,
+        viewerStatus,
+      });
       if (!canView) {
         return jsonWrap({
           type: "user",

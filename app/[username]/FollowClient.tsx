@@ -15,8 +15,6 @@ type FollowState = "following" | "requested" | "none";
 
 export default function FollowClient({ targetUserId, initialIsFollowing, onChange, onMutualChange }: Props) {
   const [status, setStatus] = useState<FollowState>(initialIsFollowing ? "following" : "none");
-  const [isPrivate, setIsPrivate] = useState(false);
-  const [isFollower, setIsFollower] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [isPending, startTransition] = useTransition();
 
@@ -28,14 +26,13 @@ export default function FollowClient({ targetUserId, initialIsFollowing, onChang
         const res = await fetch(`/api/social/follow-status?userId=${targetUserId}`);
         const json = await res.json();
         if (mounted && res.ok && json?.ok) {
-          const nextPrivate = json.targetVisibility === "PRIVATE";
-          setIsPrivate(Boolean(nextPrivate));
-          setIsFollower(Boolean(json.isFollower));
-          onMutualChange?.(Boolean(json.isMutual));
-          if (json.isFollowing) {
+          const isFriend = Boolean(json.isFriend ?? json.isMutual);
+          if (isFriend) {
             setStatus("following");
-          } else if (json.requestPending && nextPrivate) {
+            onMutualChange?.(true);
+          } else if (json.requestPending) {
             setStatus("requested");
+            onMutualChange?.(false);
           } else {
             setStatus("none");
             onMutualChange?.(false);
@@ -53,13 +50,6 @@ export default function FollowClient({ targetUserId, initialIsFollowing, onChang
   }, [targetUserId, onMutualChange]);
 
   const toggleFollow = async () => {
-    if (status === "following") {
-      setStatus("none");
-    } else if (status === "requested") {
-      setStatus("none");
-    } else {
-      setStatus(isPrivate ? "requested" : "following");
-    }
     startTransition(async () => {
       try {
         if (status === "following") {
@@ -69,14 +59,13 @@ export default function FollowClient({ targetUserId, initialIsFollowing, onChang
             body: JSON.stringify({ targetUserId }),
           });
           const json = await res.json().catch(() => null);
-          if (!res.ok || !json?.ok) {
-            setStatus("following");
-          } else {
-            onChange?.(false);
-            onMutualChange?.(false);
-          }
+          if (!res.ok || !json?.ok) return;
+          setStatus("none");
+          onChange?.(false);
+          onMutualChange?.(false);
           return;
         }
+
         if (status === "requested") {
           const res = await fetch("/api/social/follow-requests/cancel", {
             method: "POST",
@@ -84,9 +73,9 @@ export default function FollowClient({ targetUserId, initialIsFollowing, onChang
             body: JSON.stringify({ targetUserId }),
           });
           const json = await res.json().catch(() => null);
-          if (!res.ok || !json?.ok) {
-            setStatus("requested");
-          }
+          if (!res.ok || !json?.ok) return;
+          setStatus("none");
+          onMutualChange?.(false);
           return;
         }
 
@@ -97,39 +86,33 @@ export default function FollowClient({ targetUserId, initialIsFollowing, onChang
         });
         const json = await res.json().catch(() => null);
         if (!res.ok || !json?.ok) {
-          setStatus("none");
           return;
         }
+
+        const isFriend = json.status === "FOLLOWING" || json.status === "FRIEND";
+        if (isFriend) {
+          setStatus("following");
+          onChange?.(true);
+          onMutualChange?.(true);
+          return;
+        }
+
         if (json.status === "REQUESTED") {
           setStatus("requested");
           onMutualChange?.(false);
-          return;
-        }
-        if (json.status === "FOLLOWING") {
-          setStatus("following");
-          onChange?.(true);
-          onMutualChange?.(isFollower);
         }
       } catch {
-        if (status === "following") {
-          setStatus("following");
-        } else if (status === "requested") {
-          setStatus("requested");
-        } else {
-          setStatus("none");
-        }
+        // ignore
       }
     });
   };
 
   const label =
     status === "following"
-      ? "A seguir"
+      ? "Amigo"
       : status === "requested"
         ? "Pedido enviado"
-        : isPrivate
-          ? "Pedir para seguir"
-          : "Seguir";
+        : "Adicionar amigo";
 
   return (
     <button
@@ -139,7 +122,7 @@ export default function FollowClient({ targetUserId, initialIsFollowing, onChang
       className={cn(
         "disabled:opacity-60",
         status !== "none"
-          ? "inline-flex items-center rounded-full border border-white/20 bg-white/8 px-4 py-2 text-[12px] font-semibold text-white/65 transition hover:bg-white/12"
+          ? "inline-flex items-center rounded-full border border-white/20 bg-white/8 px-4 py-2 text-[12px] font-semibold text-white/80 transition hover:bg-white/12"
           : cn(CTA_PRIMARY, "px-4 py-2 text-[12px]"),
       )}
     >

@@ -108,6 +108,7 @@ export type PadelOpenPairingItem = {
   paymentMode: string;
   deadlineAt: string | null;
   isExpired: boolean;
+  averageLevel?: number | null;
   category: { id: number; label: string } | null;
   openSlots: number;
   event: {
@@ -120,6 +121,30 @@ export type PadelOpenPairingItem = {
   };
 };
 
+export type PadelServiceItem = {
+  id: number;
+  title: string;
+  description: string | null;
+  durationMinutes: number;
+  unitPriceCents: number;
+  currency: string;
+  kind: "CLASS" | "COURT";
+  categoryLabel: string | null;
+  nextAvailability: string | null;
+  addressFormatted: string | null;
+  organization: {
+    id: number;
+    publicName: string | null;
+    businessName: string | null;
+    username: string | null;
+  };
+  instructor: {
+    id: number;
+    fullName: string | null;
+    username: string | null;
+  } | null;
+};
+
 export type PadelDiscoverResponse = {
   ok: boolean;
   items: PadelTournamentItem[];
@@ -129,6 +154,15 @@ export type PadelDiscoverResponse = {
 
 export type PadelClubResponse = { ok: boolean; items: PadelClubItem[]; error?: string };
 export type PadelOpenPairingsResponse = { ok: boolean; items: PadelOpenPairingItem[]; error?: string };
+export type PadelServicesResponse = {
+  ok: boolean;
+  items: PadelServiceItem[];
+  pagination: {
+    nextCursor: number | null;
+    hasMore: boolean;
+  };
+  error?: string;
+};
 
 export type DateFilter = "all" | "today" | "weekend" | "upcoming" | "custom";
 export type TypeFilter = "all" | "event";

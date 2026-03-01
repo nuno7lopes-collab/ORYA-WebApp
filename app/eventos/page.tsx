@@ -60,6 +60,7 @@ async function loadEvents(query?: string): Promise<EventCard[]> {
     { isDeleted: false },
     { organizationId: { not: null } },
     { organization: { status: "ACTIVE" } },
+    { templateType: "PADEL" },
   ];
 
   if (query && query.trim().length > 0) {
@@ -164,10 +165,10 @@ export default async function EventosFeedPage({ searchParams }: PageProps) {
             </span>
             <div>
               <p className="text-xs uppercase tracking-[0.2em] text-white/60">
-                {t("eventsFeedTitle", locale)}
+                Torneios de Padel
               </p>
               <p className="text-sm text-white/80">
-                {t("eventsFeedSubtitle", locale)}
+                Feed público focado em competição, inscrições e duplas abertas.
               </p>
             </div>
           </div>
@@ -191,7 +192,7 @@ export default async function EventosFeedPage({ searchParams }: PageProps) {
               <input
                 name="q"
                 defaultValue={search}
-                placeholder={t("eventsFeedSearchPlaceholder", locale)}
+                placeholder="Pesquisar torneio, clube ou cidade"
                 className="w-full rounded-full bg-black/60 border border-white/15 pl-8 pr-24 py-2 text-xs outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]/60 transition"
               />
               <button

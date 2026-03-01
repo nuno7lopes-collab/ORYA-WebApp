@@ -80,7 +80,7 @@ function getStatusMeta(rawStatus: string | null) {
 }
 
 function getOrganizationDisplayName(item: OrgItem) {
-  return item.organization.publicName || item.organization.businessName || "Organização";
+  return item.organization.publicName || item.organization.businessName || "Clube";
 }
 
 export default function OrganizationsHubClient({ initialOrgs, activeId }: Props) {
@@ -163,7 +163,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        setActionMessage(json?.error || "Não foi possível mudar de organização.");
+        setActionMessage(json?.error || "Não foi possível mudar de clube.");
         return;
       }
 
@@ -191,11 +191,11 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
       }, 50);
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
-        setActionMessage("A troca de organização expirou. Tenta novamente.");
+        setActionMessage("A troca de clube expirou. Tenta novamente.");
         return;
       }
       console.error("[org hub] switch error", err);
-      setActionMessage("Erro inesperado ao mudar de organização.");
+      setActionMessage("Erro inesperado ao mudar de clube.");
     } finally {
       window.clearTimeout(timeoutId);
       setLoadingSwitch(false);
@@ -247,7 +247,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
         </div>
 
         <div className="mt-4 flex items-center justify-between gap-3">
-          <p className="text-[12px] text-white/60">{isActive ? "Organização ativa" : "Pronta para entrar"}</p>
+          <p className="text-[12px] text-white/60">{isActive ? "Clube ativo" : "Pronto para entrar"}</p>
           <button
             type="button"
             onClick={() => {
@@ -279,9 +279,9 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
           <OrgHubTopNav />
           <div className="mt-4 flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h1 className="text-[30px] font-semibold leading-tight">Organizações</h1>
+              <h1 className="text-[30px] font-semibold leading-tight">Clubes</h1>
               <p className="mt-1 text-sm text-white/75">
-                Entra rapidamente na organização certa e começa a operação diária.
+                Entra rapidamente no clube certo e começa a operação diária.
               </p>
             </div>
             <button
@@ -294,7 +294,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
           </div>
           <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-2xl border border-white/14 bg-white/6 p-3">
-              <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Organizações</p>
+              <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Clubes</p>
               <p className="mt-1 text-xl font-semibold">{summary.organizations}</p>
             </div>
             <div className="rounded-2xl border border-white/14 bg-white/6 p-3">
@@ -337,7 +337,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
                     <h2 className="text-xl font-semibold text-white">{groupLabel}</h2>
                     <p className="text-[11px] text-white/55">ID #{group.id}</p>
                     <p className="text-[12px] text-white/70">
-                      {group.organizationCount} organização(ões)
+                      {group.organizationCount} clube(s)
                       {pendingOperations > 0
                         ? ` · ${pendingOperations} operação(ões) pendente(s)`
                         : " · sem operações pendentes"}
@@ -359,8 +359,8 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
                   +
                 </div>
                 <div>
-                  <h3 className="text-xl font-semibold">Nova organização</h3>
-                  <p className="text-sm text-white/68">Cria uma nova organização e entra diretamente no dashboard.</p>
+                  <h3 className="text-xl font-semibold">Novo clube</h3>
+                  <p className="text-sm text-white/68">Cria um novo clube e entra diretamente no dashboard.</p>
                 </div>
               </div>
               <span className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#BFFBFF]">
@@ -373,15 +373,15 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
         {emptyState && (
           <section className="space-y-4 rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
             <div className="space-y-2">
-              <h2 className="text-2xl font-semibold">Ainda não tens nenhuma organização</h2>
-              <p className="text-sm text-white/70">Cria a tua primeira organização para começar.</p>
+              <h2 className="text-2xl font-semibold">Ainda não tens nenhum clube</h2>
+              <p className="text-sm text-white/70">Cria o teu primeiro clube para começar.</p>
             </div>
             <button
               type="button"
               onClick={() => router.push(buildOrgHubHref("/create"))}
               className={`${CTA_PRIMARY} px-5 py-2 text-sm`}
             >
-              Criar primeira organização
+              Criar primeiro clube
             </button>
           </section>
         )}

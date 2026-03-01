@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { OPERATION_MODULES, ORGANIZATION_MODULES } from "@/lib/organizationCategories";
+import { DEFAULT_PRIMARY_MODULE, OPERATION_MODULES, ORGANIZATION_MODULES } from "@/lib/organizationCategories";
 
 /**
  * Valida NIF português (9 dígitos, dígito de controlo módulo 11).
@@ -64,15 +64,10 @@ export function isValidWebsite(value: string): boolean {
 }
 
 const moduleKeys = ORGANIZATION_MODULES as unknown as [string, ...string[]];
+const operationModuleKeys = OPERATION_MODULES as unknown as [string, ...string[]];
 
 export const becomeOrganizationSchema = z.object({
-  primaryModule: z
-    .string()
-    .trim()
-    .min(1, "Escolhe uma operação principal.")
-    .refine((value) => OPERATION_MODULES.includes(value as (typeof OPERATION_MODULES)[number]), {
-      message: "Operação inválida.",
-    }),
+  primaryModule: z.enum(operationModuleKeys).default(DEFAULT_PRIMARY_MODULE),
   tools: z.array(z.enum(moduleKeys)).default([]),
   businessName: z
     .string()

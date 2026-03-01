@@ -1,6 +1,6 @@
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { Gender, PadelPreferredSide } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -15,6 +15,19 @@ import { getPadelOnboardingMissing, isPadelOnboardingComplete } from "@/domain/p
 import { isValidPhone, normalizePhone, resolvePhoneNormalizationOptions } from "@/lib/phone";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
+
+function parsePositiveInt(raw: string | null | undefined) {
+  if (!raw) return null;
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function toNumericParam(raw: unknown) {
+  if (typeof raw === "number" && Number.isFinite(raw)) return String(raw);
+  if (typeof raw === "string") return raw;
+  return null;
+}
+
 const normalizePhoneForStorage = (
   value: string | null | undefined,
   options?: Parameters<typeof normalizePhone>[1],
@@ -36,7 +49,11 @@ async function _GET(req: NextRequest) {
     return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
   }
 
-  const [profile, fallbackPadel] = await Promise.all([
+  const eventId = parsePositiveInt(req.nextUrl.searchParams.get("eventId"));
+  const organizationId = parsePositiveInt(req.nextUrl.searchParams.get("organizationId"));
+  const categoryId = parsePositiveInt(req.nextUrl.searchParams.get("categoryId"));
+
+  const [profile, fallbackPadel, eventContext, categoryFromEvent, looseCategory] = await Promise.all([
     prisma.profile.findUnique({
       where: { id: user.id },
       select: {
@@ -55,6 +72,53 @@ async function _GET(req: NextRequest) {
       orderBy: { updatedAt: "desc" },
       select: { level: true, preferredSide: true, clubName: true, displayName: true },
     }),
+    eventId
+      ? prisma.event.findFirst({
+          where: {
+            id: eventId,
+            isDeleted: false,
+            templateType: "PADEL",
+            ...(organizationId ? { organizationId } : {}),
+          },
+          select: {
+            id: true,
+            title: true,
+            slug: true,
+          },
+        })
+      : Promise.resolve(null),
+    eventId && categoryId
+      ? prisma.padelEventCategoryLink.findFirst({
+          where: {
+            eventId,
+            padelCategoryId: categoryId,
+            isEnabled: true,
+          },
+          select: {
+            category: {
+              select: {
+                id: true,
+                label: true,
+                genderRestriction: true,
+              },
+            },
+          },
+        })
+      : Promise.resolve(null),
+    !eventId && categoryId
+      ? prisma.padelCategory.findFirst({
+          where: {
+            id: categoryId,
+            isActive: true,
+            ...(organizationId ? { organizationId } : {}),
+          },
+          select: {
+            id: true,
+            label: true,
+            genderRestriction: true,
+          },
+        })
+      : Promise.resolve(null),
   ]);
 
   const padelProfile = {
@@ -77,9 +141,25 @@ async function _GET(req: NextRequest) {
     email: user.email ?? null,
   });
 
+  const resolvedCategory = categoryFromEvent?.category ?? looseCategory ?? null;
+
   return jsonWrap(
     {
       ok: true,
+      event: eventContext
+        ? {
+            id: eventContext.id,
+            title: eventContext.title,
+            slug: eventContext.slug,
+          }
+        : null,
+      category: resolvedCategory
+        ? {
+            id: resolvedCategory.id,
+            label: resolvedCategory.label,
+            genderRestriction: resolvedCategory.genderRestriction ?? null,
+          }
+        : null,
       profile: {
         fullName: profile?.fullName ?? null,
         username: profile?.username ?? null,
@@ -104,6 +184,9 @@ type PadelOnboardingBody = {
   level?: string | null;
   preferredSide?: PadelPreferredSide | string | null;
   clubName?: string | null;
+  eventId?: number | string | null;
+  organizationId?: number | string | null;
+  categoryId?: number | string | null;
 };
 
 async function _POST(req: NextRequest) {
@@ -122,6 +205,16 @@ async function _POST(req: NextRequest) {
     if (!body) {
       return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
     }
+
+    const eventId = parsePositiveInt(
+      toNumericParam(body.eventId) ?? req.nextUrl.searchParams.get("eventId"),
+    );
+    const organizationId = parsePositiveInt(
+      toNumericParam(body.organizationId) ?? req.nextUrl.searchParams.get("organizationId"),
+    );
+    const categoryId = parsePositiveInt(
+      toNumericParam(body.categoryId) ?? req.nextUrl.searchParams.get("categoryId"),
+    );
 
     const existingProfile = await prisma.profile.findUnique({
       where: { id: user.id },
@@ -145,7 +238,7 @@ async function _POST(req: NextRequest) {
     const fullName = rawFullName.trim();
     const usernameInput = rawUsername.trim();
     const genderRaw = typeof body.gender === "string" ? body.gender.toUpperCase() : body.gender ?? null;
-    const gender: Gender | null =
+    let gender: Gender | null =
       genderRaw === "MALE" || genderRaw === "FEMALE" ? (genderRaw as Gender) : existingProfile.gender ?? null;
 
     const phoneOptions = resolvePhoneNormalizationOptions({ headers: req.headers });
@@ -156,6 +249,10 @@ async function _POST(req: NextRequest) {
 
     if (body.contactPhone !== undefined && normalizedPhone === null) {
       return jsonWrap({ ok: false, error: "INVALID_PHONE" }, { status: 400 });
+    }
+
+    if (body.gender !== undefined && !gender) {
+      return jsonWrap({ ok: false, error: "GENDER_REQUIRED" }, { status: 400 });
     }
 
     const usernameValidation = normalizeAndValidateUsername(usernameInput, {
@@ -173,7 +270,6 @@ async function _POST(req: NextRequest) {
     }
 
     const usernameNormalized = usernameValidation.username;
-    const hasUserOnboardingData = Boolean(fullName) && Boolean(usernameNormalized);
 
     const levelInput = body.level;
     const level =
@@ -207,6 +303,56 @@ async function _POST(req: NextRequest) {
         : clubNameInput === null
           ? null
           : undefined;
+
+    let requiredGenderRaw: string | null = null;
+    if (categoryId) {
+      if (eventId) {
+        const categoryLink = await prisma.padelEventCategoryLink.findFirst({
+          where: {
+            eventId,
+            padelCategoryId: categoryId,
+            isEnabled: true,
+            ...(organizationId ? { event: { organizationId } } : {}),
+          },
+          select: { category: { select: { genderRestriction: true } } },
+        });
+        requiredGenderRaw = categoryLink?.category?.genderRestriction ?? null;
+      } else {
+        const category = await prisma.padelCategory.findFirst({
+          where: {
+            id: categoryId,
+            isActive: true,
+            ...(organizationId ? { organizationId } : {}),
+          },
+          select: { genderRestriction: true },
+        });
+        requiredGenderRaw = category?.genderRestriction ?? null;
+      }
+    }
+    const requiredGender =
+      requiredGenderRaw?.toUpperCase() === "MALE" || requiredGenderRaw?.toUpperCase() === "FEMALE"
+        ? (requiredGenderRaw.toUpperCase() as Gender)
+        : null;
+
+    if (requiredGender) {
+      if (!gender) {
+        gender = requiredGender;
+      }
+      if (gender !== requiredGender) {
+        return jsonWrap({ ok: false, error: "CATEGORY_GENDER_MISMATCH" }, { status: 409 });
+      }
+    }
+
+    const levelForCompletion = level !== undefined ? level : existingProfile.padelLevel;
+    const preferredSideForCompletion =
+      preferredSide !== undefined ? preferredSide : existingProfile.padelPreferredSide;
+    const hasUserOnboardingData = Boolean(
+      fullName &&
+        usernameNormalized &&
+        gender &&
+        (levelForCompletion ?? "").trim() &&
+        preferredSideForCompletion,
+    );
 
     const profile = await prisma.$transaction(async (tx) => {
       if (existingProfile.username !== usernameNormalized) {

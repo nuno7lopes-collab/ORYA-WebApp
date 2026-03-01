@@ -6,6 +6,8 @@ import { useUser } from "@/app/hooks/useUser";
 import { sanitizeRedirectPath } from "@/lib/auth/redirects";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
+import { sanitizeUsername, validateUsername, USERNAME_RULES_HINT } from "@/lib/username";
+import { isValidPhone } from "@/lib/phone";
 
 type PadelOnboardingResponse = {
   ok: boolean;
@@ -43,6 +45,8 @@ const GENDER_OPTIONS = [
   { value: "FEMALE", label: "Feminino" },
 ];
 
+type UsernameStatus = "idle" | "checking" | "available" | "taken" | "reserved" | "error";
+
 function PadelOnboardingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -58,8 +62,11 @@ function PadelOnboardingContent() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  const [step, setStep] = useState<1 | 2>(1);
   const [fullName, setFullName] = useState("");
   const [username, setUsername] = useState("");
+  const [usernameHint, setUsernameHint] = useState<string | null>(null);
+  const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>("idle");
   const [email, setEmail] = useState<string | null>(null);
   const [contactPhone, setContactPhone] = useState("");
   const [gender, setGender] = useState<string>("");
@@ -93,15 +100,17 @@ function PadelOnboardingContent() {
         ? "Feminino"
         : null;
 
-  const validForm = Boolean(
-    fullName.trim() &&
-      username.trim() &&
-      contactPhone.trim() &&
-      gender &&
-      level &&
-      preferredSide &&
-      !genderMismatch,
+  const usernameValidation = validateUsername(sanitizeUsername(username), {
+    allowReservedForEmail: email ?? null,
+  });
+  const usernameIsValid = usernameValidation.valid;
+  const validPhone = isValidPhone(contactPhone.trim());
+  const validPhoneOrEmpty = !contactPhone.trim() || validPhone;
+  const validIdentityStep = Boolean(
+    fullName.trim() && usernameIsValid && validPhoneOrEmpty && gender && !genderMismatch,
   );
+  const validCompetitiveStep = Boolean(level && preferredSide);
+  const validForm = validIdentityStep && validCompetitiveStep;
 
   const ctaLabel =
     redirectTo && redirectTo !== "/" ? "Guardar e continuar" : "Guardar perfil";
@@ -129,13 +138,22 @@ function PadelOnboardingContent() {
         }
         setContext(data);
         setFullName(data.profile.fullName ?? "");
-        setUsername(data.profile.username ?? "");
+        setUsername(sanitizeUsername(data.profile.username ?? ""));
         setEmail(data.profile.email ?? null);
         setContactPhone(data.profile.contactPhone ?? "");
         setGender(data.profile.gender ?? "");
         setLevel(data.padelProfile.level ?? "");
         setPreferredSide(data.padelProfile.preferredSide ?? "");
         setClubName(data.padelProfile.clubName ?? "");
+        setUsernameHint(null);
+        setUsernameStatus("idle");
+        setStep(
+          data.missing?.fullName ||
+            data.missing?.username ||
+            data.missing?.gender
+            ? 1
+            : 2,
+        );
       } catch (err) {
         setLoadError(err instanceof Error ? err.message : "Erro inesperado.");
       } finally {
@@ -152,10 +170,99 @@ function PadelOnboardingContent() {
     }
   }, [genderLocked, categoryRestriction, gender]);
 
+  async function checkUsernameAvailability(currentUsername: string) {
+    const normalized = sanitizeUsername(currentUsername);
+    if (!normalized) {
+      setUsernameHint(USERNAME_RULES_HINT);
+      setUsernameStatus("idle");
+      return "invalid" as const;
+    }
+
+    const validation = validateUsername(normalized, { allowReservedForEmail: email ?? null });
+    if (!validation.valid) {
+      setUsernameHint(validation.error);
+      setUsernameStatus("error");
+      return "invalid" as const;
+    }
+
+    setUsernameHint(null);
+    setUsernameStatus("checking");
+    try {
+      const res = await fetch(`/api/username/check?username=${encodeURIComponent(normalized)}`);
+      if (!res.ok) {
+        setUsernameStatus("error");
+        setUsernameHint("Nao foi possivel validar o username.");
+        return "error" as const;
+      }
+      const data = (await res.json().catch(() => null)) as { available?: boolean; reason?: string } | null;
+      if (data?.available) {
+        setUsernameStatus("available");
+        setUsernameHint(null);
+        return "available" as const;
+      }
+      if (data?.reason === "reserved") {
+        setUsernameStatus("reserved");
+        setUsernameHint("Este username esta reservado.");
+        return "reserved" as const;
+      }
+      setUsernameStatus("taken");
+      setUsernameHint("Este @ ja esta a ser usado.");
+      return "taken" as const;
+    } catch {
+      setUsernameStatus("error");
+      setUsernameHint("Nao foi possivel validar o username.");
+      return "error" as const;
+    }
+  }
+
+  const handleContinueIdentity = async () => {
+    setSubmitError(null);
+    if (!fullName.trim()) {
+      setSubmitError("Preenche o nome completo.");
+      return;
+    }
+    if (!usernameIsValid) {
+      setSubmitError(usernameValidation.error || "Username invalido.");
+      return;
+    }
+    if (contactPhone.trim() && !validPhone) {
+      setSubmitError("Telemovel invalido.");
+      return;
+    }
+    if (!gender) {
+      setSubmitError("Seleciona o genero.");
+      return;
+    }
+    if (genderMismatch) {
+      setSubmitError("Genero incompatível com a categoria.");
+      return;
+    }
+    const availability = await checkUsernameAvailability(username);
+    if (availability === "taken" || availability === "reserved") {
+      setSubmitError("Escolhe outro username para continuar.");
+      return;
+    }
+    if (availability === "error" || availability === "invalid") {
+      setSubmitError("Nao foi possivel validar o username.");
+      return;
+    }
+    setStep(2);
+  };
+
   const handleSubmit = async () => {
     setSubmitError(null);
-    if (!validForm) {
+    if (!validForm || (contactPhone.trim() && !validPhone)) {
       setSubmitError("Preenche os campos obrigatorios antes de continuar.");
+      return;
+    }
+
+    const availability = await checkUsernameAvailability(username);
+    if (availability === "taken" || availability === "reserved") {
+      setSubmitError("Este @ ja esta a ser usado.");
+      return;
+    }
+    if (availability === "error" || availability === "invalid") {
+      setSubmitError("Nao foi possivel validar o username.");
       return;
     }
 
@@ -165,12 +272,15 @@ function PadelOnboardingContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           fullName: fullName.trim(),
-          username: username.trim(),
-          contactPhone: contactPhone.trim(),
+          username: sanitizeUsername(username),
+          contactPhone: contactPhone.trim() || undefined,
           gender,
           level,
           preferredSide,
           clubName: clubName.trim() || null,
+          eventId: !Number.isNaN(eventId) && eventId ? eventId : undefined,
+          organizationId: !Number.isNaN(organizationId) && organizationId ? organizationId : undefined,
+          categoryId: !Number.isNaN(categoryId) && categoryId ? categoryId : undefined,
         }),
       });
         const data = (await res.json().catch(() => null)) as {
@@ -263,11 +373,36 @@ function PadelOnboardingContent() {
               <p className="mt-3 max-w-2xl text-sm text-white/70">
                 Perfil exclusivo para padel: ajuda a criar duplas equilibradas e acelera a tua inscrição em torneios.
               </p>
+              <div className="mt-5 flex flex-wrap items-center gap-2 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setStep(1)}
+                  className={`rounded-full border px-3 py-1 ${
+                    step === 1
+                      ? "border-emerald-300/60 bg-emerald-400/20 text-emerald-50"
+                      : "border-white/20 text-white/70 hover:bg-white/10"
+                  }`}
+                >
+                  1 · Identidade
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStep(2)}
+                  disabled={!validIdentityStep}
+                  className={`rounded-full border px-3 py-1 ${
+                    step === 2
+                      ? "border-emerald-300/60 bg-emerald-400/20 text-emerald-50"
+                      : "border-white/20 text-white/70 hover:bg-white/10"
+                  } disabled:opacity-50`}
+                >
+                  2 · Perfil competitivo
+                </button>
+              </div>
             </div>
 
             <div className="rounded-3xl border border-white/15 bg-white/5 p-7 shadow-[0_24px_60px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
               <div className="space-y-6">
-                <div>
+                <div className={step === 1 ? "" : "hidden"}>
                   <p className="text-xs uppercase tracking-[0.2em] text-white/60">Identidade & contacto</p>
                   <div className="mt-5 grid gap-4 md:grid-cols-2">
                     <div className="grid gap-3">
@@ -284,13 +419,38 @@ function PadelOnboardingContent() {
                       <label className="text-xs uppercase tracking-[0.2em] text-white/60">Username *</label>
                       <input
                         value={username}
-                        onChange={(e) => setUsername(e.target.value)}
+                        onChange={(e) => {
+                          const cleaned = sanitizeUsername(e.target.value);
+                          setUsername(cleaned);
+                          const validation = validateUsername(cleaned, {
+                            allowReservedForEmail: email ?? null,
+                          });
+                          setUsernameStatus("idle");
+                          setUsernameHint(validation.valid ? null : validation.error);
+                        }}
+                        onBlur={() => {
+                          if (!username.trim()) return;
+                          void checkUsernameAvailability(username);
+                        }}
                         className="w-full rounded-2xl border border-white/15 bg-black/50 px-4 py-3 text-sm text-white focus:border-white/30 focus:outline-none"
                         placeholder="@teu.username"
                       />
                       <p className="text-[11px] text-white/45">
                         3-30 caracteres, letras ou numeros, _ ou ., sem espacos.
                       </p>
+                      {usernameHint ? <p className="text-[11px] text-amber-200">{usernameHint}</p> : null}
+                      {usernameStatus === "checking" ? (
+                        <p className="text-[11px] text-white/55">A validar username...</p>
+                      ) : null}
+                      {usernameStatus === "available" && username ? (
+                        <p className="text-[11px] text-emerald-200">Username disponivel.</p>
+                      ) : null}
+                      {usernameStatus === "taken" ? (
+                        <p className="text-[11px] text-red-200">Este @ ja esta a ser usado.</p>
+                      ) : null}
+                      {usernameStatus === "reserved" ? (
+                        <p className="text-[11px] text-amber-200">Este username esta reservado.</p>
+                      ) : null}
                     </div>
 
                     <div className="grid gap-3">
@@ -303,13 +463,18 @@ function PadelOnboardingContent() {
                     </div>
 
                     <div className="grid gap-3">
-                      <label className="text-xs uppercase tracking-[0.2em] text-white/60">Telemovel *</label>
+                      <label className="text-xs uppercase tracking-[0.2em] text-white/60">Telemovel (opcional)</label>
                       <input
                         value={contactPhone}
                         onChange={(e) => setContactPhone(e.target.value)}
-                        className="w-full rounded-2xl border border-white/15 bg-black/50 px-4 py-3 text-sm text-white focus:border-white/30 focus:outline-none"
+                        className={`w-full rounded-2xl border bg-black/50 px-4 py-3 text-sm text-white focus:border-white/30 focus:outline-none ${
+                          contactPhone.trim() && !validPhone ? "border-amber-400/50" : "border-white/15"
+                        }`}
                         placeholder="+351 9xx xxx xxx"
                       />
+                      {contactPhone.trim() && !validPhone ? (
+                        <p className="text-[11px] text-amber-200">Formato de telemovel invalido.</p>
+                      ) : null}
                     </div>
                   </div>
 
@@ -346,7 +511,7 @@ function PadelOnboardingContent() {
                   </div>
                 </div>
 
-                <div className="border-t border-white/10 pt-6">
+                <div className={`border-t border-white/10 pt-6 ${step === 2 ? "" : "hidden"}`}>
                   <p className="text-xs uppercase tracking-[0.2em] text-white/60">Perfil competitivo</p>
                   <div className="mt-4 space-y-4">
                     <div className="grid gap-3">
@@ -404,17 +569,44 @@ function PadelOnboardingContent() {
                 {submitError && <p className="text-sm text-red-200">{submitError}</p>}
 
                 <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-                  <p className="text-xs text-white/55">
-                    Obrigatorio: nome, username, telemovel, genero, nivel e lado.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={handleSubmit}
-                    disabled={!validForm}
-                    className="rounded-full bg-emerald-400 px-6 py-2 text-sm font-semibold text-black shadow-[0_0_25px_rgba(52,211,153,0.35)] disabled:opacity-50"
-                  >
-                    {ctaLabel}
-                  </button>
+                  {step === 1 ? (
+                    <>
+                      <p className="text-xs text-white/55">
+                        Passo 1 de 2: valida identidade para desbloquear o perfil competitivo.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleContinueIdentity}
+                        disabled={!validIdentityStep}
+                        className="rounded-full bg-emerald-400 px-6 py-2 text-sm font-semibold text-black shadow-[0_0_25px_rgba(52,211,153,0.35)] disabled:opacity-50"
+                      >
+                        Continuar
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setStep(1)}
+                          className="rounded-full border border-white/25 px-4 py-2 text-xs text-white/80 hover:bg-white/10"
+                        >
+                          Voltar
+                        </button>
+                        <p className="text-xs text-white/55">
+                          Passo 2 de 2: nivel, lado preferido e clube.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleSubmit}
+                        disabled={!validForm}
+                        className="rounded-full bg-emerald-400 px-6 py-2 text-sm font-semibold text-black shadow-[0_0_25px_rgba(52,211,153,0.35)] disabled:opacity-50"
+                      >
+                        {ctaLabel}
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             </div>

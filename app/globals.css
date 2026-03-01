@@ -2,33 +2,33 @@
 
 /* ================== CORES BASE ================== */
 :root {
-  --background: #0b1014;
+  --background: #060b08;
   --foreground: #ffffff;
 
-  --orya-pink: #ff00c8;
-  --orya-cyan: #22d3ee;
-  --orya-cyan-strong: #22d3ee;
-  --orya-blue: #1646f5;
-  --orya-purple: #9c72ff;
+  --orya-pink: #f97316;
+  --orya-cyan: #22c55e;
+  --orya-cyan-strong: #16a34a;
+  --orya-blue: #14532d;
+  --orya-purple: #fb923c;
 
   --accent-primary: var(--theme-accent, var(--orya-cyan));
   --accent-secondary: var(--theme-accent-alt, var(--orya-purple));
-  --accent-glow: 0 0 24px rgba(34,211,238, 0.24), 0 0 14px rgba(22, 70, 245, 0.16);
+  --accent-glow: 0 0 24px rgba(34, 197, 94, 0.28), 0 0 14px rgba(249, 115, 22, 0.2);
 
   --orya-neon-pink: var(--orya-pink);
   --orya-neon-cyan: var(--orya-cyan);
   --orya-neon-blue: var(--orya-blue);
-  --orya-neon-glow-soft: 0 0 18px rgba(34,211,238, 0.2), 0 0 16px rgba(255, 0, 200, 0.18);
-  --orya-neon-glow-strong: 0 0 28px rgba(34,211,238, 0.32), 0 0 26px rgba(255, 0, 200, 0.24);
+  --orya-neon-glow-soft: 0 0 18px rgba(34, 197, 94, 0.22), 0 0 16px rgba(249, 115, 22, 0.18);
+  --orya-neon-glow-strong: 0 0 28px rgba(34, 197, 94, 0.32), 0 0 26px rgba(249, 115, 22, 0.25);
 
-  --orya-surface-1: rgba(9, 13, 22, 0.78);
-  --orya-surface-2: rgba(8, 12, 20, 0.62);
+  --orya-surface-1: rgba(7, 12, 9, 0.84);
+  --orya-surface-2: rgba(6, 10, 8, 0.68);
   --orya-surface-3: rgba(255, 255, 255, 0.04);
   --orya-surface-border: rgba(255, 255, 255, 0.14);
   --orya-surface-border-strong: rgba(255, 255, 255, 0.22);
   --orya-surface-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
-  --orya-menu-bg: linear-gradient(160deg, rgba(18, 24, 42, 0.98), rgba(9, 12, 24, 0.96));
-  --orya-menu-bg-solid: rgba(10, 14, 26, 0.98);
+  --orya-menu-bg: linear-gradient(160deg, rgba(13, 20, 15, 0.98), rgba(8, 12, 9, 0.96));
+  --orya-menu-bg-solid: rgba(10, 14, 11, 0.98);
   --orya-menu-border: rgba(255, 255, 255, 0.24);
   --orya-menu-shadow: 0 22px 70px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.06);
   --orya-menu-hover: rgba(255, 255, 255, 0.12);
@@ -80,7 +80,7 @@
   --theme-text: var(--foreground);
   --theme-muted: rgba(255, 255, 255, 0.78);
   --theme-accent: var(--orya-cyan);
-  --theme-accent-alt: var(--orya-purple);
+  --theme-accent-alt: var(--orya-pink);
   --theme-button-bg: var(--orya-cyan);
   --theme-button-text: #08131f;
   --theme-button-border: var(--orya-cyan);
@@ -149,11 +149,11 @@ html[data-theme-mode="light"] {
   --theme-text: var(--theme-ink);
   --theme-text-rgb: 10 15 26;
   --theme-muted-rgb: 10 15 26;
-  --accent-glow: 0 0 18px rgba(107, 123, 255, 0.18), 0 0 12px rgba(255, 138, 209, 0.16);
-  --orya-button-primary-bg: linear-gradient(135deg, rgba(110, 130, 255, 0.18), rgba(255, 138, 209, 0.16));
-  --orya-button-primary-border: rgba(110, 130, 255, 0.5);
+  --accent-glow: 0 0 18px rgba(34, 197, 94, 0.2), 0 0 12px rgba(249, 115, 22, 0.16);
+  --orya-button-primary-bg: linear-gradient(135deg, rgba(34, 197, 94, 0.18), rgba(249, 115, 22, 0.16));
+  --orya-button-primary-border: rgba(22, 163, 74, 0.52);
   --orya-button-primary-text: #0a0f1a;
-  --orya-button-primary-shadow: 0 16px 36px rgba(110, 130, 255, 0.24), 0 2px 6px rgba(15, 23, 42, 0.12);
+  --orya-button-primary-shadow: 0 16px 36px rgba(22, 163, 74, 0.22), 0 2px 6px rgba(15, 23, 42, 0.12);
   --orya-button-secondary-bg: rgba(255, 255, 255, 0.86);
   --orya-button-secondary-border: rgba(10, 15, 26, 0.18);
   --orya-button-secondary-text: rgba(10, 15, 26, 0.82);
@@ -1950,13 +1950,13 @@ html[data-theme-mode="light"][data-theme-badge="badge-gold"] .theme-badge {
 /* ============ LANDING ORYA ============ */
 
 .landing-shell {
-  --landing-ink: #0b1014;
-  --landing-cyan: #5ef6ff;
-  --landing-blue: #4c6dff;
-  --landing-pink: #ff5fd7;
-  --landing-violet: #7a4dff;
+  --landing-ink: #060b08;
+  --landing-green: #22c55e;
+  --landing-green-strong: #16a34a;
+  --landing-orange: #f97316;
+  --landing-orange-soft: #fb923c;
   background-color: var(--landing-ink);
-  background-image: linear-gradient(180deg, #0b1014 0%, #0d1320 50%, #101826 100%);
+  background-image: linear-gradient(180deg, #060b08 0%, #0b1410 52%, #111b16 100%);
 }
 
 .landing-shell[data-landing-mirror="true"] {
@@ -1975,10 +1975,10 @@ html[data-theme-mode="light"][data-theme-badge="badge-gold"] .theme-badge {
   inset: -25% -35%;
   background-image: linear-gradient(
     90deg,
-    rgba(255, 95, 215, 0.38) 0%,
-    rgba(122, 77, 255, 0.48) 35%,
-    rgba(76, 109, 255, 0.42) 70%,
-    rgba(255, 95, 215, 0.38) 100%
+    rgba(34, 197, 94, 0.4) 0%,
+    rgba(22, 163, 74, 0.44) 35%,
+    rgba(249, 115, 22, 0.4) 70%,
+    rgba(34, 197, 94, 0.4) 100%
   );
   background-size: 300% 100%;
   background-position: 0% 50%;
@@ -1991,9 +1991,9 @@ html[data-theme-mode="light"][data-theme-badge="badge-gold"] .theme-badge {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(circle at 20% 50%, rgba(255, 95, 215, 0.22), transparent 60%),
-    radial-gradient(circle at 80% 50%, rgba(76, 109, 255, 0.22), transparent 60%),
-    radial-gradient(circle at 50% 20%, rgba(94, 246, 255, 0.16), transparent 55%);
+    radial-gradient(circle at 20% 50%, rgba(34, 197, 94, 0.22), transparent 60%),
+    radial-gradient(circle at 80% 50%, rgba(249, 115, 22, 0.22), transparent 60%),
+    radial-gradient(circle at 50% 20%, rgba(22, 163, 74, 0.16), transparent 55%);
   opacity: 0;
   filter: blur(30px);
   mix-blend-mode: screen;
@@ -2030,8 +2030,8 @@ html[data-theme-mode="light"][data-theme-badge="badge-gold"] .theme-badge {
   overflow: hidden;
   box-shadow:
     0 40px 120px rgba(0, 0, 0, 0.8),
-    0 0 90px rgba(255, 95, 215, 0.25),
-    0 0 120px rgba(76, 109, 255, 0.22);
+    0 0 90px rgba(34, 197, 94, 0.26),
+    0 0 120px rgba(249, 115, 22, 0.22);
 }
 
 .landing-logo-wrap::before {
@@ -2040,10 +2040,10 @@ html[data-theme-mode="light"][data-theme-badge="badge-gold"] .theme-badge {
   inset: -40%;
   background: conic-gradient(
     from 180deg,
-    rgba(94, 246, 255, 0.6),
-    rgba(255, 95, 215, 0.65),
-    rgba(76, 109, 255, 0.6),
-    rgba(94, 246, 255, 0.6)
+    rgba(34, 197, 94, 0.62),
+    rgba(249, 115, 22, 0.64),
+    rgba(22, 163, 74, 0.58),
+    rgba(34, 197, 94, 0.62)
   );
   opacity: 0.5;
   filter: blur(2px);
@@ -2065,19 +2065,34 @@ html[data-theme-mode="light"][data-theme-badge="badge-gold"] .theme-badge {
   z-index: 1;
   filter:
     drop-shadow(0 22px 40px rgba(0, 0, 0, 0.6))
-    drop-shadow(0 0 28px rgba(94, 246, 255, 0.35))
-    drop-shadow(0 0 22px rgba(255, 95, 215, 0.22));
+    drop-shadow(0 0 28px rgba(34, 197, 94, 0.34))
+    drop-shadow(0 0 22px rgba(249, 115, 22, 0.24));
 }
 
 .landing-name {
   font-family: "Space Grotesk", system-ui, sans-serif;
-  font-size: clamp(2.2rem, 4.6vw, 4.4rem);
-  letter-spacing: 0.35em;
+  font-size: clamp(2rem, 4.2vw, 4rem);
+  letter-spacing: 0.2em;
   text-transform: uppercase;
-  background: linear-gradient(90deg, #f8f9ff 0%, #9bd9ff 35%, #ff9ae5 65%, #f8f9ff 100%);
+  background: linear-gradient(90deg, #f8f9ff 0%, #9fffc3 35%, #ffc38f 65%, #f8f9ff 100%);
   -webkit-background-clip: text;
   color: transparent;
-  text-shadow: 0 0 50px rgba(94, 246, 255, 0.35), 0 0 70px rgba(255, 95, 215, 0.18);
+  text-shadow: 0 0 50px rgba(34, 197, 94, 0.34), 0 0 70px rgba(249, 115, 22, 0.2);
+}
+
+.landing-headline {
+  max-width: min(760px, 90vw);
+  font-size: clamp(1rem, 1.8vw, 1.4rem);
+  font-weight: 600;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.landing-subheadline {
+  max-width: min(640px, 88vw);
+  font-size: clamp(0.9rem, 1.4vw, 1.05rem);
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.74);
 }
 
 @keyframes landing-flow {

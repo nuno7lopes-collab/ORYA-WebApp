@@ -115,14 +115,22 @@ export default function PublicProfileScreen() {
   const pendingUserFollow = Boolean(isUser && userProfileId && userActions.pendingUserId === userProfileId);
   const pendingOrgFollow = Boolean(!isUser && organizationId && orgActions.pendingOrgId === organizationId);
   const followPending = pendingUserFollow || pendingOrgFollow;
+  const isViewerFriend = Boolean(data?.viewer?.isFriend ?? data?.viewer?.isFollowing);
+  const isViewerFollowingOrg = Boolean(data?.viewer?.isFollowing);
+  const userActionActive = isViewerFriend || Boolean(data?.viewer?.isRequested);
+  const orgActionActive = isViewerFollowingOrg;
+  const followActionActive = isUser ? userActionActive : orgActionActive;
 
   const followLabel = useMemo(() => {
     if (followPending) return "A atualizar...";
-    if (!data?.viewer) return "Seguir";
-    if (data.viewer.isRequested) return "Pedido enviado";
-    if (data.viewer.isFollowing) return "A seguir";
-    return "Seguir";
-  }, [data?.viewer, followPending]);
+    if (!data?.viewer) return isUser ? "Adicionar amigo" : "Seguir";
+    if (isUser) {
+      if (data.viewer.isRequested) return "Pedido enviado";
+      if (isViewerFriend) return "Amigo";
+      return "Adicionar amigo";
+    }
+    return isViewerFollowingOrg ? "A seguir" : "Seguir";
+  }, [data?.viewer, followPending, isUser, isViewerFriend, isViewerFollowingOrg]);
 
   useEffect(() => {
     if (!accessToken || viewSentRef.current) return;
@@ -146,7 +154,7 @@ export default function PublicProfileScreen() {
     if (followPending) return;
     if (isUser) {
       const userId = String(profile.id);
-      if (data.viewer?.isFollowing || data.viewer?.isRequested) {
+      if (isViewerFriend || data.viewer?.isRequested) {
         userActions.unfollow(userId);
       } else {
         userActions.follow(userId);
@@ -154,7 +162,7 @@ export default function PublicProfileScreen() {
     } else {
       const orgId = Number(profile.id);
       if (Number.isNaN(orgId)) return;
-      if (data.viewer?.isFollowing) {
+      if (isViewerFollowingOrg) {
         orgActions.unfollow(orgId);
       } else {
         orgActions.follow(orgId);
@@ -215,7 +223,7 @@ export default function PublicProfileScreen() {
                 onPress={handleFollowPress}
                 disabled={followPending}
                 className={
-                  data?.viewer?.isFollowing || data?.viewer?.isRequested
+                  followActionActive
                     ? "rounded-2xl border border-white/15 bg-white/5 px-4 py-3"
                     : "rounded-2xl border border-sky-300/45 bg-sky-400/20 px-4 py-3"
                 }
@@ -223,13 +231,13 @@ export default function PublicProfileScreen() {
                 accessibilityLabel={followLabel}
                 accessibilityState={{
                   disabled: followPending,
-                  selected: Boolean(data?.viewer?.isFollowing || data?.viewer?.isRequested),
+                  selected: followActionActive,
                 }}
                 style={{ opacity: followPending ? 0.7 : 1 }}
               >
                 <Text
                   className={
-                    data?.viewer?.isFollowing || data?.viewer?.isRequested
+                    followActionActive
                       ? "text-white text-sm font-semibold text-center"
                       : "text-sky-200 text-sm font-semibold text-center"
                   }
@@ -290,7 +298,9 @@ export default function PublicProfileScreen() {
                 <View className="flex-1 gap-1">
                   <Text className="text-white text-sm font-semibold">Esta conta é privada</Text>
                   <Text className="text-white/60 text-xs">
-                    Segue para veres publicações, eventos e detalhes de padel.
+                    {isUser
+                      ? "Adiciona como amigo para veres publicações, eventos e detalhes de padel."
+                      : "Segue o clube para veres publicações, eventos e detalhes de padel."}
                   </Text>
                 </View>
               </View>
@@ -351,21 +361,21 @@ export default function PublicProfileScreen() {
 
       <FollowListModal
         open={followersOpen}
-        title="Seguidores"
+        title={isUser ? "Amigos" : "Seguidores"}
         items={followersList.data}
         isLoading={followersList.isLoading}
         isError={followersList.isError}
-        emptyLabel="Sem seguidores ainda."
+        emptyLabel={isUser ? "Sem amigos ainda." : "Sem seguidores ainda."}
         onClose={() => setFollowersOpen(false)}
         onRetry={() => followersList.refetch()}
       />
       <FollowListModal
         open={followingOpen && isUser}
-        title="A seguir"
+        title="Clubes seguidos"
         items={followingList.data}
         isLoading={followingList.isLoading}
         isError={followingList.isError}
-        emptyLabel="Ainda não segue ninguém."
+        emptyLabel="Ainda não segue clubes."
         onClose={() => setFollowingOpen(false)}
         onRetry={() => followingList.refetch()}
       />

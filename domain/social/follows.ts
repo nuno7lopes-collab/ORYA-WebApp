@@ -9,20 +9,41 @@ export type FollowListItem = {
   avatarUrl: string | null;
   kind?: FollowKind;
   isMutual?: boolean;
+  isFriend?: boolean;
 };
 
+async function countMutualFriends(userId: string) {
+  const rows = await prisma.$queryRaw<Array<{ total: bigint | number }>>`
+    SELECT COUNT(*)::bigint AS total
+    FROM app_v3.follows f
+    WHERE f.follower_id = ${userId}
+      AND EXISTS (
+        SELECT 1
+        FROM app_v3.follows r
+        WHERE r.follower_id = f.following_id
+          AND r.following_id = f.follower_id
+      )
+  `;
+
+  const raw = rows[0]?.total;
+  if (typeof raw === "bigint") return Number(raw);
+  const parsed = Number(raw ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 export async function getUserFollowCounts(userId: string) {
-  const [followersCount, followingUsersCount, followingOrganizationsCount] = await Promise.all([
-    prisma.follows.count({ where: { following_id: userId } }),
-    prisma.follows.count({ where: { follower_id: userId } }),
+  const [friendsCount, followingOrganizationsCount] = await Promise.all([
+    countMutualFriends(userId),
     prisma.organization_follows.count({ where: { follower_id: userId } }),
   ]);
 
   return {
-    followersCount,
-    followingUsersCount,
+    followersCount: friendsCount,
+    friendsCount,
+    // Mantemos o campo legado por compatibilidade, mas user-user passou a amizade.
+    followingUsersCount: 0,
     followingOrganizationsCount,
-    followingTotal: followingUsersCount + followingOrganizationsCount,
+    followingTotal: followingOrganizationsCount,
   };
 }
 
@@ -32,6 +53,21 @@ export async function isUserFollowing(viewerId: string, targetUserId: string) {
     select: { id: true },
   });
   return Boolean(row);
+}
+
+export async function isUserFriend(viewerId: string, targetUserId: string) {
+  const [viewerToTarget, targetToViewer] = await Promise.all([
+    prisma.follows.findFirst({
+      where: { follower_id: viewerId, following_id: targetUserId },
+      select: { id: true },
+    }),
+    prisma.follows.findFirst({
+      where: { follower_id: targetUserId, following_id: viewerId },
+      select: { id: true },
+    }),
+  ]);
+
+  return Boolean(viewerToTarget && targetToViewer);
 }
 
 export async function getUserFollowStatus(viewerId: string, targetUserId: string) {
@@ -48,10 +84,13 @@ export async function getUserFollowStatus(viewerId: string, targetUserId: string
     }),
   ]);
 
+  const isMutual = Boolean(isFollowing && isFollower);
+
   return {
     isFollowing: Boolean(isFollowing),
     isFollower: Boolean(isFollower),
-    isMutual: Boolean(isFollowing && isFollower),
+    isMutual,
+    isFriend: isMutual,
     requestPending: Boolean(pendingRequest),
     targetVisibility: targetProfile?.visibility ?? "PUBLIC",
     targetDeleted: Boolean(targetProfile?.isDeleted),
@@ -67,7 +106,7 @@ export async function listUserFollowers(params: { userId: string; limit: number;
         select: { username: true, fullName: true, avatarUrl: true },
       },
     },
-    take: params.limit,
+    take: Math.max(params.limit * 2, params.limit),
     orderBy: { id: "desc" },
   });
 
@@ -80,16 +119,25 @@ export async function listUserFollowers(params: { userId: string; limit: number;
     }))
     .filter((r) => r.userId);
 
+  const friendSetForTarget = await getUserMutualSet(
+    params.userId,
+    items.map((item) => item.userId),
+  );
+
+  const filtered = items.filter((item) => friendSetForTarget.has(item.userId)).slice(0, params.limit);
+
   const mutualSet = params.viewerId
-    ? await getUserMutualSet(params.viewerId, items.map((item) => item.userId))
+    ? await getUserMutualSet(
+        params.viewerId,
+        filtered.map((item) => item.userId),
+      )
     : new Set<string>();
 
-  const payload = items.map((item) => ({
+  return filtered.map((item) => ({
     ...item,
     isMutual: mutualSet.has(item.userId),
+    isFriend: friendSetForTarget.has(item.userId),
   }));
-
-  return payload;
 }
 
 export async function listUserFollowing(params: {
@@ -106,7 +154,7 @@ export async function listUserFollowing(params: {
         select: { username: true, fullName: true, avatarUrl: true },
       },
     },
-    take: params.limit,
+    take: Math.max(params.limit * 2, params.limit),
     orderBy: { id: "desc" },
   });
 
@@ -120,16 +168,24 @@ export async function listUserFollowing(params: {
     }))
     .filter((r) => r.userId);
 
+  const friendSetForTarget = await getUserMutualSet(
+    params.userId,
+    items.map((item) => item.userId),
+  );
+
+  const filtered = items.filter((item) => friendSetForTarget.has(item.userId)).slice(0, params.limit);
+
   const mutualSet = params.viewerId
     ? await getUserMutualSet(
         params.viewerId,
-        items.map((item) => item.userId),
+        filtered.map((item) => item.userId),
       )
     : new Set<string>();
 
-  const userPayload = items.map((item) => ({
+  const userPayload = filtered.map((item) => ({
     ...item,
     isMutual: mutualSet.has(item.userId),
+    isFriend: friendSetForTarget.has(item.userId),
   }));
 
   if (!params.includeOrganizations) {
@@ -159,7 +215,7 @@ export async function listUserFollowing(params: {
     };
   });
 
-  return [...userPayload, ...organizationItems];
+  return organizationItems.slice(0, params.limit);
 }
 
 export async function listOrganizationFollowers(params: { organizationId: number; limit: number }) {
@@ -207,6 +263,11 @@ export async function getUserFollowingSet(userId: string, targetIds?: string[]) 
     select: { following_id: true },
   });
   return new Set(rows.map((row) => row.following_id));
+}
+
+export async function getUserFriendSet(userId: string, targetIds?: string[]) {
+  const followingSet = await getUserFollowingSet(userId, targetIds);
+  return getUserMutualSet(userId, Array.from(followingSet));
 }
 
 export async function getUserFollowRequestSet(userId: string, targetIds?: string[]) {

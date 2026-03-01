@@ -49,6 +49,10 @@ export function ProfileHeader({
   const coverHasImage = Boolean(coverUrl);
   const coverEditable = Boolean(onCoverPress);
   const avatarEditable = Boolean(onAvatarPress);
+  const followersLabel = isUser ? "Amigos" : "Seguidores";
+  const followersA11yLabel = isUser ? "Ver amigos" : "Ver seguidores";
+  const followingLabel = isUser ? "Clubes" : "A seguir";
+  const followingA11yLabel = isUser ? "Ver clubes seguidos" : "Ver a seguir";
 
   return (
     <View className="gap-5">
@@ -178,23 +182,23 @@ export function ProfileHeader({
           onPress={onFollowersPress}
           disabled={!onFollowersPress}
           accessibilityRole={onFollowersPress ? "button" : "text"}
-          accessibilityLabel="Ver seguidores"
+          accessibilityLabel={followersA11yLabel}
           accessibilityState={{ disabled: !onFollowersPress }}
           className="items-center"
         >
           <Text className="text-white text-base font-semibold">{counts.followers}</Text>
-          <Text className="text-white/60 text-xs">Seguidores</Text>
+          <Text className="text-white/60 text-xs">{followersLabel}</Text>
         </Pressable>
         <Pressable
           onPress={onFollowingPress}
           disabled={!onFollowingPress}
           accessibilityRole={onFollowingPress ? "button" : "text"}
-          accessibilityLabel="Ver a seguir"
+          accessibilityLabel={followingA11yLabel}
           accessibilityState={{ disabled: !onFollowingPress }}
           className="items-center"
         >
           <Text className="text-white text-base font-semibold">{counts.following}</Text>
-          <Text className="text-white/60 text-xs">A seguir</Text>
+          <Text className="text-white/60 text-xs">{followingLabel}</Text>
         </Pressable>
         <View className="items-center">
           <Text className="text-white text-base font-semibold">{counts.events}</Text>

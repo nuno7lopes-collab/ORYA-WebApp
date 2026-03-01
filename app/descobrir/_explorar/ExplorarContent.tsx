@@ -31,6 +31,8 @@ import type {
   PadelDiscoverResponse,
   PadelOpenPairingItem,
   PadelOpenPairingsResponse,
+  PadelServiceItem,
+  PadelServicesResponse,
   PadelTournamentItem,
   ServiceApiResponse,
   ServiceItem,
@@ -39,6 +41,7 @@ import {
   EventCard,
   PadelClubCard,
   PadelOpenPairingCard,
+  PadelServiceCard,
   PadelTournamentCard,
   ServiceCard,
 } from "./DiscoverCards";
@@ -140,7 +143,7 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
   const [items, setItems] = useState<ExploreItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [world, setWorld] = useState<ExploreWorld>(initialWorld ?? "EVENTOS");
+  const [world, setWorld] = useState<ExploreWorld>(initialWorld ?? "PADEL");
 
   const [serviceItems, setServiceItems] = useState<ServiceItem[]>([]);
   const [serviceLoading, setServiceLoading] = useState(false);
@@ -152,6 +155,7 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
   const [padelTournaments, setPadelTournaments] = useState<PadelTournamentItem[]>([]);
   const [padelClubs, setPadelClubs] = useState<PadelClubItem[]>([]);
   const [padelOpenPairings, setPadelOpenPairings] = useState<PadelOpenPairingItem[]>([]);
+  const [padelServices, setPadelServices] = useState<PadelServiceItem[]>([]);
   const [padelLevels, setPadelLevels] = useState<Array<{ id: number; label: string }>>([]);
   const [padelFormatFilter, setPadelFormatFilter] = useState("all");
   const [padelEligibilityFilter, setPadelEligibilityFilter] = useState("all");
@@ -599,6 +603,7 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
       setPadelTournaments([]);
       setPadelClubs([]);
       setPadelOpenPairings([]);
+      setPadelServices([]);
 
       const baseParams = new URLSearchParams();
       if (search.trim()) baseParams.set("q", search.trim());
@@ -621,8 +626,27 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
       clubsParams.set("includeCourts", "1");
 
       const pairingsParams = new URLSearchParams(baseParams);
+      if (dateFilter === "custom" && customDate) {
+        pairingsParams.set("date", "day");
+        pairingsParams.set("day", customDate);
+      } else if (dateFilter !== "all") {
+        pairingsParams.set("date", dateFilter);
+      }
+      if (padelLevelFilter !== "all") pairingsParams.set("level", padelLevelFilter);
 
-      const [tournamentsResult, clubsResult, pairingsResult] = await Promise.allSettled([
+      const servicesParams = new URLSearchParams(baseParams);
+      servicesParams.set("kind", "ALL");
+      if (dateFilter === "custom" && customDate) {
+        servicesParams.set("date", "day");
+        servicesParams.set("day", customDate);
+      } else if (dateFilter !== "all") {
+        servicesParams.set("date", dateFilter);
+      }
+      if (priceMin > 0) servicesParams.set("priceMin", String(priceMin));
+      if (effectiveMaxParam !== null) servicesParams.set("priceMax", String(effectiveMaxParam));
+      servicesParams.set("limit", "24");
+
+      const [tournamentsResult, clubsResult, pairingsResult, servicesResult] = await Promise.allSettled([
         fetchJson<PadelDiscoverResponse>(
           `/api/padel/discover${tournamentParams.toString() ? `?${tournamentParams.toString()}` : ""}`,
         ),
@@ -631,6 +655,9 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
         ),
         fetchJson<PadelOpenPairingsResponse>(
           `/api/padel/public/open-pairings${pairingsParams.toString() ? `?${pairingsParams.toString()}` : ""}`,
+        ),
+        fetchJson<PadelServicesResponse>(
+          `/api/padel/public/services${servicesParams.toString() ? `?${servicesParams.toString()}` : ""}`,
         ),
       ]);
 
@@ -657,9 +684,15 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
         errors.push("jogos comunitários");
       }
 
+      if (servicesResult.status === "fulfilled") {
+        setPadelServices(servicesResult.value.items ?? []);
+      } else if (servicesResult.reason?.name !== "AbortError") {
+        errors.push("aulas/campos");
+      }
+
       if (errors.length === 0) {
         setPadelError(null);
-      } else if (errors.length === 3) {
+      } else if (errors.length >= 4) {
         setPadelError("Não conseguimos carregar o Padel agora.");
       } else {
         setPadelError("Algumas secções do Padel não carregaram.");
@@ -908,18 +941,25 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
   );
   const visibleOpenPairings = padelOpenPairings.filter((pairing) => pairing.openSlots > 0);
   const padelHasContent =
-    padelTournaments.length > 0 || padelClubs.length > 0 || visibleOpenPairings.length > 0;
+    padelTournaments.length > 0 ||
+    padelClubs.length > 0 ||
+    visibleOpenPairings.length > 0 ||
+    padelServices.length > 0;
   const activeItemsCount = isReservasWorld
     ? serviceItems.length
     : isPadelWorld
-      ? padelTournaments.length
+      ? padelTournaments.length + padelClubs.length + visibleOpenPairings.length + padelServices.length
       : visibleEventItems.length;
   const resultsLabel = isPadelWorld
     ? `${formatCount(padelTournaments.length, "torneio", "torneios")} · ${formatCount(
         padelClubs.length,
         "clube",
         "clubes",
-      )} · ${formatCount(visibleOpenPairings.length, "jogo", "jogos")}`
+      )} · ${formatCount(visibleOpenPairings.length, "jogo", "jogos")} · ${formatCount(
+        padelServices.length,
+        "serviço",
+        "serviços",
+      )}`
     : activeItemsCount === 1
       ? "1 resultado"
       : `${activeItemsCount} resultados`;
@@ -928,7 +968,7 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
     : isPadelWorld
       ? padelLoading || (padelError && !padelHasContent)
       : loading || (error && visibleEventItems.length === 0);
-  const worldSummaryLabel = isReservasWorld ? "Reservas" : isPadelWorld ? "Torneios" : "Eventos";
+  const worldSummaryLabel = isReservasWorld ? "Reservas" : isPadelWorld ? "Padel" : "Eventos";
   const activeItems = isReservasWorld
     ? serviceItems
     : isPadelWorld
@@ -1346,7 +1386,7 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
               {isReservasWorld
                 ? "Não encontrámos reservas com estes filtros."
                 : isPadelWorld
-                  ? "Não encontrámos torneios, clubes ou jogos comunitários com estes filtros."
+                  ? "Não encontrámos torneios, clubes, jogos comunitários ou serviços com estes filtros."
                   : "Não encontrámos eventos com estes filtros."}
             </p>
             <p className="text-xs text-white/40 max-w-sm">
@@ -1431,6 +1471,27 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {padelClubs.map((item) => (
                         <PadelClubCard key={item.id} item={item} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.28em] text-white/60">Aulas & Campos</p>
+                    <h3 className="text-lg font-semibold text-white">Serviços de padel com reserva</h3>
+                    <p className="text-xs text-white/55">
+                      Marca aulas com treinador e reserva campos com preço claro por cidade.
+                    </p>
+                  </div>
+                  {padelServices.length === 0 ? (
+                    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs text-white/60">
+                      Sem serviços disponíveis neste momento.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                      {padelServices.map((item) => (
+                        <PadelServiceCard key={item.id} item={item} />
                       ))}
                     </div>
                   )}

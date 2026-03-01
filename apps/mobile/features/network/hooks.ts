@@ -55,7 +55,8 @@ const updateUserCaches = (
   targetUserId: string,
   status: FollowStatus,
 ) => {
-  const isFollowing = status === "FOLLOWING";
+  const isFriend = status === "FOLLOWING";
+  const isFollowing = isFriend;
   const isRequested = status === "REQUESTED";
 
   client.setQueryData<SocialSuggestion[] | undefined>(suggestionsKey, (old) => {
@@ -65,6 +66,7 @@ const updateUserCaches = (
         ? {
             ...item,
             isFollowing,
+            isFriend,
             isRequested,
           }
         : item,
@@ -78,6 +80,7 @@ const updateUserCaches = (
         ? {
             ...item,
             isFollowing,
+            isFriend,
             isRequested,
           }
         : item,
@@ -89,8 +92,8 @@ const updateUserCaches = (
     if (String(old.profile?.id ?? "") !== targetUserId) return old;
     if (old.isSelf) return old;
 
-    const prevFollowing = Boolean(old.viewer?.isFollowing);
-    const nextFollowing = status === "FOLLOWING";
+    const prevFollowing = Boolean(old.viewer?.isFriend ?? old.viewer?.isFollowing);
+    const nextFollowing = isFriend;
     const nextRequested = status === "REQUESTED";
     let followers = old.counts?.followers ?? 0;
 
@@ -106,6 +109,7 @@ const updateUserCaches = (
       viewer: {
         ...(old.viewer ?? {}),
         isFollowing: nextFollowing,
+        isFriend: nextFollowing,
         isRequested: nextRequested,
       },
     };

@@ -6,6 +6,7 @@ export type SocialSuggestion = {
   city: string | null;
   mutualsCount?: number;
   isFollowing?: boolean;
+  isFriend?: boolean;
   isRequested?: boolean;
   reason?: {
     type: "SAME_EVENT_TICKET" | "SAME_EVENT_FAVORITE";

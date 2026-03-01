@@ -81,14 +81,15 @@ export const NetworkPeopleDeck = memo(function NetworkPeopleDeck({
   const handle = current.username ? `@${current.username}` : null;
   const reason = buildReason(current);
   const isPending = pendingUserId === current.id;
-  const canFollow = !current.isFollowing && !current.isRequested;
+  const isFriend = Boolean(current.isFriend ?? current.isFollowing);
+  const canFollow = !isFriend && !current.isRequested;
   const followLabel = isPending
-    ? "A seguir..."
+    ? "A atualizar..."
     : current.isRequested
       ? "Pedido enviado"
-      : current.isFollowing
-        ? "A seguir"
-        : "Seguir";
+      : isFriend
+        ? "Amigo"
+        : "Adicionar amigo";
   const rightDisabled = isPending || !canFollow;
 
   return (

@@ -44,7 +44,26 @@ async function _POST(req: NextRequest) {
       },
       update: {},
     });
+    await tx.follows.upsert({
+      where: {
+        follower_id_following_id: {
+          follower_id: request.target_id,
+          following_id: request.requester_id,
+        },
+      },
+      create: {
+        follower_id: request.target_id,
+        following_id: request.requester_id,
+      },
+      update: {},
+    });
     await tx.follow_requests.delete({ where: { id: requestId } });
+    await tx.follow_requests.deleteMany({
+      where: {
+        requester_id: request.target_id,
+        target_id: request.requester_id,
+      },
+    });
     await tx.notification.deleteMany({
       where: { userId: request.target_id, type: "FOLLOW_REQUEST", fromUserId: request.requester_id },
     });
@@ -57,7 +76,7 @@ async function _POST(req: NextRequest) {
         userId: request.requester_id,
         type: NotificationType.FOLLOW_ACCEPT,
         title: "Pedido aceite",
-        body: "O teu pedido para seguir foi aceite.",
+        body: "Agora são amigos na ORYA.",
         fromUserId: user.id,
       });
     } catch (err) {

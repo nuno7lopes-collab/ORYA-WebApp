@@ -520,10 +520,12 @@ function matchesEndpointPattern(pattern: string, candidate: string) {
   const patternParts = pattern.split("/").filter(Boolean);
   const candidateParts = candidate.split("/").filter(Boolean);
   if (patternParts.length !== candidateParts.length) return false;
+  const isWildcardPart = (value: string) => value === "[param]" || /^\[[^/]+\]$/.test(value);
   for (let i = 0; i < patternParts.length; i += 1) {
     const part = patternParts[i];
-    if (part === "[param]") continue;
-    if (part !== candidateParts[i]) return false;
+    const candidatePart = candidateParts[i];
+    if (isWildcardPart(part) || isWildcardPart(candidatePart)) continue;
+    if (part !== candidatePart) return false;
   }
   return true;
 }

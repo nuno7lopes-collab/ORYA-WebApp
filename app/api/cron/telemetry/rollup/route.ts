@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { parseOrganizationId } from "@/lib/organizationIdUtils";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
@@ -31,13 +32,6 @@ function parseBoolean(value: string | null, fallback: boolean) {
   if (normalized === "true") return true;
   if (normalized === "false") return false;
   return fallback;
-}
-
-function parseOrganizationId(value: string | null): number | null {
-  if (!value) return null;
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed <= 0) return null;
-  return parsed;
 }
 
 async function _POST(req: NextRequest) {

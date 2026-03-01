@@ -200,7 +200,7 @@ function GroupOrganizationsChips({
             onClick={onTogglePopover}
             className="inline-flex items-center rounded-full border border-white/20 bg-black/35 px-2.5 py-1 text-[11px] font-semibold text-white/80 transition hover:border-white/35 hover:text-white"
             aria-expanded={popoverOpen}
-            aria-label={`Mostrar mais ${hidden.length} organizações associadas`}
+            aria-label={`Mostrar mais ${hidden.length} clubes associados`}
           >
             +{hidden.length}
           </button>
@@ -210,7 +210,7 @@ function GroupOrganizationsChips({
         <div
           className="absolute left-0 top-[calc(100%+8px)] z-40 w-[min(22rem,92vw)] rounded-2xl border border-white/15 bg-[rgba(7,10,18,0.96)] p-2 shadow-[0_24px_70px_rgba(0,0,0,0.62)] backdrop-blur-2xl"
         >
-          <p className="px-2 pb-1 text-[10px] uppercase tracking-[0.16em] text-white/55">Outras organizações do grupo</p>
+          <p className="px-2 pb-1 text-[10px] uppercase tracking-[0.16em] text-white/55">Outros clubes do grupo</p>
           <div className="max-h-64 space-y-1 overflow-auto pr-1">
             {hidden.map((organization) => (
               <Link
@@ -259,7 +259,7 @@ export default function OrganizationProfileHeader({
   websiteHref,
   contactEmail,
 }: OrganizationProfileHeaderProps) {
-  const displayName = name?.trim() || "Organização ORYA";
+  const displayName = name?.trim() || "Clube ORYA";
   const handle = username?.trim() || null;
   const [followersDisplay, setFollowersDisplay] = useState(followersCount ?? 0);
   const [avatar, setAvatar] = useState<string | null>(avatarUrl);
@@ -334,7 +334,7 @@ export default function OrganizationProfileHeader({
   const orgBadge = (
     <span className="inline-flex items-center gap-1 rounded-full border border-amber-300/40 bg-amber-400/10 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-100 shadow-[0_6px_18px_rgba(217,164,60,0.28)]">
       <span className="h-1.5 w-1.5 rounded-full bg-amber-200" aria-hidden="true" />
-      Organização
+      Clube
     </span>
   );
 

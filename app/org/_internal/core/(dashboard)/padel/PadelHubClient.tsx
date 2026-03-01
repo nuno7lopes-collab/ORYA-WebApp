@@ -1067,6 +1067,89 @@ const mapNumberArray = (value: unknown): number[] => {
 const areNumberArraysEqual = (left: number[], right: number[]) =>
   left.length === right.length && left.every((value, index) => value === right[index]);
 
+const EMPTY_UNKNOWN_RECORD: Record<string, unknown> = {};
+const EMPTY_PROFILE_BY_CATEGORY: Record<string, Record<string, unknown>> = {};
+
+const normalizeDateLike = (value: string | Date | null | undefined) => {
+  if (!value) return "";
+  if (value instanceof Date) {
+    const ts = value.getTime();
+    return Number.isFinite(ts) ? value.toISOString() : "";
+  }
+  return String(value);
+};
+
+const arePadelClubArraysEqual = (left: PadelClub[], right: PadelClub[]) =>
+  left.length === right.length &&
+  left.every((club, index) => {
+    const target = right[index];
+    if (!target) return false;
+    return (
+      club.id === target.id &&
+      club.name === target.name &&
+      (club.city ?? null) === (target.city ?? null) &&
+      (club.addressId ?? null) === (target.addressId ?? null) &&
+      club.courtsCount === target.courtsCount &&
+      club.isActive === target.isActive &&
+      normalizeDateLike(club.createdAt) === normalizeDateLike(target.createdAt)
+    );
+  });
+
+const arePlayerArraysEqual = (left: Player[], right: Player[]) =>
+  left.length === right.length &&
+  left.every((player, index) => {
+    const target = right[index];
+    if (!target) return false;
+    return (
+      player.id === target.id &&
+      (player.userId ?? null) === (target.userId ?? null) &&
+      player.fullName === target.fullName &&
+      (player.email ?? null) === (target.email ?? null) &&
+      (player.phone ?? null) === (target.phone ?? null) &&
+      (player.gender ?? null) === (target.gender ?? null) &&
+      (player.level ?? null) === (target.level ?? null) &&
+      player.isActive === target.isActive &&
+      (player.tournamentsCount ?? null) === (target.tournamentsCount ?? null) &&
+      (player.noShowCount ?? null) === (target.noShowCount ?? null) &&
+      normalizeDateLike(player.createdAt) === normalizeDateLike(target.createdAt)
+    );
+  });
+
+const arePadelCategoryArraysEqual = (left: PadelCategory[], right: PadelCategory[]) =>
+  left.length === right.length &&
+  left.every((category, index) => {
+    const target = right[index];
+    if (!target) return false;
+    return (
+      category.id === target.id &&
+      category.label === target.label &&
+      (category.genderRestriction ?? null) === (target.genderRestriction ?? null) &&
+      (category.minLevel ?? null) === (target.minLevel ?? null) &&
+      (category.maxLevel ?? null) === (target.maxLevel ?? null) &&
+      (category.season ?? null) === (target.season ?? null) &&
+      (category.year ?? null) === (target.year ?? null) &&
+      category.isActive === target.isActive
+    );
+  });
+
+const areTeamArraysEqual = (left: Team[], right: Team[]) =>
+  left.length === right.length &&
+  left.every((team, index) => {
+    const target = right[index];
+    if (!target) return false;
+    return (
+      team.id === target.id &&
+      team.name === target.name &&
+      (team.level ?? null) === (target.level ?? null) &&
+      team.isActive === target.isActive &&
+      (team.padelClubId ?? null) === (target.padelClubId ?? null) &&
+      (team.categoryId ?? null) === (target.categoryId ?? null) &&
+      (team.membersCount ?? null) === (target.membersCount ?? null) &&
+      normalizeDateLike(team.updatedAt ?? null) === normalizeDateLike(target.updatedAt ?? null) &&
+      normalizeDateLike(team.createdAt ?? null) === normalizeDateLike(target.createdAt ?? null)
+    );
+  });
+
 const resolveCategoryTeamsForPlanning = (
   link: PadelEventCategoryLink | null | undefined,
   strategy: "runtime-first" | "capacity-first" = "runtime-first",
@@ -1724,8 +1807,8 @@ export default function PadelHubClient({
   useEffect(() => {
     const optionIds = autoScheduleCourtOptions.map((court) => court.id);
     if (optionIds.length === 0) {
-      setAutoScheduleCourtIds([]);
-      setAutoScheduleCourtPriorityOrder([]);
+      setAutoScheduleCourtIds((prev) => (prev.length === 0 ? prev : []));
+      setAutoScheduleCourtPriorityOrder((prev) => (prev.length === 0 ? prev : []));
       return;
     }
 
@@ -2093,7 +2176,16 @@ export default function PadelHubClient({
 
   const syncActiveCountOnClub = (clubId: number, list: PadelClubCourt[]) => {
     const activeCount = computeActiveCount(list);
-    setClubs((prev) => prev.map((c) => (c.id === clubId ? { ...c, courtsCount: activeCount } : c)));
+    setClubs((prev) => {
+      let changed = false;
+      const next = prev.map((club) => {
+        if (club.id !== clubId) return club;
+        if (club.courtsCount === activeCount) return club;
+        changed = true;
+        return { ...club, courtsCount: activeCount };
+      });
+      return changed ? next : prev;
+    });
     return activeCount;
   };
 
@@ -2106,12 +2198,17 @@ export default function PadelHubClient({
           return { id: club.id, count: computeActiveCount(courts) };
         }),
       );
-      setClubs((prev) =>
-        prev.map((club) => {
-          const found = updates.find((u) => u.id === club.id);
-          return found ? { ...club, courtsCount: found.count } : club;
-        }),
-      );
+      const countByClubId = new Map(updates.map((entry) => [entry.id, entry.count] as const));
+      setClubs((prev) => {
+        let changed = false;
+        const next = prev.map((club) => {
+          const foundCount = countByClubId.get(club.id);
+          if (typeof foundCount !== "number" || foundCount === club.courtsCount) return club;
+          changed = true;
+          return { ...club, courtsCount: foundCount };
+        });
+        return changed ? next : prev;
+      });
     } catch (err) {
       console.error("[padel/clubs] refreshActiveCounts", err);
     }
@@ -2694,29 +2791,31 @@ export default function PadelHubClient({
 
   useEffect(() => {
     if (!drawerClubId) {
-      setCourts([]);
-      setStaff([]);
+      setCourts((prev) => (prev.length === 0 ? prev : []));
+      setStaff((prev) => (prev.length === 0 ? prev : []));
       return;
     }
     loadCourtsAndStaff(drawerClubId);
   }, [drawerClubId]);
 
   useEffect(() => {
-    setClubs(initialClubs);
+    setClubs((prev) => (arePadelClubArraysEqual(prev, initialClubs) ? prev : initialClubs));
   }, [initialClubs]);
 
   useEffect(() => {
-    setPlayers(initialPlayers);
+    setPlayers((prev) => (arePlayerArraysEqual(prev, initialPlayers) ? prev : initialPlayers));
   }, [initialPlayers]);
 
   useEffect(() => {
-    if (!Array.isArray(categoriesRes?.items)) return;
-    setCategories(categoriesRes.items);
+    const items = categoriesRes?.items;
+    if (!items) return;
+    setCategories((prev) => (arePadelCategoryArraysEqual(prev, items) ? prev : items));
   }, [categoriesRes?.items]);
 
   useEffect(() => {
-    if (!Array.isArray(teamsRes?.items)) return;
-    setTeams(teamsRes.items);
+    const items = teamsRes?.items;
+    if (!items) return;
+    setTeams((prev) => (areTeamArraysEqual(prev, items) ? prev : items));
   }, [teamsRes?.items]);
 
   useEffect(() => {
@@ -2726,6 +2825,7 @@ export default function PadelHubClient({
   useEffect(() => {
     setCategoryDrafts((prev) => {
       const next = { ...prev };
+      let changed = false;
       const currentIds = new Set<number>();
       categories.forEach((cat) => {
         currentIds.add(cat.id);
@@ -2739,13 +2839,17 @@ export default function PadelHubClient({
             year: cat.year ? String(cat.year) : "",
             isActive: cat.isActive ?? true,
           };
+          changed = true;
         }
       });
       Object.keys(next).forEach((key) => {
         const id = Number(key);
-        if (!currentIds.has(id)) delete next[id];
+        if (!currentIds.has(id)) {
+          delete next[id];
+          changed = true;
+        }
       });
-      return next;
+      return changed ? next : prev;
     });
   }, [categories]);
 
@@ -3337,7 +3441,7 @@ export default function PadelHubClient({
   const showCourtsPanel = isClubsTab;
   const showClubStaffPanel = SHOW_CLUB_STAFF_PANEL;
   const courtsPanelReadOnly = isPadelReadOnly;
-  const calendarCourtsRaw: CalendarCourt[] = Array.isArray(calendarData?.courts) ? calendarData.courts : [];
+  const calendarCourtsRaw: CalendarCourt[] | null = Array.isArray(calendarData?.courts) ? calendarData.courts : null;
   const calendarBlocksRaw: CalendarBlock[] = calendarData?.blocks ?? [];
   const calendarClassSessionsRaw: CalendarClassSession[] = Array.isArray(calendarData?.classSessions)
     ? calendarData.classSessions
@@ -3364,7 +3468,7 @@ export default function PadelHubClient({
   const calendarTimezone = calendarData?.eventTimezone ?? "Europe/Lisbon";
   const calendarBuffer = calendarData?.bufferMinutes ?? 5;
   const calendarCourts = useMemo(() => {
-    if (calendarCourtsRaw.length > 0) return calendarCourtsRaw;
+    if (calendarCourtsRaw && calendarCourtsRaw.length > 0) return calendarCourtsRaw;
     return autoScheduleCourtOptions.map((court, idx) => ({
       id: court.id,
       name: court.name,
@@ -3374,18 +3478,33 @@ export default function PadelHubClient({
       club: court.clubName ? { name: court.clubName } : null,
     }));
   }, [autoScheduleCourtOptions, calendarCourtsRaw]);
+  const calendarCourtIdsKey = useMemo(() => {
+    const ids = calendarCourts
+      .map((court) => parsePositiveInt(court.id))
+      .filter((id): id is number => typeof id === "number")
+      .sort((left, right) => left - right);
+    const uniqueIds: number[] = [];
+    ids.forEach((id) => {
+      if (uniqueIds.length === 0 || uniqueIds[uniqueIds.length - 1] !== id) {
+        uniqueIds.push(id);
+      }
+    });
+    return uniqueIds.join(",");
+  }, [calendarCourts]);
   useEffect(() => {
+    const fallback = calendarCourtIdsKey
+      .split(",")
+      .map((value) => Number(value))
+      .filter((value): value is number => Number.isFinite(value) && value > 0);
     setBulkBlockCourtIds((prev) => {
-      if (!calendarCourts.length) {
+      if (fallback.length === 0) {
         return prev.length === 0 ? prev : [];
       }
-      const validIds = new Set(calendarCourts.map((court) => court.id));
+      const validIds = new Set(fallback);
       const next = prev.filter((id) => validIds.has(id));
-      const fallback = calendarCourts.map((court) => court.id);
-      const resolved = next.length > 0 ? next : fallback;
-      return areNumberArraysEqual(prev, resolved) ? prev : resolved;
+      return areNumberArraysEqual(prev, next) ? prev : next;
     });
-  }, [calendarCourts]);
+  }, [calendarCourtIdsKey]);
   useEffect(() => {
     if (!calendarEventStart || !calendarEventEnd) return;
     if (!bulkBlockStartAt) {
@@ -3407,27 +3526,37 @@ export default function PadelHubClient({
       : tournamentHasKnockoutPhase
         ? "Formato eliminatório: prioriza rondas KO e mantém margem para atrasos entre rondas."
         : "Formato sem eliminatórias: a prioridade aplica-se só às rondas gerais.";
-  const advancedSettings = (padelConfig?.advancedSettings ?? {}) as Record<string, unknown>;
-  const formatProfilesByCategoryRaw =
-    advancedSettings.formatProfilesByCategory && typeof advancedSettings.formatProfilesByCategory === "object"
-      ? (advancedSettings.formatProfilesByCategory as Record<string, unknown>)
-      : {};
-  const formatProfilesByCategory = Object.entries(formatProfilesByCategoryRaw).reduce<Record<string, Record<string, unknown>>>(
-    (acc, [key, value]) => {
+  const advancedSettings = useMemo<Record<string, unknown>>(() => {
+    const source = padelConfig?.advancedSettings;
+    return source && typeof source === "object" ? (source as Record<string, unknown>) : EMPTY_UNKNOWN_RECORD;
+  }, [padelConfig?.advancedSettings]);
+  const formatProfilesByCategoryRaw = useMemo<Record<string, unknown>>(() => {
+    const source = advancedSettings.formatProfilesByCategory;
+    return source && typeof source === "object" && !Array.isArray(source)
+      ? (source as Record<string, unknown>)
+      : EMPTY_UNKNOWN_RECORD;
+  }, [advancedSettings]);
+  const formatProfilesByCategory = useMemo<Record<string, Record<string, unknown>>>(() => {
+    const entries = Object.entries(formatProfilesByCategoryRaw);
+    if (entries.length === 0) return EMPTY_PROFILE_BY_CATEGORY;
+    return entries.reduce<Record<string, Record<string, unknown>>>((acc, [key, value]) => {
       if (!value || typeof value !== "object" || Array.isArray(value)) return acc;
       acc[key] = { ...(value as Record<string, unknown>) };
       return acc;
-    },
-    {},
-  );
-  const nonStopRuntimeByCategory =
-    advancedSettings.nonStopRuntimeByCategory && typeof advancedSettings.nonStopRuntimeByCategory === "object"
-      ? (advancedSettings.nonStopRuntimeByCategory as Record<string, unknown>)
-      : {};
-  const amMxRuntimeByCategory =
-    advancedSettings.amMxRuntimeByCategory && typeof advancedSettings.amMxRuntimeByCategory === "object"
-      ? (advancedSettings.amMxRuntimeByCategory as Record<string, unknown>)
-      : {};
+    }, {});
+  }, [formatProfilesByCategoryRaw]);
+  const nonStopRuntimeByCategory = useMemo<Record<string, unknown>>(() => {
+    const source = advancedSettings.nonStopRuntimeByCategory;
+    return source && typeof source === "object" && !Array.isArray(source)
+      ? (source as Record<string, unknown>)
+      : EMPTY_UNKNOWN_RECORD;
+  }, [advancedSettings]);
+  const amMxRuntimeByCategory = useMemo<Record<string, unknown>>(() => {
+    const source = advancedSettings.amMxRuntimeByCategory;
+    return source && typeof source === "object" && !Array.isArray(source)
+      ? (source as Record<string, unknown>)
+      : EMPTY_UNKNOWN_RECORD;
+  }, [advancedSettings]);
   const eventCategories = useMemo(() => {
     if (!eventCategoriesRes?.ok || !Array.isArray(eventCategoriesRes.items)) return [];
     return eventCategoriesRes.items;
@@ -3726,11 +3855,12 @@ export default function PadelHubClient({
 
   useEffect(() => {
     if (runtimeCategoryKeys.length === 0) {
-      setRoundOpsCategoryKey("global");
+      setRoundOpsCategoryKey((prev) => (prev === "global" ? prev : "global"));
       return;
     }
     if (!runtimeCategoryKeys.includes(roundOpsCategoryKey)) {
-      setRoundOpsCategoryKey(runtimeCategoryKeys[0] ?? "global");
+      const fallbackKey = runtimeCategoryKeys[0] ?? "global";
+      setRoundOpsCategoryKey((prev) => (prev === fallbackKey ? prev : fallbackKey));
     }
   }, [roundOpsCategoryKey, runtimeCategoryKeys]);
 
@@ -3741,7 +3871,7 @@ export default function PadelHubClient({
   }, [eventId, roundOpsCategoryKey]);
 
   useEffect(() => {
-    setOpsLiveFeed([]);
+    setOpsLiveFeed((prev) => (prev.length === 0 ? prev : []));
   }, [eventId]);
 
   useEffect(() => {
@@ -3754,7 +3884,8 @@ export default function PadelHubClient({
   }, [eventId]);
 
   useEffect(() => {
-    setRoundOpsNonStopRoundsDraft(String(selectedNonStopRounds));
+    const next = String(selectedNonStopRounds);
+    setRoundOpsNonStopRoundsDraft((prev) => (prev === next ? prev : next));
   }, [selectedNonStopRounds]);
 
   useEffect(() => {
@@ -4185,8 +4316,10 @@ export default function PadelHubClient({
     setLastAutoScheduleRunId(null);
     setEditingMatchId(null);
     setEditingMatchVersion(null);
-    setSelectedMatchIds([]);
-    setMatchForm({ start: "", end: "", courtId: "" });
+    setSelectedMatchIds((prev) => (prev.length === 0 ? prev : []));
+    setMatchForm((prev) =>
+      prev.start === "" && prev.end === "" && prev.courtId === "" ? prev : { start: "", end: "", courtId: "" },
+    );
   }, [eventId]);
 
   const isWithinDay = (date: string | Date) => {

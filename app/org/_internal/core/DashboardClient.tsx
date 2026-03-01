@@ -46,6 +46,11 @@ import type { DashboardToolActivationCard } from "@/lib/organizationDashboardToo
 import type { OrganizationMemberRole, OrganizationModule, OrganizationRolePack } from "@prisma/client";
 import { ModuleIcon } from "./moduleIcons";
 import {
+  CLUB_DASHBOARD_AREA_ORDER,
+  resolveClubDashboardAreaByToolId,
+  type ClubDashboardArea,
+} from "./ClubDashboardViewModel";
+import {
   hasEventEndedByDate,
   isEventCancelledStatus,
   isEventTerminalStatus,
@@ -419,7 +424,7 @@ const MARKETING_TABS = [
 type MarketingSectionKey = (typeof MARKETING_TABS)[number]["key"];
 const MARKETING_TAB_KEYS = MARKETING_TABS.map((tab) => tab.key) as MarketingSectionKey[];
 
-type DashboardToolFlow = "Operações" | "Gestão" | "Administração";
+type DashboardToolFlow = ClubDashboardArea;
 
 type DashboardToolCard = {
   id: string;
@@ -445,15 +450,15 @@ const OPERATION_MODULES = ["EVENTOS", "RESERVAS", "TORNEIOS"] as const;
 type OperationModule = (typeof OPERATION_MODULES)[number];
 
 const OPERATION_LABELS: Record<OperationModule, string> = {
-  EVENTOS: "Eventos",
-  RESERVAS: "Reservas",
-  TORNEIOS: "PADEL",
+  EVENTOS: "Competição",
+  RESERVAS: "Operação",
+  TORNEIOS: "Competição",
 };
 
 const PADEL_CLUB_SECTION = "padel-club";
 const PADEL_TOURNAMENTS_SECTION = "padel-tournaments";
 const PADEL_MANAGE_SECTIONS = [PADEL_CLUB_SECTION, PADEL_TOURNAMENTS_SECTION] as const;
-const TOOL_FLOW_ORDER: DashboardToolFlow[] = ["Operações", "Gestão", "Administração"];
+const TOOL_FLOW_ORDER: DashboardToolFlow[] = [...CLUB_DASHBOARD_AREA_ORDER];
 const MODULE_ICON_GRADIENTS: Record<string, string> = {
   EVENTOS: "from-[#FF7AD1]/45 via-[#7FE0FF]/35 to-[#6A7BFF]/45",
   RESERVAS: "from-[#22D3EE]/40 via-[#6A7BFF]/30 to-[#0EA5E9]/40",
@@ -506,6 +511,7 @@ const MODULE_ICON_BG_STYLES: Record<string, string> = {
 const TOOL_CUSTOM_ICON_BY_ID: Record<string, string> = {
   eventos: "/icons/tools/eventos.avif",
   reservas: "/icons/tools/reservas.avif",
+  academia: "/icons/tools/reservas.avif",
   calendar: "/icons/tools/calendario.avif",
   "padel-club": "/icons/tools/padel-club.avif",
   "padel-tournaments": "/icons/tools/padel-tournaments.avif",
@@ -536,6 +542,10 @@ const formatDateTime = (date: Date | null, options?: Intl.DateTimeFormatOptions)
 
 const formatDateOnly = (date: Date | null, options?: Intl.DateTimeFormatOptions) =>
   date ? date.toLocaleDateString(DATE_LOCALE, { timeZone: DATE_TIMEZONE, ...options }) : "";
+const formatPercent = (value: number | null | undefined) =>
+  typeof value === "number" && Number.isFinite(value) ? `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%` : "—";
+const formatCurrencyCents = (value: number | null | undefined) =>
+  typeof value === "number" && Number.isFinite(value) ? `${(value / 100).toFixed(2)} €` : "—";
 
 const areStringArraysEqual = (a: string[], b: string[]) =>
   a.length === b.length && a.every((value, index) => value === b[index]);
@@ -647,24 +657,12 @@ function OrganizacaoPageInner({
   const financeFocus = resolveFinanceFocusView(financeParamRaw);
   const normalizedSectionParam = sectionParamRaw;
   const normalizedDefaultSection = defaultSection;
-  const normalizedSection = normalizedSectionParam ?? normalizedDefaultSection ?? undefined;
+  const rawNormalizedSection = normalizedSectionParam ?? normalizedDefaultSection ?? undefined;
+  const normalizedSection =
+    rawNormalizedSection === "eventos" ? PADEL_TOURNAMENTS_SECTION : rawNormalizedSection;
   const scrollSection = normalizedSectionParam ?? undefined;
   const isPadelManageSection =
     sectionParamRaw === PADEL_CLUB_SECTION || sectionParamRaw === PADEL_TOURNAMENTS_SECTION;
-
-  useEffect(() => {
-    if (!pathname || pathname.startsWith("/org/padel") || pathname.startsWith("/org/")) return;
-    if (activeObjective !== "manage") return;
-    if (normalizedSection !== PADEL_CLUB_SECTION && normalizedSection !== PADEL_TOURNAMENTS_SECTION) return;
-    const params = new URLSearchParams(searchParams?.toString() || "");
-    params.set("section", normalizedSection);
-    if (!params.get("padel")) {
-      params.set("padel", normalizedSection === PADEL_TOURNAMENTS_SECTION ? "tournaments" : "clubs");
-    }
-    params.delete("tab");
-    const basePath = normalizedSection === PADEL_CLUB_SECTION ? "/org/padel/clubs" : "/org/padel/tournaments";
-    router.replace(`${basePath}?${params.toString()}`);
-  }, [activeObjective, normalizedSection, pathname, router, searchParams]);
 
   useEffect(() => {
     const statusParam = searchParams?.get("status");
@@ -817,7 +815,7 @@ function OrganizacaoPageInner({
   const orgDisplayName =
     organization?.publicName?.trim() ||
     organization?.businessName?.trim() ||
-    "Organização";
+    "Clube de padel";
   const isReservasOrg = primaryOperation === "RESERVAS";
   const isTorneiosOrg = primaryOperation === "TORNEIOS";
   const hasTorneiosModule = activeModules.includes("TORNEIOS");
@@ -828,27 +826,19 @@ function OrganizacaoPageInner({
   const isEventosRoute =
     pathname?.startsWith("/org/events") ||
     Boolean(isOrgCanonicalPath && (pathname?.includes("/eventos") || pathname?.includes("/events")));
-  const isManageEventosSection = activeObjective === "manage" && normalizedSection === "eventos";
+  const isManageEventosSection = activeObjective === "manage" && rawNormalizedSection === "eventos";
   const isManagePadelSection =
     activeObjective === "manage" &&
     (normalizedSection === PADEL_CLUB_SECTION || normalizedSection === PADEL_TOURNAMENTS_SECTION);
   const isPadelContext =
     hasTorneiosModule &&
-    !isManageEventosSection &&
     (isManagePadelSection ||
+      isManageEventosSection ||
       isTorneiosRoute ||
       isPadelManageSection ||
       (activeObjective !== "manage" && !isEventosRoute && isTorneiosOrg));
-  const eventsScope = useMemo<"PADEL" | "EVENTOS">(() => {
-    if (activeObjective === "manage") {
-      if (normalizedSection === "eventos") return "EVENTOS";
-      if (normalizedSection === PADEL_CLUB_SECTION || normalizedSection === PADEL_TOURNAMENTS_SECTION) return "PADEL";
-    }
-    if (isTorneiosRoute || isPadelManageSection) return "PADEL";
-    if (isEventosRoute) return "EVENTOS";
-    return isTorneiosOrg ? "PADEL" : "EVENTOS";
-  }, [activeObjective, isEventosRoute, isPadelManageSection, isTorneiosOrg, isTorneiosRoute, normalizedSection]);
-  const eventsScopeQuery = eventsScope === "PADEL" ? "templateType=PADEL" : "excludeTemplateType=PADEL";
+  const eventsScope = "PADEL";
+  const eventsScopeQuery = "templateType=PADEL";
   const eventsScopeSuffix = `?${eventsScopeQuery}`;
   const eventsScopeAmp = `&${eventsScopeQuery}`;
   const showPadelHub = hasTorneiosModule;
@@ -856,7 +846,7 @@ function OrganizacaoPageInner({
   const hasMarketingModule = activeModules.includes("MARKETING");
   const primaryCreateMeta =
     primaryOperation === "RESERVAS"
-      ? { label: "Criar serviço", href: "/org/bookings/new", singular: "serviço", plural: "serviços" }
+      ? { label: "Criar aula ou serviço", href: "/org/bookings/new", singular: "aula/serviço", plural: "aulas/serviços" }
       : primaryOperation === "TORNEIOS"
         ? {
             label: "Criar torneio",
@@ -864,24 +854,22 @@ function OrganizacaoPageInner({
             singular: "torneio",
             plural: "torneios",
           }
-        : { label: "Criar evento", href: "/org/events/new", singular: "evento", plural: "eventos" };
-  const manageCreateMeta = isEventosRoute
-    ? { label: "Criar evento", href: "/org/events/new", singular: "evento", plural: "eventos" }
-    : isPadelContext
-      ? {
-          label: "Criar torneio",
-          href: "/org/padel/tournaments/create",
-          singular: "torneio",
-          plural: "torneios",
-        }
-      : primaryCreateMeta;
-  const managePrimaryLabel = isPadelContext ? "PADEL" : "Eventos";
-  const managePrimaryLabelLower = isPadelContext ? "torneio" : "evento";
-  const managePrimaryLabelTitle = isPadelContext ? "Torneio" : "Evento";
+        : { label: "Criar torneio", href: "/org/padel/tournaments/create", singular: "torneio", plural: "torneios" };
+  const manageCreateMeta = isPadelContext
+    ? {
+        label: "Criar torneio",
+        href: "/org/padel/tournaments/create",
+        singular: "torneio",
+        plural: "torneios",
+      }
+    : primaryCreateMeta;
+  const managePrimaryLabel = "Competição";
+  const managePrimaryLabelLower = "torneio";
+  const managePrimaryLabelTitle = "Torneio";
   const managePrimarySingularLabel = manageCreateMeta.singular;
-  const salesUnitLabel = isPadelContext ? "Inscrições" : "Bilhetes";
-  const salesCountLabel = isPadelContext ? "Inscrições registadas" : "Bilhetes vendidos";
-  const eventRouteBase = isPadelContext ? "/org/padel/tournaments" : "/org/events";
+  const salesUnitLabel = isReservasOrg ? "Reservas" : "Inscrições";
+  const salesCountLabel = isReservasOrg ? "Reservas registadas" : "Inscrições registadas";
+  const eventRouteBase = "/org/padel/tournaments";
   const loading =
     organizationLoading ||
     (Boolean(orgMeUrl) && !organizationData && !organizationError) ||
@@ -924,7 +912,6 @@ function OrganizacaoPageInner({
     [isModuleEnabled, moduleAccess],
   );
   const canAccessFinance = canAccessModule("FINANCEIRO");
-  const canAccessEvents = canAccessModule("EVENTOS");
   const canAccessReservas = canAccessModule("RESERVAS");
   const canAccessTorneios = canAccessModule("TORNEIOS");
   const canAccessInscricoes = canAccessModule("INSCRICOES");
@@ -1034,9 +1021,9 @@ function OrganizacaoPageInner({
   const canCustomizeTools = Boolean(dashboardToolsVisibility?.canEdit ?? roleFlags.canEditOrg);
   const [hiddenToolIds, setHiddenToolIds] = useState<string[]>([]);
   const [toolVisibilityError, setToolVisibilityError] = useState<string | null>(null);
-  const salesUnitHint = isPadelContext
-    ? "Inscrições registadas nos últimos 30 dias"
-    : "Bilhetes vendidos nos últimos 30 dias";
+  const salesUnitHint = isReservasOrg
+    ? "Reservas confirmadas nos últimos 30 dias"
+    : "Inscrições registadas nos últimos 30 dias";
 
   useEffect(() => {
     if (!scopedOrganizationId) {
@@ -1089,7 +1076,6 @@ function OrganizacaoPageInner({
     const scrollTargets: Record<ObjectiveTab, string[]> = {
       create: ["overview", "ferramentas"],
       manage: [
-        "eventos",
         "reservas",
         ...(showPadelHub ? [...PADEL_MANAGE_SECTIONS] : []),
         ...(hasInscricoesModule ? ["inscricoes"] : []),
@@ -1164,9 +1150,8 @@ function OrganizacaoPageInner({
 
   const activeSection = useMemo(() => {
     const manageSections = [
-      "eventos",
-      "reservas",
       ...(showPadelHub ? [...PADEL_MANAGE_SECTIONS] : []),
+      "reservas",
       ...(hasInscricoesModule ? ["inscricoes"] : []),
     ];
     const analyzeSections = canViewFinance
@@ -1184,7 +1169,7 @@ function OrganizacaoPageInner({
     };
     const allowed = baseSections[activeObjective] ?? ["overview"];
     const candidate =
-      normalizedSection ??
+      (normalizedSection === "eventos" ? PADEL_TOURNAMENTS_SECTION : normalizedSection) ??
       (activeObjective === "analyze"
         ? canViewFinance
           ? "financas"
@@ -1495,7 +1480,7 @@ function OrganizacaoPageInner({
         const challengeId = typeof json?.details?.challengeId === "string" ? json.details.challengeId : undefined;
         const input =
           typeof window !== "undefined"
-            ? window.prompt("Introduz o código de confirmação (6 dígitos) para reativar a organização:")
+            ? window.prompt("Introduz o código de confirmação (6 dígitos) para reativar o clube:")
             : null;
         const code = typeof input === "string" ? input.trim() : "";
         if (!code) {
@@ -1508,10 +1493,10 @@ function OrganizacaoPageInner({
       }
 
       if (!res.ok || json?.ok === false) {
-        setSuspensionActionMessage(json?.message || json?.error || "Não foi possível reativar a organização.");
+        setSuspensionActionMessage(json?.message || json?.error || "Não foi possível reativar o clube.");
         return;
       }
-      setSuspensionActionMessage("Organização reativada.");
+      setSuspensionActionMessage("Clube reativado.");
       await mutateOrganization();
       router.refresh();
     } catch (err) {
@@ -2152,24 +2137,20 @@ function OrganizacaoPageInner({
   const eventsTotal = eventsSummary?.counts?.total ?? eventsList.length;
   const primaryCreatedDone = isReservasOrg ? servicesStats.total > 0 : eventsTotal > 0;
   const primaryModuleKey =
-    primaryOperation === "RESERVAS" ? "RESERVAS" : primaryOperation === "TORNEIOS" ? "TORNEIOS" : "EVENTOS";
+    primaryOperation === "RESERVAS" ? "RESERVAS" : "TORNEIOS";
   const primaryLabel =
     primaryOperation === "RESERVAS"
       ? "Primeiro serviço criado"
-      : primaryOperation === "TORNEIOS"
-        ? "Primeiro torneio criado"
-        : "Primeiro evento criado";
+      : "Primeiro torneio criado";
   const primaryDescription =
     primaryOperation === "RESERVAS"
       ? "Cria um serviço com disponibilidade."
-      : primaryOperation === "TORNEIOS"
-        ? "Publica o primeiro torneio."
-        : "Publica o primeiro evento.";
+      : "Publica o primeiro torneio.";
   const summarySteps = [
     {
       id: "profile",
       label: "Perfil completo",
-      description: "Atualiza dados base da organização.",
+      description: "Atualiza os dados base do clube.",
       done: profileStatus === "OK",
       href: "/org/settings",
       iconKey: "DEFINICOES",
@@ -2177,7 +2158,7 @@ function OrganizacaoPageInner({
     {
       id: "email",
       label: "Email oficial verificado",
-      description: "Confirma o email oficial da organização.",
+      description: "Confirma o email oficial do clube.",
       done: officialEmailVerified,
       href: "/org/settings",
       iconKey: "DEFINICOES",
@@ -2215,7 +2196,7 @@ function OrganizacaoPageInner({
     {
       id: "staff",
       label: "Primeiro membro convidado",
-      description: "Convida alguém para o staff da organização.",
+      description: "Convida alguém para o staff do clube.",
       done: hasInvitedStaff,
       href: "/org/team",
       iconKey: "STAFF",
@@ -2223,7 +2204,7 @@ function OrganizacaoPageInner({
     {
       id: "public",
       label: "Página pública definida",
-      description: "Prepara a presença pública da organização.",
+      description: "Prepara a presença pública do clube.",
       done: Boolean(publicProfileUrl),
       href: scopedOrganizationId ? `/org/${scopedOrganizationId}/settings` : "/org-hub/organizations",
       iconKey: "DEFINICOES",
@@ -2307,34 +2288,34 @@ function OrganizacaoPageInner({
   const checklistVisible = activeObjective === "create" && (!checklistDismissed || !canDismissChecklist);
   const canUseCrm = canAccessCrm;
   const canUseChatInterno = canAccessMensagens;
-  const canUseCheckin = canAccessEvents || canAccessTorneios;
-  const canUseCalendar = canAccessEvents || canAccessReservas || canAccessTorneios;
-  const calendarModuleKey = canAccessReservas ? "RESERVAS" : canAccessEvents ? "EVENTOS" : "TORNEIOS";
+  const canUseCheckin = canAccessTorneios;
+  const canUseCalendar = canAccessReservas || canAccessTorneios;
+  const calendarModuleKey = canAccessReservas ? "RESERVAS" : "TORNEIOS";
   const dashboardTools = useMemo<DashboardToolCard[]>(
     () => {
       const tools: Array<DashboardToolCard | null> = [
-        canAccessEvents
-          ? {
-              id: "eventos",
-              moduleKey: "EVENTOS",
-              iconKey: "TOOL_EVENTOS",
-              title: "Eventos",
-              summary: "Gestão de eventos públicos e privados.",
-              bullets: ["Bilhetes e regras", "Participantes e check-in", "Comunicação operacional"],
-              href: scopedOrganizationId ? `/org/${scopedOrganizationId}/events` : undefined,
-              flow: "Operações",
-            }
-          : null,
         canAccessReservas
           ? {
               id: "reservas",
               moduleKey: "RESERVAS",
               iconKey: "TOOL_RESERVAS",
-              title: "Reservas",
-              summary: "Gestão diária de serviços e marcações.",
-              bullets: ["Serviços e disponibilidade", "Marcações e estados", "Recursos e agenda"],
+              title: "Operação",
+              summary: "Gestão diária de aulas, serviços e agenda.",
+              bullets: ["Aulas e serviços", "Ocupação e disponibilidade", "Campos e manutenção"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/bookings` : undefined,
-              flow: "Operações",
+              flow: resolveClubDashboardAreaByToolId("reservas"),
+            }
+          : null,
+        canAccessReservas
+          ? {
+              id: "academia",
+              moduleKey: "RESERVAS",
+              iconKey: "TOOL_RESERVAS",
+              title: "Academia",
+              summary: "Gestão de alunos, treinadores e aulas do clube.",
+              bullets: ["Jogadores & alunos", "Treinadores", "Aulas e presença"],
+              href: scopedOrganizationId ? `/org/${scopedOrganizationId}/bookings/classes` : undefined,
+              flow: resolveClubDashboardAreaByToolId("academia"),
             }
           : null,
         canUseCalendar
@@ -2342,11 +2323,11 @@ function OrganizacaoPageInner({
               id: "calendar",
               moduleKey: calendarModuleKey,
               iconKey: "TOOL_CALENDARIO",
-              title: "Calendário",
-              summary: "Agenda unificada da organização.",
-              bullets: ["Eventos, torneios e reservas", "Vista semanal e diária", "Consulta operacional"],
+              title: "Calendário operacional",
+              summary: "Agenda diária do clube de padel.",
+              bullets: ["Vista semanal e diária", "Disponibilidade e conflitos", "Campos, aulas e torneios"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/calendar` : undefined,
-              flow: "Operações",
+              flow: resolveClubDashboardAreaByToolId("calendar"),
             }
           : null,
         canAccessTorneios
@@ -2354,11 +2335,11 @@ function OrganizacaoPageInner({
               id: "padel-club",
               moduleKey: "TORNEIOS",
               iconKey: "TOOL_PADEL_CLUBE",
-              title: "PADEL Clubes",
-              summary: "Gestão de clubes, campos e staff.",
-              bullets: ["Clubes e campos", "Staff de clube", "Jogadores e treinadores"],
+              title: "Clube",
+              summary: "Perfil, equipa, campos, parcerias e loja.",
+              bullets: ["Perfil público do clube", "Equipa e parcerias", "Campos e loja"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/padel/clubs` : undefined,
-              flow: "Operações",
+              flow: resolveClubDashboardAreaByToolId("padel-club"),
             }
           : null,
         canAccessTorneios
@@ -2366,11 +2347,11 @@ function OrganizacaoPageInner({
               id: "padel-tournaments",
               moduleKey: "TORNEIOS",
               iconKey: "TOOL_PADEL_TORNEIOS",
-              title: "PADEL Torneios",
-              summary: "Gestão competitiva e calendário.",
-              bullets: ["Criar torneios", "Categorias e equipas", "Calendário e live"],
+              title: "Competição",
+              summary: "Gestão competitiva de ponta a ponta.",
+              bullets: ["Torneios e ligas", "Categorias e equipas", "Calendário e live"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/padel/tournaments` : undefined,
-              flow: "Operações",
+              flow: resolveClubDashboardAreaByToolId("padel-tournaments"),
             }
           : null,
         canUseCheckin
@@ -2379,10 +2360,10 @@ function OrganizacaoPageInner({
               moduleKey: "CHECKIN",
               iconKey: "TOOL_CHECKIN",
               title: "Check-in",
-              summary: "Leitura de QR para entradas.",
-              bullets: ["Leitor QR", "Confirmação", "Histórico"],
+              summary: "Receção, validações e controlo de entrada.",
+              bullets: ["Leitor QR", "Lista e sessões", "Registos e dispositivos"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/check-in` : undefined,
-              flow: "Operações",
+              flow: resolveClubDashboardAreaByToolId("checkin"),
             }
           : null,
         canAccessInscricoes
@@ -2390,11 +2371,11 @@ function OrganizacaoPageInner({
               id: "inscricoes",
               moduleKey: "INSCRICOES",
               iconKey: "TOOL_FORMULARIOS",
-              title: "Formulários",
-              summary: "Formulários e inscrições.",
-              bullets: ["Formulários", "Listas e vagas", "Exportação"],
+              title: "Inscrições",
+              summary: "Inscrições para torneios, aulas e atividades.",
+              bullets: ["Formulários", "Vagas e respostas", "Exportação"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/forms` : undefined,
-              flow: "Operações",
+              flow: resolveClubDashboardAreaByToolId("inscricoes"),
             }
           : null,
         canUseChatInterno
@@ -2402,11 +2383,11 @@ function OrganizacaoPageInner({
               id: "mensagens",
               moduleKey: "MENSAGENS",
               iconKey: "TOOL_CHAT_INTERNO",
-              title: "Mensagens",
-              summary: "Comunicação interna da equipa.",
-              bullets: ["Conversas", "Canais", "Histórico"],
+              title: "Comunidade",
+              summary: "Comunicação interna e comunidades do clube.",
+              bullets: ["Mensagens diretas", "Comunidades", "Anúncios internos"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/chat` : undefined,
-              flow: "Operações",
+              flow: resolveClubDashboardAreaByToolId("mensagens"),
             }
           : null,
         canViewFinance
@@ -2418,7 +2399,7 @@ function OrganizacaoPageInner({
               summary: "Faturação e controlo financeiro.",
               bullets: ["Faturação e reconciliação", "Reembolsos e disputas", "Transferências e exportações"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/finance` : undefined,
-              flow: "Gestão",
+              flow: resolveClubDashboardAreaByToolId("financeiro"),
             }
           : null,
         canUseAnalytics
@@ -2426,11 +2407,11 @@ function OrganizacaoPageInner({
               id: "analytics",
               moduleKey: "ANALYTICS",
               iconKey: "TOOL_ANALYTICS",
-              title: "Análises",
-              summary: "Métricas de negócio.",
-              bullets: ["Visão geral", "Conversão e coortes", "Receita por dimensão"],
+              title: "Relatórios & analytics",
+              summary: "Métricas de negócio e performance do clube.",
+              bullets: ["Visão geral", "Conversão", "Receita por dimensão"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/analytics` : undefined,
-              flow: "Gestão",
+              flow: resolveClubDashboardAreaByToolId("analytics"),
             }
           : null,
         canPromote
@@ -2442,7 +2423,7 @@ function OrganizacaoPageInner({
               summary: "Promoções e parcerias.",
               bullets: ["Códigos promocionais", "Promotores e parceiros", "Links e QR"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/marketing` : undefined,
-              flow: "Gestão",
+              flow: resolveClubDashboardAreaByToolId("marketing"),
             }
           : null,
         canUseCrm
@@ -2451,10 +2432,10 @@ function OrganizacaoPageInner({
               moduleKey: "CRM",
               iconKey: "TOOL_CRM",
               title: "CRM",
-              summary: "Clientes e segmentação.",
-              bullets: ["Clientes e histórico", "Segmentos e campanhas", "Pontos e recompensas"],
+              summary: "Jogadores, relacionamento e segmentação.",
+              bullets: ["Jogadores e histórico", "Segmentos e campanhas", "Fidelização"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/crm/customers` : undefined,
-              flow: "Gestão",
+              flow: resolveClubDashboardAreaByToolId("crm"),
             }
           : null,
         canAccessLoja
@@ -2466,7 +2447,7 @@ function OrganizacaoPageInner({
               summary: "Catálogo, checkout e encomendas.",
               bullets: ["Catálogo", "Portes e descontos", "Encomendas e envio"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/store` : undefined,
-              flow: "Gestão",
+              flow: resolveClubDashboardAreaByToolId("loja"),
             }
           : null,
         canManageMembers
@@ -2478,7 +2459,7 @@ function OrganizacaoPageInner({
               summary: "Utilizadores, funções e permissões.",
               bullets: ["Perfis e funções", "Permissões por ferramenta", "Registo de ações"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/team` : undefined,
-              flow: "Administração",
+              flow: resolveClubDashboardAreaByToolId("staff"),
             }
           : null,
         canEditOrgSettings
@@ -2487,10 +2468,10 @@ function OrganizacaoPageInner({
               moduleKey: "DEFINICOES",
               iconKey: "TOOL_POLITICAS",
               title: "Políticas",
-              summary: "Regras operacionais da organização.",
+              summary: "Regras operacionais do clube.",
               bullets: ["Cancelamento e reagendamento", "Termos e condições", "Configuração por ferramenta"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/policies` : undefined,
-              flow: "Administração",
+              flow: resolveClubDashboardAreaByToolId("politicas"),
             }
           : null,
         canEditOrgSettings
@@ -2499,17 +2480,16 @@ function OrganizacaoPageInner({
               moduleKey: "DEFINICOES",
               iconKey: "TOOL_DEFINICOES",
               title: "Definições",
-              summary: "Configuração geral da organização.",
+              summary: "Configuração geral do clube.",
               bullets: ["Pagamentos", "Notificações", "Preferências"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/settings` : undefined,
-              flow: "Administração",
+              flow: resolveClubDashboardAreaByToolId("settings"),
             }
           : null,
       ];
       return tools.filter((tool): tool is DashboardToolCard => tool !== null);
     },
     [
-      canAccessEvents,
       canAccessReservas,
       canAccessTorneios,
       canUseCalendar,
@@ -2615,7 +2595,7 @@ function OrganizacaoPageInner({
         return;
       }
       if (!scopedOrganizationId) {
-        setModuleActivationError("Seleciona uma organização primeiro.");
+        setModuleActivationError("Seleciona um clube primeiro.");
         return;
       }
 
@@ -2671,12 +2651,12 @@ function OrganizacaoPageInner({
         return;
       }
       if (!scopedOrganizationId) {
-        setModuleActivationError("Seleciona uma organização primeiro.");
+        setModuleActivationError("Seleciona um clube primeiro.");
         return;
       }
       if (baseManagedModuleSet.has(card.moduleKey)) {
         setModuleActivationError(
-          `A ferramenta ${card.title} faz parte da base da organização e nao pode ser desativada.`,
+          `A ferramenta ${card.title} faz parte da base do clube e nao pode ser desativada.`,
         );
         return;
       }
@@ -3209,7 +3189,7 @@ function OrganizacaoPageInner({
                         </div>
                       ) : (
                         <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-sm text-white/70">
-                          Nao existem mais ferramentas opcionais disponiveis para ativacao nesta organizacao.
+                          Nao existem mais ferramentas opcionais disponiveis para ativacao neste clube.
                         </div>
                       )}
                     </div>
@@ -3226,7 +3206,7 @@ function OrganizacaoPageInner({
                         </div>
                       ) : (
                         <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-sm text-white/70">
-                          Nao existem ferramentas opcionais ativas nesta organizacao.
+                          Nao existem ferramentas opcionais ativas neste clube.
                         </div>
                       )}
                     </div>
@@ -3298,7 +3278,7 @@ function OrganizacaoPageInner({
           <p className="text-[11px] uppercase tracking-[0.24em] text-rose-100/80">Timeout de carregamento</p>
           <h1 className="text-2xl font-semibold text-white">O dashboard demorou demasiado tempo a abrir.</h1>
           <p className="text-sm text-rose-100/80">
-            Atualiza o contexto da organização e tenta novamente.
+            Atualiza o contexto do clube e tenta novamente.
           </p>
           <div className="flex flex-wrap gap-2">
             <button
@@ -3317,7 +3297,7 @@ function OrganizacaoPageInner({
               Tentar novamente
             </button>
             <Link href="/org-hub/organizations" className={cn(CTA_SECONDARY, "justify-center")}>
-              Ir para organizações
+              Ir para clubes
             </Link>
           </div>
         </div>
@@ -3330,9 +3310,9 @@ function OrganizacaoPageInner({
       <div className={`${containerClasses} space-y-6`}>
         <div className="max-w-xl space-y-3 rounded-3xl border border-rose-400/40 bg-rose-500/10 p-6 text-rose-100 backdrop-blur-2xl">
           <p className="text-[11px] uppercase tracking-[0.24em] text-rose-100/80">Erro de contexto</p>
-          <h1 className="text-2xl font-semibold text-white">Não foi possível carregar a organização.</h1>
+          <h1 className="text-2xl font-semibold text-white">Não foi possível carregar o clube.</h1>
           <p className="text-sm text-rose-100/80">
-            Recarrega a página. Se persistir, troca de organização no topo e volta a abrir o dashboard.
+            Recarrega a página. Se persistir, troca de clube no topo e volta a abrir o dashboard.
           </p>
           <div className="flex flex-wrap gap-2">
             <button
@@ -3349,7 +3329,7 @@ function OrganizacaoPageInner({
               Tentar novamente
             </button>
             <Link href="/org-hub/organizations" className={cn(CTA_SECONDARY, "justify-center")}>
-              Ir para organizações
+              Ir para clubes
             </Link>
           </div>
         </div>
@@ -3361,15 +3341,15 @@ function OrganizacaoPageInner({
     return (
       <div className={`${containerClasses} space-y-6`}>
         <div className="max-w-xl space-y-3 rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 backdrop-blur-2xl">
-          <p className="text-[11px] uppercase tracking-[0.24em] text-white/70">Sem organização ativa</p>
-          <h1 className="text-2xl font-semibold text-white">Liga-te a uma organização.</h1>
-          <p className="text-sm text-white/70">Cria ou escolhe uma organização para entrar.</p>
+          <p className="text-[11px] uppercase tracking-[0.24em] text-white/70">Sem clube ativo</p>
+          <h1 className="text-2xl font-semibold text-white">Liga-te a um clube.</h1>
+          <p className="text-sm text-white/70">Cria ou escolhe um clube para entrar.</p>
           <div className="flex flex-wrap gap-2">
             <Link href="/org-hub/create" className={cn(CTA_PRIMARY, "justify-center")}>
-              Criar organização
+              Criar clube
             </Link>
             <Link href="/org-hub/organizations" className={cn(CTA_SECONDARY, "justify-center")}>
-              Escolher organização
+              Escolher clube
             </Link>
           </div>
         </div>
@@ -3380,9 +3360,9 @@ function OrganizacaoPageInner({
     return (
       <div className={`${containerClasses} space-y-6`}>
         <div className="max-w-xl space-y-3 rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 backdrop-blur-2xl">
-          <p className="text-[11px] uppercase tracking-[0.24em] text-white/70">Organização pendente</p>
-          <h1 className="text-2xl font-semibold text-white">A tua organização ainda não está ativa.</h1>
-          <p className="text-sm text-white/70">Estamos a rever a tua organização. Vais receber uma notificação.</p>
+          <p className="text-[11px] uppercase tracking-[0.24em] text-white/70">Clube pendente</p>
+          <h1 className="text-2xl font-semibold text-white">O teu clube ainda não está ativo.</h1>
+          <p className="text-sm text-white/70">Estamos a rever o teu clube. Vais receber uma notificação.</p>
         </div>
       </div>
     );
@@ -3391,12 +3371,12 @@ function OrganizacaoPageInner({
     return (
       <div className={`${containerClasses} space-y-6`}>
         <div className="max-w-xl space-y-3 rounded-3xl border border-amber-400/40 bg-gradient-to-br from-amber-500/15 via-[#0b1124]/75 to-[#050810]/90 p-6 text-amber-50 backdrop-blur-2xl">
-          <p className="text-[11px] uppercase tracking-[0.24em] text-amber-100/80">Organização suspensa</p>
+          <p className="text-[11px] uppercase tracking-[0.24em] text-amber-100/80">Clube suspenso</p>
           <h1 className="text-2xl font-semibold text-white">Acesso apenas de leitura.</h1>
           {reactivationWindowOpen ? (
             <p className="text-sm text-amber-100/80">
               {remainingReactivationDays === 0
-                ? "Último dia para reativar a organização."
+                ? "Último dia para reativar o clube."
                 : `Reativação disponível por mais ${remainingReactivationDays ?? "?"} dias.`}
             </p>
           ) : (
@@ -3432,7 +3412,7 @@ function OrganizacaoPageInner({
                 disabled={suspensionActionLoading}
                 className={cn(CTA_PRIMARY, "disabled:opacity-60")}
               >
-                {suspensionActionLoading ? "A reativar…" : "Reativar organização"}
+                {suspensionActionLoading ? "A reativar…" : "Reativar clube"}
               </button>
               {suspensionActionMessage ? (
                 <p className="text-[12px] text-amber-100">{suspensionActionMessage}</p>
@@ -3452,8 +3432,8 @@ function OrganizacaoPageInner({
         <section className="space-y-4">
           <div id="overview" className="flex flex-wrap items-center justify-between gap-3">
             <div className="space-y-1">
-              <p className="text-[11px] uppercase tracking-[0.26em] text-white/60">Painel</p>
-              <h1 className="text-2xl sm:text-3xl font-semibold text-white">Visão geral</h1>
+              <p className="text-[11px] uppercase tracking-[0.26em] text-white/60">Clube de Padel</p>
+              <h1 className="text-2xl sm:text-3xl font-semibold text-white">Dashboard do clube</h1>
               <p className="text-sm text-white/70">
                 {orgDisplayName} · {operationLabel}
               </p>
@@ -3477,8 +3457,8 @@ function OrganizacaoPageInner({
           <div className={cn("space-y-4", fadeClass)}>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               <div className="rounded-3xl border border-white/16 bg-[#0c1424]/90 p-4 shadow-[0_10px_28px_rgba(0,0,0,0.42)]">
-                <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Conta</p>
-                <h3 className="text-lg font-semibold text-white">Estado da conta</h3>
+                <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Clube</p>
+                <h3 className="text-lg font-semibold text-white">Estado do clube</h3>
                 <div className="mt-3 space-y-2 text-[12px] text-white/75">
                   <div className="flex items-center justify-between">
                     <span>Perfil</span>
@@ -3526,13 +3506,11 @@ function OrganizacaoPageInner({
                 </div>
               ) : (
                 <div className="rounded-3xl border border-white/16 bg-[#0c1424]/90 p-4 shadow-[0_10px_28px_rgba(0,0,0,0.42)]">
-                  <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">
-                    {primaryOperation === "TORNEIOS" ? "Torneios" : "Eventos"}
-                  </p>
+                  <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Torneios</p>
                   <h3 className="text-lg font-semibold text-white">Atividade recente</h3>
                   <div className="mt-3 grid gap-2 text-[12px] text-white/75">
                     <div className="flex items-center justify-between">
-                      <span>{primaryOperation === "TORNEIOS" ? "Torneios ativos" : "Eventos ativos"}</span>
+                      <span>Torneios ativos</span>
                       <span className="font-semibold text-white">{overview?.activeEventsCount ?? eventsTotal}</span>
                     </div>
                     <div className="flex items-center justify-between">
@@ -3588,7 +3566,7 @@ function OrganizacaoPageInner({
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span>{primaryOperation === "TORNEIOS" ? "Torneios com vendas" : "Eventos com vendas"}</span>
+                      <span>Torneios com vendas</span>
                       <span className="font-semibold text-white">{overview?.eventsWithSalesCount ?? "—"}</span>
                     </div>
                   </div>
@@ -3603,7 +3581,7 @@ function OrganizacaoPageInner({
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="space-y-1">
                   <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Ferramentas</p>
-                  <h2 className="text-xl font-semibold text-white">Ferramentas da organização</h2>
+                  <h2 className="text-xl font-semibold text-white">Ferramentas do clube</h2>
                   <p className="text-[12px] text-white/65">Acesso direto por ferramenta.</p>
                 </div>
               </div>
@@ -3621,7 +3599,7 @@ function OrganizacaoPageInner({
                     </div>
                     <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8">
                       {group.tools.map((tool) => renderToolCard(tool))}
-                      {showToolManagementCta && group.flow === "Operações" && renderAddToolGhostCard()}
+                      {showToolManagementCta && group.flow === "Operação" && renderAddToolGhostCard()}
                     </div>
                   </div>
                 ))}
@@ -4410,7 +4388,7 @@ function OrganizacaoPageInner({
             />
           ) : (
             <div className="rounded-2xl border border-white/12 bg-white/5 px-4 py-6 text-sm text-white/70">
-              Organização indisponível para carregar o hub.
+              Clube indisponível para carregar o hub.
             </div>
           )}
         </section>
@@ -4427,7 +4405,7 @@ function OrganizacaoPageInner({
             />
           ) : (
             <div className="rounded-2xl border border-white/12 bg-white/5 px-4 py-6 text-sm text-white/70">
-              Organização indisponível para carregar o hub.
+              Clube indisponível para carregar o hub.
             </div>
           )}
         </section>
@@ -5271,8 +5249,12 @@ function OrganizacaoPageInner({
       {activeObjective === "analyze" && activeSection === "ops" && (
         <section className={cn("space-y-4", fadeClass)} id="ops">
           <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0d1530]/75 to-[#050912]/90 px-5 py-4 backdrop-blur-3xl">
-            <h2 className="text-3xl font-semibold text-white drop-shadow-[0_12px_40px_rgba(0,0,0,0.55)]">Feed operacional</h2>
-            <p className="text-sm text-white/70">Atividade operacional recente com correlação.</p>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-3xl font-semibold text-white drop-shadow-[0_12px_40px_rgba(0,0,0,0.55)]">Feed operacional</h2>
+                <p className="text-sm text-white/70">Atividade operacional recente com correlação.</p>
+              </div>
+            </div>
           </div>
           {!opsFeed && (
             <div className="rounded-2xl border border-white/12 bg-white/5 px-4 py-4 text-sm text-white/70">
@@ -5561,7 +5543,7 @@ function OrganizacaoPageInner({
               <div className="rounded-3xl border border-white/10 bg-black/35 p-4 text-sm text-white/70 space-y-4">
                 {marketingPromos.length === 0 ? (
                   <p className="text-[12px] text-white/65">
-                    Ainda não tens códigos atribuídos. Pede à organização para criar um código com o teu nome.
+                    Ainda não tens códigos atribuídos. Pede ao clube para criar um código com o teu nome.
                   </p>
                 ) : (
                   <div className="space-y-3">

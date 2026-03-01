@@ -37,6 +37,7 @@ type SearchOrganization = {
   brandingAvatarUrl: string | null;
   city: string | null;
   isFollowing?: boolean;
+  isFriend?: boolean;
 };
 
 type SearchUser = {
@@ -45,6 +46,7 @@ type SearchUser = {
   fullName: string | null;
   avatarUrl: string | null;
   isFollowing?: boolean;
+  isFriend?: boolean;
   isRequested?: boolean;
 };
 
@@ -104,6 +106,7 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
   const shouldHide = shouldHideUserNavbar(rawPathname);
   const isMobileHubRoute =
     rawPathname === "/" ||
+    rawPathname?.startsWith("/padel") ||
     rawPathname?.startsWith("/descobrir") ||
     rawPathname?.startsWith("/rede") ||
     rawPathname?.startsWith("/agora") ||
@@ -129,7 +132,7 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
         />
       </span>
       <span className="text-[17px] font-semibold leading-none tracking-[0.26em] text-white/90 sm:text-[18px]">
-        ORYA
+        ORYA PADEL
       </span>
     </button>
   );
@@ -387,7 +390,13 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
             isGratis: Boolean(it.isGratis),
           })),
         );
-        setUserResults(userItems);
+        setUserResults(
+          userItems.map((item) => ({
+            ...item,
+            isFriend: Boolean(item.isFriend ?? item.isFollowing),
+            isFollowing: Boolean(item.isFollowing ?? item.isFriend),
+          })),
+        );
         setOrganizationResults(organizationItems);
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
@@ -447,7 +456,9 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
   const updateUserFollowState = (targetId: string, nextFollowing: boolean, nextRequested: boolean) => {
     setUserResults((prev) =>
       prev.map((item) =>
-        item.id === targetId ? { ...item, isFollowing: nextFollowing, isRequested: nextRequested } : item,
+        item.id === targetId
+          ? { ...item, isFollowing: nextFollowing, isFriend: nextFollowing, isRequested: nextRequested }
+          : item,
       ),
     );
   };
@@ -511,7 +522,7 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
       if (res.ok && json?.ok) {
         if (json.status === "REQUESTED") {
           updateUserFollowState(targetId, false, true);
-        } else if (json.status === "FOLLOWING") {
+        } else if (json.status === "FOLLOWING" || json.status === "FRIEND") {
           updateUserFollowState(targetId, true, false);
         }
       } else {
@@ -567,10 +578,15 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
 
   const mainNavItems = [
     {
-      label: "Descobrir",
-      href: "/descobrir",
+      label: "Padel",
+      href: "/padel",
+      active: (path: string) => path.startsWith("/padel"),
+    },
+    {
+      label: "Torneios",
+      href: "/descobrir/torneios",
       active: (path: string) =>
-        path.startsWith("/descobrir") || path.startsWith("/procurar"),
+        path.startsWith("/descobrir") || path.startsWith("/procurar") || path.startsWith("/eventos"),
     },
   ];
 
@@ -1049,10 +1065,10 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
                                     {pending
                                       ? "…"
                                       : followStatus === "following"
-                                        ? "A seguir"
+                                        ? "Amigo"
                                         : followStatus === "requested"
                                           ? "Pedido enviado"
-                                          : "Seguir"}
+                                          : "Adicionar amigo"}
                                   </button>
                                 </div>
                               );
@@ -1232,10 +1248,10 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
                                 {pending
                                   ? "…"
                                   : followStatus === "following"
-                                    ? "A seguir"
+                                    ? "Amigo"
                                     : followStatus === "requested"
                                       ? "Pedido enviado"
-                                      : "Seguir"}
+                                      : "Adicionar amigo"}
                               </button>
                             </div>
                           );

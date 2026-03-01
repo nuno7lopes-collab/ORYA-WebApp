@@ -1,7 +1,0 @@
-score,table_a,table_b,cols_a,cols_b,shared_cols,runtime_refs_a,runtime_refs_b,rows_a,rows_b
-0.9000,padel_registrations,ticket_orders,10,9,9,28,4,0,0
-0.8750,organization_member_invites,padel_team_member_invites,15,15,14,18,14,2,0
-0.8462,crm_contact_consents,user_consents,12,12,11,12,9,363,14
-0.8333,organization_group_owner_transfers,organization_owner_transfers,11,11,10,9,2,0,0
-0.8235,padel_club_staff_invites,padel_team_member_invites,16,15,14,14,14,0,0
-0.8235,organization_member_invites,padel_club_staff_invites,15,16,14,18,14,2,0

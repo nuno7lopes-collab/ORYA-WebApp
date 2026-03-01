@@ -9,7 +9,7 @@ const prisma = vi.hoisted(() => ({
   padelPlayerProfile: { findMany: vi.fn() },
   profile: { findMany: vi.fn() },
   crmContact: { findMany: vi.fn() },
-  padelRatingProfile: { findMany: vi.fn() },
+  padelGlobalRatingProfile: { findMany: vi.fn() },
   padelPairingSlot: { findMany: vi.fn(), groupBy: vi.fn() },
   eventMatchSlot: { findMany: vi.fn() },
 }));
@@ -29,10 +29,12 @@ beforeEach(async () => {
   prisma.padelPlayerProfile.findMany.mockReset();
   prisma.profile.findMany.mockReset();
   prisma.crmContact.findMany.mockReset();
-  prisma.padelRatingProfile.findMany.mockReset();
+  prisma.padelGlobalRatingProfile.findMany.mockReset();
   prisma.padelPairingSlot.findMany.mockReset();
   prisma.padelPairingSlot.groupBy.mockReset();
   prisma.eventMatchSlot.findMany.mockReset();
+  prisma.profile.findMany.mockResolvedValue([]);
+  prisma.crmContact.findMany.mockResolvedValue([]);
 
   createSupabaseServer.mockResolvedValue({
     auth: { getUser: vi.fn(async () => ({ data: { user: { id: "user-1" } } })) },
@@ -52,7 +54,7 @@ describe("GET /api/padel/players ranking payload", () => {
       {
         id: 101,
         organizationId: 22,
-        userId: null,
+        userId: "user-101",
         crmContactId: null,
         fullName: "Jogador A",
         email: null,
@@ -70,19 +72,18 @@ describe("GET /api/padel/players ranking payload", () => {
       },
     ]);
 
-    prisma.padelRatingProfile.findMany
-      .mockResolvedValueOnce([
-        {
-          playerId: 101,
-          rating: 1512,
-          matchesPlayed: 16,
-          leaderboardEligible: true,
-          blockedNewMatches: false,
-          lastMatchAt: new Date("2026-02-10T10:00:00Z"),
-          lastRebuildAt: new Date("2026-02-11T10:00:00Z"),
-        },
-      ])
-      .mockResolvedValueOnce([{ playerId: 101 }]);
+    prisma.padelGlobalRatingProfile.findMany.mockResolvedValue([
+      {
+        id: 901,
+        userId: "user-101",
+        rating: 1512,
+        matchesPlayed: 16,
+        leaderboardEligible: true,
+        blockedNewMatches: false,
+        lastMatchAt: new Date("2026-02-10T10:00:00Z"),
+        lastRebuildAt: new Date("2026-02-11T10:00:00Z"),
+      },
+    ]);
 
     prisma.padelPairingSlot.findMany.mockResolvedValue([]);
     prisma.padelPairingSlot.groupBy.mockResolvedValue([]);

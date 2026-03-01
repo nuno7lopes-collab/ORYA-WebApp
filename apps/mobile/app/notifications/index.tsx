@@ -494,7 +494,7 @@ export default function NotificationsScreen() {
       const followUserId = typeof action.payload?.userId === "string" ? action.payload.userId : null;
       const isFollowing = followUserId ? followOverrides[followUserId] === true : false;
       const isFollowAction = action.type === "follow_back" && Boolean(followUserId);
-      return isFollowAction ? (isFollowing ? "A seguir" : action.label) : action.label;
+      return isFollowAction ? (isFollowing ? "Amigo" : "Adicionar amigo") : action.label;
     },
     [followOverrides],
   );
@@ -854,7 +854,7 @@ export default function NotificationsScreen() {
                         const followUserId = typeof action.payload?.userId === "string" ? action.payload.userId : null;
                         const isFollowing = followUserId ? followOverrides[followUserId] === true : false;
                         const isFollowAction = action.type === "follow_back" && Boolean(followUserId);
-                        const resolvedLabel = isFollowAction ? (isFollowing ? "A seguir" : action.label) : action.label;
+                        const resolvedLabel = isFollowAction ? (isFollowing ? "Amigo" : "Adicionar amigo") : action.label;
                         const isPrimary = !isStatus && (isFollowAction ? !isFollowing : action.style === "primary");
                         return (
                           <Pressable

@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { parseOrganizationId } from "@/lib/organizationIdUtils";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { requireAdminUser } from "@/lib/admin/auth";
@@ -16,13 +17,6 @@ import { logError } from "@/lib/observability/logger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function parseOrganizationId(value: string | null): number | null {
-  if (!value) return null;
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed <= 0) return null;
-  return parsed;
-}
 
 function parseTake(value: string | null) {
   const parsed = Number(value ?? "100");

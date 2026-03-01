@@ -58,7 +58,7 @@ const parseSets = (raw: string) => {
 
 function statusLockHint(status: MatchStatus) {
   if (status === "PENDING_CONFIRMATION") return "Resultado já submetido e pendente de confirmação.";
-  if (status === "PENDING_REVIEW_EXPIRED") return "Resultado expirado e em revisão pela organização.";
+  if (status === "PENDING_REVIEW_EXPIRED") return "Resultado expirado e em revisão pelo clube.";
   if (status === "DISPUTED") return "Jogo em disputa. Aguarda resolução.";
   if (status === "OFFICIAL" || status === "WALKOVER" || status === "RETIRED") return "Resultado final oficial.";
   if (status === "CANCELLED") return "Jogo cancelado.";
@@ -67,7 +67,7 @@ function statusLockHint(status: MatchStatus) {
 
 function parseServerError(code: string | null | undefined) {
   if (!code) return "Não foi possível submeter o resultado.";
-  if (code === "PLAYER_SUBMISSION_DISABLED") return "A organização desativou submissão por jogador.";
+  if (code === "PLAYER_SUBMISSION_DISABLED") return "O clube desativou submissão por jogador.";
   if (code === "RESULT_REVIEW_IN_PROGRESS") return "Resultado já está em revisão/validação.";
   if (code === "MATCH_FINALIZED_USE_RESULT_WORKFLOW") return "Este jogo já está fechado.";
   if (code === "INVALID_SCORE") return "Score inválido. Revê os valores.";
@@ -108,7 +108,7 @@ export default function PadelResultSubmitCard({
     if (!playerSubmissionEnabled) return "Submissão por jogador está desativada para este torneio.";
     if (!canSubmitByStatus) return statusLockHint(status);
     if (validationMode === "IMMEDIATE_PENDING_THEN_OFFICIAL") {
-      return "Ao submeter, o resultado fica pendente de confirmação da organização.";
+      return "Ao submeter, o resultado fica pendente de confirmação do clube.";
     }
     return "Ao submeter, o resultado pode ficar oficial de imediato.";
   }, [canSubmitByStatus, playerSubmissionEnabled, status, validationMode]);
@@ -163,7 +163,7 @@ export default function PadelResultSubmitCard({
       }
       const nextStatus = typeof json?.match?.status === "string" ? json.match.status : null;
       if (nextStatus === "PENDING_CONFIRMATION") {
-        setSuccess("Resultado enviado. Aguarda confirmação da organização.");
+        setSuccess("Resultado enviado. Aguarda confirmação do clube.");
       } else {
         setSuccess("Resultado submetido com sucesso.");
       }

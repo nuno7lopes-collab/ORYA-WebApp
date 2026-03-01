@@ -59,7 +59,7 @@ export default function ProfileLegalInlineSection({
       <article id="termos" className="rounded-2xl border border-white/18 bg-white/[0.04] p-4">
         <h4 className="text-base font-semibold text-white">Termos de utilizacao</h4>
         <p className="mt-2 text-sm text-white/75">
-          Os servicos desta organizacao sao disponibilizados na ORYA e seguem os termos da plataforma, acrescidos das
+          Os servicos deste clube sao disponibilizados na ORYA e seguem os termos da plataforma, acrescidos das
           regras operacionais configuradas abaixo. Ao concluir compras ou reservas, o utilizador aceita estes termos.
         </p>
       </article>
@@ -85,7 +85,7 @@ export default function ProfileLegalInlineSection({
           </li>
           <li>Reembolso elegivel por cliente: valor pago menos apenas a taxa real de processamento do pagamento.</li>
           <li>Nao existe penalizacao percentual configuravel de cancelamento nesta versao.</li>
-          <li>Cancelamento iniciado pela organizacao: reembolso total.</li>
+          <li>Cancelamento iniciado pelo clube: reembolso total.</li>
           <li>
             Reagendamento: {bookingPolicy?.allowReschedule
               ? formatWindow(bookingPolicy.rescheduleWindowMinutes ?? bookingPolicy.cancellationWindowMinutes ?? null)
@@ -98,7 +98,7 @@ export default function ProfileLegalInlineSection({
       <article id="loja-devolucoes" className="rounded-2xl border border-white/18 bg-white/[0.04] p-4">
         <h4 className="text-base font-semibold text-white">Politica da loja</h4>
         <p className="mt-2 text-sm text-white/75">
-          {storePolicy.returnPolicy ?? "Politica de devolucoes ainda nao configurada para esta organizacao."}
+          {storePolicy.returnPolicy ?? "Politica de devolucoes ainda nao configurada para este clube."}
         </p>
       </article>
     </section>

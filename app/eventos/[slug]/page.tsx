@@ -7,6 +7,7 @@ import WavesSectionClient, { type WaveTicket, type WaveStatus } from "./WavesSec
 import Link from "next/link";
 import EventPageClient from "./EventPageClient";
 import PadelMatchesByCategoryClient from "./PadelMatchesByCategoryClient";
+import PadelSignupInline from "./PadelSignupInline";
 import EventDescriptionReadMore from "./EventDescriptionReadMore";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import type { Metadata } from "next";
@@ -989,25 +990,38 @@ export default async function EventPage({
 
                 <div className="mt-6" data-testid="event-hero-purchase-rail">
                   {railState === "active" ? (
-                    <WavesSectionClient
-                      slug={event.slug}
-                      tickets={marketTickets}
-                      layout="rail"
-                      isGratisEvent={isGratis}
-                      checkoutUiVariant={checkoutVariant}
-                      locale={locale}
-                      inviteToken={inviteTokenForCheckout}
-                      padelMeta={
-                        checkoutVariant === "PADEL"
-                          ? {
-                              eventId: event.id,
-                              organizationId: event.organizationId ?? null,
-                              categoryId: padelDefaultCategoryId ?? null,
-                              categoryLinkId: padelDefaultCategoryLinkId ?? null,
-                            }
-                          : undefined
-                      }
-                    />
+                    <div className="space-y-3">
+                      {checkoutVariant === "PADEL" ? (
+                        <PadelSignupInline
+                          eventId={event.id}
+                          organizationId={event.organizationId ?? null}
+                          ticketTypeId={defaultPadelTicketId}
+                          categoryId={padelDefaultCategoryId ?? null}
+                          padelV2Enabled={padelV2Enabled}
+                          templateType={event.templateType}
+                          slug={event.slug}
+                        />
+                      ) : null}
+                      <WavesSectionClient
+                        slug={event.slug}
+                        tickets={marketTickets}
+                        layout="rail"
+                        isGratisEvent={isGratis}
+                        checkoutUiVariant={checkoutVariant}
+                        locale={locale}
+                        inviteToken={inviteTokenForCheckout}
+                        padelMeta={
+                          checkoutVariant === "PADEL"
+                            ? {
+                                eventId: event.id,
+                                organizationId: event.organizationId ?? null,
+                                categoryId: padelDefaultCategoryId ?? null,
+                                categoryLinkId: padelDefaultCategoryLinkId ?? null,
+                              }
+                            : undefined
+                        }
+                      />
+                    </div>
                   ) : (
                     <div
                       data-testid="event-purchase-rail"

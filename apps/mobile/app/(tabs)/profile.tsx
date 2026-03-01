@@ -112,7 +112,7 @@ export default function ProfileScreen() {
   const [coverLocalUri, setCoverLocalUri] = useState<string | null>(null);
   const [avatarRemoved, setAvatarRemoved] = useState(false);
   const [coverRemoved, setCoverRemoved] = useState(false);
-  const [showPadel, setShowPadel] = useState(false);
+  const [showPadel, setShowPadel] = useState(true);
   const [padelEditorOpen, setPadelEditorOpen] = useState(false);
   const [padelSaving, setPadelSaving] = useState(false);
   const [padelGender, setPadelGender] = useState<PadelGender | null>(null);
@@ -1202,21 +1202,21 @@ export default function ProfileScreen() {
 
       <FollowListModal
         open={followersOpen}
-        title="Seguidores"
+        title="Amigos"
         items={followersList.data}
         isLoading={followersList.isLoading}
         isError={followersList.isError}
-        emptyLabel="Sem seguidores ainda."
+        emptyLabel="Sem amigos ainda."
         onClose={() => setFollowersOpen(false)}
         onRetry={() => followersList.refetch()}
       />
       <FollowListModal
         open={followingOpen}
-        title="A seguir"
+        title="Clubes seguidos"
         items={followingList.data}
         isLoading={followingList.isLoading}
         isError={followingList.isError}
-        emptyLabel="Ainda não segues ninguém."
+        emptyLabel="Ainda não segues clubes."
         onClose={() => setFollowingOpen(false)}
         onRetry={() => followingList.refetch()}
       />

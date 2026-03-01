@@ -162,7 +162,7 @@ export default function MobileProfileOverview({
             >
               <span className="text-sm font-semibold leading-none">{followers}</span>
               <span className="text-[10px] uppercase tracking-[0.12em] text-white/70 leading-none">
-                Seguidores
+                Amigos
               </span>
             </button>
             <button
@@ -172,7 +172,7 @@ export default function MobileProfileOverview({
             >
               <span className="text-sm font-semibold leading-none">{following}</span>
               <span className="text-[10px] uppercase tracking-[0.12em] text-white/70 leading-none">
-                A seguir
+                Clubes seguidos
               </span>
             </button>
           </div>
@@ -323,7 +323,7 @@ export default function MobileProfileOverview({
           <div className="w-full max-w-md max-h-[85vh] rounded-3xl border border-white/12 bg-[rgba(8,10,18,0.92)] p-4 shadow-[0_30px_80px_rgba(0,0,0,0.8)] backdrop-blur-2xl">
             <div className="flex items-center justify-between">
               <p className="text-[13px] font-semibold text-white">
-                {activeList === "followers" ? "Seguidores" : "A seguir"}
+                {activeList === "followers" ? "Amigos" : "Clubes seguidos"}
               </p>
               <button
                 type="button"
@@ -335,8 +335,8 @@ export default function MobileProfileOverview({
             </div>
             <div className="mt-3 flex items-center gap-2 rounded-full border border-white/10 bg-white/5 p-1">
               {[
-                { value: "followers", label: "Seguidores", count: followers },
-                { value: "following", label: "A seguir", count: following },
+                { value: "followers", label: "Amigos", count: followers },
+                { value: "following", label: "Clubes seguidos", count: following },
               ].map((tab) => {
                 const isActive = activeList === tab.value;
                 return (
@@ -364,8 +364,8 @@ export default function MobileProfileOverview({
               ) : listItems.length === 0 ? (
                 <p className="text-[12px] text-white/70">
                   {activeList === "followers"
-                    ? "Sem seguidores por agora."
-                    : "Ainda não segues ninguém."}
+                    ? "Sem amigos por agora."
+                    : "Ainda não segues clubes."}
                 </p>
               ) : (
                 <div className="max-h-[60vh] space-y-2 overflow-y-auto pr-1">

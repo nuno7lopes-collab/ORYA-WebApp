@@ -28,19 +28,19 @@ export const ACCESS_LABELS: Record<ModuleAccessLevel, string> = {
 };
 
 export const MODULE_LABELS: Record<OrganizationModule, string> = {
-  EVENTOS: "Eventos",
-  RESERVAS: "Reservas",
-  TORNEIOS: "PADEL",
+  EVENTOS: "Competicao",
+  RESERVAS: "Operacao",
+  TORNEIOS: "Competicao padel",
   STAFF: "Equipa",
-  FINANCEIRO: "Financas",
-  MENSAGENS: "Chat interno",
+  FINANCEIRO: "Negocio",
+  MENSAGENS: "Comunidade",
   CRM: "CRM",
-  MARKETING: "Promocoes",
+  MARKETING: "Marketing",
   LOJA: "Loja",
-  ANALYTICS: "Analytics",
-  DEFINICOES: "Definicoes",
-  PERFIL_PUBLICO: "Perfil publico",
-  INSCRICOES: "Formularios",
+  ANALYTICS: "Relatorios",
+  DEFINICOES: "Configuracoes",
+  PERFIL_PUBLICO: "Perfil clube",
+  INSCRICOES: "Inscricoes",
 };
 
 const ROLE_BASE_ACCESS: Record<OrganizationMemberRole, Partial<Record<OrganizationModule, ModuleAccessLevel>>> = {

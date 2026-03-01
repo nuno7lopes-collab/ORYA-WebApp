@@ -12,7 +12,7 @@ export const ORG_HUB_NAV_ITEMS: OrgHubNavItem[] = [
   {
     key: "organizations",
     href: buildOrgHubHref("/organizations"),
-    label: "Organizações",
+    label: "Clubes",
   },
   {
     key: "groups",
@@ -22,7 +22,7 @@ export const ORG_HUB_NAV_ITEMS: OrgHubNavItem[] = [
   {
     key: "create",
     href: buildOrgHubHref("/create"),
-    label: "Nova organização",
+    label: "Novo clube",
   },
 ];
 

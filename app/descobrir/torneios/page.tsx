@@ -5,7 +5,7 @@ import { ExplorarContent } from "../_explorar/ExplorarContent";
 export default function ExplorarTorneiosPage() {
   return (
     <Suspense fallback={<ExplorarSkeleton initialWorld="PADEL" />}>
-      <ExplorarContent initialWorld="PADEL" />
+      <ExplorarContent initialWorld="PADEL" hideWorldTabs />
     </Suspense>
   );
 }

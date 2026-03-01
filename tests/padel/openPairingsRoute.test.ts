@@ -38,6 +38,32 @@ describe("GET /api/padel/public/open-pairings", () => {
     expect(args?.where?.event?.addressRef?.formattedAddress?.contains).toBe("Lisboa");
   });
 
+  it("valida paymentMode inválido", async () => {
+    const { GET } = await import("@/app/api/padel/public/open-pairings/route");
+    const req = new NextRequest("http://localhost/api/padel/public/open-pairings?paymentMode=INVALIDO");
+    const res = await GET(req);
+    const body = await res.json();
+    const payload = body.result ?? body;
+
+    expect(res.status).toBe(400);
+    expect(payload.error).toBe("INVALID_PAYMENT_MODE");
+  });
+
+  it("aplica filtros opcionais paymentMode/date/level", async () => {
+    const { GET } = await import("@/app/api/padel/public/open-pairings/route");
+    const req = new NextRequest(
+      "http://localhost/api/padel/public/open-pairings?paymentMode=SPLIT&date=today&level=3",
+    );
+    const res = await GET(req);
+    await res.json();
+
+    expect(res.status).toBe(200);
+    const args = prismaPairingFindMany.mock.calls[0]?.[0];
+    expect(args?.where?.payment_mode).toBe("SPLIT");
+    expect(args?.where?.event?.startsAt?.gte).toBeInstanceOf(Date);
+    expect(args?.where?.event?.startsAt?.lte).toBeInstanceOf(Date);
+  });
+
   it("exclui eventos sem policy pública e sanitiza seekingPlayers", async () => {
     prismaPairingFindMany.mockResolvedValue([
       {
@@ -50,7 +76,7 @@ describe("GET /api/padel/public/open-pairings", () => {
             id: 1,
             slotStatus: "FILLED",
             profile: { fullName: "Ana Silva", username: "ana", avatarUrl: null },
-            playerProfile: { level: "M3" },
+            playerProfile: { level: "3" },
           },
           {
             id: 2,
@@ -85,7 +111,7 @@ describe("GET /api/padel/public/open-pairings", () => {
             id: 1,
             slotStatus: "FILLED",
             profile: { fullName: "Jogador Privado", username: "privado", avatarUrl: null },
-            playerProfile: { level: "M3" },
+            playerProfile: { level: "3" },
           },
         ],
         event: {
@@ -121,11 +147,12 @@ describe("GET /api/padel/public/open-pairings", () => {
       displayName: "Ana Silva",
       username: "ana",
       avatarUrl: null,
-      level: "M3",
+      level: "3",
     });
     expect(items[0].seekingPlayers[0]).not.toHaveProperty("profileId");
     expect(items[0].seekingPlayers[0]).not.toHaveProperty("playerProfileId");
     expect(items[0].seekingPlayers[0]).not.toHaveProperty("preferredSide");
     expect(items[0].seekingPlayers[0]).not.toHaveProperty("gender");
+    expect(items[0].averageLevel).toBe(3);
   });
 });

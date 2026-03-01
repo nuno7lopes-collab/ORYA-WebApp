@@ -24,9 +24,9 @@ export const SearchUserRow = memo(function SearchUserRow({
   const displayName = item.fullName || item.username || "Utilizador";
   const handle = item.username ? `@${item.username}` : "";
   const isRequested = Boolean(item.isRequested);
-  const isFollowing = Boolean(item.isFollowing);
-  const isActive = isRequested || isFollowing;
-  const label = pending ? "A atualizar..." : isRequested ? "Pedido enviado" : isFollowing ? "A seguir" : "Seguir";
+  const isFriend = Boolean(item.isFriend ?? item.isFollowing);
+  const isActive = isRequested || isFriend;
+  const label = pending ? "A atualizar..." : isRequested ? "Pedido enviado" : isFriend ? "Amigo" : "Adicionar amigo";
 
   return (
     <GlassCard padding={tokens.spacing.md} style={{ marginBottom: tokens.spacing.sm }}>

@@ -1,6 +1,6 @@
 # ORYA SSOT Registry
 
-Atualizado: 2026-02-26
+Atualizado: 2026-02-28
 
 ## 00 Authority
 
@@ -61,6 +61,10 @@ Atualizado: 2026-02-26
 - Entrada de UI Padel: `/org/[orgId]/events/new?preset=padel` redireciona para `/org/[orgId]/padel/tournaments/create`.
 - Lifecycle Padel: criação mantém `DRAFT` por contrato e publicação continua exclusiva em `/api/padel/tournaments/lifecycle`.
 - Pagamentos+Reservas+Calendário (“A-Perfeito”): hold de checkout ao nível de plataforma (`5m`), sem drafts server por default, profissional como recurso primário, eventos com flag opcional `consumesResources`, torneios em `preview -> commit`, e `forced reschedule => refund`.
+- Onboarding Padel de utilizador (web/mobile/API): obrigatório `fullName`, `username`, `email`, `gender`, `level`, `preferredSide`; `contactPhone` opcional e validado apenas quando preenchido; interesses não são requisito de conclusão do onboarding Padel.
+- ORYA 100% Padel: reposicionamento fechado com headline canónica de backoffice Padel sem mensalidade, linguagem padel-first e paleta verde/laranja/preto nas superfícies de produto.
+- Social user-user fechado em `amizade` bidirecional: `seguir` fica exclusivo para organizações; semântica legada (`follows`, `follow_requests`, `FOLLOWERS`) mantém-se apenas por compatibilidade técnica.
+- IA diária de clube fechada em modo placeholder local: cron por timezone às `05:00` (janela técnica `05:00-05:14`), cache Redis 48h, idempotência diária com lock `NX` e placeholders Grok em torneios/rankings sem integração LLM real nesta fase.
 
 ### 00.6 Registo de Decisão Normativa (NORMATIVO)
 - Decisões FECHADO NÃO dependem de drafts/ficheiros temporários para serem válidas.
@@ -98,6 +102,9 @@ Atualizado: 2026-02-26
 | SSOT-2026-02-26-SINGLE-DOC-GOVERNANCE | Nuno | 2026-02-26 | SSOT como documento único de decisão/revisão normativa | FECHADO | consolidar o SSOT como único cérebro normativo e eliminar ruído não normativo do corpo | secção 103 removida; referências internas de fonte removidas do corpo; secção 104 fica vazia quando não há pendências |
 | SSOT-2026-02-26-A-PERFEITO-PAYMENTS-RESERVATIONS-CALENDAR | Nuno | 2026-02-26 | Pagamentos+Reservas+Calendário em arquitetura A (Next.js host) | FECHADO | tornar checkout/booking/calendar determinísticos e resistentes a duplicação em MVP solo-dev | hold de plataforma 5m, confirmação atómica no server, dedupe webhook/idempotência, sem drafts server por default, regras explícitas de evento/recursos e torneios preview->commit |
 | SSOT-2026-02-26-UNIFIED-REFUND-CASE-V1 | Nuno | 2026-02-26 | Unificação canónica de refunds (`RefundCase`) em TICKET/BOOKING/PADEL/STORE | FECHADO | eliminar dupla verdade de refunds e fechar lifecycle com retries/override auditado | `app_v3.refund_cases` + `PROCESS_REFUND_UNIFIED`; `NO_SHOW` CRM-only sem efeito financeiro; webhook `charge.refunded` cobre todos os `sourceType`; step-up em refund/override org |
+| SSOT-2026-02-28-PADEL-ONBOARDING-PROFILE-V1 | Nuno | 2026-02-28 | onboarding de perfil de jogador Padel (web/mobile/API) | FECHADO | remover ambiguidade de obrigatórios e alinhar UX/API/backend numa regra única | `phone` deixa de ser obrigatório para completion Padel; validação de phone passa a condicional quando preenchido; onboarding deixa de exigir interesses no fluxo de auth |
+| SSOT-2026-02-28-PADEL-GLOBAL-RATING-SNAPSHOT-V1 | Nuno | 2026-02-28 | ranking Padel global único por utilizador + snapshot de torneio | FECHADO | eliminar drift entre clubes/eventos e garantir replay determinístico sem deriva de rating | `PadelGlobalRatingProfile(userId)` canónico; rebuild global determinístico/idempotente; `/api/padel/rankings?eventId` default `snapshotMode=START`; `periodDays` em evento só com `snapshotMode=CURRENT`; `me/summary` e `players` passam a rating global + posição local derivada |
+| SSOT-2026-02-28-ORYA-PADEL-SOCIAL-CLUB-AI-V1 | Nuno | 2026-02-28 | reposicionamento ORYA 100% padel, social por amizade, IA diária para clubes e placeholders Grok | FECHADO | unificar produto padel-only e eliminar ambiguidade entre follow/friend sem quebrar compatibilidade técnica | user-user passa a amizade bidirecional; seguir fica exclusivo para organizações; `FOLLOWERS` em perfis passa a significar “Só amigos”; cron `club-ai` executa por timezone local às 05:00 (janela técnica 05:00-05:14) com Redis TTL 48h + lock diário; endpoints Grok entram como stubs controlados por feature flag |
 ---
 
 ### 00.6.2 Workflow de Decisão do Owner (NORMATIVO)
@@ -1536,17 +1543,24 @@ DORG.08) Username Registry — normalização e anti-spoof (FECHADO)
 
 #### G03.006 (origem: DORG.09)
 
-DORG.09) Perfil Mobile — UI/UX baseline (EM_REVIEW_SEPARADA)
-	•	Estado normativo: revisão UX separada (Q57/Q58); este bloco não bloqueia os contratos arquiteturais fechados.
-	•	Escopo: perfil de Utilizador (view pública/própria) + perfil público de Organização (view pública).
+DORG.09) Perfil Público (Web/Mobile) + Social de Utilizador (FECHADO)
+	•	`decisionId`: `SSOT-2026-02-28-ORYA-PADEL-SOCIAL-CLUB-AI-V1`
+	•	`owner`: Nuno
+	•	`approvedAt`: 2026-02-28
+	•	`scope`: perfil de Utilizador (view pública/própria), perfil público de Organização e semântica social user-user.
+	•	`rationale`: eliminar ambiguidade entre “seguir” e “amizade” e fechar linguagem/social UX em modelo único.
+	•	`migrationImpact`: relações user-user unidirecionais são removidas; pares recíprocos mantêm-se como amizade; `PRIVATE` é remapeado para `FOLLOWERS` com semântica “Só amigos”.
 	•	Padrão comum:
 		–	App Bar sticky, Hero com avatar/badges, CTA primário visível, Stats row, secções sticky, estados loading/empty/error.
 		–	acessibilidade mínima: touch targets >= 44pt, contraste AA, dynamic type.
-	•	Utilizador:
-		–	stats `Seguidores` + `A seguir`.
-		–	CTA `Follow/Unfollow` (outro user) e `Editar Perfil` (próprio).
-	•	Organização:
-		–	stats apenas `Seguidores`.
+	•	Utilizador (user-user):
+		–	relação canónica = `amizade` bidirecional (sem seguidores).
+		–	stats canónicas = `Amigos` + `Clubes seguidos`.
+		–	CTA canónico = `Adicionar amigo` / `Pedido enviado` / `Amigo` (nunca `Follow/Unfollow`).
+		–	`FOLLOWERS` em visibilidade de perfil significa “Só amigos”.
+	•	Organização (user-org):
+		–	seguir organização mantém-se canónico (`Seguir` / `A seguir`).
+		–	stats canónicas no perfil público = `Seguidores`.
 		–	CTA primário derivado da ferramenta ativa (`Ver eventos`/`Reservar`/`Ver loja`/`Contactar`).
 	•	Ordem canónica de blocos org:
 		–	`AGENDA_PUBLICA -> RESERVAS -> FORMULARIOS -> LOJA`.
@@ -3335,12 +3349,25 @@ D18.07) `TournamentEntry` em Padel é derivado (FECHADO)
 #### G08.012 (origem: D18.08)
 
 D18.08) Perfil de jogador canónico (FECHADO)
-	•	`PadelPlayerProfile` é a fonte canónica única de perfil operacional para Padel (jogo, elegibilidade, pairing, agenda e live).
-	•	`Profile/users` mantém identidade global de conta (ex.: `userId`, email, username), mas não redefine campos operacionais de jogo Padel.
-	•	`CRM Contact` é projeção comercial/marketing e não pode sobrepor campos operacionais de jogador Padel.
-	•	Leitura em superfícies Padel deve usar `PadelPlayerProfile` como primário; fallback para `Profile/users` só é permitido quando o campo canónico estiver vazio.
-	•	Escrita em fluxos Padel deve atualizar primeiro `PadelPlayerProfile`; sincronizações para CRM/outros módulos devem ser assíncronas e idempotentes.
-	•	Em conflito entre fontes, prevalece sempre `PadelPlayerProfile`.
+		•	`decisionId`: `SSOT-2026-02-28-PADEL-ONBOARDING-PROFILE-V1`
+		•	`owner`: Nuno
+		•	`approvedAt`: 2026-02-28
+		•	`scope`: onboarding de perfil Padel + perfil público competitivo em superfícies user-facing (web/mobile/auth) e write-path API.
+		•	`rationale`: eliminar drift entre UI, API e regra de completion no perfil competitivo.
+		•	`migrationImpact`: sem migração de schema; hard-cut funcional para regra única de obrigatórios.
+		•	`PadelPlayerProfile` é a fonte canónica única de perfil operacional para Padel (jogo, elegibilidade, pairing, agenda e live).
+		•	`Profile/users` mantém identidade global de conta (ex.: `userId`, email, username), mas não redefine campos operacionais de jogo Padel.
+		•	`CRM Contact` é projeção comercial/marketing e não pode sobrepor campos operacionais de jogador Padel.
+		•	Leitura em superfícies Padel deve usar `PadelPlayerProfile` como primário; fallback para `Profile/users` só é permitido quando o campo canónico estiver vazio.
+		•	Escrita em fluxos Padel deve atualizar primeiro `PadelPlayerProfile`; sincronizações para CRM/outros módulos devem ser assíncronas e idempotentes.
+		•	Em conflito entre fontes, prevalece sempre `PadelPlayerProfile`.
+		•	Superfície pública canónica de jogador competitivo é `/<username>/padel`; para `ownerType=PROFILE`, `/<username>` deve redirecionar para `/<username>/padel`.
+		•	Superfície pública canónica de clube mantém-se em `/<username>` quando `ownerType=ORGANIZATION`.
+		•	No copy público user-facing de superfícies Padel, deve usar-se `clube`; `organização` fica reservado a modelo interno/contratos técnicos.
+		•	O perfil competitivo público do jogador deve expor, no mínimo, `próximos torneios`, `últimos torneios`, `top 3 clubes`, `top 3 duplas` e `estatísticas relevantes`.
+		•	Contrato canónico de completion do onboarding Padel (`PADEL_ONBOARDING_REQUIRED`) exige exatamente: `fullName`, `username`, `email`, `gender`, `level`, `preferredSide`.
+		•	`contactPhone` é opcional para completion do onboarding Padel; quando enviado em write-path deve ser validado e normalizado.
+		•	Fluxos de onboarding de auth/perfil não podem impor seleção de interesses como pré-condição para concluir onboarding Padel.
 
 #### G08.013 (origem: D18.09)
 
@@ -3405,32 +3432,52 @@ D18.17) Gate de direção operacional na publicação (FECHADO)
 #### G08.022 (origem: D18.18)
 
 D18.18) Ranking global Padel com contrato matemático versionado (FECHADO)
-	•	O motor oficial de ranking é `Glicko-2` adaptado, com contrato matemático explícito e versionado.
-	•	A conversão `rating -> nível` (escala visual) é logarítmica e parametrizada no `RankingPolicyContract`.
-	•	Coeficientes de `carry` e `underdog` são parâmetros de contrato (não heurística ad-hoc).
-	•	Qualquer alteração de fórmula/parâmetros exige nova versão de contrato (`v2+`) sem mutação retroativa de histórico.
-	•	Contagem canónica de jogos para rating é estritamente: `OFFICIAL | WALKOVER | RETIRED`.
-	•	Atualização de ranking por mutação de resultado é assíncrona e obrigatória via outbox:
-		- evento interno: `PADEL_RATING_REBUILD_REQUESTED`;
-		- payload mínimo: `{ eventId, organizationId, matchId, actorUserId, beforeStatus, reasonCode, requestedAt }`;
-		- handler executa `rebuildPadelRatingsForEvent` em transação.
-	•	Mutações de resultado que DEVEM disparar rebuild:
-		- transição para/desde estado contado (`OFFICIAL|WALKOVER|RETIRED`);
-		- correção de score/winner em match já contado.
-	•	Eventos de resultado `submit|confirm|reject|override|reset_pending|pending_expired` devem convergir no mesmo caminho de projeção de `match_updated` (sem lacunas de runtime).
-	•	Contrato de rastreabilidade de `GET /api/padel/rankings` inclui:
-		- `meta.countedStatuses=["OFFICIAL","WALKOVER","RETIRED"]`;
-		- `meta.generatedAt` obrigatório.
-	•	Backfill canónico de fecho:
-		- endpoint interno suporta `rebuildAllRatings=true` para recalcular todos os eventos elegíveis com paginação/cursor;
-		- execução deve produzir relatório auditável (`processedEvents`, `rebuiltEvents`, `rankingRowsRebuilt`, `errors[]`, `nextCursor`).
-	•	Propagação UI obrigatória do ranking:
-		- Hub de jogadores (`/api/padel/players`) devolve bloco `ranking` por jogador;
-		- resumo do utilizador (`/api/padel/me/summary`) devolve `ranking` com posição global/org;
-		- perfil público `/<username>/padel` e `/me` expõem rating/posição/jogos com ligação para `/padel/rankings`.
-	•	Unicidade canónica de perfil competitivo por utilizador na organização:
-		- constraint DB obrigatória em `(organization_id, user_id)` (tolerando `NULL` de `user_id` para perfis não vinculados);
-		- dedupe operacional prévio usa merge determinístico e preserva histórico competitivo.
+		•	`decisionId`: `SSOT-2026-02-28-PADEL-GLOBAL-RATING-SNAPSHOT-V1`
+		•	`owner`: Nuno
+		•	`approvedAt`: 2026-02-28
+		•	`scope`: motor de rating, rebuild, snapshots de torneio, contratos API/UI de ranking Padel.
+		•	O motor oficial de ranking é `Glicko-2` adaptado, com contrato matemático explícito e versionado.
+		•	A conversão `rating -> nível` (escala visual) é logarítmica e parametrizada no `RankingPolicyContract`.
+		•	Coeficientes de `carry` e `underdog` são parâmetros de contrato (não heurística ad-hoc).
+		•	Qualquer alteração de fórmula/parâmetros exige nova versão de contrato (`v2+`) sem mutação retroativa de histórico.
+		•	Contagem canónica de jogos para rating é estritamente: `OFFICIAL | WALKOVER | RETIRED`.
+		•	Regra canónica de identidade competitiva: existe exatamente **1 perfil de rating global por utilizador** em `PadelGlobalRatingProfile` (chave `userId`); perfis locais de clube são projeções derivadas e nunca fonte primária de rating.
+		•	Jogadores sem `userId` não entram no leaderboard global até claim/ligação de conta.
+		•	Rebuild de rating é determinístico e idempotente: o mesmo histórico oficial deve produzir o mesmo output em execuções repetidas, sem deriva cumulativa.
+		•	Eventos de rating globais são auditáveis por utilizador/jogo (`matchId + userId`) e devem permitir replay temporal canónico.
+		•	Atualização de ranking por mutação de resultado é assíncrona e obrigatória via outbox:
+			- evento interno: `PADEL_RATING_REBUILD_REQUESTED`;
+			- payload mínimo: `{ eventId, organizationId, matchId, actorUserId, beforeStatus, reasonCode }` (campo `requestedAt` pode existir para auditoria, mas não integra dedupe funcional);
+			- handler executa `rebuildPadelRatingsForEvent` em transação.
+		•	Dedupe funcional de rebuild deve ser estável e independente de relógio (`requestedAt`), baseado em chaves determinísticas do facto (`eventId`, `matchId`, `reasonCode`, `beforeStatus`, contexto estável).
+		•	Mutações de resultado que DEVEM disparar rebuild:
+			- transição para/desde estado contado (`OFFICIAL|WALKOVER|RETIRED`);
+			- correção de score/winner em match já contado.
+		•	Eventos de resultado `submit|confirm|reject|override|reset_pending|pending_expired` devem convergir no mesmo caminho de projeção de `match_updated` (sem lacunas de runtime).
+		•	Contrato de rastreabilidade de `GET /api/padel/rankings` inclui:
+			- `meta.countedStatuses=["OFFICIAL","WALKOVER","RETIRED"]`;
+			- `meta.generatedAt` obrigatório;
+			- `snapshotMode` com valores `START|CURRENT`.
+		•	Quando `eventId` é fornecido em `/api/padel/rankings`, o default canónico é `snapshotMode=START` (ranking de entrada do torneio).
+		•	`periodDays` não é aplicado implicitamente em ranking de evento; só pode ser aplicado quando explicitamente pedido e compatível com `snapshotMode=CURRENT`.
+		•	Snapshot de torneio canónico:
+			- `START`: congela rating global e posições (global + organização do torneio) no instante de início (`event.startsAt`);
+			- `CURRENT`: visão operacional do estado atual, sem alterar o snapshot `START`.
+		•	Backfill canónico de fecho:
+			- endpoint interno suporta `rebuildAllRatings=true` para recalcular todos os eventos elegíveis com paginação/cursor;
+			- execução deve produzir relatório auditável (`processedEvents`, `rebuiltEvents`, `rankingRowsRebuilt`, `errors[]`, `nextCursor`).
+		•	Propagação UI obrigatória do ranking:
+			- Hub de jogadores (`/api/padel/players`) devolve bloco `ranking` por jogador;
+			- resumo do utilizador (`/api/padel/me/summary`) devolve `ranking` com posição global/org;
+			- perfil público `/<username>/padel` e `/me` expõem rating/posição/jogos com ligação para `/padel/rankings`.
+		•	Contrato de superfícies:
+			- `/api/padel/me/summary` devolve rating global canónico por `userId` e identifica origem por `sourceGlobalProfileId`;
+			- `/api/padel/players` devolve `ranking.rating` global e `ranking.orgPosition` local derivada desse rating global no contexto da organização ativa;
+			- `/<username>/padel` usa rating global único para “Rating” e “Global”, expõe o `Clube` base do jogador e a posição local derivada em card dedicado (`Clube (ranking)`).
+		•	Unicidade canónica de perfil competitivo global:
+			- constraint DB obrigatória em `PadelGlobalRatingProfile(userId)`;
+			- snapshots de torneio obrigam unicidade em `(eventId, userId, snapshotMode)`;
+			- dedupe operacional deve preservar histórico competitivo sem criar perfis globais duplicados.
 
 #### G08.017 (origem: D18.13)
 

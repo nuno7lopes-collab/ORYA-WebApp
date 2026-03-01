@@ -12,7 +12,7 @@ import { ThemeRuntime } from "./components/ThemeRuntime";
 
 export const metadata: Metadata = {
   title: "ORYA",
-  description: "O centro da tua vida social em Portugal.",
+  description: "ORYA Padel: torneios, duplas abertas, clubes, aulas e campos em Portugal.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,

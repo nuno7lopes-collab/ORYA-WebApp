@@ -17,7 +17,7 @@ import {
   type ThemeMode,
 } from "@/lib/theme/runtime";
 
-type Visibility = "PUBLIC" | "PRIVATE" | "FOLLOWERS";
+type Visibility = "PUBLIC" | "FOLLOWERS";
 type ConsentTypeKey = "MARKETING" | "CONTACT_EMAIL" | "CONTACT_SMS";
 type ConsentItem = {
   organization: {
@@ -473,18 +473,7 @@ export default function SettingsPage() {
                   onChange={() => setVisibility("FOLLOWERS")}
                   className="h-3 w-3 accent-[#7CFFB2]"
                 />
-                <span>Só seguidores</span>
-              </label>
-              <label className="inline-flex items-center gap-2 rounded-xl border border-white/12 bg-white/5 px-3 py-2">
-                <input
-                  type="radio"
-                  name="visibility"
-                  value="PRIVATE"
-                  checked={visibility === "PRIVATE"}
-                  onChange={() => setVisibility("PRIVATE")}
-                  className="h-3 w-3 accent-[#FF00C8]"
-                />
-                <span>Perfil privado</span>
+                <span>Só amigos</span>
               </label>
             </div>
           </Card>

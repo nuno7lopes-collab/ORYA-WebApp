@@ -32,9 +32,9 @@ export type ProfileHeaderProps = {
   city?: string | null;
   /** Visibilidade do perfil */
   visibility?: "PUBLIC" | "PRIVATE" | string | null;
-  /** Seguidores (placeholder enquanto não temos API) */
+  /** Amigos (contagem social user-user) */
   followers?: number | null;
-  /** Seguindo (placeholder enquanto não temos API) */
+  /** Clubes seguidos (organizações) */
   following?: number | null;
   /** Id do alvo para follow/unfollow (quando não é dono) */
   targetUserId?: string | null;
@@ -332,12 +332,12 @@ export default function ProfileHeader({
   const statsSlot = (
     <>
       <ProfileStatPill
-        label="Seguidores"
+        label="Amigos"
         value={followersDisplay ?? "—"}
         onClick={canOpenLists ? () => openListModal("followers") : undefined}
       />
       <ProfileStatPill
-        label="A seguir"
+        label="Clubes seguidos"
         value={followingCount ?? "—"}
         onClick={canOpenLists ? () => openListModal("following") : undefined}
       />
@@ -644,15 +644,15 @@ export default function ProfileHeader({
       </div>
     ) : null;
 
-  const listTitle = activeList === "following" ? "A seguir" : "Seguidores";
+  const listTitle = activeList === "following" ? "Clubes seguidos" : "Amigos";
   const listTabs: Array<{ value: ListMode; label: string; count: number }> = [
-    { value: "followers", label: "Seguidores", count: followersDisplay ?? 0 },
-    { value: "following", label: "A seguir", count: followingCount ?? 0 },
+    { value: "followers", label: "Amigos", count: followersDisplay ?? 0 },
+    { value: "following", label: "Clubes seguidos", count: followingCount ?? 0 },
   ];
   const emptyLabel =
     activeList === "following"
-      ? "Ainda não segues ninguém."
-      : "Sem seguidores por agora.";
+      ? "Ainda não segues clubes."
+      : "Sem amigos por agora.";
 
   return (
     <>
@@ -754,7 +754,7 @@ export default function ProfileHeader({
                   const isOrganization = item.kind === "organization";
                   const handle = item.username || item.userId;
                   const displayName =
-                    item.fullName || item.username || (isOrganization ? "Organização ORYA" : "Utilizador ORYA");
+                    item.fullName || item.username || (isOrganization ? "Clube ORYA" : "Utilizador ORYA");
                   const href = item.username ? `/${item.username}` : isOrganization ? orgFallbackHref : "/me";
                   return (
                     <Link
@@ -780,7 +780,7 @@ export default function ProfileHeader({
                       </div>
                       {isOrganization && (
                         <span className="rounded-full border border-amber-300/35 bg-amber-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-100">
-                          Org
+                          Clube
                         </span>
                       )}
                     </Link>

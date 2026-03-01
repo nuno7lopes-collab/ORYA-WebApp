@@ -39,6 +39,7 @@ type SuggestionsResponse = {
     city: string | null;
     mutualsCount: number;
     isFollowing: boolean;
+    isFriend?: boolean;
   }>;
 };
 
@@ -48,6 +49,7 @@ type SearchUser = {
   fullName: string | null;
   avatarUrl: string | null;
   isFollowing?: boolean;
+  isFriend?: boolean;
   isRequested?: boolean;
 };
 
@@ -119,7 +121,7 @@ const NOTIFICATION_LABELS: Record<string, string> = {
   EVENT_SALE: "Venda",
   EVENT_PAYOUT_STATUS: "Pagamento",
   STRIPE_STATUS: "Stripe",
-  FOLLOW_REQUEST: "Pedido para seguir",
+  FOLLOW_REQUEST: "Pedido de amizade",
   FOLLOW_ACCEPT: "Pedido aceite",
   EVENT_REMINDER: "Lembrete",
   CHECKIN_READY: "Check-in",
@@ -131,7 +133,7 @@ const NOTIFICATION_LABELS: Record<string, string> = {
   CHAT_OPEN: "Chat",
   CHAT_ANNOUNCEMENT: "Chat",
   CHAT_MESSAGE: "Mensagem de chat",
-  FOLLOWED_YOU: "Segue-te",
+  FOLLOWED_YOU: "Nova ligação",
   FRIEND_GOING_TO_EVENT: "Amigo vai ao evento",
   EVENT_INVITE: "Convite para evento",
   TICKET_TRANSFER_RECEIVED: "Transferencia",
@@ -197,11 +199,27 @@ export default function SocialHubPage() {
   }, [searchParams]);
 
   useEffect(() => {
-    if (suggestionsData?.items) setSuggestions(suggestionsData.items);
+    if (suggestionsData?.items) {
+      setSuggestions(
+        suggestionsData.items.map((item) => ({
+          ...item,
+          isFriend: Boolean(item.isFriend ?? item.isFollowing),
+          isFollowing: Boolean(item.isFollowing ?? item.isFriend),
+        })),
+      );
+    }
   }, [suggestionsData?.items]);
 
   useEffect(() => {
-    if (usersData?.results) setUserResults(usersData.results);
+    if (usersData?.results) {
+      setUserResults(
+        usersData.results.map((item) => ({
+          ...item,
+          isFriend: Boolean(item.isFriend ?? item.isFollowing),
+          isFollowing: Boolean(item.isFollowing ?? item.isFriend),
+        })),
+      );
+    }
   }, [usersData?.results]);
 
   useEffect(() => {
@@ -251,13 +269,17 @@ export default function SocialHubPage() {
         if (res.ok && json?.ok) {
           setUserResults((prev) =>
             prev.map((item) =>
-              item.id === targetId ? { ...item, isFollowing: false, isRequested: false } : item,
+              item.id === targetId
+                ? { ...item, isFollowing: false, isFriend: false, isRequested: false }
+                : item,
             ),
           );
         } else {
           setUserResults((prev) =>
             prev.map((item) =>
-              item.id === targetId ? { ...item, isFollowing: true, isRequested: false } : item,
+              item.id === targetId
+                ? { ...item, isFollowing: true, isFriend: true, isRequested: false }
+                : item,
             ),
           );
         }
@@ -274,13 +296,17 @@ export default function SocialHubPage() {
         if (res.ok && json?.ok) {
           setUserResults((prev) =>
             prev.map((item) =>
-              item.id === targetId ? { ...item, isFollowing: false, isRequested: false } : item,
+              item.id === targetId
+                ? { ...item, isFollowing: false, isFriend: false, isRequested: false }
+                : item,
             ),
           );
         } else {
           setUserResults((prev) =>
             prev.map((item) =>
-              item.id === targetId ? { ...item, isFollowing: false, isRequested: true } : item,
+              item.id === targetId
+                ? { ...item, isFollowing: false, isFriend: false, isRequested: true }
+                : item,
             ),
           );
         }
@@ -297,13 +323,17 @@ export default function SocialHubPage() {
         if (json.status === "REQUESTED") {
           setUserResults((prev) =>
             prev.map((item) =>
-              item.id === targetId ? { ...item, isFollowing: false, isRequested: true } : item,
+              item.id === targetId
+                ? { ...item, isFollowing: false, isFriend: false, isRequested: true }
+                : item,
             ),
           );
-        } else if (json.status === "FOLLOWING") {
+        } else if (json.status === "FOLLOWING" || json.status === "FRIEND") {
           setUserResults((prev) =>
             prev.map((item) =>
-              item.id === targetId ? { ...item, isFollowing: true, isRequested: false } : item,
+              item.id === targetId
+                ? { ...item, isFollowing: true, isFriend: true, isRequested: false }
+                : item,
             ),
           );
         }
@@ -335,7 +365,11 @@ export default function SocialHubPage() {
     setFollowPendingFlag(key, true);
     setSuggestions(
       (prev) =>
-        prev?.map((item) => (item.id === targetId ? { ...item, isFollowing: next } : item)) ?? [],
+        prev?.map((item) =>
+          item.id === targetId
+            ? { ...item, isFollowing: next, isFriend: next }
+            : item,
+        ) ?? [],
     );
     try {
       await fetch(next ? "/api/social/follow" : "/api/social/unfollow", {
@@ -638,7 +672,7 @@ export default function SocialHubPage() {
                       <div>
                         <p className="text-sm font-semibold text-white">{label}</p>
                         <p className="text-[12px] text-white/60">
-                          {request.username ? `@${request.username}` : "Pedido para seguir"}
+                          {request.username ? `@${request.username}` : "Pedido de amizade"}
                         </p>
                       </div>
                     </div>
@@ -675,7 +709,7 @@ export default function SocialHubPage() {
           </div>
 
           <div className="space-y-4">
-            <SectionCard title="Sugestoes" subtitle="Pessoas proximas para seguir.">
+            <SectionCard title="Sugestoes" subtitle="Pessoas proximas para adicionares como amigo.">
               {(!suggestions || suggestions.length === 0) && (
                 <EmptyLabel label="Sem sugestoes por agora." />
               )}
@@ -708,7 +742,7 @@ export default function SocialHubPage() {
                         </p>
                         <p className="text-[11px] text-white/50">
                           {item.mutualsCount > 0
-                            ? `${item.mutualsCount} seguidor${item.mutualsCount === 1 ? "" : "es"} em comum`
+                            ? `${item.mutualsCount} amigo${item.mutualsCount === 1 ? "" : "s"} em comum`
                             : "Novo na tua zona"}
                         </p>
                       </div>
@@ -716,14 +750,18 @@ export default function SocialHubPage() {
                     <button
                       type="button"
                       disabled={pending}
-                      onClick={() => handleFollowSuggestion(item.id, !item.isFollowing)}
+                      onClick={() => handleFollowSuggestion(item.id, !Boolean(item.isFriend ?? item.isFollowing))}
                       className={`rounded-full border px-4 py-2 text-[12px] font-semibold transition ${
-                        item.isFollowing
+                        Boolean(item.isFriend ?? item.isFollowing)
                           ? "border-emerald-300/40 bg-emerald-400/15 text-emerald-100"
                           : "border-white/20 bg-white/10 text-white/85 hover:bg-white/20"
                       } ${pending ? "opacity-60" : ""}`}
                     >
-                      {pending ? "A seguir..." : item.isFollowing ? "Deixar de seguir" : "Seguir"}
+                      {pending
+                        ? "..."
+                        : Boolean(item.isFriend ?? item.isFollowing)
+                          ? "Amigo"
+                          : "Adicionar amigo"}
                     </button>
                   </div>
                 );
@@ -751,7 +789,7 @@ export default function SocialHubPage() {
                 <div className="mt-3 space-y-2">
                   <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Utilizadores</p>
                   {userResults.map((item) => {
-                    const isFollowing = Boolean(item.isFollowing);
+                    const isFollowing = Boolean(item.isFriend ?? item.isFollowing);
                     const isRequested = Boolean(item.isRequested);
                     const followStatus: "following" | "requested" | "none" = isFollowing
                       ? "following"
@@ -793,10 +831,10 @@ export default function SocialHubPage() {
                           {pending
                             ? "..."
                             : followStatus === "following"
-                              ? "Deixar de seguir"
+                              ? "Amigo"
                               : followStatus === "requested"
                                 ? "Pedido enviado"
-                                : "Seguir"}
+                                : "Adicionar amigo"}
                         </button>
                       </div>
                     );
@@ -963,7 +1001,7 @@ export default function SocialHubPage() {
                             const targetUserId = typeof action.payload?.userId === "string" ? action.payload.userId : null;
                             const isFollowAction = action.type === "follow_back" && Boolean(targetUserId);
                             const isFollowing = targetUserId ? followBackState[targetUserId] === true : false;
-                            const resolvedLabel = isFollowAction ? (isFollowing ? "A seguir" : action.label) : action.label;
+                            const resolvedLabel = isFollowAction ? (isFollowing ? "Amigo" : "Adicionar amigo") : action.label;
                             const isPrimary = isFollowAction ? !isFollowing : action.style === "primary";
                             return (
                               <button

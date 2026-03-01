@@ -19,6 +19,45 @@ function clampLimit(raw: string | null) {
   return Math.min(Math.max(1, Math.floor(parsed)), 30);
 }
 
+function buildDateFilter(dateParam: string | null, dayParam: string | null) {
+  if (dateParam === "today") {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date();
+    endOfDay.setHours(23, 59, 59, 999);
+    return { gte: startOfDay, lte: endOfDay };
+  }
+  if (dateParam === "weekend") {
+    const now = new Date();
+    const day = now.getDay();
+    let start = new Date(now);
+    let end = new Date(now);
+    if (day === 0) {
+      start = now;
+      end.setHours(23, 59, 59, 999);
+    } else {
+      const daysToSaturday = (6 - day + 7) % 7;
+      start.setDate(now.getDate() + daysToSaturday);
+      start.setHours(0, 0, 0, 0);
+      end = new Date(start);
+      end.setDate(start.getDate() + 1);
+      end.setHours(23, 59, 59, 999);
+    }
+    return { gte: start, lte: end };
+  }
+  if (dateParam === "day" && dayParam) {
+    const day = new Date(dayParam);
+    if (!Number.isNaN(day.getTime())) {
+      const startOfDay = new Date(day);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(day);
+      endOfDay.setHours(23, 59, 59, 999);
+      return { gte: startOfDay, lte: endOfDay };
+    }
+  }
+  return null;
+}
+
 async function _GET(req: NextRequest) {
   try {
     const rateLimited = await enforcePublicRateLimit(req, {
@@ -31,6 +70,10 @@ async function _GET(req: NextRequest) {
     const q = params.get("q")?.trim() ?? "";
     const eventIdParam = params.get("eventId");
     const categoryIdParam = params.get("categoryId");
+    const dateParam = params.get("date");
+    const dayParam = params.get("day");
+    const levelParam = params.get("level")?.trim() ?? "";
+    const paymentModeParam = params.get("paymentMode")?.trim().toUpperCase() ?? "";
     const cityParamRaw = params.get("city")?.trim() ?? "";
     const cityParam =
       cityParamRaw && cityParamRaw.toLowerCase() !== "portugal"
@@ -46,9 +89,20 @@ async function _GET(req: NextRequest) {
     if (categoryIdParam && !hasValidCategoryId) {
       return jsonWrap({ ok: false, error: "INVALID_CATEGORY" }, { status: 400 });
     }
+    if (paymentModeParam && paymentModeParam !== "FULL" && paymentModeParam !== "SPLIT") {
+      return jsonWrap({ ok: false, error: "INVALID_PAYMENT_MODE" }, { status: 400 });
+    }
     const limit = clampLimit(params.get("limit"));
     const queryTake = Math.min(limit * 3, 90);
     const now = new Date();
+    const dateFilter = buildDateFilter(dateParam, dayParam);
+    const startsAtFilter = dateFilter
+      ? {
+          ...dateFilter,
+          gte:
+            dateFilter.gte.getTime() < now.getTime() ? now : dateFilter.gte,
+        }
+      : { gte: now };
     const eventFilter: Prisma.PadelPairingWhereInput = {};
     if (hasValidEventId) {
       eventFilter.eventId = eventId;
@@ -60,6 +114,7 @@ async function _GET(req: NextRequest) {
 
     const pairingWhere: Prisma.PadelPairingWhereInput = {
       pairingStatus: { not: "CANCELLED" },
+      ...(paymentModeParam ? { payment_mode: paymentModeParam as "FULL" | "SPLIT" } : {}),
       ...eventFilter,
       ...categoryFilter,
       AND: [
@@ -73,7 +128,7 @@ async function _GET(req: NextRequest) {
       ],
       event: {
         isDeleted: false,
-        startsAt: { gte: now },
+        startsAt: startsAtFilter,
         ...(cityParam
           ? {
               addressRef: {
@@ -169,10 +224,23 @@ async function _GET(req: NextRequest) {
       return check.ok;
     });
 
+    const levelNeedle = levelParam.toLowerCase();
+    const levelFiltered = levelNeedle
+      ? filtered.filter((pairing) => {
+          const categoryLabel = pairing.category?.label?.toLowerCase() ?? "";
+          if (categoryLabel.includes(levelNeedle)) return true;
+          return pairing.slots.some((slot) =>
+            String(slot.playerProfile?.level ?? "")
+              .toLowerCase()
+              .includes(levelNeedle),
+          );
+        })
+      : filtered;
+
     return jsonWrap(
       {
         ok: true,
-        items: filtered
+        items: levelFiltered
           .map((pairing) => ({
             seekingPlayers: pairing.slots
               .filter((slot) => slot.slotStatus === "FILLED")
@@ -185,6 +253,15 @@ async function _GET(req: NextRequest) {
                 avatarUrl: slot.profile?.avatarUrl ?? null,
                 level: slot.playerProfile?.level ?? null,
               })),
+            averageLevel: (() => {
+              const levels = pairing.slots
+                .map((slot) => slot.playerProfile?.level)
+                .filter((value): value is string => Boolean(value))
+                .map((value) => Number(value))
+                .filter((value) => Number.isFinite(value));
+              if (levels.length === 0) return null;
+              return Number((levels.reduce((acc, cur) => acc + cur, 0) / levels.length).toFixed(2));
+            })(),
             isExpired: pairing.deadlineAt ? pairing.deadlineAt.getTime() < now.getTime() : false,
             id: pairing.id,
             paymentMode: pairing.payment_mode,

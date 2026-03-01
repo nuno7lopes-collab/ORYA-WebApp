@@ -72,6 +72,7 @@ export const fetchIpLocation = async (accessToken?: string | null): Promise<IpLo
 export const saveBasicProfile = async (payload: {
   fullName: string;
   username: string;
+  contactPhone?: string | null;
   favouriteCategories: InterestId[];
   accessToken?: string | null;
   onboardingDone?: boolean;
@@ -81,6 +82,7 @@ export const saveBasicProfile = async (payload: {
     body: JSON.stringify({
       fullName: payload.fullName,
       username: payload.username,
+      contactPhone: payload.contactPhone ?? null,
       favouriteCategories: payload.favouriteCategories,
       ...(typeof payload.onboardingDone === "boolean"
         ? { onboardingDone: payload.onboardingDone }

@@ -551,6 +551,9 @@
       "usernameLabel": "Username",
       "usernamePlaceholder": "@yourname",
       "usernameHint": "3-15 characters, letters or numbers, optional _ or ., no spaces or accents. Some words are reserved.",
+      "phoneLabel": "Phone (optional)",
+      "phonePlaceholder": "+351 9xx xxx xxx",
+      "phoneHint": "Use an international or local number with 9 to 15 digits.",
       "continue": "Continue"
     },
     "interests": {
@@ -609,11 +612,12 @@
       "usernameCheckTimeout": "Check took too long. Try again.",
       "usernameCheckFailed": "Couldn't check right now.",
       "profileSaveFailed": "Couldn't save profile.",
+      "phoneInvalid": "Invalid phone number.",
       "interestsSaveFailed": "Couldn't save interests.",
       "padelSaveFailed": "Couldn't save padel profile.",
       "locationFailed": "Couldn't get location right now.",
       "missingDataTitle": "Missing info",
-      "padelMissing": "Select gender and preferred side.",
+      "padelMissing": "Select gender, preferred side, and level.",
       "finalizeFailed": "Couldn't finish onboarding. Try again."
     }
   },

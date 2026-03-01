@@ -4,8 +4,8 @@ import { ExplorarContent } from "./_explorar/ExplorarContent";
 
 export default function ExplorarLandingPage() {
   return (
-    <Suspense fallback={<ExplorarSkeleton initialWorld="EVENTOS" />}>
-      <ExplorarContent initialWorld="EVENTOS" />
+    <Suspense fallback={<ExplorarSkeleton initialWorld="PADEL" />}>
+      <ExplorarContent initialWorld="PADEL" hideWorldTabs />
     </Suspense>
   );
 }

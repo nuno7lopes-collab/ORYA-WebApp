@@ -20,7 +20,13 @@ export default function LandingPage() {
             className="landing-logo"
           />
         </div>
-        <h1 className="landing-name">ORYA</h1>
+        <h1 className="landing-name">ORYA Padel</h1>
+        <p className="landing-headline">
+          O backoffice completo de padel SEM MENSALIDADE. Pagas só 5% quando ganhas.
+        </p>
+        <p className="landing-subheadline">
+          Gestão de clube e marketplace para jogadores numa experiência 100% padel.
+        </p>
       </div>
     </div>
   );

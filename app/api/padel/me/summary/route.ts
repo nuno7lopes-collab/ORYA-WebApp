@@ -13,6 +13,7 @@ import { computeUserPadelStats } from "@/domain/padel/userStats";
 import { PadelPairingSlotStatus, Prisma } from "@prisma/client";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
+import { withPadelGlobalRatingFallback } from "@/lib/padel/globalRatingSchema";
 const MAX_PAIRINGS = 20;
 const MAX_WAITLIST = 10;
 const MAX_MATCHES = 120;
@@ -28,7 +29,7 @@ async function _GET() {
     return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
   }
 
-  const [profile, fallbackPadel, playerProfiles] = await Promise.all([
+  const [profile, fallbackPadel, playerProfiles, globalRatingProfile] = await Promise.all([
     prisma.profile.findUnique({
       where: { id: user.id },
       select: {
@@ -36,6 +37,7 @@ async function _GET() {
         fullName: true,
         username: true,
         avatarUrl: true,
+        contactPhone: true,
         gender: true,
         padelLevel: true,
         padelPreferredSide: true,
@@ -55,54 +57,106 @@ async function _GET() {
         updatedAt: true,
         ratingProfile: {
           select: {
-            rating: true,
             matchesPlayed: true,
-            leaderboardEligible: true,
-            blockedNewMatches: true,
-            lastMatchAt: true,
-            lastRebuildAt: true,
           },
         },
       },
     }),
+    withPadelGlobalRatingFallback(
+      () =>
+        prisma.padelGlobalRatingProfile.findUnique({
+          where: { userId: user.id },
+          select: {
+            id: true,
+            rating: true,
+            rd: true,
+            sigma: true,
+            matchesPlayed: true,
+            leaderboardEligible: true,
+            blockedNewMatches: true,
+            lastMatchAt: true,
+            lastActivityAt: true,
+            lastRebuildAt: true,
+          },
+        }),
+      null,
+      "app/api/padel/me/summary#globalProfile",
+    ),
   ]);
 
-  const byRankingPriority = (a: (typeof playerProfiles)[number], b: (typeof playerProfiles)[number]) => {
-    const aMatches = a.ratingProfile?.matchesPlayed ?? -1;
-    const bMatches = b.ratingProfile?.matchesPlayed ?? -1;
-    if (aMatches !== bMatches) return bMatches - aMatches;
-    const aRating = a.ratingProfile?.rating ?? -1;
-    const bRating = b.ratingProfile?.rating ?? -1;
-    if (aRating !== bRating) return bRating - aRating;
-    return b.updatedAt.getTime() - a.updatedAt.getTime();
-  };
-  const sourcePlayerProfile = [...playerProfiles].sort(byRankingPriority)[0] ?? null;
-  const sourceRating = sourcePlayerProfile?.ratingProfile ?? null;
+  const sourcePlayerProfile =
+    [...playerProfiles].sort((a, b) => {
+      const aMatches = a.ratingProfile?.matchesPlayed ?? -1;
+      const bMatches = b.ratingProfile?.matchesPlayed ?? -1;
+      if (aMatches !== bMatches) return bMatches - aMatches;
+      return b.updatedAt.getTime() - a.updatedAt.getTime() || a.id - b.id;
+    })[0] ?? null;
+
   let orgPosition: number | null = null;
   let globalPosition: number | null = null;
 
-  if (sourcePlayerProfile && sourceRating) {
-    const orgAhead = await prisma.padelRatingProfile.count({
+  if (sourcePlayerProfile && globalRatingProfile) {
+    const orgPlayers = await prisma.padelPlayerProfile.findMany({
       where: {
         organizationId: sourcePlayerProfile.organizationId,
-        OR: [
-          { rating: { gt: sourceRating.rating } },
-          { rating: sourceRating.rating, playerId: { lt: sourcePlayerProfile.id } },
-        ],
+        userId: { not: null },
       },
+      select: { userId: true },
     });
-    orgPosition = orgAhead + 1;
+    const orgUserIds = Array.from(
+      new Set(orgPlayers.map((row) => row.userId).filter((value): value is string => typeof value === "string")),
+    );
 
-    if (sourceRating.leaderboardEligible) {
-      const globalAhead = await prisma.padelRatingProfile.count({
-        where: {
-          leaderboardEligible: true,
-          OR: [
-            { rating: { gt: sourceRating.rating } },
-            { rating: sourceRating.rating, playerId: { lt: sourcePlayerProfile.id } },
-          ],
-        },
+    if (orgUserIds.length > 0) {
+      const orgGlobalProfiles = await withPadelGlobalRatingFallback(
+        () =>
+          prisma.padelGlobalRatingProfile.findMany({
+            where: {
+              userId: { in: orgUserIds },
+              matchesPlayed: { gt: 0 },
+            },
+            select: { userId: true, rating: true },
+          }),
+        [],
+        "app/api/padel/me/summary#orgRanking",
+      );
+
+      const sorted = orgGlobalProfiles.sort((a, b) => {
+        if (b.rating !== a.rating) return b.rating - a.rating;
+        return a.userId.localeCompare(b.userId);
       });
+      const positions = new Map<string, number>();
+      let lastPoints: number | null = null;
+      let lastPosition = 0;
+      sorted.forEach((entry, index) => {
+        const points = Math.round(entry.rating);
+        if (lastPoints === null || points !== lastPoints) {
+          lastPoints = points;
+          lastPosition = index + 1;
+        }
+        positions.set(entry.userId, lastPosition);
+      });
+      orgPosition = positions.get(user.id) ?? null;
+    }
+  }
+
+  if (globalRatingProfile?.leaderboardEligible && globalRatingProfile.matchesPlayed > 0) {
+    const globalAhead = await withPadelGlobalRatingFallback(
+      () =>
+        prisma.padelGlobalRatingProfile.count({
+          where: {
+            leaderboardEligible: true,
+            matchesPlayed: { gt: 0 },
+            OR: [
+              { rating: { gt: globalRatingProfile.rating } },
+              { rating: globalRatingProfile.rating, userId: { lt: user.id } },
+            ],
+          },
+        }),
+      null,
+      "app/api/padel/me/summary#globalPosition",
+    );
+    if (typeof globalAhead === "number") {
       globalPosition = globalAhead + 1;
     }
   }
@@ -118,6 +172,10 @@ async function _GET() {
       ? {
           fullName: profile.fullName,
           username: profile.username,
+          contactPhone: profile.contactPhone,
+          gender: profile.gender,
+          padelLevel: profile.padelLevel,
+          padelPreferredSide: profile.padelPreferredSide,
         }
       : null,
     email: user.email ?? null,
@@ -309,14 +367,15 @@ async function _GET() {
         waitlistCount: waitlistItems.length,
       },
       ranking: {
-        rating: sourceRating ? Number(sourceRating.rating) : null,
+        rating: globalRatingProfile ? Number(globalRatingProfile.rating) : null,
         globalPosition,
         orgPosition,
-        matchesPlayed: sourceRating?.matchesPlayed ?? 0,
-        leaderboardEligible: sourceRating?.leaderboardEligible ?? false,
-        lastMatchAt: sourceRating?.lastMatchAt ?? null,
-        lastRebuildAt: sourceRating?.lastRebuildAt ?? null,
-        sourcePlayerProfileId: sourcePlayerProfile?.id ?? null,
+        matchesPlayed: globalRatingProfile?.matchesPlayed ?? 0,
+        leaderboardEligible: globalRatingProfile?.leaderboardEligible ?? false,
+        blockedNewMatches: globalRatingProfile?.blockedNewMatches ?? false,
+        lastMatchAt: globalRatingProfile?.lastMatchAt ?? null,
+        lastRebuildAt: globalRatingProfile?.lastRebuildAt ?? null,
+        sourceGlobalProfileId: globalRatingProfile?.id ?? null,
       },
       pairings: pairingItems,
       waitlist: waitlistItems,

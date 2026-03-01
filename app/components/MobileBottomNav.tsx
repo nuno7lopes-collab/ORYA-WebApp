@@ -42,10 +42,11 @@ export default function MobileBottomNav({ pathname, socialBadgeCount }: MobileBo
 
   const itemDescobrir: Item = useMemo(
     () => ({
-      label: "Descobrir",
+      label: "Padel",
       icon: IconCompass,
-      path: "/descobrir",
-      active: (p) => p.startsWith("/descobrir") || p.startsWith("/procurar"),
+      path: "/padel",
+      active: (p) =>
+        p.startsWith("/padel") || p.startsWith("/descobrir") || p.startsWith("/procurar"),
     }),
     [],
   );

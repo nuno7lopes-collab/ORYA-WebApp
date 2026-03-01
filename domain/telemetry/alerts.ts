@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getAppEnv } from "@/lib/appEnv";
+import { parseOrganizationId } from "@/lib/organizationIdUtils";
 import { sanitizeTelemetryPayload } from "@/domain/telemetry/redaction";
 import {
   TELEMETRY_COMPARISON_OPERATORS,
@@ -1132,11 +1133,6 @@ function parseWindowMinutes(value: unknown): number | null {
 
 function parseCooldownMinutes(value: unknown): number | null {
   return toNullableInt(value, { min: 1, max: 7 * 24 * 60 });
-}
-
-function parseOrganizationId(value: unknown): number | null {
-  if (value === null || value === undefined || value === "") return null;
-  return toNullableInt(value, { min: 1 });
 }
 
 type ParseResult<T> =

@@ -551,6 +551,9 @@
       "usernameLabel": "Usuario",
       "usernamePlaceholder": "@tusuario",
       "usernameHint": "3-15 caracteres, letras o números, opcionalmente _ o ., sin espacios ni acentos. Algunas palabras están reservadas.",
+      "phoneLabel": "Teléfono (opcional)",
+      "phonePlaceholder": "+351 9xx xxx xxx",
+      "phoneHint": "Usa un número internacional o nacional con 9 a 15 dígitos.",
       "continue": "Continuar"
     },
     "interests": {
@@ -609,11 +612,12 @@
       "usernameCheckTimeout": "La verificación tardó demasiado. Inténtalo de nuevo.",
       "usernameCheckFailed": "No se pudo verificar ahora.",
       "profileSaveFailed": "No se pudo guardar el perfil.",
+      "phoneInvalid": "Teléfono inválido.",
       "interestsSaveFailed": "No se pudieron guardar los intereses.",
       "padelSaveFailed": "No se pudo guardar el perfil de pádel.",
       "locationFailed": "No se pudo obtener la ubicación ahora.",
       "missingDataTitle": "Faltan datos",
-      "padelMissing": "Selecciona el género y el lado preferido.",
+      "padelMissing": "Selecciona el género, el lado preferido y el nivel.",
       "finalizeFailed": "No se pudo completar el onboarding. Inténtalo de nuevo."
     }
   },

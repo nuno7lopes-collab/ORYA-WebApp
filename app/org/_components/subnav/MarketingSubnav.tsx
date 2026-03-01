@@ -6,14 +6,41 @@ import ToolSubnavShell from "./ToolSubnavShell";
 export default function MarketingSubnav({ orgId, className }: { orgId: number | null; className?: string }) {
   if (!orgId) return null;
 
+  const resolveMarketingTab = (searchParams: URLSearchParams) => {
+    const value = searchParams.get("marketing");
+    if (!value) return "overview";
+    if (value === "promos" || value === "promoters" || value === "content") return value;
+    return "overview";
+  };
+
   return (
     <ToolSubnavShell
       className={className}
       items={[
-        { id: "overview", label: "Resumo", href: buildOrgHref(orgId, "/marketing", { marketing: "overview" }) },
-        { id: "promos", label: "Promoções", href: buildOrgHref(orgId, "/marketing", { marketing: "promos" }) },
-        { id: "promoters", label: "Promotores", href: buildOrgHref(orgId, "/marketing", { marketing: "promoters" }) },
-        { id: "content", label: "Conteúdo", href: buildOrgHref(orgId, "/marketing", { marketing: "content" }) },
+        {
+          id: "overview",
+          label: "Resumo",
+          href: buildOrgHref(orgId, "/marketing", { marketing: "overview" }),
+          isActive: ({ searchParams }) => resolveMarketingTab(searchParams) === "overview",
+        },
+        {
+          id: "promos",
+          label: "Promoções",
+          href: buildOrgHref(orgId, "/marketing", { marketing: "promos" }),
+          isActive: ({ searchParams }) => resolveMarketingTab(searchParams) === "promos",
+        },
+        {
+          id: "promoters",
+          label: "Promotores",
+          href: buildOrgHref(orgId, "/marketing", { marketing: "promoters" }),
+          isActive: ({ searchParams }) => resolveMarketingTab(searchParams) === "promoters",
+        },
+        {
+          id: "content",
+          label: "Conteúdo",
+          href: buildOrgHref(orgId, "/marketing", { marketing: "content" }),
+          isActive: ({ searchParams }) => resolveMarketingTab(searchParams) === "content",
+        },
       ]}
     />
   );

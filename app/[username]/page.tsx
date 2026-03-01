@@ -2,22 +2,15 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import ProfileHeader from "@/app/components/profile/ProfileHeader";
 import OrganizationProfileHeader from "@/app/components/profile/OrganizationProfileHeader";
 import OrganizationAgendaTabs from "@/app/components/profile/OrganizationAgendaTabs";
-import MobileTopBar from "@/app/components/mobile/MobileTopBar";
-import MobileProfileOverview from "@/app/components/mobile/MobileProfileOverview";
-import { FilterChip } from "@/app/components/mobile/MobileFilters";
-import InterestIcon from "@/app/components/interests/InterestIcon";
 import { getEventCoverUrl } from "@/lib/eventCover";
 import { getProfileCoverUrl } from "@/lib/profileCover";
-import { getPadelOnboardingMissing, isPadelOnboardingComplete } from "@/domain/padelOnboarding";
 import {
   CORE_ORGANIZATION_MODULES,
   parseOrganizationTools,
   resolvePrimaryModule,
 } from "@/lib/organizationCategories";
-import { normalizeInterestSelection, resolveInterestLabel } from "@/lib/interests";
 import { getPaidSalesGate } from "@/lib/organizationPayments";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { resolveStorePolicy } from "@/lib/store/policySettings";
@@ -27,7 +20,6 @@ import {
   canShowPublicReservasSection,
 } from "@/lib/publicOrganizationProfile";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
-import { getUserIdentityIds } from "@/lib/ownership/identity";
 import { ChatCommunityAccessMode, OrganizationFormStatus, type Prisma } from "@prisma/client";
 import { resolveTicketPricingSummary } from "@/domain/events/ticketPricing";
 import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
@@ -40,7 +32,6 @@ import ProfileCommunitySection, {
 } from "@/app/[username]/_components/ProfileCommunitySection";
 import ProfileSectionsShell from "@/app/[username]/_components/ProfileSectionsShell";
 import { formatEventLocationLabel, pickCanonicalField } from "@/lib/location/eventLocation";
-import { getUserFollowCounts, isUserFollowing } from "@/domain/social/follows";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
@@ -96,12 +87,12 @@ export async function generateMetadata({
     }),
   ]);
 
-  const canonicalUrl = `${baseUrl}/${username}`;
+  const canonicalUrl = organization ? `${baseUrl}/${username}` : `${baseUrl}/${username}/padel`;
   const isOrg = Boolean(organization);
   const displayName = isOrg
     ? organization?.publicName?.trim() ||
       organization?.businessName?.trim() ||
-      "Organização ORYA"
+      "Clube ORYA"
     : profile?.fullName?.trim() || username;
   const description =
     (isOrg ? organization?.publicDescription : profile?.bio)?.trim() ||
@@ -331,24 +322,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     getViewerId(),
     prisma.profile.findUnique({
       where: { username: usernameParam },
-      select: {
-        id: true,
-        username: true,
-        fullName: true,
-        avatarUrl: true,
-        coverUrl: true,
-        bio: true,
-        contactPhone: true,
-        gender: true,
-        padelLevel: true,
-        padelPreferredSide: true,
-        padelClubName: true,
-        favouriteCategories: true,
-        visibility: true,
-        is_verified: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+      select: { id: true },
     }),
     prisma.organization.findFirst({
       where: { username: usernameParam, status: "ACTIVE" },
@@ -422,8 +396,11 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
   if (!profile && !organizationProfile) {
     notFound();
   }
+  if (profile && !organizationProfile) {
+    redirect(`/${usernameParam}/padel`);
+  }
 
-  if (!profile && organizationProfile) {
+  if (organizationProfile) {
     const now = new Date();
     const moduleKeys = (organizationProfile.organizationModules ?? [])
       .map((module) => String(module.moduleKey).trim().toUpperCase());
@@ -441,7 +418,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     const orgDisplayName =
       organizationProfile.publicName?.trim() ||
       organizationProfile.businessName?.trim() ||
-      "Organização ORYA";
+      "Clube ORYA";
     const officialEmailNormalized = normalizeOfficialEmail(organizationProfile.officialEmail ?? null);
     const isVerified = Boolean(officialEmailNormalized && organizationProfile.officialEmailVerifiedAt);
     const contactEmail = isVerified ? officialEmailNormalized : null;
@@ -922,7 +899,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
       .map((organization) => ({
         id: organization.id,
         username: organization.username,
-        name: organization.publicName?.trim() || organization.businessName?.trim() || `Centro #${organization.id}`,
+        name: organization.publicName?.trim() || organization.businessName?.trim() || `Clube #${organization.id}`,
         avatarUrl: organization.brandingAvatarUrl ?? null,
       }));
     const canShowLocation = organizationProfile.showAddressPublicly === true;
@@ -1199,7 +1176,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
                     />
                   ) : (
                     <div className="rounded-2xl border border-white/18 bg-white/[0.04] p-4 text-[13px] text-white/88">
-                      Esta organização ainda não publicou serviços de reserva.
+                      Este clube ainda não publicou serviços de reserva.
                     </div>
                   )}
                 </div>
@@ -1379,350 +1356,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     );
   }
 
-  if (!profile) {
-    notFound();
-  }
-
-  const resolvedProfile = profile;
-  const isOwner = viewerId === resolvedProfile.id;
-  const isPrivate = resolvedProfile.visibility !== "PUBLIC";
-  let isFollowing = false;
-  let initialIsFollowing = false;
-
-  let stats = {
-    total: 0,
-    upcoming: 0,
-    past: 0,
-    totalSpent: "—",
-  };
-  let followersCount = 0;
-  let followingCount = 0;
-
-  let recent: Array<{
-    id: string;
-    title: string;
-    venueName: string | null;
-    coverUrl: string | null;
-    startAt: Date | null;
-    isUpcoming: boolean;
-    slug: string | null;
-  }> = [];
-
-  if (prisma.follows) {
-    const counts = await getUserFollowCounts(resolvedProfile.id);
-    followersCount = counts.followersCount;
-    followingCount = counts.followingTotal;
-
-    if (!isOwner && viewerId) {
-      isFollowing = await isUserFollowing(viewerId, resolvedProfile.id);
-      initialIsFollowing = isFollowing;
-    }
-  }
-
-  const canSeePrivateTimeline = isOwner || !isPrivate || isFollowing;
-  const now = new Date();
-
-  const profileHandle = resolvedProfile.username ?? usernameParam;
-  const padelUser = await prisma.users.findUnique({
-    where: { id: resolvedProfile.id },
-    select: { email: true },
-  });
-  const padelMissing = getPadelOnboardingMissing({
-    profile: {
-      fullName: resolvedProfile.fullName,
-      username: resolvedProfile.username,
-    },
-    email: padelUser?.email ?? null,
-  });
-  const padelComplete = isPadelOnboardingComplete(padelMissing);
-  type PadelActionTone = "emerald" | "amber" | "ghost";
-  const padelAction: { href: string; label: string; tone?: PadelActionTone } | null = canSeePrivateTimeline
-    ? isOwner
-      ? {
-          href: padelComplete
-            ? `/${profileHandle}/padel`
-            : `/onboarding/padel?redirectTo=${encodeURIComponent(`/${profileHandle}/padel`)}`,
-          label: padelComplete ? "Padel" : "Concluir Padel",
-          tone: padelComplete ? "emerald" : "amber",
-        }
-      : padelComplete
-        ? { href: `/${profileHandle}/padel`, label: "Padel", tone: "ghost" }
-        : null
-    : null;
-
-  if (canSeePrivateTimeline && (prisma as any).entitlement) {
-    try {
-      const identityIds = await getUserIdentityIds(resolvedProfile.id);
-      const ownerFilter =
-        identityIds.length > 0
-          ? { ownerIdentityId: { in: identityIds } }
-          : { ownerUserId: resolvedProfile.id };
-      const [total, upcoming, past, recentEntitlements] = await Promise.all([
-        (prisma as any).entitlement.count({ where: ownerFilter }),
-        (prisma as any).entitlement.count({
-          where: { ...ownerFilter, snapshotStartAt: { gte: now } },
-        }),
-        (prisma as any).entitlement.count({
-          where: { ...ownerFilter, snapshotStartAt: { lt: now } },
-        }),
-        (prisma as any).entitlement.findMany({
-          where: ownerFilter,
-          orderBy: [{ snapshotStartAt: "desc" }],
-          take: 4,
-          select: {
-            id: true,
-            eventId: true,
-            snapshotTitle: true,
-            snapshotVenueName: true,
-            snapshotCoverUrl: true,
-            snapshotStartAt: true,
-          },
-        }),
-      ]);
-
-      stats = {
-        total,
-        upcoming,
-        past,
-        totalSpent: "—",
-      };
-
-      const eventIds = Array.from(
-        new Set<number>(
-          (recentEntitlements ?? [])
-            .map((r: any) => r.eventId)
-            .filter((id: unknown): id is number => typeof id === "number"),
-        ),
-      );
-      const eventSlugRows = eventIds.length
-        ? await prisma.event.findMany({
-            where: { id: { in: eventIds } },
-            select: { id: true, slug: true },
-          })
-        : [];
-      const slugMap = new Map(eventSlugRows.map((row) => [row.id, row.slug]));
-
-      recent = (recentEntitlements ?? []).map((r: any) => ({
-        id: r.id,
-        title: r.snapshotTitle,
-        venueName: r.snapshotVenueName,
-        coverUrl: r.snapshotCoverUrl,
-        startAt: r.snapshotStartAt,
-        isUpcoming: r.snapshotStartAt ? new Date(r.snapshotStartAt) >= now : false,
-        slug: typeof r.eventId === "number" ? slugMap.get(r.eventId) ?? null : null,
-      }));
-    } catch (err) {
-      console.warn("[profile] falha ao carregar entitlements", err);
-    }
-  }
-
-  const displayName =
-    organizationProfile?.publicName?.trim() ||
-    resolvedProfile.fullName?.trim() ||
-    resolvedProfile.username ||
-    "Utilizador ORYA";
-  const coverCandidate = resolvedProfile.coverUrl?.trim() || null;
-  const headerCoverUrl = coverCandidate
-    ? getProfileCoverUrl(coverCandidate, {
-        width: 1500,
-        height: 500,
-        quality: 72,
-        format: "webp",
-      })
-    : null;
-  const recentMobile = recent.map((item) => ({
-    ...item,
-    startAt: item.startAt ? item.startAt.toISOString() : null,
-  }));
-  const desktopInterests = normalizeInterestSelection(resolvedProfile.favouriteCategories ?? []);
-
-  return (
-    <main className="relative min-h-screen w-full overflow-hidden text-white">
-      <div className="md:hidden">
-        <MobileTopBar />
-        <MobileProfileOverview
-          name={displayName}
-          username={resolvedProfile.username}
-          avatarUrl={resolvedProfile.avatarUrl}
-          avatarUpdatedAt={resolvedProfile.updatedAt ? resolvedProfile.updatedAt.getTime() : null}
-          coverUrl={headerCoverUrl}
-          city={null}
-          bio={resolvedProfile.bio}
-          isOwner={isOwner}
-          targetUserId={resolvedProfile.id}
-          initialIsFollowing={initialIsFollowing}
-          followersCount={followersCount}
-          followingCount={followingCount}
-          padelAction={padelAction ?? undefined}
-          interests={resolvedProfile.favouriteCategories ?? []}
-          recentEvents={recentMobile}
-        />
-      </div>
-
-      <section className="relative hidden flex-col gap-6 py-10 md:flex">
-        <ProfileHeader
-          isOwner={isOwner}
-          name={displayName}
-          username={resolvedProfile.username}
-          avatarUrl={resolvedProfile.avatarUrl}
-          avatarUpdatedAt={resolvedProfile.updatedAt ? resolvedProfile.updatedAt.getTime() : null}
-          coverUrl={headerCoverUrl}
-          bio={resolvedProfile.bio}
-          city={null}
-          visibility={resolvedProfile.visibility as "PUBLIC" | "PRIVATE" | "FOLLOWERS" | null}
-          followers={followersCount}
-          following={followingCount}
-          targetUserId={resolvedProfile.id}
-          initialIsFollowing={initialIsFollowing}
-          isVerified={resolvedProfile.is_verified}
-          canOpenLists={canSeePrivateTimeline}
-          padelAction={padelAction ?? undefined}
-        />
-
-        <div className="px-5 sm:px-8">
-          <div className="orya-page-width flex flex-col gap-6">
-            {(desktopInterests.length > 0 || isOwner) && (
-              <section className="space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Interesses</p>
-                    <p className="mt-2 text-sm text-white/70">
-                      {desktopInterests.length > 0
-                        ? "O que inspira este perfil."
-                        : "Ainda não definiste interesses."}
-                    </p>
-                  </div>
-                  {isOwner && desktopInterests.length === 0 && (
-                    <Link
-                      href="/me/settings"
-                      className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[11px] font-semibold text-white/80 shadow-[0_10px_30px_rgba(0,0,0,0.25)] hover:border-white/40 hover:bg-white/15 transition-colors"
-                    >
-                      Adicionar interesses
-                    </Link>
-                  )}
-                </div>
-                {desktopInterests.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {desktopInterests.map((interest) => (
-                      <FilterChip
-                        key={interest}
-                        label={resolveInterestLabel(interest) ?? interest}
-                        icon={<InterestIcon id={interest} className="h-3 w-3" />}
-                        active
-                        className="cursor-default"
-                      />
-                    ))}
-                  </div>
-                )}
-              </section>
-            )}
-            {canSeePrivateTimeline ? (
-              <>
-                <section className="rounded-3xl border border-white/15 bg-white/5 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    <StatCard
-                      title="Eventos com bilhete"
-                      value={stats.total}
-                      subtitle="Timeline ORYA."
-                      tone="default"
-                    />
-                    <StatCard
-                      title="Próximos"
-                      value={stats.upcoming}
-                      subtitle="O que vem aí."
-                      tone="emerald"
-                    />
-                    <StatCard
-                      title="Passados"
-                      value={stats.past}
-                      subtitle="Memórias."
-                      tone="rose"
-                    />
-                    <StatCard
-                      title="Total investido"
-                      value={stats.totalSpent}
-                      subtitle="Total pago."
-                      tone="purple"
-                    />
-                  </div>
-                </section>
-
-                {isOwner ? (
-                  <section className="space-y-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <h2 className="text-sm font-semibold text-white/95 tracking-[0.08em]">
-                          Carteira ORYA
-                        </h2>
-                        <p className="text-[11px] text-white/68">
-                          Entitlements ativos primeiro; memórias logo atrás. Tudo num só lugar.
-                        </p>
-                      </div>
-                      <Link
-                        href="/me/carteira?section=wallet"
-                        className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 text-white text-[11px] font-semibold px-4 py-1.5 shadow-[0_10px_26px_rgba(255,255,255,0.15)] hover:border-white/45 hover:bg-white/20 hover:scale-[1.02] active:scale-95 transition-transform backdrop-blur"
-                      >
-                        Ver carteira
-                        <span className="text-[12px]">↗</span>
-                      </Link>
-                    </div>
-
-                    {recent.length === 0 ? (
-                      <div className="rounded-2xl border border-white/15 bg-white/5 px-4 py-6 text-sm text-white/80">
-                        Ainda não tens bilhetes ORYA.
-                      </div>
-                    ) : (
-                      <div className="grid gap-3 md:grid-cols-2">
-                        {recent.map((item) => (
-                          <RecentCard key={item.id} item={item} />
-                        ))}
-                      </div>
-                    )}
-                  </section>
-                ) : (
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <EventListCard
-                      title="Próximos eventos"
-                      items={recent.filter((r) => r.isUpcoming)}
-                      emptyLabel="Sem eventos futuros para mostrar."
-                    />
-                    <EventListCard
-                      title="Eventos passados"
-                      items={recent.filter((r) => !r.isUpcoming)}
-                      emptyLabel="Sem eventos passados para mostrar."
-                    />
-                  </div>
-                )}
-              </>
-            ) : (
-              <section className="rounded-3xl border border-white/15 bg-white/5 p-6 shadow-[0_26px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl text-center">
-                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-white/15 bg-white/10">
-                  <svg
-                    aria-hidden="true"
-                    viewBox="0 0 24 24"
-                    className="h-6 w-6 text-white/90"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M7 11V8a5 5 0 0 1 10 0v3" />
-                    <rect x="5" y="11" width="14" height="9" rx="2" />
-                  </svg>
-                </div>
-                <h2 className="mt-3 text-lg font-semibold text-white">Esta conta é privada</h2>
-                <p className="mt-2 text-sm text-white/70">
-                  {displayName} mantém a timeline privada. Segue para veres publicações, eventos e
-                  detalhes de padel.
-                </p>
-              </section>
-            )}
-          </div>
-        </div>
-      </section>
-    </main>
-  );
+  notFound();
 }
 
 function formatFormDateRange(startAt: Date | null, endAt: Date | null) {
@@ -1813,107 +1447,5 @@ function EventSpotlightCard({
         </div>
       </div>
     </div>
-  );
-}
-
-type StatTone = "default" | "emerald" | "rose" | "purple";
-
-function toneClasses(tone: StatTone) {
-  switch (tone) {
-    case "emerald":
-      return "border-emerald-300/30 bg-emerald-400/12 text-emerald-50";
-    case "rose":
-      return "border-rose-300/30 bg-rose-400/12 text-rose-50";
-    case "purple":
-      return "border-purple-300/30 bg-purple-400/12 text-purple-50";
-    default:
-      return "border-white/12 bg-white/5 text-white";
-  }
-}
-
-function StatCard({
-  title,
-  value,
-  subtitle,
-  tone = "default",
-}: {
-  title: string;
-  value: string | number;
-  subtitle: string;
-  tone?: StatTone;
-}) {
-  return (
-    <div
-      className={`rounded-2xl border px-3 py-3 shadow-[0_16px_40px_rgba(0,0,0,0.45)] backdrop-blur-2xl ${toneClasses(
-        tone,
-      )}`}
-    >
-      <p className="text-[10px] uppercase tracking-[0.2em] text-white/60">{title}</p>
-      <p className="mt-1 text-lg font-semibold">{value}</p>
-      <p className="text-[11px] text-white/60">{subtitle}</p>
-    </div>
-  );
-}
-
-function RecentCard({
-  item,
-}: {
-  item: { id: string; title: string; venueName: string | null; coverUrl: string | null; startAt: Date | null };
-}) {
-  const coverUrl = getEventCoverUrl(item.coverUrl, {
-    seed: item.id ?? item.title,
-    width: 200,
-    quality: 70,
-    format: "webp",
-  });
-  return (
-    <div className="relative overflow-hidden rounded-2xl border border-white/15 bg-white/5 p-3 shadow-[0_12px_36px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
-      <div className="flex items-center gap-3">
-        <div className="h-16 w-16 overflow-hidden rounded-xl border border-white/10 bg-[radial-gradient(circle_at_30%_30%,rgba(255,0,200,0.14),transparent_45%),radial-gradient(circle_at_70%_70%,rgba(107,255,255,0.14),transparent_50%),#0b0f1b]">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={coverUrl}
-            alt={item.title}
-            className="h-full w-full object-cover"
-          />
-        </div>
-        <div className="flex-1">
-          <p className="text-sm font-semibold text-white line-clamp-2">{item.title}</p>
-          {item.venueName ? (
-            <p className="text-[11px] text-white/70 line-clamp-1">{item.venueName}</p>
-          ) : null}
-          <p className="text-[11px] text-white/60">{formatDate(item.startAt)}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function EventListCard({
-  title,
-  items,
-  emptyLabel,
-}: {
-  title: string;
-  items: Array<{ id: string; title: string; venueName: string | null; coverUrl: string | null; startAt: Date | null }>;
-  emptyLabel: string;
-}) {
-  return (
-    <section className="rounded-3xl border border-white/15 bg-white/5 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-white/90">{title}</h3>
-      </div>
-      {items.length === 0 ? (
-        <div className="rounded-2xl border border-white/15 bg-white/5 px-4 py-6 text-[12px] text-white/80">
-          {emptyLabel}
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {items.map((item) => (
-            <RecentCard key={item.id} item={item} />
-          ))}
-        </div>
-      )}
-    </section>
   );
 }

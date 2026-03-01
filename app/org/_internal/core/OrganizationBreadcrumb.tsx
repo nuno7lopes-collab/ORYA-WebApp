@@ -6,11 +6,11 @@ import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbSeparator, Breadc
 import { buildOrgHref, buildOrgHubHref, parseOrgIdFromPathnameStrict } from "@/lib/organizationIdUtils";
 
 const SECTION_LABELS: Record<string, string> = {
-  overview: "Visão geral",
+  overview: "Dashboard clube",
   ferramentas: "Ferramentas",
-  eventos: "Eventos",
-  "padel-club": "Gestão de Clube Padel",
-  "padel-tournaments": "Torneios de Padel",
+  eventos: "Eventos do clube",
+  "padel-club": "Clube de Padel",
+  "padel-tournaments": "Competição",
   calendar: "Calendário",
   clubs: "Clubes",
   courts: "Campos",
@@ -20,14 +20,14 @@ const SECTION_LABELS: Record<string, string> = {
   teams: "Equipas",
   community: "Comunidade",
   lessons: "Aulas",
-  inscricoes: "Formulários",
-  reservas: "Reservas",
+  inscricoes: "Inscrições",
+  reservas: "Operação",
   agenda: "Agenda",
-  disponibilidade: "Disponibilidade (calendário)",
-  servicos: "Serviços",
-  clientes: "Clientes",
-  profissionais: "Profissionais",
-  recursos: "Recursos",
+  disponibilidade: "Disponibilidade",
+  servicos: "Aulas & serviços",
+  clientes: "Jogadores & alunos",
+  profissionais: "Treinadores",
+  recursos: "Campos",
   politicas: "Políticas",
   membros: "Membros",
   caixa: "Caixa",
@@ -44,10 +44,10 @@ const SECTION_LABELS: Record<string, string> = {
 };
 
 const OBJECTIVE_LABELS: Record<string, string> = {
-  create: "Painel",
-  manage: "Gerir",
+  create: "Criar",
+  manage: "Operar",
   promote: "Marketing",
-  analyze: "Analisar",
+  analyze: "Performance",
 };
 
 function resolveLabel(
@@ -77,16 +77,16 @@ function resolveLabel(
       return `${sectionLabel ?? "Padel"} · ${padelLabel}`;
     }
     if (sectionLabel && section !== "eventos") {
-      return `Torneios de Padel · ${sectionLabel}`;
+      return `Competição · ${sectionLabel}`;
     }
-    return "Torneios de Padel";
+    return "Competição";
   }
   if (pathname.startsWith("/org/events")) {
     const sectionLabel = section ? SECTION_LABELS[section] : null;
     if (sectionLabel && section !== "eventos") {
-      return `Eventos · ${sectionLabel}`;
+      return `Competição · ${sectionLabel}`;
     }
-    return "Eventos";
+    return "Competição";
   }
   if (/^\/org\/(?:\d+\/)?calendar\/day(?:\/|$)/.test(pathname)) return "Calendário · Dia";
   if (
@@ -99,20 +99,20 @@ function resolveLabel(
     return "Calendário · Disponibilidade";
   }
   if (/^\/org\/(?:\d+\/)?calendar(?:\/|$)/.test(pathname)) return "Calendário";
-  if (/^\/org\/(?:\d+\/)?bookings\/new(?:\/|$)/.test(pathname)) return "Reservas · Criar serviço";
-  if (/^\/org\/(?:\d+\/)?bookings\/customers(?:\/|$)/.test(pathname)) return "Reservas · Clientes";
-  if (/^\/org\/(?:\d+\/)?bookings\/professionals(?:\/|$)/.test(pathname)) return "Reservas · Profissionais";
-  if (/^\/org\/(?:\d+\/)?bookings\/resources(?:\/|$)/.test(pathname)) return "Reservas · Recursos";
+  if (/^\/org\/(?:\d+\/)?bookings\/new(?:\/|$)/.test(pathname)) return "Operação · Criar aula/serviço";
+  if (/^\/org\/(?:\d+\/)?bookings\/customers(?:\/|$)/.test(pathname)) return "Operação · Jogadores & alunos";
+  if (/^\/org\/(?:\d+\/)?bookings\/professionals(?:\/|$)/.test(pathname)) return "Operação · Treinadores";
+  if (/^\/org\/(?:\d+\/)?bookings\/resources(?:\/|$)/.test(pathname)) return "Operação · Campos";
   if (/^\/org\/(?:\d+\/)?bookings(?:\/|$)/.test(pathname)) {
     if (/^\/org\/(?:\d+\/)?bookings\/availability(?:\/|$)/.test(pathname)) return "Calendário · Disponibilidade";
     const sectionLabel = section ? SECTION_LABELS[section] : null;
     if (sectionLabel && section !== "reservas") {
-      return `Reservas · ${sectionLabel}`;
+      return `Operação · ${sectionLabel}`;
     }
-    return "Reservas";
+    return "Operação";
   }
   if (/^\/org\/\d+\/policies(?:\/|$)/.test(pathname)) {
-    if (view === "booking") return "Políticas · Reservas";
+    if (view === "booking") return "Políticas · Operação";
     if (view === "crm") return "Políticas · CRM";
     if (view === "finance") return "Políticas · Financeiro";
     if (view === "padel") return "Políticas · Padel";
@@ -124,8 +124,8 @@ function resolveLabel(
   if (pathname.startsWith("/org/clube/membros")) return "Clube · Membros";
   if (pathname.startsWith("/org/clube/caixa")) return "Clube · Caixa";
   if (pathname.includes("/eventos/") && pathname.endsWith("/edit")) return "Editar evento";
-  if (pathname.includes("/eventos/")) return "Eventos";
-  if (pathname.startsWith("/org/forms")) return "Formulários";
+  if (pathname.includes("/eventos/")) return "Eventos do clube";
+  if (pathname.startsWith("/org/forms")) return "Inscrições";
   if (pathname.startsWith("/org/check-in")) return "Check-in";
   if (pathname.startsWith("/org/faturacao")) return "Finanças";
   if (pathname.startsWith("/org/pagamentos/invoices")) return "Faturação";
@@ -144,8 +144,8 @@ function resolveLabel(
   }
   if (objectiveLabel) return objectiveLabel;
 
-  if (tab === "overview") return "Painel";
-  return "Painel";
+  if (tab === "overview") return "Dashboard clube";
+  return "Dashboard clube";
 }
 
 export function OrganizationBreadcrumb() {
@@ -173,7 +173,7 @@ export function OrganizationBreadcrumb() {
     <Breadcrumb className="text-base md:text-lg font-semibold text-white/80">
         <BreadcrumbList className="gap-3">
         <BreadcrumbItem className="text-white/75 hover:text-white transition">
-          <Link href={dashboardHref}>Painel</Link>
+          <Link href={dashboardHref}>Dashboard clube</Link>
         </BreadcrumbItem>
         <BreadcrumbSeparator className="text-white/50" />
         <BreadcrumbItem>

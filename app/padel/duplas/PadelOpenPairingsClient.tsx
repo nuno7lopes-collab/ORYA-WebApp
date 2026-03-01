@@ -34,13 +34,19 @@ type OpenPairingsResponse = {
 
 export default function PadelOpenPairingsClient() {
   const [query, setQuery] = useState("");
+  const [paymentMode, setPaymentMode] = useState<"all" | "FULL" | "SPLIT">("all");
+  const [level, setLevel] = useState("");
+  const [date, setDate] = useState<"all" | "today" | "weekend" | "upcoming">("upcoming");
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
     if (query.trim()) params.set("q", query.trim());
+    if (paymentMode !== "all") params.set("paymentMode", paymentMode);
+    if (level.trim()) params.set("level", level.trim());
+    if (date !== "all") params.set("date", date);
     params.set("limit", "18");
     return params.toString();
-  }, [query]);
+  }, [query, paymentMode, level, date]);
 
   const { data, isLoading } = useSWR<OpenPairingsResponse>(
     `/api/padel/public/open-pairings?${queryString}`,
@@ -66,6 +72,34 @@ export default function PadelOpenPairingsClient() {
             placeholder="Pesquisa"
             className="w-40 rounded-full border border-white/15 bg-black/40 px-3 py-1 text-[12px] text-white/80 placeholder:text-white/40"
           />
+          <select
+            value={paymentMode}
+            onChange={(event) => setPaymentMode(event.target.value as "all" | "FULL" | "SPLIT")}
+            className="rounded-full border border-white/15 bg-black/40 px-3 py-1 text-[12px] text-white/80"
+          >
+            <option value="all">Pagamento</option>
+            <option value="SPLIT">Split</option>
+            <option value="FULL">Capitão paga</option>
+          </select>
+          <input
+            type="text"
+            value={level}
+            onChange={(event) => setLevel(event.target.value)}
+            placeholder="Nível (M3, 4...)"
+            className="w-32 rounded-full border border-white/15 bg-black/40 px-3 py-1 text-[12px] text-white/80 placeholder:text-white/40"
+          />
+          <select
+            value={date}
+            onChange={(event) =>
+              setDate(event.target.value as "all" | "today" | "weekend" | "upcoming")
+            }
+            className="rounded-full border border-white/15 bg-black/40 px-3 py-1 text-[12px] text-white/80"
+          >
+            <option value="upcoming">Próximos</option>
+            <option value="today">Hoje</option>
+            <option value="weekend">Fim de semana</option>
+            <option value="all">Todas</option>
+          </select>
         </div>
       </div>
 

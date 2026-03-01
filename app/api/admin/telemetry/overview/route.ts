@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { parseOrganizationId } from "@/lib/organizationIdUtils";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { requireAdminUser } from "@/lib/admin/auth";
@@ -14,13 +15,6 @@ function parseHours(value: string | null) {
   const parsed = Number(value ?? "24");
   if (!Number.isFinite(parsed) || parsed <= 0) return 24;
   return Math.min(Math.floor(parsed), 24 * 14);
-}
-
-function parseOrganizationId(value: string | null): number | null {
-  if (!value) return null;
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed <= 0) return null;
-  return parsed;
 }
 
 async function _GET(req: NextRequest) {

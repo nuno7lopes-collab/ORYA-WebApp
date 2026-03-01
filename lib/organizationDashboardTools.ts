@@ -8,6 +8,7 @@ import { normalizeOrganizationUiRole } from "@/lib/organizationUiPermissions";
 const DASHBOARD_TOOL_IDS = [
   "eventos",
   "reservas",
+  "academia",
   "calendar",
   "padel-club",
   "padel-tournaments",
@@ -23,6 +24,8 @@ const DASHBOARD_TOOL_IDS = [
   "politicas",
   "settings",
 ] as const;
+
+const LEGACY_HIDDEN_MODULE_KEYS = new Set<OrganizationModule>(["EVENTOS"]);
 
 export type DashboardToolId = (typeof DASHBOARD_TOOL_IDS)[number];
 
@@ -41,7 +44,14 @@ export {
   NON_DEACTIVABLE_ORGANIZATION_TOOL_MODULE_SET,
 };
 
-export type DashboardToolFlow = "Operações" | "Gestão" | "Administração";
+export type DashboardToolFlow =
+  | "Operação"
+  | "Competição"
+  | "Academia"
+  | "Comunidade"
+  | "Clube"
+  | "Negócio"
+  | "Configurações";
 
 export type DashboardToolActivationCard = {
   moduleKey: OrganizationModule;
@@ -57,55 +67,55 @@ export const DASHBOARD_TOOL_ACTIVATION_CATALOG: DashboardToolActivationCard[] = 
   {
     moduleKey: "EVENTOS",
     iconKey: "TOOL_EVENTOS",
-    title: "Eventos",
-    summary: "Gestao de eventos publicos e privados.",
-    bullets: ["Bilhetes e regras", "Participantes e check-in", "Comunicacao operacional"],
-    flow: "Operações",
+    title: "Competições",
+    summary: "Torneios, ligas e resultados do clube.",
+    bullets: ["Calendário competitivo", "Participantes e check-in", "Resultados e rankings"],
+    flow: "Competição",
     unlocks: ["eventos", "checkin"],
   },
   {
     moduleKey: "RESERVAS",
     iconKey: "TOOL_RESERVAS",
-    title: "Reservas",
-    summary: "Gestao diaria de servicos e marcacoes.",
-    bullets: ["Servicos e disponibilidade", "Marcacoes e estados", "Calendario operacional"],
-    flow: "Operações",
+    title: "Operação de Clube",
+    summary: "Gestão diária de campos, aulas e serviços.",
+    bullets: ["Campos e disponibilidade", "Aulas e serviços", "Calendário operacional"],
+    flow: "Operação",
     unlocks: ["reservas", "calendar"],
   },
   {
     moduleKey: "TORNEIOS",
     iconKey: "TOOL_PADEL_TORNEIOS",
-    title: "PADEL",
-    summary: "Gestao de clubes, campos e torneios.",
-    bullets: ["Clubes e campos", "Torneios e equipas", "Calendario e check-in"],
-    flow: "Operações",
+    title: "Competição Padel",
+    summary: "Gestão de torneios, categorias, equipas e rankings.",
+    bullets: ["Torneios e ligas", "Categorias e equipas", "Resultados e classificação"],
+    flow: "Competição",
     unlocks: ["padel-club", "padel-tournaments", "checkin"],
   },
   {
     moduleKey: "INSCRICOES",
     iconKey: "TOOL_FORMULARIOS",
-    title: "Formularios",
-    summary: "Formularios e inscricoes.",
-    bullets: ["Formularios", "Listas e vagas", "Exportacao de dados"],
-    flow: "Operações",
+    title: "Inscrições",
+    summary: "Gestão de inscrições do clube.",
+    bullets: ["Formulários", "Listas e vagas", "Exportação de dados"],
+    flow: "Competição",
     unlocks: ["inscricoes"],
   },
   {
     moduleKey: "MENSAGENS",
     iconKey: "TOOL_CHAT_INTERNO",
-    title: "Mensagens",
-    summary: "Comunicacao interna da equipa.",
-    bullets: ["Conversas", "Canais", "Historico"],
-    flow: "Operações",
+    title: "Comunidade",
+    summary: "Mensagens e comunidades internas.",
+    bullets: ["Conversas", "Comunidades", "Histórico"],
+    flow: "Comunidade",
     unlocks: ["mensagens"],
   },
   {
     moduleKey: "LOJA",
     iconKey: "TOOL_LOJA",
     title: "Loja",
-    summary: "Catalogo, checkout e encomendas.",
-    bullets: ["Catalogo", "Portes e descontos", "Encomendas e envio"],
-    flow: "Gestão",
+    summary: "Catálogo, checkout e encomendas.",
+    bullets: ["Catálogo", "Portes e descontos", "Encomendas e envio"],
+    flow: "Clube",
     unlocks: ["loja"],
   },
 ];
@@ -127,14 +137,18 @@ export function getAvailableDashboardToolActivationCards(
   enabledTools: string[],
 ): DashboardToolActivationCard[] {
   const enabledSet = resolveEnabledToolSet(enabledTools);
-  return DASHBOARD_TOOL_ACTIVATION_CATALOG.filter((card) => !enabledSet.has(card.moduleKey));
+  return DASHBOARD_TOOL_ACTIVATION_CATALOG.filter(
+    (card) => !LEGACY_HIDDEN_MODULE_KEYS.has(card.moduleKey) && !enabledSet.has(card.moduleKey),
+  );
 }
 
 export function getEnabledDashboardToolActivationCards(
   enabledTools: string[],
 ): DashboardToolActivationCard[] {
   const enabledSet = resolveEnabledToolSet(enabledTools);
-  return DASHBOARD_TOOL_ACTIVATION_CATALOG.filter((card) => enabledSet.has(card.moduleKey));
+  return DASHBOARD_TOOL_ACTIVATION_CATALOG.filter(
+    (card) => !LEGACY_HIDDEN_MODULE_KEYS.has(card.moduleKey) && enabledSet.has(card.moduleKey),
+  );
 }
 
 export function shouldShowDashboardToolManagerCta(input: {

@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { getUserFollowingSet, getUserFollowRequestSet } from "@/domain/social/follows";
+import { getUserFollowingSet, getUserFriendSet, getUserFollowRequestSet } from "@/domain/social/follows";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logError } from "@/lib/observability/logger";
 
@@ -59,12 +59,14 @@ async function _GET(req: NextRequest) {
     });
 
     let followingSet = new Set<string>();
+    let friendSet = new Set<string>();
     let requestSet = new Set<string>();
 
     if (user && results.length > 0) {
       const ids = results.map((r) => r.id);
-      [followingSet, requestSet] = await Promise.all([
+      [followingSet, friendSet, requestSet] = await Promise.all([
         getUserFollowingSet(user.id, ids),
+        getUserFriendSet(user.id, ids),
         getUserFollowRequestSet(user.id, ids),
       ]);
     }
@@ -75,6 +77,7 @@ async function _GET(req: NextRequest) {
       fullName: r.fullName,
       avatarUrl: r.avatarUrl,
       isFollowing: followingSet.has(r.id),
+      isFriend: friendSet.has(r.id),
       isRequested: requestSet.has(r.id),
     }));
 

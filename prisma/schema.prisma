@@ -114,6 +114,9 @@ model Profile {
   servicesInstructing                                             Service[]                        @relation("ServiceInstructor")
   reservationProfessionals                                        ReservationProfessional[]
   trainerProfiles                                                 TrainerProfile[]
+  padelGlobalRatingProfile                                        PadelGlobalRatingProfile?
+  padelGlobalRatingEvents                                         PadelGlobalRatingEvent[]
+  padelEventRankingSnapshots                                      PadelEventRankingSnapshot[]
   chatConversationsCreated                                        ChatConversation[]               @relation("ChatConversationCreator")
   chatConversationMembers                                         ChatConversationMember[]         @relation("ChatConversationMemberUser")
   chatConversationMembersWriteMutedBy                             ChatConversationMember[]         @relation("ChatConversationMemberWriteMutedBy")
@@ -199,8 +202,8 @@ model Organization {
   brandingCoverUrl                                                         String?                                       @map("branding_cover_url")
   brandingPrimaryColor                                                     String?                                       @map("branding_primary_color")
   brandingSecondaryColor                                                   String?                                       @map("branding_secondary_color")
-  organizationKind                                                         OrganizationKind                              @default(PESSOA_SINGULAR) @map("organization_kind")
-  primaryModule                                                            OrganizationModule                            @default(EVENTOS) @map("primary_module")
+  organizationKind                                                         OrganizationKind                              @default(CLUBE_PADEL) @map("organization_kind")
+  primaryModule                                                            OrganizationModule                            @default(TORNEIOS) @map("primary_module")
   reservationAssignmentMode                                                ReservationAssignmentMode                     @default(PROFESSIONAL_ONLY) @map("reservation_assignment_mode")
   orgRescheduleWindowMinutes                                               Int                                           @default(240) @map("org_reschedule_window_minutes")
   padelDefaultShortName                                                    String?                                       @map("padel_default_short_name")
@@ -264,6 +267,8 @@ model Organization {
   padelRankingEntries                                                      PadelRankingEntry[]
   padelRatingProfiles                                                      PadelRatingProfile[]
   padelRatingEvents                                                        PadelRatingEvent[]
+  padelGlobalRatingEvents                                                  PadelGlobalRatingEvent[]
+  padelEventRankingSnapshots                                               PadelEventRankingSnapshot[]
   padelRatingSanctions                                                     PadelRatingSanction[]
   padelPlayerHistoryProjections                                            PadelPlayerHistoryProjection[]
   padelTournamentTierApprovals                                             PadelTournamentTierApproval[]
@@ -1863,6 +1868,7 @@ model Event {
   padelTournamentParticipants    PadelTournamentParticipant[]
   padelRounds                    PadelRound[]
   padelRankingEntries            PadelRankingEntry[]
+  padelEventRankingSnapshots     PadelEventRankingSnapshot[]
   padelTournamentConfig          PadelTournamentConfig?
   padelTournamentTierApproval    PadelTournamentTierApproval?
   padelTournamentRoleAssignments PadelTournamentRoleAssignment[]
@@ -1889,6 +1895,7 @@ model Event {
   favorites                      EventFavorite[]
   userEventSignals               UserEventSignal[]
   guestTicketAccessTokens        GuestTicketAccessToken[]
+  padelGlobalRatingEvents        PadelGlobalRatingEvent[]
 
   @@index([type, status])
   @@index([ownerUserId])
@@ -2635,31 +2642,31 @@ model Refund {
 }
 
 model RefundCase {
-  env              String                 @default("prod")
-  id               String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId   Int                    @map("organization_id")
-  sourceType       SourceType             @map("source_type")
-  sourceId         String                 @map("source_id") @db.Text
-  paymentId        String                 @map("payment_id") @db.Text
-  paymentIntentId  String?                @map("payment_intent_id")
-  policyCause      RefundCasePolicyCause  @map("policy_cause")
-  culpability      RefundCaseCulpability  @default(SYSTEM)
-  requestedBy      String?                @map("requested_by")
-  reasonCode       String?                @map("reason_code")
-  amountsBreakdown Json                   @map("amounts_breakdown")
-  status           RefundCaseStatus       @default(REQUESTED)
-  attempts         Int                    @default(0)
-  nextRetryAt      DateTime?              @map("next_retry_at") @db.Timestamptz(6)
-  lastError        String?                @map("last_error")
-  stripeRefundId   String?                @map("stripe_refund_id")
-  idempotencyKey   String                 @unique(map: "refund_cases_idempotency_key_unique") @map("idempotency_key")
-  overridePayload  Json?                  @map("override_payload")
-  overrideBy       String?                @map("override_by")
-  overrideAt       DateTime?              @map("override_at") @db.Timestamptz(6)
-  createdAt        DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  payment          Payment                @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  env              String                @default("prod")
+  id               String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId   Int                   @map("organization_id")
+  sourceType       SourceType            @map("source_type")
+  sourceId         String                @map("source_id") @db.Text
+  paymentId        String                @map("payment_id") @db.Text
+  paymentIntentId  String?               @map("payment_intent_id")
+  policyCause      RefundCasePolicyCause @map("policy_cause")
+  culpability      RefundCaseCulpability @default(SYSTEM)
+  requestedBy      String?               @map("requested_by")
+  reasonCode       String?               @map("reason_code")
+  amountsBreakdown Json                  @map("amounts_breakdown")
+  status           RefundCaseStatus      @default(REQUESTED)
+  attempts         Int                   @default(0)
+  nextRetryAt      DateTime?             @map("next_retry_at") @db.Timestamptz(6)
+  lastError        String?               @map("last_error")
+  stripeRefundId   String?               @map("stripe_refund_id")
+  idempotencyKey   String                @unique(map: "refund_cases_idempotency_key_unique") @map("idempotency_key")
+  overridePayload  Json?                 @map("override_payload")
+  overrideBy       String?               @map("override_by")
+  overrideAt       DateTime?             @map("override_at") @db.Timestamptz(6)
+  createdAt        DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  organization     Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  payment          Payment               @relation(fields: [paymentId], references: [id], onDelete: Cascade)
 
   @@index([organizationId], map: "refund_cases_org_idx")
   @@index([organizationId, status], map: "refund_cases_org_status_idx")
@@ -2744,6 +2751,7 @@ model PadelPlayerProfile {
   rankings                  PadelRankingEntry[]
   ratingProfile             PadelRatingProfile?
   ratingEvents              PadelRatingEvent[]
+  eventRankingSnapshots     PadelEventRankingSnapshot[]
   ratingSanctions           PadelRatingSanction[]
   availabilities            CalendarAvailability[]
   crmContactPadelLinks      CrmContactPadel[]
@@ -4055,6 +4063,105 @@ model PadelRatingEvent {
   @@schema("app_v3")
 }
 
+/// Perfil global canónico (Glicko-2) por utilizador ORYA
+model PadelGlobalRatingProfile {
+  env                 String    @default("prod")
+  id                  Int       @id @default(autoincrement())
+  userId              String    @unique(map: "padel_global_rating_profiles_user_uq") @map("user_id") @db.Uuid
+  rating              Float     @default(1200)
+  rd                  Float     @default(350)
+  sigma               Float     @default(0.06)
+  tau                 Float     @default(0.5)
+  matchesPlayed       Int       @default(0) @map("matches_played")
+  leaderboardEligible Boolean   @default(true) @map("leaderboard_eligible")
+  blockedNewMatches   Boolean   @default(false) @map("blocked_new_matches")
+  suspensionEndsAt    DateTime? @map("suspension_ends_at") @db.Timestamptz(6)
+  lastMatchAt         DateTime? @map("last_match_at") @db.Timestamptz(6)
+  lastActivityAt      DateTime? @map("last_activity_at") @db.Timestamptz(6)
+  lastRebuildAt       DateTime? @map("last_rebuild_at") @db.Timestamptz(6)
+  metadata            Json?     @default("{}")
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  user                Profile   @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([rating], map: "padel_global_rating_profiles_rating_idx")
+  @@index([leaderboardEligible], map: "padel_global_rating_profiles_leaderboard_idx")
+  @@map("padel_global_rating_profiles")
+  @@schema("app_v3")
+}
+
+/// Eventos de rating globais auditáveis (antes/depois) por utilizador
+model PadelGlobalRatingEvent {
+  env               String        @default("prod")
+  id                Int           @id @default(autoincrement())
+  userId            String        @map("user_id") @db.Uuid
+  organizationId    Int?          @map("organization_id")
+  eventId           Int?          @map("event_id")
+  matchId           Int?          @map("match_id")
+  tier              String?       @map("tier")
+  clubId            Int?          @map("club_id")
+  city              String?       @map("city")
+  opponentAvgRating Float?        @map("opponent_avg_rating")
+  preRating         Float         @map("pre_rating")
+  preRd             Float         @map("pre_rd")
+  preSigma          Float         @map("pre_sigma")
+  postRating        Float         @map("post_rating")
+  postRd            Float         @map("post_rd")
+  postSigma         Float         @map("post_sigma")
+  expectedScore     Float?        @map("expected_score")
+  actualScore       Float?        @map("actual_score")
+  gamesFor          Int?          @map("games_for")
+  gamesAgainst      Int?          @map("games_against")
+  tierMultiplier    Float         @default(1) @map("tier_multiplier")
+  carryMultiplier   Float         @default(1) @map("carry_multiplier")
+  metadata          Json?         @default("{}")
+  occurredAt        DateTime      @map("occurred_at") @db.Timestamptz(6)
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  user              Profile       @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organization      Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  event             Event?        @relation(fields: [eventId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([organizationId], map: "padel_global_rating_events_org_idx")
+  @@index([eventId], map: "padel_global_rating_events_event_idx")
+  @@index([matchId], map: "padel_global_rating_events_match_idx")
+  @@index([organizationId, tier], map: "padel_global_rating_events_org_tier_idx")
+  @@index([organizationId, clubId], map: "padel_global_rating_events_org_club_idx")
+  @@index([organizationId, city], map: "padel_global_rating_events_org_city_idx")
+  @@index([userId, occurredAt], map: "padel_global_rating_events_user_occurred_idx")
+  @@map("padel_global_rating_events")
+  @@schema("app_v3")
+}
+
+/// Snapshot de ranking por torneio em momentos canónicos (START/CURRENT)
+model PadelEventRankingSnapshot {
+  env                  String                   @default("prod")
+  id                   Int                      @id @default(autoincrement())
+  organizationId       Int                      @map("organization_id")
+  eventId              Int                      @map("event_id")
+  userId               String                   @map("user_id") @db.Uuid
+  playerId             Int?                     @map("player_id")
+  snapshotMode         PadelRankingSnapshotMode @default(START) @map("snapshot_mode")
+  rating               Float
+  points               Int                      @default(0)
+  globalPosition       Int?                     @map("global_position")
+  organizationPosition Int?                     @map("organization_position")
+  occurredAt           DateTime                 @map("occurred_at") @db.Timestamptz(6)
+  createdAt            DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  event                Event                    @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organization         Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user                 Profile                  @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  player               PadelPlayerProfile?      @relation(fields: [playerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([eventId, userId, snapshotMode], map: "padel_event_ranking_snapshot_event_user_mode_uq")
+  @@index([organizationId], map: "padel_event_ranking_snapshot_org_idx")
+  @@index([eventId], map: "padel_event_ranking_snapshot_event_idx")
+  @@index([snapshotMode], map: "padel_event_ranking_snapshot_mode_idx")
+  @@index([globalPosition], map: "padel_event_ranking_snapshot_global_pos_idx")
+  @@index([organizationPosition], map: "padel_event_ranking_snapshot_org_pos_idx")
+  @@map("padel_event_ranking_snapshots")
+  @@schema("app_v3")
+}
+
 /// Sanções aplicadas ao ranking/funcionalidades de padel
 model PadelRatingSanction {
   env              String                    @default("prod")
@@ -4883,10 +4990,10 @@ model AvailabilityChangeConflict {
   updatedAt        DateTime                              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   changeSet        AvailabilityChangeSet                 @relation(fields: [changeSetId], references: [id], onDelete: Cascade)
 
+  @@unique([changeSetId, entityType, entityId], map: "availability_change_conflicts_set_entity_unique")
   @@index([changeSetId, status], map: "availability_change_conflicts_set_status_idx")
   @@index([organizationId, status], map: "availability_change_conflicts_org_status_idx")
   @@index([entityType, entityId], map: "availability_change_conflicts_entity_idx")
-  @@unique([changeSetId, entityType, entityId], map: "availability_change_conflicts_set_entity_unique")
   @@map("availability_change_conflicts")
   @@schema("app_v3")
 }
@@ -6710,17 +6817,17 @@ model TelemetryEvent {
 }
 
 model TelemetryMetricRollup {
-  env            String             @default("prod")
-  id             Int                @id @default(autoincrement())
-  organizationId Int                @map("organization_id")
-  bucketStart    DateTime           @map("bucket_start") @db.Timestamptz(6)
+  env            String              @default("prod")
+  id             Int                 @id @default(autoincrement())
+  organizationId Int                 @map("organization_id")
+  bucketStart    DateTime            @map("bucket_start") @db.Timestamptz(6)
   bucketUnit     TelemetryBucketUnit @map("bucket_unit")
-  metricKey      TelemetryMetricKey @map("metric_key")
-  dimensionKey   String             @map("dimension_key")
-  dimensionValue String             @map("dimension_value")
-  value          Int                @map("value")
-  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  metricKey      TelemetryMetricKey  @map("metric_key")
+  dimensionKey   String              @map("dimension_key")
+  dimensionValue String              @map("dimension_value")
+  value          Int                 @map("value")
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@unique([env, organizationId, bucketStart, bucketUnit, metricKey, dimensionKey, dimensionValue], map: "telemetry_metric_rollups_unique")
   @@index([env, organizationId, bucketStart], map: "telemetry_metric_rollups_org_bucket_idx")
@@ -6730,23 +6837,23 @@ model TelemetryMetricRollup {
 }
 
 model TelemetryAlertRule {
-  env                String              @default("prod")
-  id                 String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId     Int?                @map("organization_id")
-  name               String              @map("name") @db.Text
-  description        String?             @map("description") @db.Text
-  metricKey          TelemetryMetricKey  @map("metric_key")
-  dimensionKey       String?             @map("dimension_key")
-  dimensionValue     String?             @map("dimension_value")
-  comparisonOperator String              @default("GTE") @map("comparison_operator") @db.Text
-  threshold          Int                 @map("threshold")
-  windowMinutes      Int                 @default(15) @map("window_minutes")
-  cooldownMinutes    Int                 @default(30) @map("cooldown_minutes")
-  severity           TelemetrySeverity   @default(WARN)
-  isActive           Boolean             @default(true) @map("is_active")
-  createdByUserId    String?             @map("created_by_user_id") @db.Uuid
-  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  env                String                   @default("prod")
+  id                 String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId     Int?                     @map("organization_id")
+  name               String                   @map("name") @db.Text
+  description        String?                  @map("description") @db.Text
+  metricKey          TelemetryMetricKey       @map("metric_key")
+  dimensionKey       String?                  @map("dimension_key")
+  dimensionValue     String?                  @map("dimension_value")
+  comparisonOperator String                   @default("GTE") @map("comparison_operator") @db.Text
+  threshold          Int                      @map("threshold")
+  windowMinutes      Int                      @default(15) @map("window_minutes")
+  cooldownMinutes    Int                      @default(30) @map("cooldown_minutes")
+  severity           TelemetrySeverity        @default(WARN)
+  isActive           Boolean                  @default(true) @map("is_active")
+  createdByUserId    String?                  @map("created_by_user_id") @db.Uuid
+  createdAt          DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
   incidents          TelemetryAlertIncident[]
 
   @@index([env, organizationId, isActive], map: "telemetry_alert_rules_org_active_idx")
@@ -6756,28 +6863,28 @@ model TelemetryAlertRule {
 }
 
 model TelemetryAlertIncident {
-  env                 String                 @default("prod")
-  id                  String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  ruleId              String?                @map("rule_id") @db.Uuid
-  organizationId      Int?                   @map("organization_id")
-  status              TelemetryIncidentStatus @default(OPEN)
-  severity            TelemetrySeverity
-  title               String                 @map("title") @db.Text
-  description         String?                @map("description") @db.Text
-  metricKey           TelemetryMetricKey?    @map("metric_key")
-  dimensionKey        String?                @map("dimension_key")
-  dimensionValue      String?                @map("dimension_value")
-  observedValue       Int?                   @map("observed_value")
-  thresholdValue      Int?                   @map("threshold_value")
-  triggeredAt         DateTime               @default(now()) @map("triggered_at") @db.Timestamptz(6)
-  acknowledgedAt      DateTime?              @map("acknowledged_at") @db.Timestamptz(6)
-  resolvedAt          DateTime?              @map("resolved_at") @db.Timestamptz(6)
-  acknowledgedByUserId String?               @map("acknowledged_by_user_id") @db.Uuid
-  resolvedByUserId    String?                @map("resolved_by_user_id") @db.Uuid
-  context             Json                   @default("{}")
-  createdAt           DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
-  rule                TelemetryAlertRule?    @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  env                  String                  @default("prod")
+  id                   String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ruleId               String?                 @map("rule_id") @db.Uuid
+  organizationId       Int?                    @map("organization_id")
+  status               TelemetryIncidentStatus @default(OPEN)
+  severity             TelemetrySeverity
+  title                String                  @map("title") @db.Text
+  description          String?                 @map("description") @db.Text
+  metricKey            TelemetryMetricKey?     @map("metric_key")
+  dimensionKey         String?                 @map("dimension_key")
+  dimensionValue       String?                 @map("dimension_value")
+  observedValue        Int?                    @map("observed_value")
+  thresholdValue       Int?                    @map("threshold_value")
+  triggeredAt          DateTime                @default(now()) @map("triggered_at") @db.Timestamptz(6)
+  acknowledgedAt       DateTime?               @map("acknowledged_at") @db.Timestamptz(6)
+  resolvedAt           DateTime?               @map("resolved_at") @db.Timestamptz(6)
+  acknowledgedByUserId String?                 @map("acknowledged_by_user_id") @db.Uuid
+  resolvedByUserId     String?                 @map("resolved_by_user_id") @db.Uuid
+  context              Json                    @default("{}")
+  createdAt            DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  rule                 TelemetryAlertRule?     @relation(fields: [ruleId], references: [id], onDelete: SetNull)
 
   @@index([env, status, triggeredAt], map: "telemetry_alert_incidents_status_time_idx")
   @@index([env, organizationId, triggeredAt], map: "telemetry_alert_incidents_org_time_idx")
@@ -6806,16 +6913,16 @@ model TelemetryIngestError {
 }
 
 model TelemetryFunnelDefinition {
-  env             String                 @default("prod")
-  id              String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId  Int?                   @map("organization_id")
-  name            String                 @map("name") @db.Text
-  description     String?                @map("description") @db.Text
-  steps           Json                   @default("[]")
-  isActive        Boolean                @default(true) @map("is_active")
-  createdByUserId String?                @map("created_by_user_id") @db.Uuid
-  createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  env             String                  @default("prod")
+  id              String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId  Int?                    @map("organization_id")
+  name            String                  @map("name") @db.Text
+  description     String?                 @map("description") @db.Text
+  steps           Json                    @default("[]")
+  isActive        Boolean                 @default(true) @map("is_active")
+  createdByUserId String?                 @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
   results         TelemetryFunnelResult[]
 
   @@index([env, organizationId, isActive], map: "telemetry_funnel_definitions_org_active_idx")
@@ -7241,6 +7348,13 @@ enum PadelMatchResultCardStatus {
   CONFIRMED
   CONFLICTED
   CANCELLED
+
+  @@schema("app_v3")
+}
+
+enum PadelRankingSnapshotMode {
+  START
+  CURRENT
 
   @@schema("app_v3")
 }

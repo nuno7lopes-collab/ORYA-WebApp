@@ -32,7 +32,7 @@ async function gotoCriticalRoute(page, route) {
 }
 
 test("@web public critical pages render without blocking errors", async ({ page, baseURL }) => {
-  const targets = ["/", "/eventos", "/descobrir"];
+  const targets = ["/", "/padel", "/eventos", "/descobrir", "/descobrir/eventos", "/descobrir/reservas"];
 
   for (const route of targets) {
     const response = await gotoCriticalRoute(page, route);

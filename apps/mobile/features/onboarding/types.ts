@@ -12,12 +12,11 @@ export const INTEREST_OPTIONS = [
 export type InterestOption = (typeof INTEREST_OPTIONS)[number];
 export type InterestId = InterestOption["id"];
 
-export type OnboardingStep = "basic" | "interests" | "padel";
+export type OnboardingStep = "basic" | "padel";
 
 export type OnboardingPayload = {
   fullName: string;
   username: string;
-  interests: InterestId[];
   padelGender?: string | null;
   padelPreferredSide?: string | null;
   padelLevel?: string | null;

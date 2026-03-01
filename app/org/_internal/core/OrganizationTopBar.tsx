@@ -18,11 +18,9 @@ import {
   shouldPinOrganizationTopbar,
   type OrgToolKey,
 } from "@/app/org/_internal/core/topbarRouteUtils";
+import { resolveClubDashboardViewModel } from "@/app/org/_internal/core/ClubDashboardViewModel";
 import { buildOrgHref, buildOrgHubHref } from "@/lib/organizationIdUtils";
-import EventsSubnav from "@/app/org/_components/subnav/EventsSubnav";
 import BookingsSubnav from "@/app/org/_components/subnav/BookingsSubnav";
-import CalendarSubnav from "@/app/org/_components/subnav/CalendarSubnav";
-import CheckInSubnav from "@/app/org/_components/subnav/CheckInSubnav";
 import PoliciesSubnav from "@/app/org/_components/subnav/PoliciesSubnav";
 import FinanceSubnav from "@/app/org/_components/subnav/FinanceSubnav";
 import AnalyticsSubnav from "@/app/org/_components/subnav/AnalyticsSubnav";
@@ -34,6 +32,7 @@ import TeamSubnav from "@/app/org/_components/subnav/TeamSubnav";
 import PadelClubSubnav from "@/app/org/_components/subnav/PadelClubSubnav";
 import PadelTournamentsSubnav from "@/app/org/_components/subnav/PadelTournamentsSubnav";
 import MarketingSubnav from "@/app/org/_components/subnav/MarketingSubnav";
+import SettingsSubnav from "@/app/org/_components/subnav/SettingsSubnav";
 
 const ORG_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
 const ORG_SWITCH_TIMEOUT_MS = 8_000;
@@ -94,26 +93,6 @@ type OrganizationMeResponse = {
   paymentsMode?: "CONNECT" | "PLATFORM";
 };
 
-const TOOL_META: Record<OrgToolKey, { label: string }> = {
-  dashboard: { label: "Painel" },
-  events: { label: "Eventos" },
-  bookings: { label: "Reservas" },
-  calendar: { label: "Calendário" },
-  "check-in": { label: "Check-in" },
-  policies: { label: "Políticas" },
-  finance: { label: "Finanças" },
-  analytics: { label: "Análises" },
-  crm: { label: "CRM" },
-  store: { label: "Loja" },
-  forms: { label: "Formulários" },
-  chat: { label: "Mensagens" },
-  team: { label: "Equipa" },
-  "padel-club": { label: "Gestão de Clube Padel" },
-  "padel-tournaments": { label: "Torneios de Padel" },
-  marketing: { label: "Marketing" },
-  settings: { label: "Definições" },
-};
-
 const TOPBAR_CUSTOM_ICON_BY_TOOL: Record<OrgToolKey, string | null> = {
   dashboard: null,
   events: "/icons/tools/eventos.avif",
@@ -172,7 +151,7 @@ export default function OrganizationTopBar({
     [normalizedPathname],
   );
 
-  const orgDisplay = activeOrg?.name ?? "Organização";
+  const orgDisplay = activeOrg?.name ?? "Clube";
   const orgAvatar = activeOrg?.avatarUrl ?? null;
   const userLabel = user?.name || user?.email || "Utilizador";
   const dashboardHref = activeOrg?.id ? buildOrgHref(activeOrg.id, "/overview") : buildOrgHubHref("/organizations");
@@ -181,15 +160,17 @@ export default function OrganizationTopBar({
     () => resolveOrganizationTool(normalizedPathname) ?? "dashboard",
     [normalizedPathname],
   );
-  const currentApp = TOOL_META[activeTool] ?? TOOL_META.dashboard;
+  const currentApp = resolveClubDashboardViewModel(activeTool);
   const currentAppIcon = TOPBAR_CUSTOM_ICON_BY_TOOL[activeTool] ?? null;
   const resolvedToolSubnav = useMemo(() => {
     const orgId = activeOrg?.id ?? null;
     if (!orgId || activeTool === "dashboard") return null;
-    if (activeTool === "events") return <EventsSubnav orgId={orgId} className="w-full max-w-full" />;
-    if (activeTool === "bookings") return <BookingsSubnav orgId={orgId} className="w-full max-w-full" />;
-    if (activeTool === "calendar") return <CalendarSubnav orgId={orgId} className="w-full max-w-full" />;
-    if (activeTool === "check-in") return <CheckInSubnav orgId={orgId} className="w-full max-w-full" />;
+    if (activeTool === "bookings" || activeTool === "calendar" || activeTool === "check-in") {
+      return <BookingsSubnav orgId={orgId} className="w-full max-w-full" />;
+    }
+    if (activeTool === "events" || activeTool === "padel-tournaments") {
+      return <PadelTournamentsSubnav orgId={orgId} className="w-full max-w-full" />;
+    }
     if (activeTool === "policies") return <PoliciesSubnav orgId={orgId} className="w-full max-w-full" />;
     if (activeTool === "finance") return <FinanceSubnav orgId={orgId} className="w-full max-w-full" />;
     if (activeTool === "analytics") return <AnalyticsSubnav orgId={orgId} className="w-full max-w-full" />;
@@ -201,10 +182,8 @@ export default function OrganizationTopBar({
     if (activeTool === "chat") return <ChatSubnav orgId={orgId} className="w-full max-w-full" />;
     if (activeTool === "team") return <TeamSubnav orgId={orgId} className="w-full max-w-full" />;
     if (activeTool === "padel-club") return <PadelClubSubnav orgId={orgId} className="w-full max-w-full" />;
-    if (activeTool === "padel-tournaments") {
-      return <PadelTournamentsSubnav orgId={orgId} className="w-full max-w-full" />;
-    }
     if (activeTool === "marketing") return <MarketingSubnav orgId={orgId} className="w-full max-w-full" />;
+    if (activeTool === "settings") return <SettingsSubnav orgId={orgId} className="w-full max-w-full" />;
     return null;
   }, [activeOrg?.id, activeTool]);
 
@@ -512,7 +491,7 @@ export default function OrganizationTopBar({
             <Link
               href={dashboardHref}
               className="group flex h-10 min-w-0 shrink-0 items-center gap-2.5 rounded-full border border-white/22 bg-black/25 px-3.5 text-sm text-white shadow-[0_12px_38px_rgba(0,0,0,0.36)] transition hover:border-[#22D3EE]/45 hover:bg-[#22D3EE]/12"
-              aria-label={`Voltar ao painel (${currentApp.label})`}
+              aria-label={`Voltar ao dashboard do clube (${currentApp.label})`}
             >
               {currentAppIcon ? (
                 <span className="relative h-7 w-7 shrink-0 overflow-hidden">
@@ -559,7 +538,7 @@ export default function OrganizationTopBar({
                 />
                 <div className="flex min-w-0 flex-col leading-tight">
                   <span className="text-[9px] uppercase tracking-[0.22em] text-white/50 md:hidden">
-                    Organização:
+                    Clube:
                   </span>
                   <span className="max-w-[140px] truncate text-[12px] font-semibold text-white md:text-sm">
                     {orgDisplay}
@@ -569,14 +548,14 @@ export default function OrganizationTopBar({
               </div>
             </summary>
             <div className="absolute right-0 mt-2 w-64 rounded-2xl orya-menu-surface p-2 backdrop-blur-2xl">
-              <p className="px-2 pb-2 text-[10px] uppercase tracking-[0.24em] text-white/50">Organizações</p>
+              <p className="px-2 pb-2 text-[10px] uppercase tracking-[0.24em] text-white/50">Clubes</p>
               <div className="orya-menu-list">
                 {orgOptions.map((item) => {
                   const label =
                     item.organization.publicName ||
                     item.organization.businessName ||
                     item.organization.username ||
-                    "Organização";
+                    "Clube";
                   const isActive = activeOrg?.id === item.organizationId;
                   return (
                     <button
@@ -602,13 +581,13 @@ export default function OrganizationTopBar({
                     href={buildOrgHubHref("/create")}
                     className="orya-menu-item text-[12px] text-white/70"
                   >
-                    Criar organização
+                    Criar clube
                   </Link>
                   <Link
                     href={buildOrgHubHref("/organizations")}
                     className="orya-menu-item text-[12px] text-white/70"
                   >
-                    Gerir organizações
+                    Gerir clubes
                   </Link>
                 </div>
               </div>

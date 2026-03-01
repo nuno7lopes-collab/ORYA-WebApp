@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { listUserFollowers } from "@/domain/social/follows";
+import { isUserFriend, listUserFollowers } from "@/domain/social/follows";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
@@ -36,11 +36,8 @@ async function _GET(req: NextRequest) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     if (viewerId !== userId) {
-      const isFollower = await prisma.follows.findFirst({
-        where: { follower_id: viewerId, following_id: userId },
-        select: { id: true },
-      });
-      if (!isFollower) {
+      const canView = await isUserFriend(viewerId, userId);
+      if (!canView) {
         return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
       }
     }

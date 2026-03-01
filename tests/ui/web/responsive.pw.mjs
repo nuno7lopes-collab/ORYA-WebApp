@@ -35,7 +35,16 @@ async function gotoRoute(page, route) {
 }
 
 test("@responsive public responsive guardrails across target breakpoints", async ({ browser }) => {
-  const routes = ["/", "/eventos", "/descobrir"];
+  const routes = [
+    "/",
+    "/padel",
+    "/padel/duplas",
+    "/padel/rankings",
+    "/eventos",
+    "/descobrir",
+    "/descobrir/eventos",
+    "/descobrir/reservas",
+  ];
 
   for (const viewport of VIEWPORTS) {
     const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height } });

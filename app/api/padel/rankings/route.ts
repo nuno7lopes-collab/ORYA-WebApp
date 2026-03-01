@@ -13,11 +13,15 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { applyInactivityToVisual, computeVisualLevel } from "@/domain/padel/ratingEngine";
 import { enforceMobileVersionGate } from "@/lib/http/mobileVersionGate";
 import { executePadelRankingRebuild } from "@/domain/padel/rankingRebuild";
+import { ensurePadelEventRankingSnapshot } from "@/domain/padel/globalRating";
 import { isPublicEventStatus } from "@/domain/events/publicStatus";
-
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
+
 const DEFAULT_LIMIT = 50;
+const DEFAULT_RATING = 1200;
 const COUNTED_STATUSES = ["OFFICIAL", "WALKOVER", "RETIRED"] as const;
+
+type SnapshotMode = "START" | "CURRENT";
 
 const clampLimit = (raw: string | null) => {
   const parsed = raw ? Number(raw) : NaN;
@@ -37,12 +41,137 @@ const normalizeCityFilter = (raw: string | null) => {
   return normalized.length > 0 ? normalized : null;
 };
 
+const normalizeSnapshotMode = (raw: string | null): SnapshotMode | null => {
+  if (!raw) return null;
+  const normalized = raw.trim().toUpperCase();
+  if (normalized === "START" || normalized === "CURRENT") return normalized;
+  return null;
+};
+
+function isMissingGlobalRatingSchemaError(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const code = (error as { code?: string }).code ?? null;
+  if (code !== "P2021") return false;
+  const message = String((error as { message?: unknown }).message ?? "");
+  return (
+    message.includes("padel_global_rating_profiles") ||
+    message.includes("padel_global_rating_events") ||
+    message.includes("padel_event_ranking_snapshots")
+  );
+}
+
+function rankingSchemaFallback() {
+  return jsonWrap(
+    {
+      ok: true,
+      items: [],
+      meta: {
+        bootstrap: true,
+        reason: "RANKING_SCHEMA_MISSING",
+        countedStatuses: COUNTED_STATUSES,
+        generatedAt: new Date().toISOString(),
+      },
+    },
+    { status: 200 },
+  );
+}
+
+function withStablePosition<T extends { points: number }>(rows: T[]): Array<T & { position: number }> {
+  let lastPoints: number | null = null;
+  let lastPosition = 0;
+  return rows.map((row, idx) => {
+    if (lastPoints === null || row.points !== lastPoints) {
+      lastPoints = row.points;
+      lastPosition = idx + 1;
+    }
+    return { ...row, position: lastPosition };
+  });
+}
+
 async function ensureUser() {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
   } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   return user;
+}
+
+async function listEventParticipants(eventId: number) {
+  const registered = await prisma.padelTournamentParticipant.findMany({
+    where: { eventId },
+    select: {
+      playerProfileId: true,
+      playerProfile: {
+        select: {
+          id: true,
+          userId: true,
+          fullName: true,
+          displayName: true,
+          level: true,
+        },
+      },
+    },
+    orderBy: { id: "asc" },
+  });
+
+  const deduped = new Map<
+    string,
+    { userId: string; playerId: number; fullName: string; level: string | null }
+  >();
+  for (const row of registered) {
+    const userId = row.playerProfile?.userId;
+    const playerId = row.playerProfile?.id ?? row.playerProfileId;
+    if (!userId || !playerId) continue;
+    if (deduped.has(userId)) continue;
+    deduped.set(userId, {
+      userId,
+      playerId,
+      fullName: row.playerProfile?.displayName || row.playerProfile?.fullName || "Jogador",
+      level: row.playerProfile?.level ?? null,
+    });
+  }
+  if (deduped.size > 0) return Array.from(deduped.values());
+
+  const fallbackMatches = await prisma.eventMatchSlot.findMany({
+    where: { eventId },
+    select: {
+      participants: {
+        select: {
+          participant: {
+            select: {
+              playerProfileId: true,
+              playerProfile: {
+                select: {
+                  id: true,
+                  userId: true,
+                  fullName: true,
+                  displayName: true,
+                  level: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  for (const match of fallbackMatches) {
+    for (const row of match.participants) {
+      const userId = row.participant?.playerProfile?.userId;
+      const playerId = row.participant?.playerProfile?.id ?? row.participant?.playerProfileId;
+      if (!userId || !playerId) continue;
+      if (deduped.has(userId)) continue;
+      deduped.set(userId, {
+        userId,
+        playerId,
+        fullName: row.participant?.playerProfile?.displayName || row.participant?.playerProfile?.fullName || "Jogador",
+        level: row.participant?.playerProfile?.level ?? null,
+      });
+    }
+  }
+
+  return Array.from(deduped.values());
 }
 
 async function _GET(req: NextRequest) {
@@ -59,7 +188,8 @@ async function _GET(req: NextRequest) {
   const eventId = req.nextUrl.searchParams.get("eventId");
   const scope = (req.nextUrl.searchParams.get("scope") || "global").toLowerCase();
   const limit = clampLimit(req.nextUrl.searchParams.get("limit"));
-  const periodDaysRaw = Number(req.nextUrl.searchParams.get("periodDays"));
+  const periodDaysParam = req.nextUrl.searchParams.get("periodDays");
+  const periodDaysRaw = Number(periodDaysParam);
   const periodDays = Number.isFinite(periodDaysRaw) && periodDaysRaw > 0 ? Math.floor(periodDaysRaw) : null;
   const tierFilter = normalizeTierFilter(req.nextUrl.searchParams.get("tier"));
   const cityFilter = normalizeCityFilter(req.nextUrl.searchParams.get("city"));
@@ -69,6 +199,13 @@ async function _GET(req: NextRequest) {
   if (clubIdParam != null && clubIdFilter == null) {
     return jsonWrap({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
   }
+
+  const snapshotModeParam = req.nextUrl.searchParams.get("snapshotMode");
+  const snapshotMode = normalizeSnapshotMode(snapshotModeParam);
+  if (snapshotModeParam && !snapshotMode) {
+    return jsonWrap({ ok: false, error: "INVALID_SNAPSHOT_MODE" }, { status: 400 });
+  }
+
   const since = periodDays ? new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000) : null;
 
   if (eventId) {
@@ -80,6 +217,7 @@ async function _GET(req: NextRequest) {
       select: {
         templateType: true,
         status: true,
+        organizationId: true,
         padelTournamentConfig: { select: { advancedSettings: true, lifecycleStatus: true } },
         accessPolicies: {
           orderBy: { policyVersion: "desc" },
@@ -106,45 +244,142 @@ async function _GET(req: NextRequest) {
       return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
-    const filteredPlayerIds =
-      tierFilter || clubIdFilter || cityFilter
-        ? (
-            await prisma.padelRatingEvent.findMany({
-              where: {
-                eventId: eId,
-                ...(since ? { createdAt: { gte: since } } : {}),
-                ...(tierFilter ? { tier: tierFilter } : {}),
-                ...(clubIdFilter ? { clubId: clubIdFilter } : {}),
-                ...(cityFilter ? { city: cityFilter } : {}),
-              },
-              select: { playerId: true },
-              distinct: ["playerId"],
-              take: 2000,
-            })
-          ).map((row) => row.playerId)
-        : null;
+    const resolvedSnapshotMode = snapshotMode ?? "START";
+    const applyPeriodFilter = resolvedSnapshotMode === "CURRENT" && periodDays != null;
+    const currentSince = applyPeriodFilter ? since : null;
 
-    const entries = await prisma.padelRankingEntry.findMany({
-      where: {
+    if (resolvedSnapshotMode === "START") {
+      await ensurePadelEventRankingSnapshot({
+        tx: prisma,
         eventId: eId,
-        ...(since ? { createdAt: { gte: since } } : {}),
-        ...(filteredPlayerIds ? { playerId: { in: filteredPlayerIds } } : {}),
-      },
-      include: { player: true },
-      orderBy: [{ points: "desc" }, { playerId: "asc" }],
-      take: limit,
-    });
+        snapshotMode: "START",
+      });
 
-    const items = entries.map((row, idx) => ({
-      position: idx + 1,
-      points: row.points,
-      rating: row.points,
-      player: {
-        id: row.player.id,
-        fullName: row.player.fullName,
-        level: row.level ?? row.player.level,
-      },
-    }));
+      const snapshots = await prisma.padelEventRankingSnapshot.findMany({
+        where: {
+          eventId: eId,
+          snapshotMode: "START",
+        },
+        include: {
+          player: { select: { id: true, fullName: true, level: true } },
+          user: { select: { fullName: true } },
+        },
+        orderBy: [{ points: "desc" }, { userId: "asc" }],
+        take: limit,
+      });
+
+      const items = withStablePosition(
+        snapshots.map((row) => ({
+          points: row.points,
+          rating: Number(row.rating),
+          player: {
+            id: row.player?.id ?? row.playerId,
+            fullName: row.player?.fullName || row.user?.fullName || "Jogador",
+            level: row.player?.level ?? null,
+          },
+        })),
+      ).map((row) => ({
+        position: row.position,
+        points: row.points,
+        rating: row.rating,
+        player: row.player,
+      }));
+
+      const bootstrap = items.length === 0;
+      return jsonWrap(
+        {
+          ok: true,
+          items,
+          meta: {
+            bootstrap,
+            reason: bootstrap ? "NO_RATING_DATA" : null,
+            countedStatuses: COUNTED_STATUSES,
+            generatedAt: new Date().toISOString(),
+            snapshotMode: resolvedSnapshotMode,
+          },
+        },
+        { status: 200 },
+      );
+    }
+
+    const participants = await listEventParticipants(eId);
+    const participantUserIds = participants.map((row) => row.userId);
+
+    let filteredUsers: Set<string> | null = null;
+    if (tierFilter || clubIdFilter || cityFilter || applyPeriodFilter) {
+      const rows = await prisma.padelGlobalRatingEvent.findMany({
+        where: {
+          eventId: eId,
+          ...(applyPeriodFilter && currentSince ? { occurredAt: { gte: currentSince } } : {}),
+          ...(tierFilter ? { tier: tierFilter } : {}),
+          ...(clubIdFilter ? { clubId: clubIdFilter } : {}),
+          ...(cityFilter ? { city: cityFilter } : {}),
+        },
+        select: { userId: true },
+        distinct: ["userId"],
+        take: 3000,
+      });
+      filteredUsers = new Set(rows.map((row) => row.userId));
+    }
+
+    const profiles = participantUserIds.length
+      ? await prisma.padelGlobalRatingProfile.findMany({
+          where: {
+            userId: { in: participantUserIds },
+            ...(currentSince ? { lastActivityAt: { gte: currentSince } } : {}),
+          },
+          select: {
+            userId: true,
+            rating: true,
+            rd: true,
+            sigma: true,
+            lastActivityAt: true,
+          },
+        })
+      : [];
+    const profileMap = new Map(profiles.map((profile) => [profile.userId, profile]));
+
+    const currentRows = participants
+      .filter((participant) => (filteredUsers ? filteredUsers.has(participant.userId) : true))
+      .map((participant) => {
+        const profile = profileMap.get(participant.userId);
+        const rating = profile?.rating ?? DEFAULT_RATING;
+        return {
+          key: participant.userId,
+          points: Math.round(rating),
+          rating,
+          rd: profile?.rd ?? null,
+          sigma: profile?.sigma ?? null,
+          lastActivityAt: profile?.lastActivityAt ?? null,
+          player: {
+            id: participant.playerId,
+            fullName: participant.fullName,
+            level: participant.level ?? null,
+          },
+        };
+      })
+      .sort((a, b) => b.rating - a.rating || a.key.localeCompare(b.key));
+
+    const leaderRating = currentRows[0]?.rating ?? DEFAULT_RATING;
+    const items = withStablePosition(currentRows)
+      .slice(0, limit)
+      .map((row, idx) => {
+        const computed = computeVisualLevel(row.rating, leaderRating);
+        let drifted = applyInactivityToVisual(computed, row.lastActivityAt ?? null);
+        if (idx === 0) drifted = 1;
+        if (idx > 0 && drifted <= 1) drifted = 1.01;
+        return {
+          position: row.position,
+          points: row.points,
+          rating: row.rating,
+          rd: row.rd,
+          sigma: row.sigma,
+          player: {
+            ...row.player,
+            level: row.player.level ?? drifted.toFixed(2),
+          },
+        };
+      });
 
     const bootstrap = items.length === 0;
     return jsonWrap(
@@ -156,6 +391,7 @@ async function _GET(req: NextRequest) {
           reason: bootstrap ? "NO_RATING_DATA" : null,
           countedStatuses: COUNTED_STATUSES,
           generatedAt: new Date().toISOString(),
+          snapshotMode: resolvedSnapshotMode,
         },
       },
       { status: 200 },
@@ -173,60 +409,98 @@ async function _GET(req: NextRequest) {
     });
     if (!organization || !membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
-    const filteredPlayerIds =
-      tierFilter || clubIdFilter || cityFilter
-        ? (
-            await prisma.padelRatingEvent.findMany({
-              where: {
-                organizationId,
-                ...(since ? { createdAt: { gte: since } } : {}),
-                ...(tierFilter ? { tier: tierFilter } : {}),
-                ...(clubIdFilter ? { clubId: clubIdFilter } : {}),
-                ...(cityFilter ? { city: cityFilter } : {}),
-              },
-              select: { playerId: true },
-              distinct: ["playerId"],
-              take: 5000,
-            })
-          ).map((row) => row.playerId)
-        : null;
-
-    const leader = await prisma.padelRatingProfile.aggregate({ _max: { rating: true } });
-    const leaderRating = leader._max.rating ?? 1200;
-
-    const profiles = await prisma.padelRatingProfile.findMany({
-      where: {
-        organizationId,
-        ...(since ? { lastActivityAt: { gte: since } } : {}),
-        ...(filteredPlayerIds ? { playerId: { in: filteredPlayerIds } } : {}),
-      },
-      include: {
-        player: {
-          select: { id: true, fullName: true, level: true },
-        },
-      },
-      orderBy: [{ rating: "desc" }, { playerId: "asc" }],
-      take: limit,
+    const orgPlayers = await prisma.padelPlayerProfile.findMany({
+      where: { organizationId, userId: { not: null } },
+      select: { id: true, userId: true, fullName: true, displayName: true, level: true, updatedAt: true },
+      orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
     });
+    const playerByUser = new Map<
+      string,
+      { playerId: number; fullName: string; level: string | null }
+    >();
+    for (const player of orgPlayers) {
+      if (!player.userId || playerByUser.has(player.userId)) continue;
+      playerByUser.set(player.userId, {
+        playerId: player.id,
+        fullName: player.displayName || player.fullName || "Jogador",
+        level: player.level ?? null,
+      });
+    }
+    const orgUserIds = Array.from(playerByUser.keys());
 
-    const items = profiles.map((profile, idx) => {
-      const computed = computeVisualLevel(profile.rating, leaderRating);
-      let drifted = applyInactivityToVisual(computed, profile.lastActivityAt ?? null);
-      if (idx === 0) drifted = 1;
-      if (idx > 0 && drifted <= 1) drifted = 1.01;
-      return {
-        position: idx + 1,
-        points: Math.round(profile.rating),
-        rating: profile.rating,
-        rd: profile.rd,
-        sigma: profile.sigma,
-        player: {
-          id: profile.player.id,
-          fullName: profile.player.fullName,
-          level: drifted.toFixed(2),
+    let filteredUsers: Set<string> | null = null;
+    if (tierFilter || clubIdFilter || cityFilter) {
+      const rows = await prisma.padelGlobalRatingEvent.findMany({
+        where: {
+          organizationId,
+          ...(since ? { occurredAt: { gte: since } } : {}),
+          ...(tierFilter ? { tier: tierFilter } : {}),
+          ...(clubIdFilter ? { clubId: clubIdFilter } : {}),
+          ...(cityFilter ? { city: cityFilter } : {}),
         },
-      };
-    });
+        select: { userId: true },
+        distinct: ["userId"],
+        take: 5000,
+      });
+      filteredUsers = new Set(rows.map((row) => row.userId));
+    }
+
+    const profiles = orgUserIds.length
+      ? await prisma.padelGlobalRatingProfile.findMany({
+          where: {
+            userId: { in: orgUserIds },
+            matchesPlayed: { gt: 0 },
+            ...(since ? { lastActivityAt: { gte: since } } : {}),
+          },
+          select: {
+            userId: true,
+            rating: true,
+            rd: true,
+            sigma: true,
+            lastActivityAt: true,
+          },
+        })
+      : [];
+    const rows = profiles
+      .filter((profile) => (filteredUsers ? filteredUsers.has(profile.userId) : true))
+      .map((profile) => {
+        const player = playerByUser.get(profile.userId);
+        if (!player) return null;
+        const rating = profile.rating;
+        return {
+          key: profile.userId,
+          points: Math.round(rating),
+          rating,
+          rd: profile.rd ?? null,
+          sigma: profile.sigma ?? null,
+          lastActivityAt: profile.lastActivityAt ?? null,
+          player,
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => row !== null)
+      .sort((a, b) => b.rating - a.rating || a.key.localeCompare(b.key));
+
+    const leaderRating = rows[0]?.rating ?? DEFAULT_RATING;
+    const items = withStablePosition(rows)
+      .slice(0, limit)
+      .map((row, idx) => {
+        const computed = computeVisualLevel(row.rating, leaderRating);
+        let drifted = applyInactivityToVisual(computed, row.lastActivityAt ?? null);
+        if (idx === 0) drifted = 1;
+        if (idx > 0 && drifted <= 1) drifted = 1.01;
+        return {
+          position: row.position,
+          points: row.points,
+          rating: row.rating,
+          rd: row.rd,
+          sigma: row.sigma,
+          player: {
+            id: row.player.playerId,
+            fullName: row.player.fullName,
+            level: row.player.level ?? drifted.toFixed(2),
+          },
+        };
+      });
 
     const bootstrap = items.length === 0;
     return jsonWrap(
@@ -244,57 +518,104 @@ async function _GET(req: NextRequest) {
     );
   }
 
-  const leader = await prisma.padelRatingProfile.aggregate({ _max: { rating: true } });
-  const leaderRating = leader._max.rating ?? 1200;
-  const filteredPlayerIds =
-    tierFilter || clubIdFilter || cityFilter
-      ? (
-          await prisma.padelRatingEvent.findMany({
-            where: {
-              ...(since ? { createdAt: { gte: since } } : {}),
-              ...(tierFilter ? { tier: tierFilter } : {}),
-              ...(clubIdFilter ? { clubId: clubIdFilter } : {}),
-              ...(cityFilter ? { city: cityFilter } : {}),
-            },
-            select: { playerId: true },
-            distinct: ["playerId"],
-            take: 5000,
-          })
-        ).map((row) => row.playerId)
-      : null;
-
-  const profiles = await prisma.padelRatingProfile.findMany({
-    where: {
-      ...(since ? { lastActivityAt: { gte: since } } : {}),
-      leaderboardEligible: true,
-      ...(filteredPlayerIds ? { playerId: { in: filteredPlayerIds } } : {}),
-    },
-    include: {
-      player: {
-        select: { id: true, fullName: true, level: true },
+  let filteredUsers: Set<string> | null = null;
+  if (tierFilter || clubIdFilter || cityFilter) {
+    const rows = await prisma.padelGlobalRatingEvent.findMany({
+      where: {
+        ...(since ? { occurredAt: { gte: since } } : {}),
+        ...(tierFilter ? { tier: tierFilter } : {}),
+        ...(clubIdFilter ? { clubId: clubIdFilter } : {}),
+        ...(cityFilter ? { city: cityFilter } : {}),
       },
+      select: { userId: true },
+      distinct: ["userId"],
+      take: 10000,
+    });
+    filteredUsers = new Set(rows.map((row) => row.userId));
+  }
+
+  const globalProfiles = await prisma.padelGlobalRatingProfile.findMany({
+    where: {
+      leaderboardEligible: true,
+      matchesPlayed: { gt: 0 },
+      ...(since ? { lastActivityAt: { gte: since } } : {}),
+      ...(filteredUsers ? { userId: { in: Array.from(filteredUsers) } } : {}),
     },
-    orderBy: [{ rating: "desc" }, { playerId: "asc" }],
+    select: {
+      userId: true,
+      rating: true,
+      rd: true,
+      sigma: true,
+      lastActivityAt: true,
+    },
+    orderBy: [{ rating: "desc" }, { userId: "asc" }],
     take: limit,
   });
 
-  const items = profiles.map((profile, idx) => {
-    const computed = computeVisualLevel(profile.rating, leaderRating);
-    let drifted = applyInactivityToVisual(computed, profile.lastActivityAt ?? null);
-    if (idx === 0) drifted = 1;
-    if (idx > 0 && drifted <= 1) drifted = 1.01;
-    return {
-      position: idx + 1,
+  const userIds = globalProfiles.map((row) => row.userId);
+  const [profiles, playerProfiles]: [
+    Array<{ id: string; fullName: string | null }>,
+    Array<{
+      id: number;
+      userId: string | null;
+      fullName: string;
+      displayName: string | null;
+      level: string | null;
+      updatedAt: Date;
+    }>,
+  ] = userIds.length
+    ? await Promise.all([
+        prisma.profile.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, fullName: true },
+        }),
+        prisma.padelPlayerProfile.findMany({
+          where: { userId: { in: userIds } },
+          select: { id: true, userId: true, fullName: true, displayName: true, level: true, updatedAt: true },
+          orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
+        }),
+      ])
+    : [[], []];
+
+  const profileMap = new Map<string, { id: string; fullName: string | null }>();
+  for (const profile of profiles) {
+    profileMap.set(profile.id, profile);
+  }
+  const playerByUser = new Map<string, (typeof playerProfiles)[number]>();
+  for (const player of playerProfiles) {
+    if (!player.userId || playerByUser.has(player.userId)) continue;
+    playerByUser.set(player.userId, player);
+  }
+
+  const leaderRating = globalProfiles[0]?.rating ?? DEFAULT_RATING;
+  const items = withStablePosition(
+    globalProfiles.map((profile) => ({
       points: Math.round(profile.rating),
       rating: profile.rating,
       rd: profile.rd,
       sigma: profile.sigma,
-      player: {
-        id: profile.player.id,
-        fullName: profile.player.fullName,
-        level: drifted.toFixed(2),
-      },
-    };
+      lastActivityAt: profile.lastActivityAt,
+      userId: profile.userId,
+    })),
+  ).map((row, idx) => {
+    const player = playerByUser.get(row.userId);
+    const profile = profileMap.get(row.userId);
+    const computed = computeVisualLevel(row.rating, leaderRating);
+    let drifted = applyInactivityToVisual(computed, row.lastActivityAt ?? null);
+    if (idx === 0) drifted = 1;
+    if (idx > 0 && drifted <= 1) drifted = 1.01;
+      return {
+        position: row.position,
+        points: row.points,
+        rating: row.rating,
+        rd: row.rd,
+        sigma: row.sigma,
+        player: {
+          id: player?.id ?? -(idx + 1),
+          fullName: profile?.fullName || player?.displayName || player?.fullName || "Jogador",
+          level: player?.level ?? drifted.toFixed(2),
+        },
+      };
   });
 
   const bootstrap = items.length === 0;
@@ -335,5 +656,17 @@ async function _POST(req: NextRequest) {
   return jsonWrap({ ok: true, result: outcome.result }, { status: 200 });
 }
 
-export const GET = withApiEnvelope(_GET);
+const safeGet = async (req: NextRequest) => {
+  try {
+    return await _GET(req);
+  } catch (error) {
+    if (isMissingGlobalRatingSchemaError(error)) {
+      console.warn("[padel/rankings] global rating schema missing; returning bootstrap fallback");
+      return rankingSchemaFallback();
+    }
+    throw error;
+  }
+};
+
+export const GET = withApiEnvelope(safeGet);
 export const POST = withApiEnvelope(_POST);

@@ -30,6 +30,54 @@
       "reason": "contract_exception_operational_cleanup",
       "expiresAt": "2026-12-31",
       "wave": "wave-2"
+    },
+    {
+      "route": "/api/admin/telemetry/catalog",
+      "domain": "admin-telemetry",
+      "owner": "platform-observability",
+      "reason": "catalog_endpoint_reserved_for_admin_iteration",
+      "expiresAt": "2026-12-31",
+      "wave": "wave-3"
+    },
+    {
+      "route": "/api/eventos/[slug]/invites/check",
+      "domain": "eventos",
+      "owner": "eventos-platform",
+      "reason": "invite_token_preflight_external_clients",
+      "expiresAt": "2026-12-31",
+      "wave": "wave-3"
+    },
+    {
+      "route": "/api/org/[orgId]/events/publish",
+      "domain": "org-events",
+      "owner": "club-operations",
+      "reason": "publish_workflow_managed_outside_dashboard_ui",
+      "expiresAt": "2026-12-31",
+      "wave": "wave-3"
+    },
+    {
+      "route": "/api/org/[orgId]/refunds/cases",
+      "domain": "org-finance",
+      "owner": "payments-core",
+      "reason": "refund_case_triage_internal_rollout",
+      "expiresAt": "2026-12-31",
+      "wave": "wave-3"
+    },
+    {
+      "route": "/api/org/[orgId]/refunds/cases/[id]/override",
+      "domain": "org-finance",
+      "owner": "payments-core",
+      "reason": "refund_override_stepup_flow_not_exposed_yet",
+      "expiresAt": "2026-12-31",
+      "wave": "wave-3"
+    },
+    {
+      "route": "/api/public/org/[username]/reservas/hub",
+      "domain": "public-reservas",
+      "owner": "public-experience",
+      "reason": "public_hub_endpoint_used_by_external_consumer_surface",
+      "expiresAt": "2026-12-31",
+      "wave": "wave-3"
     }
   ]
 }

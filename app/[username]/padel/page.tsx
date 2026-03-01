@@ -6,18 +6,56 @@ import ProfileHeader from "@/app/components/profile/ProfileHeader";
 import { getProfileCoverUrl } from "@/lib/profileCover";
 import { getPadelOnboardingMissing, isPadelOnboardingComplete } from "@/domain/padelOnboarding";
 import { resolvePadelMatchStats } from "@/domain/padel/score";
-import { buildScoreRuleSummary, resolveEffectiveScoreRules } from "@/domain/padel/scoreRulesResolver";
-import PadelDisputeButton from "./PadelDisputeButton";
-import PadelResultSubmitCard from "./PadelResultSubmitCard";
-import { getUserFollowCounts, isUserFollowing } from "@/domain/social/follows";
+import { getUserFollowCounts, isUserFriend } from "@/domain/social/follows";
 import { normalizeUsernameInput } from "@/lib/username";
 import { isReservedUsername } from "@/lib/reservedUsernames";
+import { withPadelGlobalRatingFallback } from "@/lib/padel/globalRatingSchema";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 type PageProps = {
   params: { username: string } | Promise<{ username: string }>;
+};
+
+type TopClubRow = {
+  organizationId: number;
+  name: string;
+  matches: number;
+  rating: number | null;
+};
+
+type TopPartnershipRow = {
+  partnerId: string;
+  name: string;
+  matches: number;
+  wins: number;
+  losses: number;
+  lastPlayedAt: Date | null;
+};
+
+type TournamentSummaryRow = {
+  eventId: number;
+  title: string;
+  slug: string;
+  startsAt: Date | null;
+  endsAt: Date | null;
+  matchCount: number;
+  nextMatchAt: Date | null;
+  finalPosition: number | null;
+  wonTitle: boolean;
+  categoryLabel: string | null;
+  partnerName: string | null;
+};
+
+type PadelStats = {
+  matches: number;
+  wins: number;
+  losses: number;
+  setsWon: number;
+  setsLost: number;
+  gamesWon: number;
+  gamesLost: number;
 };
 
 async function getViewerId() {
@@ -32,57 +70,22 @@ async function getViewerId() {
 }
 
 function formatDate(date?: Date | null) {
-  if (!date) return "";
-  return new Intl.DateTimeFormat("pt-PT", {
-    weekday: "short",
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
-}
-
-function formatDateTimeLabel(date?: Date | null) {
   if (!date) return "—";
   return new Intl.DateTimeFormat("pt-PT", {
     day: "2-digit",
     month: "short",
     year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
   }).format(date);
 }
 
-function formatRemainingTime(ms?: number | null) {
-  if (typeof ms !== "number" || !Number.isFinite(ms)) return null;
-  if (ms <= 0) return "expirado";
-  const totalMinutes = Math.floor(ms / 60000);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  if (hours <= 0) return `${Math.max(1, totalMinutes)} min`;
-  if (minutes === 0) return `${hours}h`;
-  return `${hours}h ${minutes}m`;
-}
-
-type PlayerAttentionReason =
-  | "SUBMIT_RESULT"
-  | "AWAITING_CONFIRMATION"
-  | "CONFIRMATION_EXPIRED"
-  | "REVIEW_EXPIRED"
-  | "DISPUTED"
-  | "MATCH_LIVE";
-
-function resolvePlayerAttentionLabel(params: {
-  reason: PlayerAttentionReason;
-  pendingConfirmationMsRemaining?: number | null;
-}) {
-  if (params.reason === "SUBMIT_RESULT") return "Submeter resultado";
-  if (params.reason === "MATCH_LIVE") return "Jogo ao vivo";
-  if (params.reason === "DISPUTED") return "Disputa aberta";
-  if (params.reason === "REVIEW_EXPIRED") return "Revisão pendente";
-  if (params.reason === "CONFIRMATION_EXPIRED") return "Confirmação expirada";
-  const remaining = formatRemainingTime(params.pendingConfirmationMsRemaining);
-  return remaining ? `Aguardar confirmação (${remaining})` : "Aguardar confirmação";
+function formatDateTime(date?: Date | null) {
+  if (!date) return "—";
+  return new Intl.DateTimeFormat("pt-PT", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
 }
 
 function resolveMatchDate(match: {
@@ -94,103 +97,14 @@ function resolveMatchDate(match: {
   return match.startTime ?? match.plannedStartAt ?? match.actualStartAt ?? match.createdAt ?? null;
 }
 
-function buildPairingLabel(pairing?: {
-  slots: Array<{ playerProfile?: { displayName?: string | null; fullName?: string | null } | null }>;
-} | null) {
-  if (!pairing) return "—";
-  const names = pairing.slots
-    .map((slot) => slot.playerProfile?.displayName || slot.playerProfile?.fullName)
-    .filter(Boolean) as string[];
-  return names.length ? names.join(" / ") : "Dupla";
-}
-
-function formatScoreSummary(match: {
-  scoreSets: Array<{ teamA: number; teamB: number }> | null;
-  score: Record<string, unknown> | null;
-}) {
-  const score = match.score || {};
-  if (score.disputeStatus === "OPEN") return "Em disputa";
-  if (match.scoreSets?.length) {
-    return match.scoreSets.map((set) => `${set.teamA}-${set.teamB}`).join(", ");
-  }
-  const resultType =
-    score.resultType === "WALKOVER" || score.walkover === true
-      ? "WALKOVER"
-      : score.resultType === "RETIREMENT"
-        ? "RETIREMENT"
-        : score.resultType === "INJURY"
-          ? "INJURY"
-          : null;
-  if (resultType === "WALKOVER") return "WO";
-  if (resultType === "RETIREMENT") return "Desistência";
-  if (resultType === "INJURY") return "Lesão";
+function resolveSideLabel(side: string | null | undefined) {
+  if (side === "ESQUERDA") return "Esquerda";
+  if (side === "DIREITA") return "Direita";
+  if (side === "QUALQUER") return "Qualquer";
   return "—";
 }
 
-function formatMatchStatusLabel(status: string) {
-  switch (status) {
-    case "PENDING":
-      return "Pendente";
-    case "IN_PROGRESS":
-      return "Em curso";
-    case "RESULT_SUBMITTED":
-      return "Resultado submetido";
-    case "PENDING_CONFIRMATION":
-      return "Pendente confirmação";
-    case "PENDING_REVIEW_EXPIRED":
-      return "Pendente expirado";
-    case "DISPUTED":
-      return "Em disputa";
-    case "OFFICIAL":
-      return "Oficial";
-    case "WALKOVER":
-      return "WO";
-    case "RETIRED":
-      return "Desistência";
-    case "CANCELLED":
-      return "Cancelado";
-    default:
-      return status || "—";
-  }
-}
-
-function matchStatusToneClass(status: string) {
-  if (status === "IN_PROGRESS") return "border-emerald-300/35 bg-emerald-500/10 text-emerald-100";
-  if (status === "RESULT_SUBMITTED" || status === "PENDING_CONFIRMATION") {
-    return "border-sky-300/35 bg-sky-500/10 text-sky-100";
-  }
-  if (status === "PENDING_REVIEW_EXPIRED" || status === "DISPUTED") {
-    return "border-amber-300/35 bg-amber-500/10 text-amber-100";
-  }
-  if (status === "OFFICIAL" || status === "WALKOVER" || status === "RETIRED") {
-    return "border-white/25 bg-white/10 text-white/85";
-  }
-  return "border-white/20 bg-white/5 text-white/75";
-}
-
-type PadelStats = {
-  matches: number;
-  wins: number;
-  losses: number;
-  setsWon: number;
-  setsLost: number;
-  gamesWon: number;
-  gamesLost: number;
-};
-
-type HeadToHeadRow = {
-  opponentId: string;
-  name: string;
-  matches: number;
-  wins: number;
-  losses: number;
-  lastPlayedAt: Date | null;
-};
-
-type RecentFormRow = { result: "W" | "L"; date: Date | null };
-
 type StatTone = "default" | "emerald" | "cyan" | "purple";
-type BadgeTone = "emerald" | "cyan" | "amber" | "violet" | "slate";
 
 function toneClasses(tone: StatTone) {
   switch (tone) {
@@ -229,112 +143,15 @@ function StatCard({
   );
 }
 
-type PadelBadge = {
-  id: string;
-  label: string;
-  description: string;
-  tone: BadgeTone;
-};
-
-function badgeToneClasses(tone: BadgeTone) {
-  switch (tone) {
-    case "emerald":
-      return "border-emerald-300/30 bg-emerald-500/15 text-emerald-50";
-    case "cyan":
-      return "border-cyan-300/30 bg-cyan-500/15 text-cyan-50";
-    case "amber":
-      return "border-amber-300/30 bg-amber-500/15 text-amber-50";
-    case "violet":
-      return "border-violet-300/30 bg-violet-500/15 text-violet-50";
-    default:
-      return "border-white/15 bg-white/10 text-white/70";
-  }
-}
-
-function BadgePill({ badge }: { badge: PadelBadge }) {
-  return (
-    <span
-      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.18em] ${badgeToneClasses(
-        badge.tone,
-      )}`}
-      title={badge.description}
-    >
-      <span>{badge.label}</span>
-    </span>
-  );
-}
-
-function buildPadelBadges({
-  matches,
-  wins,
-  tournamentsPlayed,
-  currentWinStreak,
-}: {
-  matches: number;
-  wins: number;
-  tournamentsPlayed: number;
-  currentWinStreak: number;
-}) {
-  const badges: PadelBadge[] = [];
-
-  if (matches >= 1) {
-    const matchBadge =
-      matches >= 25
-        ? { label: "25 jogos", description: "Veterano em court." }
-        : matches >= 10
-          ? { label: "10 jogos", description: "Ritmo de competição." }
-          : { label: "Estreia", description: "Primeiro jogo concluído." };
-    badges.push({ id: "matches", tone: "slate", ...matchBadge });
-  }
-
-  if (wins >= 5) {
-    const winBadge =
-      wins >= 20
-        ? { label: "20 vitórias", description: "Vitórias de respeito." }
-        : wins >= 10
-          ? { label: "10 vitórias", description: "Vitórias consistentes." }
-          : { label: "5 vitórias", description: "Boa fase." };
-    badges.push({ id: "wins", tone: "emerald", ...winBadge });
-  }
-
-  if (tournamentsPlayed >= 1) {
-    const tournamentBadge =
-      tournamentsPlayed >= 5
-        ? { label: "5 torneios", description: "Experiência em torneios." }
-        : tournamentsPlayed >= 3
-          ? { label: "3 torneios", description: "Competição regular." }
-          : { label: "1 torneio", description: "Primeira competição." };
-    badges.push({ id: "tournaments", tone: "violet", ...tournamentBadge });
-  }
-
-  if (currentWinStreak >= 3) {
-    const streakBadge =
-      currentWinStreak >= 5
-        ? { label: "5 seguidas", description: "Sequência implacável." }
-        : { label: "3 seguidas", description: "Sequência positiva." };
-    badges.push({ id: "streak", tone: "amber", ...streakBadge });
-  }
-
-  return badges;
-}
-
 export default async function PadelProfilePage({ params }: PageProps) {
   const resolvedParams = await params;
   const rawUsernameParam = resolvedParams?.username ?? "";
   const usernameParam = normalizeUsernameInput(rawUsernameParam);
 
-  if (!usernameParam) {
-    notFound();
-  }
-  if (usernameParam === "me") {
-    redirect("/me");
-  }
-  if (isReservedUsername(usernameParam)) {
-    notFound();
-  }
-  if (rawUsernameParam !== usernameParam) {
-    redirect(`/${usernameParam}/padel`);
-  }
+  if (!usernameParam) notFound();
+  if (usernameParam === "me") redirect("/me");
+  if (isReservedUsername(usernameParam)) notFound();
+  if (rawUsernameParam !== usernameParam) redirect(`/${usernameParam}/padel`);
 
   const [viewerId, profile, organizationProfile] = await Promise.all([
     getViewerId(),
@@ -347,14 +164,12 @@ export default async function PadelProfilePage({ params }: PageProps) {
         avatarUrl: true,
         coverUrl: true,
         bio: true,
-        contactPhone: true,
         gender: true,
         padelLevel: true,
         padelPreferredSide: true,
         padelClubName: true,
         visibility: true,
         is_verified: true,
-        createdAt: true,
         updatedAt: true,
       },
     }),
@@ -364,16 +179,13 @@ export default async function PadelProfilePage({ params }: PageProps) {
     }),
   ]);
 
-  if (!profile && organizationProfile) {
-    redirect(`/${usernameParam}`);
-  }
-  if (!profile) {
-    notFound();
-  }
+  if (!profile && organizationProfile) redirect(`/${usernameParam}`);
+  if (!profile) notFound();
 
   const resolvedProfile = profile;
   const isOwner = viewerId === resolvedProfile.id;
   const isPrivate = resolvedProfile.visibility !== "PUBLIC";
+
   let isFollowing = false;
   let initialIsFollowing = false;
   let followersCount = 0;
@@ -382,20 +194,18 @@ export default async function PadelProfilePage({ params }: PageProps) {
   if (prisma.follows) {
     const counts = await getUserFollowCounts(resolvedProfile.id);
     followersCount = counts.followersCount;
-    followingCount = counts.followingTotal;
+    followingCount = counts.followingOrganizationsCount ?? counts.followingTotal;
 
     if (viewerId && !isOwner) {
-      isFollowing = await isUserFollowing(viewerId, resolvedProfile.id);
+      isFollowing = await isUserFriend(viewerId, resolvedProfile.id);
       initialIsFollowing = isFollowing;
     }
   }
 
   const canSeeProfile = isOwner || !isPrivate || isFollowing;
   const profileHandle = resolvedProfile.username ?? usernameParam;
-  const coverCandidate =
-    resolvedProfile.coverUrl?.trim() ||
-    resolvedProfile.avatarUrl ||
-    null;
+
+  const coverCandidate = resolvedProfile.coverUrl?.trim() || resolvedProfile.avatarUrl || null;
   const headerCoverUrl = coverCandidate
     ? getProfileCoverUrl(coverCandidate, {
         width: 1500,
@@ -409,11 +219,28 @@ export default async function PadelProfilePage({ params }: PageProps) {
     where: { id: resolvedProfile.id },
     select: { email: true },
   });
-
+  const canonicalPadelProfile = await prisma.padelPlayerProfile.findFirst({
+    where: { userId: resolvedProfile.id, isActive: true },
+    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+    select: {
+      fullName: true,
+      displayName: true,
+      gender: true,
+      level: true,
+      preferredSide: true,
+      clubName: true,
+    },
+  });
   const padelMissing = getPadelOnboardingMissing({
     profile: {
-      fullName: resolvedProfile.fullName,
+      fullName:
+        canonicalPadelProfile?.displayName?.trim() ||
+        canonicalPadelProfile?.fullName?.trim() ||
+        resolvedProfile.fullName,
       username: resolvedProfile.username,
+      gender: canonicalPadelProfile?.gender?.trim() || resolvedProfile.gender,
+      padelLevel: canonicalPadelProfile?.level?.trim() || resolvedProfile.padelLevel,
+      padelPreferredSide: canonicalPadelProfile?.preferredSide || resolvedProfile.padelPreferredSide,
     },
     email: padelUser?.email ?? null,
   });
@@ -442,32 +269,15 @@ export default async function PadelProfilePage({ params }: PageProps) {
             initialIsFollowing={initialIsFollowing}
             isVerified={resolvedProfile.is_verified}
             padelAction={{
-              href: `/${profileHandle}`,
-              label: "Ver perfil",
+              href: "/padel/rankings",
+              label: "Ranking Padel",
               tone: "ghost",
             }}
           />
           <div className="px-5 sm:px-8">
             <div className="orya-page-width rounded-3xl border border-white/15 bg-white/5 p-6 text-center shadow-[0_26px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-white/15 bg-white/10">
-                <svg
-                  aria-hidden="true"
-                  viewBox="0 0 24 24"
-                  className="h-6 w-6 text-white/90"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M7 11V8a5 5 0 0 1 10 0v3" />
-                  <rect x="5" y="11" width="14" height="9" rx="2" />
-                </svg>
-              </div>
-              <h2 className="mt-3 text-lg font-semibold text-white">Esta conta é privada</h2>
-              <p className="mt-2 text-sm text-white/70">
-                Segue para veres publicações, eventos e detalhes de padel.
-              </p>
+              <h2 className="text-lg font-semibold text-white">Esta conta é privada</h2>
+              <p className="mt-2 text-sm text-white/70">Adiciona como amigo para veres o perfil competitivo de padel.</p>
             </div>
           </div>
         </section>
@@ -475,234 +285,35 @@ export default async function PadelProfilePage({ params }: PageProps) {
     );
   }
 
-  if (!padelComplete && !isOwner) {
-    return (
-      <main className="relative min-h-screen w-full overflow-hidden text-white">
-        <section className="relative flex flex-col gap-6 py-10">
-          <ProfileHeader
-            isOwner={isOwner}
-            name={resolvedProfile.fullName ?? resolvedProfile.username}
-            username={resolvedProfile.username}
-            avatarUrl={resolvedProfile.avatarUrl}
-            avatarUpdatedAt={resolvedProfile.updatedAt ? resolvedProfile.updatedAt.getTime() : null}
-            coverUrl={headerCoverUrl}
-            city={null}
-            visibility={resolvedProfile.visibility as "PUBLIC" | "PRIVATE" | "FOLLOWERS" | null}
-            followers={followersCount}
-            following={followingCount}
-            targetUserId={resolvedProfile.id}
-            initialIsFollowing={initialIsFollowing}
-            isVerified={resolvedProfile.is_verified}
-            padelAction={{
-              href: `/${profileHandle}`,
-              label: "Ver perfil",
-              tone: "ghost",
-            }}
-          />
-          <div className="px-5 sm:px-8">
-            <div className="orya-page-width rounded-3xl border border-white/15 bg-white/5 p-6 text-sm text-white/70 backdrop-blur-2xl">
-              Padel indisponível.
-            </div>
-          </div>
-        </section>
-      </main>
-    );
-  }
+  const now = new Date();
 
-  let padelMatches: Array<{
-    id: number;
-    categoryId: number | null;
-    status: string;
-    roundLabel: string | null;
-    groupLabel: string | null;
-    startAt: Date | null;
-    scoreSets: Array<{ teamA: number; teamB: number }> | null;
-    score: Record<string, unknown> | null;
-    event: {
-      title: string;
-      slug: string;
-      playerResultSubmissionEnabled: boolean;
-      resultValidationMode: "IMMEDIATE_OFFICIAL" | "IMMEDIATE_PENDING_THEN_OFFICIAL" | null;
-      scoreRuleSummary: ReturnType<typeof buildScoreRuleSummary>;
-    };
-    pairingA: any;
-    pairingB: any;
-  }> = [];
-  let padelUpcoming: typeof padelMatches = [];
-  let padelRecent: typeof padelMatches = [];
-
-  try {
-    const matchRows = await prisma.eventMatchSlot.findMany({
+  const [timelineRows, officialRows, rankingProfiles, historyRows, globalRatingProfile] = await Promise.all([
+    prisma.eventMatchSlot.findMany({
       where: {
         OR: [
           { pairingA: { slots: { some: { profileId: resolvedProfile.id } } } },
           { pairingB: { slots: { some: { profileId: resolvedProfile.id } } } },
         ],
       },
-      include: {
+      select: {
+        startTime: true,
+        plannedStartAt: true,
+        actualStartAt: true,
+        createdAt: true,
         event: {
           select: {
+            id: true,
             title: true,
             slug: true,
-            padelTournamentConfig: {
-              select: {
-                playerResultSubmissionEnabled: true,
-                resultValidationMode: true,
-                advancedSettings: true,
-              },
-            },
+            startsAt: true,
+            endsAt: true,
           },
         },
-        pairingA: { include: { slots: { select: { playerProfile: { select: { displayName: true, fullName: true } } } } } },
-        pairingB: { include: { slots: { select: { playerProfile: { select: { displayName: true, fullName: true } } } } } },
       },
       orderBy: [{ startTime: "desc" }, { plannedStartAt: "desc" }, { id: "desc" }],
-      take: 12,
-    });
-
-    padelMatches = matchRows.map((match) => {
-      const effectiveRules = resolveEffectiveScoreRules(
-        match.event.padelTournamentConfig?.advancedSettings,
-        match.categoryId ?? null,
-      );
-      return {
-        id: match.id,
-        categoryId: match.categoryId ?? null,
-        status: match.status,
-        roundLabel: match.roundLabel ?? null,
-        groupLabel: match.groupLabel ?? null,
-        startAt: match.startTime ?? match.plannedStartAt ?? match.actualStartAt ?? null,
-        scoreSets: Array.isArray(match.scoreSets) ? (match.scoreSets as Array<{ teamA: number; teamB: number }>) : null,
-        score: match.score && typeof match.score === "object" ? (match.score as Record<string, unknown>) : null,
-        event: {
-          title: match.event.title,
-          slug: match.event.slug,
-          playerResultSubmissionEnabled: match.event.padelTournamentConfig?.playerResultSubmissionEnabled === true,
-          resultValidationMode:
-            match.event.padelTournamentConfig?.resultValidationMode === "IMMEDIATE_PENDING_THEN_OFFICIAL"
-              ? "IMMEDIATE_PENDING_THEN_OFFICIAL"
-              : "IMMEDIATE_OFFICIAL",
-          scoreRuleSummary: buildScoreRuleSummary({
-            rules: effectiveRules.rules,
-            source: effectiveRules.source,
-            categoryId: effectiveRules.categoryId,
-          }),
-        },
-        pairingA: match.pairingA,
-        pairingB: match.pairingB,
-      };
-    });
-
-    const now = new Date();
-    padelUpcoming = padelMatches
-      .filter((match) => match.startAt && match.startAt >= now)
-      .sort((a, b) => (a.startAt?.getTime() ?? 0) - (b.startAt?.getTime() ?? 0))
-      .slice(0, 4);
-    padelRecent = padelMatches
-      .filter((match) => !match.startAt || match.startAt < now)
-      .sort((a, b) => (b.startAt?.getTime() ?? 0) - (a.startAt?.getTime() ?? 0))
-      .slice(0, 4);
-  } catch {
-    // ignore
-  }
-  const padelOperationalSummary = padelMatches.reduce(
-    (acc, match) => {
-      acc.total += 1;
-      if (match.status === "IN_PROGRESS") acc.liveNow += 1;
-      if (match.status === "PENDING_CONFIRMATION") acc.pendingConfirmation += 1;
-      if (match.status === "PENDING_REVIEW_EXPIRED") acc.pendingReviewExpired += 1;
-      if (match.status === "DISPUTED") acc.disputed += 1;
-      const canSubmit =
-        match.event.playerResultSubmissionEnabled &&
-        !["PENDING_CONFIRMATION", "PENDING_REVIEW_EXPIRED", "DISPUTED", "OFFICIAL", "WALKOVER", "RETIRED", "CANCELLED"].includes(
-          match.status,
-        );
-      if (canSubmit) acc.actionable += 1;
-      return acc;
-    },
-    {
-      total: 0,
-      liveNow: 0,
-      pendingConfirmation: 0,
-      pendingReviewExpired: 0,
-      disputed: 0,
-      actionable: 0,
-    },
-  );
-  const padelAttentionMatches = padelMatches
-    .map((match) => {
-      const workflow =
-        match.score?.liveWorkflow && typeof match.score.liveWorkflow === "object" && !Array.isArray(match.score.liveWorkflow)
-          ? (match.score.liveWorkflow as Record<string, unknown>)
-          : null;
-      const pendingConfirmationExpiresAtRaw =
-        workflow && typeof workflow.pendingConfirmationExpiresAt === "string" ? workflow.pendingConfirmationExpiresAt : null;
-      const pendingConfirmationExpiresAt = pendingConfirmationExpiresAtRaw ? new Date(pendingConfirmationExpiresAtRaw) : null;
-      const pendingConfirmationMsRemaining =
-        pendingConfirmationExpiresAt && Number.isFinite(pendingConfirmationExpiresAt.getTime())
-          ? pendingConfirmationExpiresAt.getTime() - Date.now()
-          : null;
-      const canSubmit =
-        match.event.playerResultSubmissionEnabled &&
-        !["PENDING_CONFIRMATION", "PENDING_REVIEW_EXPIRED", "DISPUTED", "OFFICIAL", "WALKOVER", "RETIRED", "CANCELLED"].includes(match.status);
-      const attentionReason: PlayerAttentionReason | null = canSubmit
-        ? "SUBMIT_RESULT"
-        : match.status === "PENDING_CONFIRMATION"
-          ? pendingConfirmationMsRemaining != null && pendingConfirmationMsRemaining <= 0
-            ? "CONFIRMATION_EXPIRED"
-            : "AWAITING_CONFIRMATION"
-          : match.status === "PENDING_REVIEW_EXPIRED"
-            ? "REVIEW_EXPIRED"
-            : match.status === "DISPUTED"
-              ? "DISPUTED"
-              : match.status === "IN_PROGRESS"
-                ? "MATCH_LIVE"
-                : null;
-      if (!attentionReason) return null;
-      const priority =
-        attentionReason === "CONFIRMATION_EXPIRED" || attentionReason === "REVIEW_EXPIRED"
-          ? 1
-          : attentionReason === "DISPUTED"
-            ? 2
-            : attentionReason === "AWAITING_CONFIRMATION"
-              ? 3
-              : attentionReason === "MATCH_LIVE"
-                ? 4
-                : 5;
-      return {
-        id: match.id,
-        eventTitle: match.event.title,
-        eventSlug: match.event.slug,
-        status: match.status,
-        startAt: match.startAt,
-        attentionReason,
-        pendingConfirmationMsRemaining,
-        priority,
-      };
-    })
-    .filter((item): item is NonNullable<typeof item> => item !== null)
-    .sort((a, b) => {
-      if (a.priority !== b.priority) return a.priority - b.priority;
-      return (a.startAt?.getTime() ?? Number.MAX_SAFE_INTEGER) - (b.startAt?.getTime() ?? Number.MAX_SAFE_INTEGER);
-    })
-    .slice(0, 6);
-
-  const padelStats: PadelStats = {
-    matches: 0,
-    wins: 0,
-    losses: 0,
-    setsWon: 0,
-    setsLost: 0,
-    gamesWon: 0,
-    gamesLost: 0,
-  };
-  let headToHead: HeadToHeadRow[] = [];
-  let recentForm: RecentFormRow[] = [];
-  let tournamentsPlayed = 0;
-  let currentWinStreak = 0;
-
-  try {
-    const statsRows = await prisma.eventMatchSlot.findMany({
+      take: 200,
+    }),
+    prisma.eventMatchSlot.findMany({
       where: {
         status: { in: ["OFFICIAL", "WALKOVER", "RETIRED"] },
         OR: [
@@ -720,19 +331,29 @@ export default async function PadelProfilePage({ params }: PageProps) {
         ],
       },
       select: {
-        id: true,
         eventId: true,
         pairingAId: true,
         pairingBId: true,
         winnerPairingId: true,
         winnerParticipantId: true,
-        winnerSide: true,
         scoreSets: true,
         score: true,
         startTime: true,
         plannedStartAt: true,
         actualStartAt: true,
         createdAt: true,
+        event: {
+          select: {
+            organizationId: true,
+            organization: {
+              select: {
+                publicName: true,
+                businessName: true,
+                username: true,
+              },
+            },
+          },
+        },
         pairingA: {
           select: {
             slots: { select: { profileId: true, playerProfile: { select: { displayName: true, fullName: true } } } },
@@ -750,7 +371,6 @@ export default async function PadelProfilePage({ params }: PageProps) {
             side: true,
             participant: {
               select: {
-                id: true,
                 playerProfile: {
                   select: {
                     userId: true,
@@ -763,256 +383,374 @@ export default async function PadelProfilePage({ params }: PageProps) {
           },
         },
       },
-    });
-
-    const opponentMap = new Map<string, HeadToHeadRow>();
-    const formRows: RecentFormRow[] = [];
-    const tournamentIds = new Set<number>();
-
-    for (const match of statsRows) {
-      const participantRows = Array.isArray(match.participants) ? match.participants : [];
-      const participantInA =
-        participantRows.some((row) => row.side === "A" && row.participant?.playerProfile?.userId === resolvedProfile.id) ?? false;
-      const participantInB =
-        participantRows.some((row) => row.side === "B" && row.participant?.playerProfile?.userId === resolvedProfile.id) ?? false;
-      const inA = participantInA || (match.pairingA?.slots?.some((slot) => slot.profileId === resolvedProfile.id) ?? false);
-      const inB = participantInB || (match.pairingB?.slots?.some((slot) => slot.profileId === resolvedProfile.id) ?? false);
-      if (!inA && !inB) continue;
-
-      padelStats.matches += 1;
-      if (Number.isFinite(match.eventId)) tournamentIds.add(match.eventId);
-      const userPairingId = inA ? match.pairingAId : match.pairingBId;
-      const winnerPairingId = match.winnerPairingId;
-      const sideAParticipantIds = participantRows
-        .filter((row) => row.side === "A")
-        .map((row) => row.participantId)
-        .filter((id): id is number => typeof id === "number" && Number.isFinite(id));
-      const sideBParticipantIds = participantRows
-        .filter((row) => row.side === "B")
-        .map((row) => row.participantId)
-        .filter((id): id is number => typeof id === "number" && Number.isFinite(id));
-      const participantDidWin =
-        typeof match.winnerParticipantId === "number"
-          ? inA
-            ? sideAParticipantIds.includes(match.winnerParticipantId)
-            : sideBParticipantIds.includes(match.winnerParticipantId)
-          : null;
-      const pairingDidWin = Boolean(userPairingId && winnerPairingId) ? winnerPairingId === userPairingId : null;
-      const didWin =
-        typeof participantDidWin === "boolean"
-          ? participantDidWin
-          : typeof pairingDidWin === "boolean"
-            ? pairingDidWin
-            : null;
-      const decided = typeof didWin === "boolean";
-      if (decided) {
-        if (didWin === true) padelStats.wins += 1;
-        else padelStats.losses += 1;
-      }
-
-      const stats = resolvePadelMatchStats(match.scoreSets, match.score);
-      if (stats) {
-        if (inA) {
-          padelStats.setsWon += stats.aSets;
-          padelStats.setsLost += stats.bSets;
-          padelStats.gamesWon += stats.aGames;
-          padelStats.gamesLost += stats.bGames;
-        } else if (inB) {
-          padelStats.setsWon += stats.bSets;
-          padelStats.setsLost += stats.aSets;
-          padelStats.gamesWon += stats.bGames;
-          padelStats.gamesLost += stats.aGames;
-        }
-      }
-
-      if (decided) {
-        formRows.push({ result: didWin === true ? "W" : "L", date: resolveMatchDate(match) });
-      }
-
-      const opponentParticipantRows =
-        participantRows.length > 0
-          ? participantRows.filter((row) =>
-              inA
-                ? row.side === "B"
-                : inB
-                  ? row.side === "A"
-                  : false,
-            )
-          : [];
-      if (opponentParticipantRows.length > 0) {
-        for (const row of opponentParticipantRows) {
-          const opponentId = row.participant?.playerProfile?.userId;
-          if (!opponentId || opponentId === resolvedProfile.id) continue;
-          const name =
-            row.participant?.playerProfile?.displayName ||
-            row.participant?.playerProfile?.fullName ||
-            "Jogador";
-          const existing = opponentMap.get(opponentId) ?? {
-            opponentId,
-            name,
-            matches: 0,
-            wins: 0,
-            losses: 0,
-            lastPlayedAt: null,
-          };
-          existing.matches += 1;
-          if (decided) {
-            if (didWin === true) existing.wins += 1;
-            else existing.losses += 1;
-          }
-          const playedAt = resolveMatchDate(match);
-          if (playedAt && (!existing.lastPlayedAt || playedAt > existing.lastPlayedAt)) {
-            existing.lastPlayedAt = playedAt;
-          }
-          if (!existing.name && name) {
-            existing.name = name;
-          }
-          opponentMap.set(opponentId, existing);
-        }
-      } else {
-        const opponentSlots = inA ? match.pairingB?.slots : match.pairingA?.slots;
-        if (!opponentSlots) continue;
-        for (const slot of opponentSlots) {
-          const opponentId = slot.profileId;
-          if (!opponentId || opponentId === resolvedProfile.id) continue;
-          const name = slot.playerProfile?.displayName || slot.playerProfile?.fullName || "Jogador";
-          const existing = opponentMap.get(opponentId) ?? {
-            opponentId,
-            name,
-            matches: 0,
-            wins: 0,
-            losses: 0,
-            lastPlayedAt: null,
-          };
-          existing.matches += 1;
-          if (decided) {
-            if (didWin === true) existing.wins += 1;
-            else existing.losses += 1;
-          }
-          const playedAt = resolveMatchDate(match);
-          if (playedAt && (!existing.lastPlayedAt || playedAt > existing.lastPlayedAt)) {
-            existing.lastPlayedAt = playedAt;
-          }
-          if (!existing.name && name) {
-            existing.name = name;
-          }
-          opponentMap.set(opponentId, existing);
-        }
-      }
-    }
-
-    headToHead = Array.from(opponentMap.values())
-      .sort((a, b) => {
-        if (b.matches !== a.matches) return b.matches - a.matches;
-        return a.name.localeCompare(b.name);
-      })
-      .slice(0, 6);
-    const sortedForm = formRows.sort((a, b) => (b.date?.getTime() ?? 0) - (a.date?.getTime() ?? 0));
-    recentForm = sortedForm.slice(0, 5);
-    currentWinStreak = 0;
-    for (const row of sortedForm) {
-      if (row.result === "W") currentWinStreak += 1;
-      else break;
-    }
-    tournamentsPlayed = tournamentIds.size;
-  } catch {
-    // ignore
-  }
-
-  const decidedMatches = padelStats.wins + padelStats.losses;
-  const winRate = decidedMatches > 0 ? Math.round((padelStats.wins / decidedMatches) * 100) : 0;
-  const badges = buildPadelBadges({
-    matches: padelStats.matches,
-    wins: padelStats.wins,
-    tournamentsPlayed,
-    currentWinStreak,
-  });
-  const rankingProfiles = await prisma.padelPlayerProfile.findMany({
-    where: { userId: resolvedProfile.id, isActive: true },
-    select: {
-      id: true,
-      organizationId: true,
-      updatedAt: true,
-      organization: {
-        select: {
-          publicName: true,
-          businessName: true,
-          username: true,
+      orderBy: [{ startTime: "desc" }, { plannedStartAt: "desc" }, { id: "desc" }],
+      take: 300,
+    }),
+    prisma.padelPlayerProfile.findMany({
+      where: { userId: resolvedProfile.id, isActive: true },
+      select: {
+        id: true,
+        organizationId: true,
+        updatedAt: true,
+        fullName: true,
+        displayName: true,
+        gender: true,
+        level: true,
+        preferredSide: true,
+        clubName: true,
+        organization: {
+          select: {
+            publicName: true,
+            businessName: true,
+            username: true,
+          },
+        },
+        ratingProfile: {
+          select: {
+            matchesPlayed: true,
+            rating: true,
+          },
         },
       },
-      ratingProfile: {
-        select: {
-          rating: true,
-          matchesPlayed: true,
-          leaderboardEligible: true,
-          lastMatchAt: true,
-          lastRebuildAt: true,
+    }),
+    prisma.padelPlayerHistoryProjection.findMany({
+      where: {
+        playerProfile: {
+          userId: resolvedProfile.id,
         },
       },
-    },
-  });
+      select: {
+        event: { select: { id: true, title: true, slug: true, startsAt: true, endsAt: true } },
+        finalPosition: true,
+        wonTitle: true,
+        category: { select: { label: true } },
+        partnerPlayerProfile: { select: { displayName: true, fullName: true } },
+      },
+      orderBy: [{ event: { endsAt: "desc" } }, { event: { startsAt: "desc" } }, { id: "desc" }],
+      take: 120,
+    }),
+    withPadelGlobalRatingFallback(
+      () =>
+        prisma.padelGlobalRatingProfile.findUnique({
+          where: { userId: resolvedProfile.id },
+          select: {
+            id: true,
+            rating: true,
+            matchesPlayed: true,
+            leaderboardEligible: true,
+            blockedNewMatches: true,
+            lastMatchAt: true,
+            lastActivityAt: true,
+            lastRebuildAt: true,
+          },
+        }),
+      null,
+      "app/[username]/padel/page#globalProfile",
+    ),
+  ]);
+
   const rankingSource =
     [...rankingProfiles].sort((a, b) => {
-      const aMatches = a.ratingProfile?.matchesPlayed ?? -1;
-      const bMatches = b.ratingProfile?.matchesPlayed ?? -1;
-      if (aMatches !== bMatches) return bMatches - aMatches;
-      const aRating = typeof a.ratingProfile?.rating === "number" ? a.ratingProfile.rating : Number(a.ratingProfile?.rating ?? -1);
-      const bRating = typeof b.ratingProfile?.rating === "number" ? b.ratingProfile.rating : Number(b.ratingProfile?.rating ?? -1);
-      if (aRating !== bRating) return bRating - aRating;
-      return b.updatedAt.getTime() - a.updatedAt.getTime();
+      const matchesA = a.ratingProfile?.matchesPlayed ?? 0;
+      const matchesB = b.ratingProfile?.matchesPlayed ?? 0;
+      if (matchesB !== matchesA) return matchesB - matchesA;
+      return b.updatedAt.getTime() - a.updatedAt.getTime() || a.id - b.id;
     })[0] ?? null;
-  const rankingData = rankingSource?.ratingProfile ?? null;
-  let rankingOrgPosition: number | null = null;
-  let rankingGlobalPosition: number | null = null;
-  if (rankingSource && rankingData) {
-    const orgAhead = await prisma.padelRatingProfile.count({
-      where: {
-        organizationId: rankingSource.organizationId,
-        OR: [
-          { rating: { gt: rankingData.rating } },
-          { rating: rankingData.rating, playerId: { lt: rankingSource.id } },
-        ],
-      },
-    });
-    rankingOrgPosition = orgAhead + 1;
-
-    if (rankingData.leaderboardEligible) {
-      const globalAhead = await prisma.padelRatingProfile.count({
-        where: {
-          leaderboardEligible: true,
-          OR: [
-            { rating: { gt: rankingData.rating } },
-            { rating: rankingData.rating, playerId: { lt: rankingSource.id } },
-          ],
-        },
-      });
-      rankingGlobalPosition = globalAhead + 1;
-    }
-  }
+  const displayPadelLevel =
+    rankingSource?.level?.trim() || canonicalPadelProfile?.level?.trim() || resolvedProfile.padelLevel || null;
+  const displayPadelPreferredSide =
+    rankingSource?.preferredSide || canonicalPadelProfile?.preferredSide || resolvedProfile.padelPreferredSide || null;
+  const displayPadelClubName =
+    rankingSource?.clubName?.trim() || canonicalPadelProfile?.clubName?.trim() || resolvedProfile.padelClubName || null;
   const rankingOrgName =
     rankingSource?.organization.publicName ||
     rankingSource?.organization.businessName ||
     (rankingSource?.organization.username ? `@${rankingSource.organization.username}` : null) ||
     null;
-  const playerHistory = await prisma.padelPlayerHistoryProjection.findMany({
-    where: {
-      playerProfile: {
-        userId: resolvedProfile.id,
+  let rankingOrgPosition: number | null = null;
+  let rankingGlobalPosition: number | null = null;
+
+  if (rankingSource && globalRatingProfile && globalRatingProfile.matchesPlayed > 0) {
+    const orgPlayers = await prisma.padelPlayerProfile.findMany({
+      where: {
+        organizationId: rankingSource.organizationId,
+        userId: { not: null },
       },
-    },
-    select: {
-      id: true,
-      finalPosition: true,
-      wonTitle: true,
-      bracketSnapshot: true,
-      event: { select: { id: true, title: true, slug: true, startsAt: true, endsAt: true } },
-      category: { select: { id: true, label: true } },
-      partnerPlayerProfile: { select: { id: true, fullName: true, displayName: true } },
-    },
-    orderBy: [{ event: { endsAt: "desc" } }, { event: { startsAt: "desc" } }, { id: "desc" }],
-    take: 80,
-  });
-  const officialTitles = playerHistory.filter((item) => item.wonTitle);
+      select: { userId: true },
+    });
+    const orgUserIds = Array.from(
+      new Set(orgPlayers.map((row) => row.userId).filter((value): value is string => typeof value === "string")),
+    );
+
+    if (orgUserIds.length > 0) {
+      const orgGlobalProfiles = await withPadelGlobalRatingFallback(
+        () =>
+          prisma.padelGlobalRatingProfile.findMany({
+            where: {
+              userId: { in: orgUserIds },
+              matchesPlayed: { gt: 0 },
+            },
+            select: { userId: true, rating: true },
+          }),
+        [],
+        "app/[username]/padel/page#orgRanking",
+      );
+
+      const sorted = orgGlobalProfiles.sort((a, b) => {
+        if (b.rating !== a.rating) return b.rating - a.rating;
+        return a.userId.localeCompare(b.userId);
+      });
+      const positions = new Map<string, number>();
+      let lastPoints: number | null = null;
+      let lastPosition = 0;
+      sorted.forEach((entry, index) => {
+        const points = Math.round(entry.rating);
+        if (lastPoints === null || points !== lastPoints) {
+          lastPoints = points;
+          lastPosition = index + 1;
+        }
+        positions.set(entry.userId, lastPosition);
+      });
+      rankingOrgPosition = positions.get(resolvedProfile.id) ?? null;
+    }
+  }
+
+  if (globalRatingProfile?.leaderboardEligible && globalRatingProfile.matchesPlayed > 0) {
+    const globalAhead = await withPadelGlobalRatingFallback(
+      () =>
+        prisma.padelGlobalRatingProfile.count({
+          where: {
+            leaderboardEligible: true,
+            matchesPlayed: { gt: 0 },
+            OR: [
+              { rating: { gt: globalRatingProfile.rating } },
+              { rating: globalRatingProfile.rating, userId: { lt: resolvedProfile.id } },
+            ],
+          },
+        }),
+      null,
+      "app/[username]/padel/page#globalPosition",
+    );
+    if (typeof globalAhead === "number") {
+      rankingGlobalPosition = globalAhead + 1;
+    }
+  }
+
+  const upcomingTournaments = Array.from(
+    timelineRows.reduce((acc, row) => {
+      const matchAt = resolveMatchDate(row);
+      if (!matchAt || matchAt < now) return acc;
+      const event = row.event;
+      const existing = acc.get(event.id) ?? {
+        eventId: event.id,
+        title: event.title,
+        slug: event.slug,
+        startsAt: event.startsAt ?? null,
+        endsAt: event.endsAt ?? null,
+        matchCount: 0,
+        nextMatchAt: null,
+        finalPosition: null,
+        wonTitle: false,
+        categoryLabel: null,
+        partnerName: null,
+      };
+      existing.matchCount += 1;
+      if (!existing.nextMatchAt || matchAt < existing.nextMatchAt) {
+        existing.nextMatchAt = matchAt;
+      }
+      acc.set(event.id, existing);
+      return acc;
+    }, new Map<number, TournamentSummaryRow>()).values(),
+  )
+    .sort((a, b) => (a.nextMatchAt?.getTime() ?? Number.MAX_SAFE_INTEGER) - (b.nextMatchAt?.getTime() ?? Number.MAX_SAFE_INTEGER))
+    .slice(0, 6);
+
+  const recentTournaments = Array.from(
+    historyRows.reduce((acc, row) => {
+      const key = row.event.id;
+      const existing = acc.get(key) ?? {
+        eventId: key,
+        title: row.event.title,
+        slug: row.event.slug,
+        startsAt: row.event.startsAt ?? null,
+        endsAt: row.event.endsAt ?? null,
+        matchCount: 0,
+        nextMatchAt: null,
+        finalPosition: null,
+        wonTitle: false,
+        categoryLabel: null,
+        partnerName: null,
+      };
+      existing.matchCount += 1;
+      if (typeof row.finalPosition === "number" && (existing.finalPosition === null || row.finalPosition < existing.finalPosition)) {
+        existing.finalPosition = row.finalPosition;
+      }
+      if (row.wonTitle) existing.wonTitle = true;
+      if (!existing.categoryLabel && row.category?.label) {
+        existing.categoryLabel = row.category.label;
+      }
+      if (!existing.partnerName && row.partnerPlayerProfile) {
+        existing.partnerName = row.partnerPlayerProfile.displayName || row.partnerPlayerProfile.fullName || null;
+      }
+      acc.set(key, existing);
+      return acc;
+    }, new Map<number, TournamentSummaryRow>()).values(),
+  )
+    .sort((a, b) => (b.endsAt?.getTime() ?? b.startsAt?.getTime() ?? 0) - (a.endsAt?.getTime() ?? a.startsAt?.getTime() ?? 0))
+    .slice(0, 6);
+
+  const padelStats: PadelStats = {
+    matches: 0,
+    wins: 0,
+    losses: 0,
+    setsWon: 0,
+    setsLost: 0,
+    gamesWon: 0,
+    gamesLost: 0,
+  };
+
+  const partnershipMap = new Map<string, TopPartnershipRow>();
+  const clubStatsMap = new Map<number, TopClubRow>();
+
+  const upsertPartnership = (partnerId: string, partnerName: string, didWin: boolean | null, playedAt: Date | null) => {
+    const existing = partnershipMap.get(partnerId) ?? {
+      partnerId,
+      name: partnerName,
+      matches: 0,
+      wins: 0,
+      losses: 0,
+      lastPlayedAt: null,
+    };
+    existing.matches += 1;
+    if (didWin === true) existing.wins += 1;
+    if (didWin === false) existing.losses += 1;
+    if (playedAt && (!existing.lastPlayedAt || playedAt > existing.lastPlayedAt)) {
+      existing.lastPlayedAt = playedAt;
+    }
+    if (!existing.name && partnerName) {
+      existing.name = partnerName;
+    }
+    partnershipMap.set(partnerId, existing);
+  };
+
+  for (const row of officialRows) {
+    const participantRows = Array.isArray(row.participants) ? row.participants : [];
+    const inAByParticipant = participantRows.some((item) => item.side === "A" && item.participant?.playerProfile?.userId === resolvedProfile.id);
+    const inBByParticipant = participantRows.some((item) => item.side === "B" && item.participant?.playerProfile?.userId === resolvedProfile.id);
+    const inABySlots = row.pairingA?.slots?.some((slot) => slot.profileId === resolvedProfile.id) ?? false;
+    const inBBySlots = row.pairingB?.slots?.some((slot) => slot.profileId === resolvedProfile.id) ?? false;
+    const inA = inAByParticipant || inABySlots;
+    const inB = inBByParticipant || inBBySlots;
+    if (!inA && !inB) continue;
+
+    const eventOrganizationId = row.event?.organizationId;
+    if (typeof eventOrganizationId === "number" && Number.isFinite(eventOrganizationId)) {
+      const eventOrganization = row.event?.organization;
+      const existing = clubStatsMap.get(eventOrganizationId) ?? {
+        organizationId: eventOrganizationId,
+        name:
+          eventOrganization?.publicName?.trim() ||
+          eventOrganization?.businessName?.trim() ||
+          (eventOrganization?.username ? `@${eventOrganization.username}` : `Clube #${eventOrganizationId}`),
+        matches: 0,
+        rating: null,
+      };
+      existing.matches += 1;
+      if (globalRatingProfile && typeof globalRatingProfile.rating === "number") {
+        existing.rating = Number(globalRatingProfile.rating);
+      }
+      clubStatsMap.set(eventOrganizationId, existing);
+    }
+
+    padelStats.matches += 1;
+
+    const userPairingId = inA ? row.pairingAId : row.pairingBId;
+    const winnerPairingId = row.winnerPairingId;
+
+    const sideAParticipantIds = participantRows
+      .filter((item) => item.side === "A")
+      .map((item) => item.participantId)
+      .filter((id): id is number => typeof id === "number" && Number.isFinite(id));
+    const sideBParticipantIds = participantRows
+      .filter((item) => item.side === "B")
+      .map((item) => item.participantId)
+      .filter((id): id is number => typeof id === "number" && Number.isFinite(id));
+
+    const participantDidWin =
+      typeof row.winnerParticipantId === "number"
+        ? inA
+          ? sideAParticipantIds.includes(row.winnerParticipantId)
+          : sideBParticipantIds.includes(row.winnerParticipantId)
+        : null;
+
+    const pairingDidWin = Boolean(userPairingId && winnerPairingId) ? winnerPairingId === userPairingId : null;
+    const didWin = typeof participantDidWin === "boolean" ? participantDidWin : typeof pairingDidWin === "boolean" ? pairingDidWin : null;
+
+    if (didWin === true) padelStats.wins += 1;
+    if (didWin === false) padelStats.losses += 1;
+
+    const scoreStats = resolvePadelMatchStats(row.scoreSets, row.score);
+    if (scoreStats) {
+      if (inA) {
+        padelStats.setsWon += scoreStats.aSets;
+        padelStats.setsLost += scoreStats.bSets;
+        padelStats.gamesWon += scoreStats.aGames;
+        padelStats.gamesLost += scoreStats.bGames;
+      } else if (inB) {
+        padelStats.setsWon += scoreStats.bSets;
+        padelStats.setsLost += scoreStats.aSets;
+        padelStats.gamesWon += scoreStats.bGames;
+        padelStats.gamesLost += scoreStats.aGames;
+      }
+    }
+
+    const playedAt = resolveMatchDate(row);
+
+    const teammateParticipantRows =
+      participantRows.length > 0
+        ? participantRows.filter((item) => (inA ? item.side === "A" : inB ? item.side === "B" : false))
+        : [];
+
+    if (teammateParticipantRows.length > 0) {
+      for (const item of teammateParticipantRows) {
+        const partnerId = item.participant?.playerProfile?.userId ?? null;
+        if (!partnerId || partnerId === resolvedProfile.id) continue;
+        const partnerName = item.participant?.playerProfile?.displayName || item.participant?.playerProfile?.fullName || "Parceiro";
+        upsertPartnership(partnerId, partnerName, didWin, playedAt);
+      }
+    } else {
+      const teammateSlots = inA ? row.pairingA?.slots : row.pairingB?.slots;
+      if (!teammateSlots) continue;
+      for (const slot of teammateSlots) {
+        const partnerId = slot.profileId;
+        if (!partnerId || partnerId === resolvedProfile.id) continue;
+        const partnerName = slot.playerProfile?.displayName || slot.playerProfile?.fullName || "Parceiro";
+        upsertPartnership(partnerId, partnerName, didWin, playedAt);
+      }
+    }
+  }
+
+  const topPartnerships = Array.from(partnershipMap.values())
+    .sort((a, b) => {
+      if (b.matches !== a.matches) return b.matches - a.matches;
+      if (b.wins !== a.wins) return b.wins - a.wins;
+      return a.name.localeCompare(b.name);
+    })
+    .slice(0, 3);
+
+  const topClubs = Array.from(clubStatsMap.values())
+    .sort((a, b) => {
+      if (b.matches !== a.matches) return b.matches - a.matches;
+      const ratingA = a.rating ?? -1;
+      const ratingB = b.rating ?? -1;
+      if (ratingB !== ratingA) return ratingB - ratingA;
+      return a.name.localeCompare(b.name);
+    })
+    .slice(0, 3);
+
+  const titlesWon = recentTournaments.filter((item) => item.wonTitle).length;
+  const decidedMatches = padelStats.wins + padelStats.losses;
+  const winRate = decidedMatches > 0 ? Math.round((padelStats.wins / decidedMatches) * 100) : 0;
 
   return (
     <main className="relative min-h-screen w-full overflow-hidden text-white">
@@ -1033,8 +771,8 @@ export default async function PadelProfilePage({ params }: PageProps) {
           initialIsFollowing={initialIsFollowing}
           isVerified={resolvedProfile.is_verified}
           padelAction={{
-            href: `/${profileHandle}`,
-            label: "Ver perfil normal",
+            href: "/padel/rankings",
+            label: "Ranking Padel",
             tone: "ghost",
           }}
         />
@@ -1042,445 +780,168 @@ export default async function PadelProfilePage({ params }: PageProps) {
         <div className="px-5 sm:px-8">
           <div className="orya-page-width flex flex-col gap-6">
             <section className="rounded-3xl border border-white/15 bg-white/5 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <StatCard
-                  title="Nivel"
-                  value={resolvedProfile.padelLevel ?? "—"}
-                  subtitle="Nível de jogo."
-                  tone="emerald"
-                />
-                <StatCard
-                  title="Lado"
-                  value={
-                    resolvedProfile.padelPreferredSide === "ESQUERDA"
-                      ? "Esquerda"
-                      : resolvedProfile.padelPreferredSide === "DIREITA"
-                        ? "Direita"
-                        : resolvedProfile.padelPreferredSide === "QUALQUER"
-                          ? "Qualquer"
-                          : "—"
-                  }
-                  subtitle="Preferência."
-                  tone="cyan"
-                />
-                <StatCard
-                  title="Clube"
-                  value={resolvedProfile.padelClubName ?? "—"}
-                  subtitle="Base atual."
-                  tone="purple"
-                />
-                <StatCard
-                  title="Jogos"
-                  value={padelStats.matches}
-                  subtitle="Jogos terminados."
-                  tone="default"
-                />
-              </div>
-            </section>
-
-            <section className="rounded-3xl border border-white/15 bg-white/5 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Ranking oficial</p>
-                  <h2 className="mt-2 text-sm font-semibold text-white/95">Posicionamento competitivo</h2>
-                  <p className="text-[12px] text-white/70">
-                    Atualização automática por resultados oficiais, walkover e retired.
-                  </p>
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Estatísticas relevantes</p>
+                  <h2 className="mt-2 text-sm font-semibold text-white/95">Resumo competitivo</h2>
                 </div>
-                <Link
-                  href="/padel/rankings"
-                  className="inline-flex items-center gap-2 rounded-full border border-white/25 bg-white/10 px-3 py-1.5 text-[11px] text-white/85 hover:bg-white/15"
-                >
-                  Ver ranking global →
-                </Link>
               </div>
-              <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <StatCard title="Nível" value={displayPadelLevel ?? "—"} subtitle="Nível atual." tone="emerald" />
+                <StatCard title="Lado" value={resolveSideLabel(displayPadelPreferredSide)} subtitle="Lado preferido." tone="cyan" />
+                <StatCard title="Clube" value={displayPadelClubName ?? rankingOrgName ?? "—"} subtitle="Base atual." tone="purple" />
                 <StatCard
                   title="Global"
                   value={typeof rankingGlobalPosition === "number" ? `#${rankingGlobalPosition}` : "—"}
-                  subtitle={rankingData?.leaderboardEligible ? "Elegível no leaderboard." : "Sem elegibilidade global."}
+                  subtitle={globalRatingProfile?.leaderboardEligible ? "Leaderboard global." : "Sem elegibilidade global."}
                   tone="emerald"
                 />
                 <StatCard
-                  title="Organização"
+                  title="Clube (ranking)"
                   value={typeof rankingOrgPosition === "number" ? `#${rankingOrgPosition}` : "—"}
-                  subtitle={rankingOrgName ? `${rankingOrgName}` : "Sem organização elegível."}
+                  subtitle={rankingOrgName ?? "Sem clube elegível."}
                   tone="cyan"
                 />
                 <StatCard
                   title="Rating"
-                  value={rankingData?.rating != null ? Math.round(Number(rankingData.rating)) : "—"}
-                  subtitle="Pontos Glicko-2."
+                  value={globalRatingProfile ? Math.round(Number(globalRatingProfile.rating)) : "—"}
+                  subtitle={
+                    globalRatingProfile
+                      ? `Último rebuild ${formatDateTime(globalRatingProfile.lastRebuildAt ?? null)}`
+                      : "Glicko-2 global."
+                  }
                   tone="purple"
                 />
-                <StatCard
-                  title="Jogos contados"
-                  value={rankingData?.matchesPlayed ?? 0}
-                  subtitle={`Último rebuild ${formatDateTimeLabel(rankingData?.lastRebuildAt ?? null)}`}
-                  tone="default"
-                />
+                <StatCard title="Jogos" value={padelStats.matches} subtitle="Jogos oficiais." />
+                <StatCard title="Vitórias" value={padelStats.wins} subtitle={`Win rate ${winRate}%`} tone="emerald" />
+                <StatCard title="Títulos" value={titlesWon} subtitle="Torneios ganhos." tone="purple" />
               </div>
-              {rankingData && (
-                <p className="mt-4 text-[12px] text-white/65">
-                  Último jogo contado: {formatDateTimeLabel(rankingData.lastMatchAt ?? null)}.
-                </p>
-              )}
-            </section>
-
-            <section className="rounded-3xl border border-white/15 bg-white/5 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Histórico oficial</p>
-                  <h2 className="mt-2 text-sm font-semibold text-white/95">Títulos oficiais</h2>
-                  <p className="text-[12px] text-white/70">Projeção canónica por torneio/categoria/jogador.</p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border border-white/12 bg-white/5 px-3 py-2 text-[12px] text-white/80">
+                  Sets: {padelStats.setsWon}-{padelStats.setsLost} <span className="text-white/55">(saldo {padelStats.setsWon - padelStats.setsLost})</span>
                 </div>
-                <p className="text-[11px] text-white/60">{officialTitles.length} título(s)</p>
-              </div>
-
-              {officialTitles.length === 0 ? (
-                <div className="mt-4 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/70">
-                  Ainda sem títulos oficiais registados.
+                <div className="rounded-xl border border-white/12 bg-white/5 px-3 py-2 text-[12px] text-white/80">
+                  Games: {padelStats.gamesWon}-{padelStats.gamesLost} <span className="text-white/55">(saldo {padelStats.gamesWon - padelStats.gamesLost})</span>
                 </div>
-              ) : (
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {officialTitles.map((item) => (
-                    <span
-                      key={`official-title-${item.id}`}
-                      className="rounded-full border border-amber-300/40 bg-amber-500/10 px-3 py-1 text-[11px] text-amber-50"
-                    >
-                      {item.event.title}
-                      {item.category?.label ? ` · ${item.category.label}` : ""}
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              <div className="mt-4 space-y-3">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Histórico competitivo</p>
-                {playerHistory.length === 0 && (
-                  <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/70">
-                    Sem histórico competitivo projetado.
-                  </div>
-                )}
-                {playerHistory.map((item) => (
-                  <article key={`history-row-${item.id}`} className="rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-white/80">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-sm font-semibold text-white">{item.event.title}</p>
-                      <span className="rounded-full border border-white/15 px-2 py-1 text-[11px] text-white/70">
-                        Posição final {item.finalPosition ?? "—"}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-[11px] text-white/60">
-                      {item.category?.label ? `${item.category.label}` : "Sem categoria"}
-                      {item.partnerPlayerProfile
-                        ? ` · Parceiro ${item.partnerPlayerProfile.displayName || item.partnerPlayerProfile.fullName || "Jogador"}`
-                        : ""}
-                    </p>
-                    <details className="mt-2 rounded-lg border border-white/10 bg-black/35 px-3 py-2">
-                      <summary className="cursor-pointer text-[11px] text-white/75">Ver snapshot de bracket</summary>
-                      <pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-[10px] text-white/60">
-                        {JSON.stringify(item.bracketSnapshot ?? {}, null, 2)}
-                      </pre>
-                    </details>
-                  </article>
-                ))}
               </div>
             </section>
 
             <section className="rounded-3xl border border-white/15 bg-white/5 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Performance</p>
-                  <h2 className="mt-2 text-sm font-semibold text-white/95">Estatísticas</h2>
-                  <p className="text-[12px] text-white/70">
-                    Baseado em {padelStats.matches} jogos terminados.
-                  </p>
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Torneios</p>
+                  <h2 className="mt-2 text-sm font-semibold text-white/95">Próximos e últimos</h2>
                 </div>
-                <p className="text-[11px] text-white/60">Win rate {winRate}%</p>
-              </div>
-              <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <StatCard
-                  title="Vitórias"
-                  value={padelStats.wins}
-                  subtitle={`Win rate ${winRate}%`}
-                  tone="emerald"
-                />
-                <StatCard
-                  title="Derrotas"
-                  value={padelStats.losses}
-                  subtitle="Jogos decididos."
-                  tone="default"
-                />
-                <StatCard
-                  title="Sets"
-                  value={`${padelStats.setsWon}-${padelStats.setsLost}`}
-                  subtitle={`Saldo ${padelStats.setsWon - padelStats.setsLost}`}
-                  tone="cyan"
-                />
-                <StatCard
-                  title="Games"
-                  value={`${padelStats.gamesWon}-${padelStats.gamesLost}`}
-                  subtitle={`Saldo ${padelStats.gamesWon - padelStats.gamesLost}`}
-                  tone="purple"
-                />
-              </div>
-              <div className="mt-4 rounded-2xl border border-white/15 bg-white/5 p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Conquistas</p>
-                    <p className="text-[12px] text-white/70">Badges desbloqueadas em torneios.</p>
-                  </div>
-                  {currentWinStreak >= 3 ? (
-                    <span className="text-[11px] text-amber-200">{currentWinStreak} vitórias seguidas</span>
-                  ) : null}
-                </div>
-                {badges.length === 0 && (
-                  <p className="mt-3 text-[12px] text-white/60">Ainda sem conquistas. Continua a jogar!</p>
-                )}
-                {badges.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {badges.map((badge) => (
-                      <BadgePill key={badge.id} badge={badge} />
-                    ))}
-                  </div>
-                )}
               </div>
               <div className="mt-4 grid gap-4 lg:grid-cols-2">
                 <div className="rounded-2xl border border-white/15 bg-white/5 p-4">
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Head-to-head</p>
-                  <p className="mt-2 text-[12px] text-white/70">Top adversários enfrentados.</p>
-                  {headToHead.length === 0 && (
-                    <p className="mt-3 text-[12px] text-white/60">Sem confrontos suficientes.</p>
-                  )}
-                  {headToHead.length > 0 && (
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Próximos torneios</p>
+                  {upcomingTournaments.length === 0 ? (
+                    <p className="mt-3 text-[12px] text-white/60">Sem torneios confirmados de momento.</p>
+                  ) : (
                     <div className="mt-3 space-y-2">
-                      {headToHead.map((row) => (
-                        <div
-                          key={row.opponentId}
-                          className="flex items-center justify-between rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-[12px] text-white/80"
-                        >
-                          <div>
-                            <p className="font-semibold">{row.name}</p>
-                            {row.lastPlayedAt && (
-                              <p className="text-[11px] text-white/50">
-                                Último: {formatDate(row.lastPlayedAt)}
-                              </p>
-                            )}
-                          </div>
-                          <div className="text-right text-[11px] text-white/70">
-                            <p>
-                              {row.wins}-{row.losses}
-                            </p>
-                            <p>{row.matches} jogos</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="rounded-2xl border border-white/15 bg-white/5 p-4">
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Forma recente</p>
-                  <p className="mt-2 text-[12px] text-white/70">Últimos resultados.</p>
-                  {recentForm.length === 0 && (
-                    <p className="mt-3 text-[12px] text-white/60">Sem resultados suficientes.</p>
-                  )}
-                  {recentForm.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {recentForm.map((item, idx) => (
-                        <div
-                          key={`form-${idx}`}
-                          className={`rounded-full border px-3 py-1 text-[11px] ${
-                            item.result === "W"
-                              ? "border-emerald-300/40 bg-emerald-500/10 text-emerald-50"
-                              : "border-rose-300/40 bg-rose-500/10 text-rose-50"
-                          }`}
-                        >
-                          {item.result === "W" ? "Vitória" : "Derrota"}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </section>
-
-            <section className="rounded-3xl border border-white/15 bg-white/5 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Padel</p>
-                  <h2 className="mt-2 text-sm font-semibold text-white/95">Jogos e resultados</h2>
-                  <p className="text-[12px] text-white/70">Próximos jogos e últimos resultados.</p>
-                </div>
-              </div>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                <div className="rounded-xl border border-emerald-300/30 bg-emerald-500/10 px-3 py-2 text-[12px] text-emerald-50">
-                  <p className="text-[10px] uppercase tracking-[0.16em] text-emerald-100/85">Live</p>
-                  <p className="mt-1 text-xl font-semibold">{padelOperationalSummary.liveNow}</p>
-                </div>
-                <div className="rounded-xl border border-sky-300/30 bg-sky-500/10 px-3 py-2 text-[12px] text-sky-50">
-                  <p className="text-[10px] uppercase tracking-[0.16em] text-sky-100/85">Pend. conf.</p>
-                  <p className="mt-1 text-xl font-semibold">{padelOperationalSummary.pendingConfirmation}</p>
-                </div>
-                <div className="rounded-xl border border-rose-300/30 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-50">
-                  <p className="text-[10px] uppercase tracking-[0.16em] text-rose-100/85">Pend. exp.</p>
-                  <p className="mt-1 text-xl font-semibold">{padelOperationalSummary.pendingReviewExpired}</p>
-                </div>
-                <div className="rounded-xl border border-amber-300/30 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-50">
-                  <p className="text-[10px] uppercase tracking-[0.16em] text-amber-100/85">Disputa</p>
-                  <p className="mt-1 text-xl font-semibold">{padelOperationalSummary.disputed}</p>
-                </div>
-                <div className="rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-[12px] text-white">
-                  <p className="text-[10px] uppercase tracking-[0.16em] text-white/70">Ação jogador</p>
-                  <p className="mt-1 text-xl font-semibold">{padelOperationalSummary.actionable}</p>
-                </div>
-                <div className="rounded-xl border border-white/20 bg-white/5 px-3 py-2 text-[12px] text-white/85">
-                  <p className="text-[10px] uppercase tracking-[0.16em] text-white/60">Total analisado</p>
-                  <p className="mt-1 text-xl font-semibold">{padelOperationalSummary.total}</p>
-                </div>
-              </div>
-              {isOwner && (
-                <div className="mt-4 rounded-2xl border border-amber-300/25 bg-amber-500/10 p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-[11px] uppercase tracking-[0.18em] text-amber-100/85">Fila de atenção (jogador)</p>
-                    <p className="text-[11px] text-amber-100/75">{padelAttentionMatches.length} item(ns)</p>
-                  </div>
-                  {padelAttentionMatches.length === 0 && (
-                    <p className="mt-2 text-[12px] text-amber-100/70">Sem ações pendentes para já.</p>
-                  )}
-                  {padelAttentionMatches.length > 0 && (
-                    <div className="mt-3 grid gap-2">
-                      {padelAttentionMatches.map((item) => (
+                      {upcomingTournaments.map((item) => (
                         <Link
-                          key={`attention-${item.id}`}
-                          href={item.eventSlug ? `/eventos/${item.eventSlug}/calendario` : `/${profileHandle}/padel`}
-                          className="rounded-xl border border-amber-100/20 bg-black/30 px-3 py-2 text-[12px] text-amber-50/95 hover:bg-black/40"
+                          key={`upcoming-tournament-${item.eventId}`}
+                          href={`/eventos/${item.slug}/calendario`}
+                          className="block rounded-xl border border-white/10 bg-black/35 px-3 py-2 text-[12px] text-white/85 hover:border-white/25"
                         >
-                          <p className="font-semibold text-amber-50">{item.eventTitle || "Torneio"}</p>
-                          <p className="text-[11px] text-amber-100/80">
-                            {resolvePlayerAttentionLabel({
-                              reason: item.attentionReason,
-                              pendingConfirmationMsRemaining: item.pendingConfirmationMsRemaining,
-                            })}
-                            {" · "}
-                            {formatMatchStatusLabel(item.status)}
-                          </p>
-                          <p className="text-[11px] text-amber-100/70">
-                            {formatDate(item.startAt)} · jogo #{item.id}
+                          <p className="font-semibold text-white">{item.title}</p>
+                          <p className="text-[11px] text-white/65">
+                            {formatDateTime(item.nextMatchAt ?? item.startsAt)} · {item.matchCount} jogo(s) agendado(s)
                           </p>
                         </Link>
                       ))}
                     </div>
                   )}
                 </div>
-              )}
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <div className="space-y-3">
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Próximos</p>
-                  {padelUpcoming.length === 0 && (
-                    <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/70">
-                      Sem jogos agendados.
+
+                <div className="rounded-2xl border border-white/15 bg-white/5 p-4">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Últimos torneios</p>
+                  {recentTournaments.length === 0 ? (
+                    <p className="mt-3 text-[12px] text-white/60">Sem histórico de torneios ainda.</p>
+                  ) : (
+                    <div className="mt-3 space-y-2">
+                      {recentTournaments.map((item) => (
+                        <Link
+                          key={`recent-tournament-${item.eventId}`}
+                          href={`/eventos/${item.slug}`}
+                          className="block rounded-xl border border-white/10 bg-black/35 px-3 py-2 text-[12px] text-white/85 hover:border-white/25"
+                        >
+                          <p className="font-semibold text-white">{item.title}</p>
+                          <p className="text-[11px] text-white/65">
+                            {item.wonTitle
+                              ? "Título conquistado"
+                              : item.finalPosition
+                                ? `Posição final ${item.finalPosition}`
+                                : "Sem posição final oficial"}
+                            {item.categoryLabel ? ` · ${item.categoryLabel}` : ""}
+                            {item.partnerName ? ` · Parceiro ${item.partnerName}` : ""}
+                          </p>
+                          <p className="text-[11px] text-white/50">{formatDate(item.endsAt ?? item.startsAt)}</p>
+                        </Link>
+                      ))}
                     </div>
                   )}
-                  {padelUpcoming.map((match) => (
-                    <div key={`padel-up-${match.id}`} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/80">
-                      <p className="text-[11px] text-white/60">{match.event.title}</p>
-                      <div className="mt-1 flex flex-wrap items-center gap-2">
-                        <span className={`rounded-full border px-2 py-0.5 text-[10px] ${matchStatusToneClass(match.status)}`}>
-                          {formatMatchStatusLabel(match.status)}
-                        </span>
-                      </div>
-                      <p className="text-sm text-white/90">
-                        {buildPairingLabel(match.pairingA)} vs {buildPairingLabel(match.pairingB)}
-                      </p>
-                      {formatDate(match.startAt) ? (
-                        <p className="text-[11px] text-white/60">
-                          {match.roundLabel || match.groupLabel || "Jogo"} · {formatDate(match.startAt)}
-                        </p>
-                      ) : null}
-                      {isOwner && (
-                        <PadelResultSubmitCard
-                          matchId={match.id}
-                          status={match.status}
-                          playerSubmissionEnabled={match.event.playerResultSubmissionEnabled}
-                          validationMode={match.event.resultValidationMode ?? "IMMEDIATE_OFFICIAL"}
-                          scoreRuleSummary={match.event.scoreRuleSummary}
-                        />
-                      )}
-                    </div>
-                  ))}
-                </div>
-                <div className="space-y-3">
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Últimos</p>
-                  {padelRecent.length === 0 && (
-                    <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/70">
-                      Sem histórico recente.
-                    </div>
-                  )}
-                  {padelRecent.map((match) => {
-                    const score = match.score || {};
-                    const workflow =
-                      score.liveWorkflow && typeof score.liveWorkflow === "object" && !Array.isArray(score.liveWorkflow)
-                        ? (score.liveWorkflow as Record<string, unknown>)
-                        : null;
-                    const pendingConfirmationExpiresAt =
-                      workflow && typeof workflow.pendingConfirmationExpiresAt === "string"
-                        ? workflow.pendingConfirmationExpiresAt
-                        : null;
-                    const disputeStatusRaw = typeof score.disputeStatus === "string" ? score.disputeStatus : null;
-                    const disputeStatus =
-                      disputeStatusRaw === "OPEN" || disputeStatusRaw === "RESOLVED" ? disputeStatusRaw : null;
-                    const disputeReason = typeof score.disputeReason === "string" ? score.disputeReason : null;
-                    return (
-                      <div key={`padel-recent-${match.id}`} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/80">
-                        <p className="text-[11px] text-white/60">{match.event.title}</p>
-                        <div className="mt-1 flex flex-wrap items-center gap-2">
-                          <span className={`rounded-full border px-2 py-0.5 text-[10px] ${matchStatusToneClass(match.status)}`}>
-                            {formatMatchStatusLabel(match.status)}
-                          </span>
-                        </div>
-                        <p className="text-sm text-white/90">
-                          {buildPairingLabel(match.pairingA)} vs {buildPairingLabel(match.pairingB)}
-                        </p>
-                        {formatDate(match.startAt) ? (
-                          <p className="text-[11px] text-white/60">
-                            {match.roundLabel || match.groupLabel || "Jogo"} · {formatDate(match.startAt)}
-                          </p>
-                        ) : null}
-                        <p className="text-[11px] text-white/70">Resultado: {formatScoreSummary(match)}</p>
-                        {pendingConfirmationExpiresAt && (
-                          <p className="text-[11px] text-white/60">
-                            Confirmação até {formatDateTimeLabel(new Date(pendingConfirmationExpiresAt))}.
-                          </p>
-                        )}
-                        {isOwner && (
-                          <PadelResultSubmitCard
-                            matchId={match.id}
-                            status={match.status}
-                            playerSubmissionEnabled={match.event.playerResultSubmissionEnabled}
-                            validationMode={match.event.resultValidationMode ?? "IMMEDIATE_OFFICIAL"}
-                            scoreRuleSummary={match.event.scoreRuleSummary}
-                          />
-                        )}
-                        {isOwner && ["OFFICIAL", "WALKOVER", "RETIRED"].includes(match.status) && (
-                          <PadelDisputeButton
-                            matchId={match.id}
-                            initialStatus={disputeStatus as "OPEN" | "RESOLVED" | null}
-                            initialReason={disputeReason}
-                          />
-                        )}
-                      </div>
-                    );
-                  })}
                 </div>
               </div>
             </section>
 
-            <section className="rounded-3xl border border-white/15 bg-white/5 p-5 text-sm text-white/70 shadow-[0_24px_60px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p>Explora o perfil normal para ver a atividade geral.</p>
-                <Link href={`/${profileHandle}`} className="text-white/85 underline">
-                  Ir para perfil normal →
-                </Link>
+            <section className="rounded-3xl border border-white/15 bg-white/5 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Top 3</p>
+                  <h2 className="mt-2 text-sm font-semibold text-white/95">Clubes e duplas onde mais jogas</h2>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                <div className="rounded-2xl border border-white/15 bg-white/5 p-4">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Top 3 clubes</p>
+                  {topClubs.length === 0 ? (
+                    <p className="mt-3 text-[12px] text-white/60">Sem clubes com jogos suficientes.</p>
+                  ) : (
+                    <div className="mt-3 space-y-2">
+                      {topClubs.map((club, idx) => (
+                        <div
+                          key={`top-club-${club.organizationId}`}
+                          className="flex items-center justify-between rounded-xl border border-white/10 bg-black/35 px-3 py-2 text-[12px] text-white/85"
+                        >
+                          <div>
+                            <p className="font-semibold text-white">#{idx + 1} {club.name}</p>
+                            <p className="text-[11px] text-white/60">{club.matches} jogos oficiais</p>
+                          </div>
+                          <span className="text-[11px] text-white/65">
+                            {club.rating !== null ? `rating ${Math.round(club.rating)}` : "rating —"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-2xl border border-white/15 bg-white/5 p-4">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Top 3 duplas</p>
+                  {topPartnerships.length === 0 ? (
+                    <p className="mt-3 text-[12px] text-white/60">Sem duplas com jogos suficientes.</p>
+                  ) : (
+                    <div className="mt-3 space-y-2">
+                      {topPartnerships.map((row, idx) => (
+                        <div
+                          key={`top-dupla-${row.partnerId}`}
+                          className="flex items-center justify-between rounded-xl border border-white/10 bg-black/35 px-3 py-2 text-[12px] text-white/85"
+                        >
+                          <div>
+                            <p className="font-semibold text-white">#{idx + 1} {row.name}</p>
+                            <p className="text-[11px] text-white/60">{row.matches} jogos · {row.wins}-{row.losses}</p>
+                          </div>
+                          <span className="text-[11px] text-white/65">
+                            {row.lastPlayedAt ? `último ${formatDate(row.lastPlayedAt)}` : "sem data"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </section>
           </div>

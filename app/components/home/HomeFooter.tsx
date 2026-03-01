@@ -10,17 +10,21 @@ import {
 type FooterLink = { label: string; href?: string; external?: boolean };
 
 const PRODUCT_LINKS: FooterLink[] = [
-  { label: "Descobrir", href: "/descobrir" },
-  { label: "Eventos", href: "/eventos" },
-  { label: "Padel", href: "/padel" },
+  { label: "Padel Hub", href: "/padel" },
+  { label: "Torneios", href: "/descobrir/torneios" },
+  { label: "Duplas", href: "/padel/duplas" },
+  { label: "Rankings", href: "/padel/rankings" },
+  { label: "Clubes", href: "/padel/clubes" },
+  { label: "Aulas", href: "/padel/aulas" },
+  { label: "Campos", href: "/padel/campos" },
   { label: "Loja", href: "/loja" },
   { label: "Agora", href: "/agora" },
   { label: "Rede", href: "/rede" },
 ];
 
 const ORG_LINKS: FooterLink[] = [
-  { label: "Criar organização", href: "/org-hub/create" },
-  { label: "Painel da organização", href: "/org-hub/organizations" },
+  { label: "Criar clube", href: "/org-hub/create" },
+  { label: "Backoffice do clube", href: "/org-hub/organizations" },
   { label: "Promoções", href: "/org-hub/organizations" },
 ];
 
@@ -114,12 +118,12 @@ export default function HomeFooter() {
                 </span>
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.28em] text-white/60">ORYA</p>
-                  <p className="text-[18px] font-semibold text-white">O centro da tua vida social.</p>
+                  <p className="text-[18px] font-semibold text-white">Backoffice e marketplace de padel.</p>
                 </div>
               </div>
               <p className="text-[13px] text-white/70">
-                Eventos, padel e experiências num só lugar. Descobre, reserva e compra em segundos — com a
-                tua rede sempre por perto.
+                O backoffice completo de padel sem mensalidade: pagas só 5% quando ganhas. Jogadores e clubes
+                ligados numa só experiência.
               </p>
               <div className="flex flex-wrap items-center gap-2.5">
                 <a
@@ -129,10 +133,10 @@ export default function HomeFooter() {
                   {ORYA_APP_INSTALL_CTA_LABEL}
                 </a>
                 <Link
-                  href="/descobrir"
+                  href="/padel"
                   className="inline-flex items-center justify-center rounded-full border border-white/20 bg-white/5 px-4 py-2 text-[12px] text-white/80 transition hover:border-white/35 hover:bg-white/10"
                 >
-                  Explorar agora
+                  Abrir Padel Hub
                 </Link>
               </div>
               <p className="text-[11px] text-white/58">{ORYA_APP_INSTALL_HINT}</p>

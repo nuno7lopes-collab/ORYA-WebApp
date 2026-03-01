@@ -1,11 +1,5 @@
-import { Suspense } from "react";
-import ExplorarSkeleton from "../_explorar/ExplorarSkeleton";
-import { ExplorarContent } from "../_explorar/ExplorarContent";
+import { redirect } from "next/navigation";
 
 export default function ExplorarEventosPage() {
-  return (
-    <Suspense fallback={<ExplorarSkeleton initialWorld="EVENTOS" />}>
-      <ExplorarContent initialWorld="EVENTOS" />
-    </Suspense>
-  );
+  redirect("/descobrir/torneios");
 }

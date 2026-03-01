@@ -26,9 +26,9 @@ const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 const OBJECTIVE_LABELS: Record<ObjectiveTab, string> = {
   create: "Criar",
-  manage: "Gerir",
+  manage: "Operar",
   promote: "Marketing",
-  analyze: "Analisar",
+  analyze: "Performance",
 };
 
 type ObjectiveSubnavProps = {
@@ -89,16 +89,16 @@ export default function ObjectiveSubnav({
   const moduleBasePath = isCanonicalOrgPath
     ? null
     : pathname?.startsWith("/org/events")
-      ? "/org/events"
+      ? "/org/padel/tournaments"
       : pathname?.startsWith("/org/padel")
         ? "/org/padel/tournaments"
-      : null;
+        : null;
   const sectionParam = searchParams?.get("section");
   const sectionOperationOverride =
     sectionParam === "reservas"
       ? "RESERVAS"
       : sectionParam === "eventos"
-        ? "EVENTOS"
+        ? "TORNEIOS"
         : sectionParam === "padel-club" || sectionParam === "padel-tournaments"
           ? "TORNEIOS"
           : null;
@@ -108,7 +108,7 @@ export default function ObjectiveSubnav({
       ? "RESERVAS"
       : pathname?.startsWith("/org/events") ||
           (isCanonicalOrgPath && (pathname?.includes("/events") || pathname?.includes("/eventos")))
-        ? "EVENTOS"
+        ? "TORNEIOS"
         : pathname?.startsWith("/org/padel") ||
             (isCanonicalOrgPath && pathname?.includes("/padel"))
           ? "TORNEIOS"

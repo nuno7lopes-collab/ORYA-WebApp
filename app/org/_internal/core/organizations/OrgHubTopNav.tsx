@@ -12,7 +12,7 @@ export default function OrgHubTopNav() {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <nav
-        aria-label="Navegação do hub de organizações"
+        aria-label="Navegação do hub de clubes"
         className="inline-flex flex-wrap items-center gap-2 rounded-full border border-white/16 bg-black/28 p-1"
       >
         {ORG_HUB_NAV_ITEMS.map((item) => {
@@ -39,7 +39,7 @@ export default function OrgHubTopNav() {
         href="/me"
         className="rounded-full border border-white/20 bg-white/8 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/80 transition hover:bg-white/14 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55"
       >
-        Sair do modo organização
+        Sair do modo clube
       </Link>
     </div>
   );

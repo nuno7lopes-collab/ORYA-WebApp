@@ -30,6 +30,8 @@ export default function PadelSignupInline({
   const locale = resolveLocale(searchParams?.get("lang"));
   const [loadingFull, setLoadingFull] = useState(false);
   const [loadingSplit, setLoadingSplit] = useState(false);
+  const [inlineError, setInlineError] = useState<string | null>(null);
+  const [inlineInfo, setInlineInfo] = useState<string | null>(null);
 
   const isPadelV2 = templateType === "PADEL" && padelV2Enabled;
   const canProceed = isPadelV2 && organizationId && ticketTypeId;
@@ -39,12 +41,17 @@ export default function PadelSignupInline({
     const current =
       pathname + (searchParams?.toString() ? `?${searchParams.toString()}` : "");
     params.set("redirectTo", current);
+    params.set("eventId", String(eventId));
+    if (organizationId) params.set("organizationId", String(organizationId));
+    if (categoryId) params.set("categoryId", String(categoryId));
     router.push(`/onboarding/padel?${params.toString()}`);
   };
 
   const createPairing = async (mode: "FULL" | "SPLIT") => {
+    setInlineError(null);
+    setInlineInfo(null);
     if (!canProceed) {
-      alert(t("padelSignupConfigMissing", locale));
+      setInlineError(t("padelSignupConfigMissing", locale));
       return;
     }
     const setLoading = mode === "FULL" ? setLoadingFull : setLoadingSplit;
@@ -100,7 +107,7 @@ export default function PadelSignupInline({
         throw new Error(resolvePadelError(json?.error));
       }
       if (json?.waitlist) {
-        alert(t("padelSignupWaitlist", locale));
+        setInlineInfo(t("padelSignupWaitlist", locale));
         return;
       }
       if (!json?.pairing?.id) {
@@ -114,7 +121,7 @@ export default function PadelSignupInline({
       }
     } catch (err) {
       console.error("[PadelSignupInline] erro", err);
-      alert(err instanceof Error ? err.message : t("padelSignupStartError", locale));
+      setInlineError(err instanceof Error ? err.message : t("padelSignupStartError", locale));
     } finally {
       setLoading(false);
     }
@@ -150,6 +157,8 @@ export default function PadelSignupInline({
         {!canProceed && (
           <p className="text-[12px] text-amber-200">{t("padelSignupUnavailable", locale)}</p>
         )}
+        {inlineError ? <p className="text-[12px] text-red-200">{inlineError}</p> : null}
+        {inlineInfo ? <p className="text-[12px] text-emerald-200">{inlineInfo}</p> : null}
       </div>
     </div>
   );

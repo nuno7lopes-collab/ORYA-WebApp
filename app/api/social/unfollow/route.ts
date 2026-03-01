@@ -20,7 +20,21 @@ async function _POST(req: NextRequest) {
     if (!targetUserId) return jsonWrap({ ok: false, error: "INVALID_TARGET" }, { status: 400 });
 
     await prisma.follows.deleteMany({
-      where: { follower_id: user.id, following_id: targetUserId },
+      where: {
+        OR: [
+          { follower_id: user.id, following_id: targetUserId },
+          { follower_id: targetUserId, following_id: user.id },
+        ],
+      },
+    });
+
+    await prisma.follow_requests.deleteMany({
+      where: {
+        OR: [
+          { requester_id: user.id, target_id: targetUserId },
+          { requester_id: targetUserId, target_id: user.id },
+        ],
+      },
     });
 
     return jsonWrap({ ok: true }, { status: 200 });

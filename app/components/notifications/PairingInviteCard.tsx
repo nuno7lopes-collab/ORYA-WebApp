@@ -289,12 +289,17 @@ export default function PairingInviteCard({
           </Link>
         )}
         {status?.requiredAction === "ONBOARD" && status?.urls?.onboardingUrl && (
-          <Link
-            href={status.urls.onboardingUrl}
-            className="rounded-full bg-white px-3 py-1.5 text-[11px] font-semibold text-black"
-          >
-            Completar perfil
-          </Link>
+          <>
+            <Link
+              href={status.urls.onboardingUrl}
+              className="rounded-full bg-white px-3 py-1.5 text-[11px] font-semibold text-black"
+            >
+              Completar perfil
+            </Link>
+            <span className="text-[11px] text-white/60">
+              Precisas de perfil padel completo para aceitar ou pagar este convite.
+            </span>
+          </>
         )}
         {(status?.requiredAction === "PAY" || status?.actions?.canPay) && payUrl && (
           <Link

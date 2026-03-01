@@ -12,6 +12,7 @@ import { resolveUsernameOwner } from "@/lib/username/resolveUsernameOwner";
 import { isStoreFeatureEnabled, resolveStoreState } from "@/lib/storeAccess";
 import { getPublicStorePaymentsGate } from "@/lib/store/publicPaymentsGate";
 import { canOpenPublicStorefront } from "@/lib/publicOrganizationProfile";
+import { isSocialFriendsOnlyEnabled } from "@/domain/social/features";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 
@@ -30,6 +31,24 @@ type UserProfileCore = {
   isDeleted?: boolean;
 };
 
+function canViewPrivateUserProfile(params: {
+  isPrivate: boolean;
+  isSelf: boolean;
+  viewerStatus:
+    | {
+        isFriend?: boolean;
+        isMutual?: boolean;
+        isFollowing?: boolean;
+      }
+    | null;
+}) {
+  if (!params.isPrivate || params.isSelf) return true;
+  const isFriend = Boolean(params.viewerStatus?.isFriend ?? params.viewerStatus?.isMutual);
+  if (isFriend) return true;
+  if (isSocialFriendsOnlyEnabled()) return false;
+  return Boolean(params.viewerStatus?.isFollowing);
+}
+
 async function buildUserResponse(profile: UserProfileCore, viewerId: string | null) {
   if (profile.isDeleted) {
     return null;
@@ -42,7 +61,11 @@ async function buildUserResponse(profile: UserProfileCore, viewerId: string | nu
 
   const isPrivate = profile.visibility !== "PUBLIC";
   const isSelf = viewerId === profile.id;
-  const canView = !isPrivate || isSelf || Boolean(viewerStatus?.isFollowing);
+  const canView = canViewPrivateUserProfile({
+    isPrivate,
+    isSelf,
+    viewerStatus,
+  });
   const restricted = isPrivate && !canView;
   const safeProfile = restricted
     ? {
@@ -79,12 +102,13 @@ async function buildUserResponse(profile: UserProfileCore, viewerId: string | nu
       profile: safeProfile,
       counts: {
         followers: followCounts.followersCount,
-        following: followCounts.followingTotal,
+        following: followCounts.followingOrganizationsCount ?? followCounts.followingTotal,
         events: eventsCount,
       },
       viewer: viewerStatus
         ? {
             isFollowing: viewerStatus.isFollowing,
+            isFriend: Boolean(viewerStatus.isFriend ?? viewerStatus.isMutual),
             isRequested: viewerStatus.requestPending,
             isMutual: viewerStatus.isMutual,
           }

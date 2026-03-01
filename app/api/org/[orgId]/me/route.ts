@@ -321,7 +321,7 @@ async function _GET(req: NextRequest) {
           brandingCoverUrl: (organization as { brandingCoverUrl?: string | null }).brandingCoverUrl ?? null,
           brandingPrimaryColor: (organization as { brandingPrimaryColor?: string | null }).brandingPrimaryColor ?? null,
           brandingSecondaryColor: (organization as { brandingSecondaryColor?: string | null }).brandingSecondaryColor ?? null,
-          organizationKind: (organization as any).organizationKind ?? "PESSOA_SINGULAR",
+          organizationKind: (organization as any).organizationKind ?? "CLUBE_PADEL",
           primaryModule:
             (organization as { primaryModule?: string | null }).primaryModule ??
             DEFAULT_PRIMARY_MODULE,
@@ -801,14 +801,12 @@ async function _PATCH(req: NextRequest) {
     }
     if (typeof organizationKind === "string") {
       const kind = organizationKind.toUpperCase();
-      const allowed = ["CLUBE_PADEL", "RESTAURANTE", "EMPRESA_EVENTOS", "ASSOCIACAO", "PESSOA_SINGULAR"];
-      if (!allowed.includes(kind)) {
-        return fail(
-          400,
-          "organizationKind inválido. Usa CLUBE_PADEL, RESTAURANTE, EMPRESA_EVENTOS, ASSOCIACAO ou PESSOA_SINGULAR.",
-        );
+      if (kind !== "CLUBE_PADEL") {
+        return fail(400, "organizationKind invalido. Usa apenas CLUBE_PADEL.");
       }
-      organizationUpdates.organizationKind = kind;
+      organizationUpdates.organizationKind = "CLUBE_PADEL";
+    } else if ((organization as { organizationKind?: string | null }).organizationKind !== "CLUBE_PADEL") {
+      organizationUpdates.organizationKind = "CLUBE_PADEL";
     }
     if (typeof padelDefaultShortName === "string") {
       organizationUpdates.padelDefaultShortName = padelDefaultShortName.trim() || null;

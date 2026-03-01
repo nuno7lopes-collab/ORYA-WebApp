@@ -26,15 +26,15 @@ const PRIMARY_META: Record<
   }
 > = {
   EVENTOS: {
-    createLabel: "Criar evento",
-    createHref: "/org/events/new",
+    createLabel: "Criar torneio",
+    createHref: "/org/padel/tournaments/create",
   },
   TORNEIOS: {
     createLabel: "Criar torneio",
     createHref: "/org/padel/tournaments/create",
   },
   RESERVAS: {
-    createLabel: "Criar serviço",
+    createLabel: "Criar aula ou serviço",
     createHref: "/org/bookings/new",
   },
 };
@@ -69,7 +69,7 @@ export function getObjectiveSections(
     if (manageBase) {
       return section === "eventos" ? manageBase : `${manageBase}?section=${section}`;
     }
-    if (section === "eventos") return "/org/events";
+    if (section === "eventos") return "/org/padel/tournaments";
     if (section === "reservas") return "/org/bookings";
     if (section === "inscricoes") return "/org/forms";
     if (section === PADEL_CLUB_SECTION) return "/org/padel/clubs";
@@ -77,13 +77,13 @@ export function getObjectiveSections(
     if (section === "staff") return "/org/team";
     if (section === "chat") return "/org/chat";
     if (section === "crm") return "/org/crm/customers";
-    return "/org/events";
+    return "/org/padel/clubs";
   };
 
   if (objective === "create") {
     sections.push({
       id: "overview",
-      label: "Painel",
+      label: "Dashboard Clube",
       href: "/org",
     });
     sections.push({
@@ -94,7 +94,7 @@ export function getObjectiveSections(
     if (hasTool(context.tools, "INSCRICOES")) {
       sections.push({
         id: "inscricoes",
-        label: "Formulários",
+        label: "Inscrições",
         href: "/org/forms",
       });
     }
@@ -114,7 +114,7 @@ export function getObjectiveSections(
       const detailBase = options?.inscricoesBasePath ?? null;
       const canDeepLink = Boolean(detailBase);
       return [
-        { id: "inscricoes", label: "Formulários", href: listHref },
+        { id: "inscricoes", label: "Inscrições", href: listHref },
         {
           id: "respostas",
           label: "Respostas",
@@ -147,8 +147,8 @@ export function getObjectiveSections(
         },
         {
           id: "servicos",
-          label: "Serviços",
-          href: `${baseHref}/services`,
+          label: "Aulas & serviços",
+          href: `${baseHref}`,
         },
       );
       sections.push(
@@ -164,17 +164,17 @@ export function getObjectiveSections(
         },
         {
           id: "clientes",
-          label: "Clientes",
+          label: "Jogadores & alunos",
           href: `${baseHref}/customers`,
         },
         {
           id: "profissionais",
-          label: "Profissionais",
+          label: "Treinadores",
           href: `${baseHref}/professionals`,
         },
         {
           id: "recursos",
-          label: "Recursos",
+          label: "Campos",
           href: `${baseHref}/resources`,
         },
       );
@@ -191,11 +191,11 @@ export function getObjectiveSections(
         `${baseHref}${baseHref.includes("?") ? "&" : "?"}padel=${tab}`;
       const padelClubHref = (tab: string) => withPadelTab(padelClubBase, tab);
       const padelTournamentsHref = (tab: string) => withPadelTab(padelTournamentsBase, tab);
-      const torneiosHref = manageHref("eventos");
+      const torneiosHref = padelTournamentsHref("tournaments");
       sections.push(
         {
           id: "padel-tool-b",
-          label: "Torneios de Padel",
+          label: "Competição",
           href: padelTournamentsHref("calendar"),
           items: [
             { id: "torneios", label: "Torneios", href: torneiosHref },
@@ -207,7 +207,7 @@ export function getObjectiveSections(
         },
         {
           id: "padel-tool-a",
-          label: "Gestão de Clube Padel",
+          label: "Clube",
           href: padelClubHref("clubs"),
           items: [
             { id: "clubs", label: "Clubes", href: padelClubHref("clubs") },
@@ -219,7 +219,7 @@ export function getObjectiveSections(
         },
         {
           id: "padel-jogadores",
-          label: "Jogadores",
+          label: "Ranking de jogadores",
           href: padelTournamentsHref("players"),
           items: [{ id: "players", label: "Jogadores", href: padelTournamentsHref("players") }],
         },
@@ -233,8 +233,8 @@ export function getObjectiveSections(
     if (operationOverride === "EVENTOS") {
       sections.push({
         id: "eventos",
-        label: "Eventos",
-        href: manageHref("eventos"),
+        label: "Competição",
+        href: "/org/padel/tournaments",
       });
       sections.push({
         id: "create",
@@ -244,7 +244,7 @@ export function getObjectiveSections(
       if (hasTool(context.tools, "INSCRICOES") && focusId === "inscricoes") {
         sections.push({
           id: "inscricoes",
-          label: "Formulários",
+          label: "Inscrições",
           href: "/org/forms",
         });
       }
@@ -256,53 +256,79 @@ export function getObjectiveSections(
     }
     sections.push(
       {
-        id: "eventos",
-        label: "Eventos",
-        href: manageHref("eventos"),
-      },
-      {
-        id: "reservas",
-        label: "Reservas",
+        id: "operacao",
+        label: "Operação",
         href: manageHref("reservas"),
+        items: [
+          { id: "operacao-agenda", label: "Calendário", href: "/org/calendar" },
+          { id: "operacao-campos", label: "Campos", href: "/org/bookings/resources" },
+          { id: "operacao-checkin", label: "Check-in", href: "/org/check-in" },
+          { id: "operacao-aulas", label: "Aulas & serviços", href: "/org/bookings" },
+        ],
       },
       {
-        id: "padel-tool-a",
-        label: "Gestão de Clube Padel",
-        href: manageHref(PADEL_CLUB_SECTION),
-      },
-      {
-        id: "padel-tool-b",
-        label: "Torneios de Padel",
+        id: "competicao",
+        label: "Competição",
         href: manageHref(PADEL_TOURNAMENTS_SECTION),
+        items: [
+          { id: "competicao-torneios", label: "Torneios", href: "/org/padel/tournaments" },
+          { id: "competicao-ranking", label: "Rankings", href: "/org/padel/tournaments?padel=players" },
+          { id: "competicao-inscricoes", label: "Inscrições", href: "/org/forms" },
+        ],
+      },
+      {
+        id: "academia",
+        label: "Academia",
+        href: "/org/bookings/customers",
+        items: [
+          { id: "academia-jogadores", label: "Jogadores & alunos", href: "/org/bookings/customers" },
+          { id: "academia-treinadores", label: "Treinadores", href: "/org/bookings/professionals" },
+          { id: "academia-aulas", label: "Aulas", href: "/org/bookings/classes" },
+        ],
+      },
+      {
+        id: "comunidade",
+        label: "Comunidade",
+        href: "/org/chat",
+        items: [
+          { id: "comunidade-chat", label: "Mensagens", href: "/org/chat" },
+          { id: "comunidade-grupos", label: "Comunidades", href: "/org/chat/comunidades" },
+        ],
+      },
+      {
+        id: "clube",
+        label: "Clube",
+        href: manageHref(PADEL_CLUB_SECTION),
+        items: [
+          { id: "clube-perfil", label: "Perfil público", href: "/org/padel/clubs" },
+          { id: "clube-equipa", label: "Equipa", href: "/org/team" },
+          { id: "clube-parcerias", label: "Parcerias", href: "/org/padel/parcerias" },
+          { id: "clube-loja", label: "Loja", href: "/org/store" },
+        ],
+      },
+      {
+        id: "negocio",
+        label: "Negócio",
+        href: "/org/finance",
+        items: [
+          { id: "negocio-financas", label: "Finanças", href: "/org/finance" },
+          { id: "negocio-analytics", label: "Relatórios & analytics", href: "/org/analytics" },
+          { id: "negocio-marketing", label: "Marketing", href: "/org/marketing" },
+          { id: "negocio-crm", label: "CRM", href: "/org/crm/customers" },
+        ],
+      },
+      {
+        id: "configuracoes",
+        label: "Configurações",
+        href: "/org/settings",
+        items: [
+          { id: "configuracoes-politicas", label: "Políticas", href: "/org/policies" },
+          { id: "configuracoes-acessos", label: "Permissões", href: "/org/team" },
+          { id: "configuracoes-definicoes", label: "Definições", href: "/org/settings" },
+          { id: "configuracoes-faturacao", label: "Faturação", href: "/org/finance?view=invoicing" },
+        ],
       },
     );
-    if (hasTool(context.tools, "EVENTOS") || hasTool(context.tools, "TORNEIOS")) {
-      sections.push({
-        id: "checkin",
-        label: "Check-in",
-        href: "/org/check-in",
-      });
-    }
-    if (hasTool(context.tools, "CRM")) {
-      sections.push({
-        id: "crm",
-        label: "CRM",
-        href: "/org/crm",
-        items: [
-          { id: "crm-clientes", label: "Clientes", href: "/org/crm/customers" },
-          { id: "crm-segmentos", label: "Segmentos", href: "/org/crm/segments" },
-          { id: "crm-campanhas", label: "Campanhas", href: "/org/crm/campaigns" },
-          { id: "crm-loyalty", label: "Pontos & recompensas", href: "/org/crm/loyalty" },
-        ],
-      });
-    }
-    if (hasTool(context.tools, "INSCRICOES")) {
-      sections.push({
-        id: "inscricoes",
-        label: "Formulários",
-        href: "/org/forms",
-      });
-    }
     if (focusId) {
       const focused = sections.find((section) => section.id === focusId);
       return focused ? [focused] : sections;

@@ -10,6 +10,7 @@ import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { parseOrganizationId, resolveOrganizationIdFromParams } from "@/lib/organizationId";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { isValidPhone, normalizePhone, resolvePhoneNormalizationOptions } from "@/lib/phone";
+import { withPadelGlobalRatingFallback } from "@/lib/padel/globalRatingSchema";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
@@ -100,38 +101,51 @@ async function _GET(req: NextRequest) {
   const crmByUserId = new Map(crmContacts.filter((contact) => contact.userId).map((contact) => [contact.userId, contact]));
   const crmById = new Map(crmContacts.map((contact) => [contact.id, contact]));
   const profileIds = players.map((player) => player.id);
-  const [ratingProfiles, orgRatingOrder] = await Promise.all([
-    profileIds.length
-      ? prisma.padelRatingProfile.findMany({
-          where: {
-            organizationId: organization.id,
-            playerId: { in: profileIds },
-          },
-          select: {
-            playerId: true,
-            rating: true,
-            matchesPlayed: true,
-            leaderboardEligible: true,
-            blockedNewMatches: true,
-            lastMatchAt: true,
-            lastRebuildAt: true,
-          },
-        })
-      : Promise.resolve([]),
-    prisma.padelRatingProfile.findMany({
-      where: { organizationId: organization.id },
-      select: { playerId: true },
-      orderBy: [{ rating: "desc" }, { playerId: "asc" }],
-    }),
-  ]);
-  type RatingProfileRow = (typeof ratingProfiles)[number];
-  const ratingProfileMap = new Map<number, RatingProfileRow>();
-  ratingProfiles.forEach((row) => {
-    ratingProfileMap.set(row.playerId, row);
-  });
-  const orgPositionMap = new Map<number, number>();
-  orgRatingOrder.forEach((row, idx) => {
-    orgPositionMap.set(row.playerId, idx + 1);
+  const globalProfiles = userIds.length
+    ? await withPadelGlobalRatingFallback(
+        () =>
+          prisma.padelGlobalRatingProfile.findMany({
+            where: { userId: { in: userIds } },
+            select: {
+              id: true,
+              userId: true,
+              rating: true,
+              matchesPlayed: true,
+              leaderboardEligible: true,
+              blockedNewMatches: true,
+              lastMatchAt: true,
+              lastRebuildAt: true,
+            },
+          }),
+        [],
+        "app/api/padel/players#get",
+      )
+    : [];
+  const globalProfileMap = new Map(globalProfiles.map((row) => [row.userId, row]));
+  const orgPositionMap = new Map<string, number>();
+  const orgRankingRows = Array.from(
+    new Set(players.map((player) => player.userId).filter((value): value is string => typeof value === "string")),
+  )
+    .map((userId) => {
+      const profile = globalProfileMap.get(userId);
+      if (!profile) return null;
+      return {
+        userId,
+        rating: Number(profile.rating),
+        points: Math.round(Number(profile.rating)),
+      };
+    })
+    .filter((row): row is NonNullable<typeof row> => row !== null)
+    .sort((a, b) => b.rating - a.rating || a.userId.localeCompare(b.userId));
+
+  let lastPoints: number | null = null;
+  let lastPosition = 0;
+  orgRankingRows.forEach((row, idx) => {
+    if (lastPoints === null || row.points !== lastPoints) {
+      lastPoints = row.points;
+      lastPosition = idx + 1;
+    }
+    orgPositionMap.set(row.userId, lastPosition);
   });
 
   const pairingSlots = profileIds.length
@@ -228,7 +242,10 @@ async function _GET(req: NextRequest) {
     const resolvedFullName = crm?.displayName ?? profile?.fullName ?? player.fullName;
     const resolvedEmail = crm?.contactEmail ?? profile?.users?.email ?? player.email ?? null;
     const resolvedPhone = crm?.contactPhone ?? profile?.contactPhone ?? player.phone ?? null;
-    const ratingProfile = ratingProfileMap.get(player.id) ?? null;
+    const globalRatingProfile =
+      typeof player.userId === "string" && player.userId.length > 0
+        ? globalProfileMap.get(player.userId) ?? null
+        : null;
     return {
       ...player,
       fullName: resolvedFullName || player.fullName,
@@ -261,13 +278,16 @@ async function _GET(req: NextRequest) {
           }
         : null,
       ranking: {
-        rating: ratingProfile ? Number(ratingProfile.rating) : null,
-        orgPosition: orgPositionMap.get(player.id) ?? null,
-        matchesPlayed: ratingProfile?.matchesPlayed ?? 0,
-        leaderboardEligible: ratingProfile?.leaderboardEligible ?? false,
-        blockedNewMatches: ratingProfile?.blockedNewMatches ?? false,
-        lastMatchAt: ratingProfile?.lastMatchAt ?? null,
-        lastRebuildAt: ratingProfile?.lastRebuildAt ?? null,
+        rating: globalRatingProfile ? Number(globalRatingProfile.rating) : null,
+        orgPosition:
+          typeof player.userId === "string" && player.userId.length > 0
+            ? orgPositionMap.get(player.userId) ?? null
+            : null,
+        matchesPlayed: globalRatingProfile?.matchesPlayed ?? 0,
+        leaderboardEligible: globalRatingProfile?.leaderboardEligible ?? false,
+        blockedNewMatches: globalRatingProfile?.blockedNewMatches ?? false,
+        lastMatchAt: globalRatingProfile?.lastMatchAt ?? null,
+        lastRebuildAt: globalRatingProfile?.lastRebuildAt ?? null,
       },
     };
   });

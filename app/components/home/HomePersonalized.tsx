@@ -18,7 +18,7 @@ type AgendaItem = {
 };
 
 type AgendaResponse = { ok: boolean; items?: AgendaItem[]; error?: string };
-type FollowResponse = {
+type FriendResponse = {
   ok: boolean;
   items?: Array<{ userId: string; username: string | null; fullName: string | null; avatarUrl: string | null }>;
 };
@@ -71,8 +71,8 @@ export default function HomePersonalized() {
 
   const agendaUrl = user ? `/api/me/agenda?start=${encodeURIComponent(startIso)}&end=${encodeURIComponent(endIso)}` : null;
   const { data: agendaData } = useSWR<AgendaResponse>(agendaUrl, fetcher);
-  const { data: followingData } = useSWR<FollowResponse>(
-    user ? `/api/social/following?userId=${user.id}&limit=4` : null,
+  const { data: friendsData } = useSWR<FriendResponse>(
+    user ? `/api/social/followers?userId=${user.id}&limit=4` : null,
     fetcher,
   );
 
@@ -81,7 +81,7 @@ export default function HomePersonalized() {
   const upcomingBookings = agendaItems.filter((i) => i.type === "RESERVA").slice(0, 3);
   const nextEvent = upcomingEvents[0] ?? null;
   const nextBooking = upcomingBookings[0] ?? null;
-  const following = followingData?.items ?? [];
+  const friends = friendsData?.items ?? [];
 
   const panelBase =
     "rounded-3xl border border-white/15 bg-[linear-gradient(150deg,rgba(255,255,255,0.12),rgba(6,10,20,0.92))] p-4 shadow-[0_22px_60px_rgba(0,0,0,0.6)] backdrop-blur-2xl";
@@ -92,7 +92,7 @@ export default function HomePersonalized() {
         <div className="rounded-2xl border border-white/15 bg-white/5 p-3 text-[12px] text-white/70 shadow-[0_18px_40px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
           <p className="font-semibold text-white/90">Personaliza a tua home</p>
           <p className="mt-1 text-[11px] text-white/60">
-            Entra para veres agenda, pessoas que segues e recomendações.
+            Entra para veres agenda, amigos e recomendações.
           </p>
           <Link
             href="/login"
@@ -219,18 +219,18 @@ export default function HomePersonalized() {
 
       <div className={panelBase}>
         <div className="flex items-center justify-between">
-          <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Atividade de quem segues</p>
+          <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Atividade dos teus amigos</p>
           <Link href="/social" className="text-[10px] text-white/70 hover:text-white">
             Ver social
           </Link>
         </div>
-        {following.length === 0 ? (
+        {friends.length === 0 ? (
           <p className="mt-3 text-[12px] text-white/60">
-            Segue pessoas para veres o que estão a planear.
+            Adiciona amigos para veres o que estão a planear.
           </p>
         ) : (
           <div className="mt-3 space-y-2">
-            {following.slice(0, 3).map((person) => (
+            {friends.slice(0, 3).map((person) => (
               <div
                 key={person.userId}
                 className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/30 px-3 py-2"

@@ -90,46 +90,46 @@ const sortPopularEvents = (a: PublicEventCard, b: PublicEventCard) => {
 const buildDemoCarouselItems = (discoverHref: string, cityLabel: string): CarouselItem[] => {
   const demoSpecs = [
     {
-      key: "demo-night",
-      title: "Noite Social Club",
-      imageUrl: "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1200&q=80",
-      tag: "Hoje · 21:00",
-      meta: "Desde 12€",
-    },
-    {
-      key: "demo-sunset",
-      title: "Sunset Networking",
-      imageUrl: "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&w=1200&q=80",
-      tag: "Sex · 19:00",
-      meta: "Desde 9€",
-    },
-    {
-      key: "demo-padel",
-      title: "Padel Open Session",
-      imageUrl: "https://images.unsplash.com/photo-1511578314322-379afb476865?auto=format&fit=crop&w=1200&q=80",
-      tag: "Sáb · 10:00",
+      key: "demo-padel-1",
+      title: "Open de Padel Matinal",
+      imageUrl: "https://images.unsplash.com/photo-1543351611-58f69d4a9f5b?auto=format&fit=crop&w=1200&q=80",
+      tag: "Hoje · 09:30",
       meta: "Desde 15€",
     },
     {
-      key: "demo-jazz",
-      title: "Jazz & Friends",
-      imageUrl: "https://images.unsplash.com/photo-1517457373958-b7bdd4587205?auto=format&fit=crop&w=1200&q=80",
-      tag: "Dom · 18:30",
-      meta: "Desde 18€",
+      key: "demo-padel-2",
+      title: "Liga M3 Weekend",
+      imageUrl: "https://images.unsplash.com/photo-1552674605-db6ffd4facb5?auto=format&fit=crop&w=1200&q=80",
+      tag: "Sáb · 10:00",
+      meta: "Desde 20€",
     },
     {
-      key: "demo-food",
-      title: "Food Market Night",
-      imageUrl: "https://images.unsplash.com/photo-1521334884684-d80222895322?auto=format&fit=crop&w=1200&q=80",
-      tag: "Qua · 20:00",
-      meta: "Entrada livre",
+      key: "demo-padel-3",
+      title: "Duplas Abertas Prime",
+      imageUrl: "https://images.unsplash.com/photo-1521412644187-c49fa049e84d?auto=format&fit=crop&w=1200&q=80",
+      tag: "Dom · 11:30",
+      meta: "Split disponível",
     },
     {
-      key: "demo-startup",
-      title: "Startup Afterwork",
-      imageUrl: "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?auto=format&fit=crop&w=1200&q=80",
-      tag: "Qui · 18:00",
-      meta: "Desde 7€",
+      key: "demo-padel-4",
+      title: "Campus Intensivo de Jogo",
+      imageUrl: "https://images.unsplash.com/photo-1517649763962-0c623066013b?auto=format&fit=crop&w=1200&q=80",
+      tag: "Ter · 20:00",
+      meta: "Desde 12€",
+    },
+    {
+      key: "demo-padel-5",
+      title: "Treino Técnico com Coach",
+      imageUrl: "https://images.unsplash.com/photo-1471295253337-3ceaaedca402?auto=format&fit=crop&w=1200&q=80",
+      tag: "Qua · 19:00",
+      meta: "Aula",
+    },
+    {
+      key: "demo-padel-6",
+      title: "Night Session Club Series",
+      imageUrl: "https://images.unsplash.com/photo-1461896836934-ffe607ba8211?auto=format&fit=crop&w=1200&q=80",
+      tag: "Qui · 21:30",
+      meta: "Desde 9€",
     },
   ];
 
@@ -150,7 +150,7 @@ export default async function HomePage() {
   const now = new Date();
 
   const feed = await fetchDiscoverFeed({
-    worlds: ["events"],
+    worlds: ["padel"],
     date: "upcoming",
     city: city ?? undefined,
     eventLimit: 36,
@@ -167,7 +167,7 @@ export default async function HomePage() {
 
   if (city && basePopular.length < 6) {
     const fallbackFeed = await fetchDiscoverFeed({
-      worlds: ["events"],
+      worlds: ["padel"],
       date: "upcoming",
       eventLimit: 36,
     });
@@ -206,7 +206,10 @@ export default async function HomePage() {
     };
   });
 
-  const discoverHref = city ? `/descobrir?city=${encodeURIComponent(city)}` : "/descobrir";
+  const discoverHref = city
+    ? `/descobrir/torneios?city=${encodeURIComponent(city)}`
+    : "/descobrir/torneios";
+  const padelHubHref = "/padel";
   const cityLabel = city ?? location.region ?? "perto de ti";
   const finalCarouselItems =
     carouselItems.length > 0 ? carouselItems : buildDemoCarouselItems(discoverHref, cityLabel);
@@ -223,17 +226,17 @@ export default async function HomePage() {
       <section className="orya-page-width px-4 md:px-8 pt-36 md:pt-40 pb-6 lg:pt-44">
         <div className="mx-auto max-w-[920px] text-center">
           <h1 className="text-4xl font-semibold leading-[0.98] tracking-[-0.02em] text-white drop-shadow-[0_2px_14px_rgba(0,0,0,0.55)] md:text-5xl lg:text-[64px]">
-            Leva a ORYA no bolso e descobre o que acontece agora.
+            O backoffice completo de padel SEM MENSALIDADE. Pagas só 5% quando ganhas.
           </h1>
           <p className="mx-auto mt-6 max-w-[700px] text-sm leading-relaxed text-white/90 drop-shadow-[0_2px_10px_rgba(0,0,0,0.5)] md:text-lg">
-            Eventos, padel e experiências num só lugar. Segue a tua rede, guarda planos e compra bilhetes em segundos.
+            Backoffice para clubes + marketplace para jogadores. Torneios, duplas, aulas e campos numa só plataforma 100% padel.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <a href={ORYA_APP_INSTALL_URL} className={primaryCtaClass}>
               {ORYA_APP_INSTALL_CTA_LABEL}
             </a>
-            <Link href={discoverHref} className={ghostCtaClass}>
-              Ver eventos
+            <Link href={padelHubHref} className={ghostCtaClass}>
+              Abrir Padel Hub
             </Link>
           </div>
           <p className="mt-3 text-[12px] text-white/62">{ORYA_APP_INSTALL_HINT}</p>
@@ -244,17 +247,17 @@ export default async function HomePage() {
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="space-y-2">
             <p className="text-[28px] font-semibold leading-none tracking-[-0.02em] text-white md:text-[40px]">
-              Eventos populares perto de ti
+              Torneios de padel perto de ti
             </p>
           </div>
           <Link href={discoverHref} className="text-[12px] text-white/75 hover:text-white/95 transition">
-            Descobrir mais
+            Ver todos
           </Link>
         </div>
 
         {usingDemoCarousel ? (
           <p className="mt-3 text-[11px] text-white/55">
-            Sem eventos públicos no índice neste ambiente. A mostrar eventos de demonstração com fotografias reais.
+            Sem torneios públicos no índice neste ambiente. A mostrar sugestões de demonstração com fotografias reais.
           </p>
         ) : null}
 

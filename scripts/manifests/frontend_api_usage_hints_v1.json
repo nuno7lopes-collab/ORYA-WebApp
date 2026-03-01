@@ -240,6 +240,48 @@
         "components/store/StoreShippingMethodsPanel.tsx",
         "components/store/StoreShippingTiersPanel.tsx"
       ]
+    },
+    {
+      "route": "/api/org/[orgId]/padel/trainers",
+      "reason": "dynamic_org_api_builder",
+      "files": [
+        "app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/telemetry/export",
+      "reason": "dynamic_org_api_builder",
+      "files": [
+        "app/org/[orgId]/analytics/AnalyticsToolClient.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/telemetry/export/preview",
+      "reason": "dynamic_org_api_builder",
+      "files": [
+        "app/org/[orgId]/analytics/AnalyticsToolClient.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/telemetry/rules",
+      "reason": "dynamic_org_api_builder",
+      "files": [
+        "app/org/[orgId]/analytics/AnalyticsToolClient.tsx"
+      ]
+    },
+    {
+      "route": "/api/org/[orgId]/telemetry/rules/[id]",
+      "reason": "dynamic_org_api_builder",
+      "files": [
+        "app/org/[orgId]/analytics/AnalyticsToolClient.tsx"
+      ]
+    },
+    {
+      "route": "/api/messages/communities/[conversationId]/participants/[userId]",
+      "reason": "dynamic_template_encodeURIComponent",
+      "files": [
+        "app/org/_internal/core/(dashboard)/chat/CommunitiesManagerClient.tsx"
+      ]
     }
   ]
 }

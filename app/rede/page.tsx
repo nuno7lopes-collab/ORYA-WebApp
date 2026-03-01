@@ -165,7 +165,7 @@ export default function RedePage() {
                             pending && "opacity-60",
                           )}
                         >
-                          {pending ? "..." : person.isFollowing ? "A seguir" : "Seguir"}
+                          {pending ? "..." : person.isFollowing ? "Amigo" : "Adicionar amigo"}
                         </button>
                       </div>
                     );
@@ -215,8 +215,8 @@ export default function RedePage() {
 
             <section className="space-y-3">
               <div className="space-y-1">
-                <p className="text-[16px] font-semibold text-white">Seguidores em comum</p>
-                <p className="text-[11px] text-white/60">Pessoas que seguem o mesmo que tu.</p>
+                <p className="text-[16px] font-semibold text-white">Amigos em comum</p>
+                <p className="text-[11px] text-white/60">Pessoas com ligações em comum na tua rede.</p>
               </div>
               {peopleCommonFollowers.length === 0 ? (
                 <div className="orya-mobile-surface-soft p-4 text-[12px] text-white/60">
@@ -229,8 +229,8 @@ export default function RedePage() {
                     const pending = followPending[`user_${person.id}`] === true;
                     const mutualLabel =
                       person.mutualsCount > 0
-                        ? `${person.mutualsCount} seguidores em comum`
-                        : "Sem seguidores em comum";
+                        ? `${person.mutualsCount} amigos em comum`
+                        : "Sem amigos em comum";
                     return (
                       <div
                         key={person.id}
@@ -261,7 +261,7 @@ export default function RedePage() {
                             pending && "opacity-60",
                           )}
                         >
-                          {pending ? "..." : person.isFollowing ? "A seguir" : "Seguir"}
+                          {pending ? "..." : person.isFollowing ? "Amigo" : "Adicionar amigo"}
                         </button>
                       </div>
                     );

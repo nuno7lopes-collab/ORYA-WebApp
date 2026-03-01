@@ -57,8 +57,18 @@ const hashPayload = (payload: Record<string, unknown>) =>
 const buildMatchDedupeKey = (eventType: string, payload: Record<string, unknown>) =>
   `padel_match:${eventType}:${payload.matchId ?? "unknown"}:${hashPayload(payload)}`;
 
-const buildRatingRebuildDedupeKey = (payload: Record<string, unknown>) =>
-  `padel_rating_rebuild:${payload.eventId ?? "unknown"}:${payload.matchId ?? "unknown"}:${hashPayload(payload)}`;
+const buildRatingRebuildDedupeKey = (payload: Record<string, unknown>) => {
+  const stablePayload = {
+    eventId: payload.eventId ?? null,
+    organizationId: payload.organizationId ?? null,
+    matchId: payload.matchId ?? null,
+    reasonCode: payload.reasonCode ?? null,
+    beforeStatus: payload.beforeStatus ?? null,
+    afterStatus: payload.afterStatus ?? null,
+    mutationFingerprint: payload.mutationFingerprint ?? null,
+  };
+  return `padel_rating_rebuild:${stablePayload.eventId ?? "unknown"}:${stablePayload.matchId ?? "unknown"}:${hashPayload(stablePayload)}`;
+};
 
 async function withTx<T>(
   tx: Prisma.TransactionClient | undefined,
@@ -151,6 +161,29 @@ const resolveRatingRebuildReason = (params: {
   if (beforeIsCounted !== afterIsCounted) return "COUNTED_STATUS_TRANSITION";
   if (touchesResultData && (beforeIsCounted || afterIsCounted)) return "COUNTED_RESULT_CORRECTION";
   return null;
+};
+
+const buildRatingMutationFingerprint = (params: {
+  data: Prisma.EventMatchSlotUpdateInput | Prisma.EventMatchSlotUncheckedUpdateInput;
+  beforeStatus: string | null;
+  afterStatus: string | null;
+}) => {
+  const payload = params.data as Record<string, unknown>;
+  const signature: Record<string, unknown> = {
+    beforeStatus: params.beforeStatus ?? null,
+    afterStatus: params.afterStatus ?? null,
+  };
+
+  if (Object.prototype.hasOwnProperty.call(payload, "status")) {
+    signature.status = payload.status;
+  }
+  for (const key of RESULT_MUTATION_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(payload, key)) {
+      signature[key] = payload[key];
+    }
+  }
+
+  return hashPayload(signature);
 };
 
 async function resolveConfirmedResultCardForWrite(params: {
@@ -271,13 +304,20 @@ export async function updatePadelMatch(
         afterStatus: resolvedAfterStatus,
       });
       if (reasonCode) {
+        const mutationFingerprint = buildRatingMutationFingerprint({
+          data: input.data,
+          beforeStatus: resolvedBeforeStatus,
+          afterStatus: resolvedAfterStatus,
+        });
         const ratingPayload = {
           eventId: input.eventId,
           organizationId: input.organizationId,
           matchId: input.matchId,
           actorUserId: input.actorUserId,
           beforeStatus: resolvedBeforeStatus,
+          afterStatus: resolvedAfterStatus,
           reasonCode,
+          mutationFingerprint,
           requestedAt,
         } satisfies Record<string, unknown>;
         await recordOutboxEvent(

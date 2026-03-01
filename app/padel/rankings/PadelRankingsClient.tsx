@@ -68,18 +68,23 @@ export default function PadelRankingsClient({
     const params = new URLSearchParams();
     if (eventId) {
       params.set("eventId", String(eventId));
+      if (!showFilters) {
+        params.set("snapshotMode", "START");
+      } else if (periodDays) {
+        params.set("periodDays", String(periodDays));
+      }
     } else {
       params.set("scope", scope);
       if (scope === "organization" && organizationId) {
         params.set("organizationId", String(organizationId));
       }
+      if (periodDays) params.set("periodDays", String(periodDays));
     }
-    if (periodDays) params.set("periodDays", String(periodDays));
     if (tier.trim()) params.set("tier", tier.trim());
     if (city.trim()) params.set("city", city.trim());
     params.set("limit", compact ? "20" : "80");
     return params.toString();
-  }, [eventId, scope, organizationId, periodDays, tier, city, compact]);
+  }, [eventId, scope, organizationId, periodDays, tier, city, compact, showFilters]);
 
   const { data, isLoading } = useSWR<RankingResponse>(`/api/padel/rankings?${query}`, fetcher, {
     revalidateOnFocus: false,

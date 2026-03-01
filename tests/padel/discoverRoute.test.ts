@@ -61,6 +61,33 @@ describe("GET /api/padel/discover", () => {
     );
   });
 
+  it("aplica filtros de formato, elegibilidade e nível", async () => {
+    parsePadelFormat.mockReturnValue("AMERICANO");
+
+    const { GET } = await import("@/app/api/padel/discover/route");
+    const req = new NextRequest(
+      "http://localhost/api/padel/discover?format=americano&eligibility=MIXED&level=12",
+    );
+    const res = await GET(req);
+    await res.json();
+
+    expect(res.status).toBe(200);
+    const args = prismaEventFindMany.mock.calls[0]?.[0];
+    expect(args?.where?.AND).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          padelTournamentConfig: { is: { format: "AMERICANO" } },
+        }),
+        expect.objectContaining({
+          padelTournamentConfig: { is: { eligibilityType: "MIXED" } },
+        }),
+        expect.objectContaining({
+          padelCategoryLinks: { some: { padelCategoryId: 12 } },
+        }),
+      ]),
+    );
+  });
+
   it("exclui eventos sem access policy pública", async () => {
     prismaEventFindMany.mockResolvedValue([
       {

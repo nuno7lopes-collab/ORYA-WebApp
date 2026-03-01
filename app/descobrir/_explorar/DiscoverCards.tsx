@@ -13,6 +13,7 @@ import type {
   ExploreItem,
   PadelClubItem,
   PadelOpenPairingItem,
+  PadelServiceItem,
   PadelTournamentItem,
   ServiceItem,
 } from "./discoverTypes";
@@ -641,5 +642,63 @@ export function PadelOpenPairingCard({
         </button>
       </div>
     </div>
+  );
+}
+
+type PadelServiceCardProps = {
+  item: PadelServiceItem;
+};
+
+export function PadelServiceCard({ item }: PadelServiceCardProps) {
+  const organizationName = item.organization.publicName || item.organization.businessName || "Organização";
+  const locationLabel = item.addressFormatted || "Local a anunciar";
+  const instructorLabel = item.instructor?.fullName || item.instructor?.username || null;
+  const priceLabel =
+    item.unitPriceCents > 0
+      ? formatCurrencyFromCents(item.unitPriceCents, item.currency)
+      : "Grátis";
+  const kindLabel = item.kind === "CLASS" ? "Aula" : "Campo";
+
+  return (
+    <Link
+      href={
+        item.organization.username
+          ? `/${item.organization.username}?serviceId=${item.id}`
+          : `/servicos/${item.id}`
+      }
+      className="rounded-3xl border border-white/10 bg-white/[0.02] p-4 shadow-[0_14px_32px_rgba(0,0,0,0.4)] transition-all hover:border-white/16 hover:-translate-y-[4px]"
+    >
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">{kindLabel}</p>
+          <span className="rounded-full border border-white/12 bg-white/5 px-2 py-0.5 text-[10px] text-white/75">
+            {priceLabel}
+          </span>
+        </div>
+        <h3 className="text-lg font-semibold text-white">{item.title}</h3>
+        <p className="text-xs text-white/55">{organizationName}</p>
+        {item.description ? (
+          <p className="text-xs text-white/70 line-clamp-2">{item.description}</p>
+        ) : null}
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-1.5 text-[10px] text-white/75">
+        <span className="rounded-full border border-white/12 bg-white/5 px-2 py-0.5">
+          {item.durationMinutes} min
+        </span>
+        {item.categoryLabel ? (
+          <span className="rounded-full border border-white/12 bg-white/5 px-2 py-0.5">
+            {item.categoryLabel}
+          </span>
+        ) : null}
+        {instructorLabel ? (
+          <span className="rounded-full border border-white/12 bg-white/5 px-2 py-0.5">
+            {instructorLabel}
+          </span>
+        ) : null}
+      </div>
+
+      <p className="mt-3 text-[11px] text-white/60">{locationLabel}</p>
+    </Link>
   );
 }

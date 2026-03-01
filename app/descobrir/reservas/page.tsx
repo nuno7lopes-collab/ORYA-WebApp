@@ -1,11 +1,5 @@
-import { Suspense } from "react";
-import ExplorarSkeleton from "../_explorar/ExplorarSkeleton";
-import { ExplorarContent } from "../_explorar/ExplorarContent";
+import { redirect } from "next/navigation";
 
 export default function ExplorarReservasPage() {
-  return (
-    <Suspense fallback={<ExplorarSkeleton initialWorld="RESERVAS" />}>
-      <ExplorarContent initialWorld="RESERVAS" />
-    </Suspense>
-  );
+  redirect("/padel/campos");
 }

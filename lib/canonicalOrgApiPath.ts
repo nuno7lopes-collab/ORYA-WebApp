@@ -5,7 +5,8 @@ import {
 } from "@/lib/organizationIdUtils";
 
 function mapLegacySuffix(suffix: string) {
-  // Canonical org namespace in this repo keeps PT segment names.
+  // Legacy endpoint removed from runtime; keep callers functional by redirecting to canonical padel namespace.
+  if (/^\/trainers\/?$/i.test(suffix)) return "/padel/trainers";
   return suffix;
 }
 
@@ -57,7 +58,7 @@ export function resolveCanonicalOrgApiPath(
     if (!resolvedOrgId) return input;
     nextSearch.delete("organizationId");
     nextSearch.delete("org");
-    parsed.pathname = `/api/org/${resolvedOrgId}${orgMatch[2] ?? ""}`;
+    parsed.pathname = `/api/org/${resolvedOrgId}${mapLegacySuffix(orgMatch[2] ?? "")}`;
     parsed.search = nextSearch.toString() ? `?${nextSearch.toString()}` : "";
     return isAbsolute
       ? parsed.toString()

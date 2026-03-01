@@ -20,7 +20,7 @@ type ProfileCommunitySectionProps = {
 function resolveCommunityErrorMessage(errorCode: string | null) {
   switch (errorCode) {
     case "FOLLOW_REQUIRED":
-      return "Precisas de seguir a organização para entrar nesta comunidade.";
+      return "Precisas de seguir o clube para entrar nesta comunidade.";
     case "INVITE_REQUIRED":
       return "Esta comunidade requer convite.";
     case "BANNED":
@@ -114,7 +114,7 @@ export default function ProfileCommunitySection({
       if (payload.requiresApproval || payload.grantStatus === "PENDING") {
         setFeedbackByCommunity((prev) => ({
           ...prev,
-          [community.conversationId]: "Pedido enviado. A organização vai aprovar na app ORYA.",
+          [community.conversationId]: "Pedido enviado. O clube vai aprovar na app ORYA.",
         }));
         return;
       }
@@ -164,7 +164,7 @@ export default function ProfileCommunitySection({
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
         <div>
           <p className="text-[11px] uppercase tracking-[0.22em] text-white/82">Comunidade</p>
-          <h3 className="text-lg font-semibold text-white">Comunidades da organização</h3>
+          <h3 className="text-lg font-semibold text-white">Comunidades do clube</h3>
         </div>
         <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] text-white/78">
           {communities.length} {communities.length === 1 ? "comunidade" : "comunidades"}
@@ -190,7 +190,7 @@ export default function ProfileCommunitySection({
                 <div>
                   <p className="text-sm font-semibold text-white">{community.title}</p>
                   <p className="mt-1 text-[12px] text-white/80">
-                    {community.description || "Comunidade oficial da organização."}
+                    {community.description || "Comunidade oficial do clube."}
                   </p>
                 </div>
                 <span className="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-white/80">

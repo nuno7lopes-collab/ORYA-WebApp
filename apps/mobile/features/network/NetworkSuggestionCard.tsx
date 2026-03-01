@@ -29,9 +29,9 @@ export const NetworkSuggestionCard = memo(function NetworkSuggestionCard({
       : "Comunidade ORYA";
 
   const isRequested = Boolean(item.isRequested);
-  const isFollowing = Boolean(item.isFollowing);
-  const isActive = isFollowing || isRequested;
-  const label = pending ? "A atualizar..." : isRequested ? "Pedido enviado" : isFollowing ? "A seguir" : "Seguir";
+  const isFriend = Boolean(item.isFriend ?? item.isFollowing);
+  const isActive = isFriend || isRequested;
+  const label = pending ? "A atualizar..." : isRequested ? "Pedido enviado" : isFriend ? "Amigo" : "Adicionar amigo";
 
   return (
     <GlassCard padding={tokens.spacing.md} style={{ marginBottom: tokens.spacing.md }}>
@@ -63,7 +63,7 @@ export const NetworkSuggestionCard = memo(function NetworkSuggestionCard({
           onPress={() => (isActive ? onUnfollow(item.id) : onFollow(item.id))}
           disabled={pending}
           accessibilityRole="button"
-          accessibilityLabel={isActive ? `Deixar de seguir ${fullName}` : `Seguir ${fullName}`}
+          accessibilityLabel={isActive ? `Remover amigo ${fullName}` : `Adicionar amigo ${fullName}`}
           className={
             isActive
               ? "rounded-xl border border-white/15 bg-white/5 px-4 py-2"

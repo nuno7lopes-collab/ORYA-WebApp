@@ -72,7 +72,7 @@
       "soldOut": "Esgotado",
       "available": "Disponível",
       "public": "Público",
-      "followers": "Só seguidores",
+      "followers": "Só amigos",
       "private": "Privado"
     },
     "time": {
@@ -422,9 +422,9 @@
     },
     "privacy": {
       "public": "Perfil público",
-      "followers": "Só seguidores",
+      "followers": "Só amigos",
       "private": "Privado",
-      "privateFollowers": "Perfil privado (seguidores)",
+      "privateFollowers": "Perfil só amigos",
       "save": "Guardar privacidade"
     },
     "interests": {
@@ -551,6 +551,9 @@
       "usernameLabel": "Username",
       "usernamePlaceholder": "@teunome",
       "usernameHint": "3-15 caracteres, letras ou números, opcionalmente _ ou ., sem espaços ou acentos. Algumas palavras estão reservadas.",
+      "phoneLabel": "Telemóvel (opcional)",
+      "phonePlaceholder": "+351 9xx xxx xxx",
+      "phoneHint": "Formato internacional ou nacional com 9 a 15 dígitos.",
       "continue": "Continuar"
     },
     "interests": {
@@ -609,11 +612,12 @@
       "usernameCheckTimeout": "Verificação demorou demasiado. Tenta novamente.",
       "usernameCheckFailed": "Não foi possível verificar agora.",
       "profileSaveFailed": "Não foi possível guardar o perfil.",
+      "phoneInvalid": "Telemóvel inválido.",
       "interestsSaveFailed": "Não foi possível guardar os interesses.",
       "padelSaveFailed": "Não foi possível guardar o perfil de padel.",
       "locationFailed": "Não foi possível obter localização agora.",
       "missingDataTitle": "Faltam dados",
-      "padelMissing": "Seleciona o género e o lado preferido.",
+      "padelMissing": "Seleciona o género, o lado preferido e o nível.",
       "finalizeFailed": "Não foi possível concluir o onboarding. Tenta novamente."
     }
   },

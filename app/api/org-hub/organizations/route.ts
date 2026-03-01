@@ -8,6 +8,7 @@ import { createOrganizationAtomic } from "@/lib/domain/groupGovernance";
 import { listEffectiveOrganizationMembershipsForUser } from "@/lib/organizationMembers";
 import { becomeOrganizationSchema } from "@/lib/validation/organization";
 import { UsernameTakenError } from "@/lib/globalUsernames";
+import { DEFAULT_PRIMARY_MODULE } from "@/lib/organizationCategories";
 
 function errorCodeForStatus(status: number) {
   if (status === 400) return "BAD_REQUEST";
@@ -126,10 +127,11 @@ async function _POST(req: NextRequest) {
       entityType: typeof normalizedBody.entityType === "string" ? normalizedBody.entityType : null,
       addressId: typeof normalizedBody.addressId === "string" ? normalizedBody.addressId : null,
       username: parsed.data.username,
-      primaryModule: parsed.data.primaryModule,
+      primaryModule: DEFAULT_PRIMARY_MODULE,
       tools: parsed.data.tools,
       publicWebsite: typeof normalizedBody.publicWebsite === "string" ? normalizedBody.publicWebsite : null,
       existingGroupId,
+      organizationKind: "CLUBE_PADEL",
     });
 
     return respondOk(

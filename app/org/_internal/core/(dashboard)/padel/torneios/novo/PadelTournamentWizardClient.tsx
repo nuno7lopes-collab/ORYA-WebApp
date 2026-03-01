@@ -1162,6 +1162,20 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
       }
       rightColumn={
         <div className="space-y-5">
+          <section className="rounded-2xl border border-emerald-300/35 bg-gradient-to-br from-emerald-500/12 via-lime-400/8 to-orange-400/10 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="space-y-1">
+                <p className="text-[10px] uppercase tracking-[0.22em] text-emerald-100/85">Grok em breve</p>
+                <p className="text-sm font-semibold text-white">Assistente de torneios</p>
+                <p className="text-[12px] text-white/75">
+                  Em breve vais poder gerar formatos, rounds e regras com apoio de IA.
+                </p>
+              </div>
+              <span className="rounded-full border border-emerald-200/40 bg-emerald-300/10 px-3 py-1 text-[11px] text-emerald-50/90">
+                Placeholder ativo
+              </span>
+            </div>
+          </section>
           <section id="wizard-identity" className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
             <div className="space-y-1 border-b border-white/10 pb-3">
               <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Identidade</p>
