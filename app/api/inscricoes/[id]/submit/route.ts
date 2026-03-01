@@ -125,14 +125,6 @@ async function _POST(req: NextRequest, context: { params: Promise<{ id: string }
       );
     }
 
-    const moduleEnabled = await prisma.organizationModuleEntry.findFirst({
-      where: { organizationId: form.organization.id, moduleKey: "INSCRICOES", enabled: true },
-      select: { organizationId: true },
-    });
-    if (!moduleEnabled) {
-      return jsonWrap({ ok: false, error: "Formulário não disponível." }, { status: 404 });
-    }
-
     const phoneOptions = resolvePhoneNormalizationOptions({ headers: req.headers });
     const normalizedAnswers: Record<string, unknown> = {};
     let emailAnswer: string | null = null;

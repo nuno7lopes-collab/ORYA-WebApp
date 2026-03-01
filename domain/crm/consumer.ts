@@ -182,6 +182,15 @@ function parseCrmInteractionPayload(raw: Record<string, unknown>) {
       : null,
   };
 
+  const actorType = typeof raw.actorType === "string" ? raw.actorType.trim().toUpperCase() : null;
+  const actorId = typeof raw.actorId === "string" ? raw.actorId.trim() : null;
+  if (!contact.userId && actorType === "USER" && actorId) {
+    contact.userId = actorId;
+  }
+  if (!contact.emailIdentityId && actorType === "CONTACT" && actorId) {
+    contact.emailIdentityId = actorId;
+  }
+
   return { interaction, contact };
 }
 

@@ -9,6 +9,7 @@ type RebuildResult = {
   contactTotalsUpdated: number;
   contactNotesUpdated: number;
   contactNotesZeroed: number;
+  padelProfilesSeeded: number;
   padelProfilesRecomputed: number;
 };
 
@@ -162,6 +163,44 @@ export async function rebuildCrmContacts(options?: { organizationId?: number | n
       )
   `);
 
+  const padelProfilesSeeded = await prisma.$executeRaw(Prisma.sql`
+    INSERT INTO app_v3.crm_contact_padel (
+      organization_id,
+      contact_id,
+      tournaments_count,
+      no_show_count,
+      created_at,
+      updated_at
+    )
+    SELECT
+      i.organization_id,
+      i.contact_id,
+      0,
+      0,
+      NOW(),
+      NOW()
+    FROM app_v3.crm_interactions i
+    WHERE i.contact_id IS NOT NULL
+      AND i.type IN (
+        'PADEL_TOURNAMENT_ENTRY'::app_v3."CrmInteractionType",
+        'PADEL_MATCH_PAYMENT'::app_v3."CrmInteractionType",
+        'PADEL_BOOKING_CONFIRMED'::app_v3."CrmInteractionType",
+        'PADEL_BOOKING_CANCELLED'::app_v3."CrmInteractionType",
+        'PADEL_BOOKING_NO_SHOW'::app_v3."CrmInteractionType",
+        'PADEL_MATCH_PLAYED'::app_v3."CrmInteractionType",
+        'PADEL_MATCH_WIN'::app_v3."CrmInteractionType",
+        'PADEL_MATCH_LOSS'::app_v3."CrmInteractionType",
+        'PADEL_CLASS_ATTENDED'::app_v3."CrmInteractionType",
+        'PADEL_CLASS_MISSED'::app_v3."CrmInteractionType",
+        'PADEL_TOURNAMENT_REGISTERED'::app_v3."CrmInteractionType",
+        'PADEL_TOURNAMENT_PLAYED'::app_v3."CrmInteractionType",
+        'PADEL_TOURNAMENT_PODIUM'::app_v3."CrmInteractionType"
+      )
+      ${orgFilter}
+    GROUP BY i.organization_id, i.contact_id
+    ON CONFLICT (contact_id) DO NOTHING
+  `);
+
   let padelProfilesRecomputed = 0;
   let cursorContactId: string | null = null;
   const batchSize = 200;
@@ -217,6 +256,7 @@ export async function rebuildCrmContacts(options?: { organizationId?: number | n
     contactTotalsUpdated: Number(contactTotalsUpdated),
     contactNotesUpdated: Number(contactNotesUpdated),
     contactNotesZeroed: Number(contactNotesZeroed),
+    padelProfilesSeeded: Number(padelProfilesSeeded),
     padelProfilesRecomputed,
   };
 }

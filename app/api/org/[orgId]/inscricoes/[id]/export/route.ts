@@ -20,17 +20,6 @@ type SubmissionWithUser = Prisma.OrganizationFormSubmissionGetPayload<{
   include: { user: { select: { id: true; fullName: true; username: true; avatarUrl: true } } };
 }>;
 
-async function ensureInscricoesEnabled(organization: {
-  id: number;
-  username?: string | null;
-}) {
-  const enabled = await prisma.organizationModuleEntry.findFirst({
-    where: { organizationId: organization.id, moduleKey: "INSCRICOES", enabled: true },
-    select: { organizationId: true },
-  });
-  return Boolean(enabled);
-}
-
 function escapeCsv(value: unknown) {
   const text = value === null || value === undefined ? "" : String(value);
   const escaped = text.replace(/"/g, '""');
@@ -57,10 +46,6 @@ async function _GET(req: NextRequest, context: { params: Promise<{ id: string }>
     });
     if (!organization) {
       return jsonWrap({ ok: false, error: "Sem organização ativa." }, { status: 403 });
-    }
-
-    if (!(await ensureInscricoesEnabled(organization))) {
-      return jsonWrap({ ok: false, error: "Ferramenta de formulários desativada." }, { status: 403 });
     }
 
     const { id } = await context.params;

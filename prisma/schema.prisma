@@ -314,6 +314,8 @@ model Organization {
   crmCampaignApprovals                                                     CrmCampaignApproval[]
   crmJourneys                                                              CrmJourney[]
   crmJourneySteps                                                          CrmJourneyStep[]
+  crmJourneyRuns                                                           CrmJourneyRun[]
+  crmJourneyStepLogs                                                       CrmJourneyStepLog[]
   crmCampaignDeliveries                                                    CrmCampaignDelivery[]
   crmSavedViews                                                            CrmSavedView[]
   userConsents                                                             UserConsent[]

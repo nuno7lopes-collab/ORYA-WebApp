@@ -8,6 +8,11 @@ import { getPlatformOfficialEmail } from "@/lib/platformSettings";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { ensureCrmPolicy, policyToConfig } from "@/lib/crm/policy";
 import {
+  normalizeCrmAbTestConfig,
+  resolveCrmAbAssignment,
+  resolveCrmAbMessage,
+} from "@/lib/crm/abTesting";
+import {
   CrmCampaignApprovalState,
   CrmCampaignDeliveryChannel,
   CrmCampaignStatus,
@@ -35,6 +40,7 @@ export type SendCrmCampaignResult =
       suppressedByCap: number;
       suppressedByConsent: number;
       suppressedByQuietHours: number;
+      suppressedByExperimentHoldout: number;
     }
   | SendCampaignError;
 
@@ -476,6 +482,7 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
       typeof campaignPayload.emailSubject === "string" && campaignPayload.emailSubject.trim()
         ? campaignPayload.emailSubject.trim()
         : title;
+    const abTest = normalizeCrmAbTestConfig(campaignPayload.abTest);
 
     const organization = emailEnabled
       ? await prisma.organization.findUnique({
@@ -493,6 +500,7 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
 
     let suppressedByCap = 0;
     let suppressedByConsent = 0;
+    let suppressedByExperimentHoldout = 0;
 
     for (const contact of contacts) {
       const dayCount = capDayMap.get(contact.id) ?? 0;
@@ -509,11 +517,36 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
       const allowMarketing = pref?.allowMarketingCampaigns ?? true;
       const allowEmailPref = pref?.allowEmailNotifications ?? true;
       const marketingGranted = contact.marketingEmailOptIn === true || contact.marketingPushOptIn === true;
+      const abAssignment = resolveCrmAbAssignment({
+        scope: "campaign",
+        entityId: campaign.id,
+        contactId: contact.id,
+        config: abTest,
+      });
+      if (abAssignment.holdout) {
+        suppressedByExperimentHoldout += 1;
+        continue;
+      }
+      const resolvedMessage = resolveCrmAbMessage({
+        base: {
+          title,
+          body,
+          ctaLabel,
+          ctaUrl,
+          emailSubject,
+        },
+        assignment: abAssignment,
+      });
+      const channelLock = resolvedMessage.channel;
+      const allowsInApp = channelLock !== "EMAIL";
+      const allowsEmail = channelLock !== "IN_APP";
 
       let hasAttempt = false;
 
       const inAppRecipientId = recipientId;
-      const canSendInApp = Boolean(inAppEnabled && inAppRecipientId && allowMarketing && marketingGranted);
+      const canSendInApp = Boolean(
+        inAppEnabled && allowsInApp && inAppRecipientId && allowMarketing && marketingGranted,
+      );
       if (canSendInApp && inAppRecipientId) {
         const reservation = await reserveDelivery({
           organizationId: options.organizationId,
@@ -529,14 +562,23 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
               userId: inAppRecipientId,
               dedupeKey: `crm-campaign:${campaign.id}:inapp:${inAppRecipientId}`,
               type: NotificationType.CRM_CAMPAIGN,
-              title,
-              body,
-              ctaUrl,
-              ctaLabel,
+              title: resolvedMessage.title,
+              body: resolvedMessage.body,
+              ctaUrl: resolvedMessage.ctaUrl,
+              ctaLabel: resolvedMessage.ctaLabel,
               priority: "NORMAL",
               senderVisibility: "PRIVATE",
               organizationId: options.organizationId,
-              payload: { campaignId: campaign.id, channel: "IN_APP" },
+              payload: {
+                campaignId: campaign.id,
+                channel: "IN_APP",
+                abTest: {
+                  enabled: abAssignment.enabled,
+                  key: abAssignment.key,
+                  bucket: abAssignment.bucket,
+                  variantId: abAssignment.variantId,
+                },
+              },
             });
             await markDeliverySent({ deliveryId: reservation.deliveryId, sentAt: new Date() });
           } catch (err) {
@@ -554,7 +596,11 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
       }
 
       const canSendEmail = Boolean(
-        emailEnabled && contact.contactEmail && allowEmailPref && contact.marketingEmailOptIn,
+        emailEnabled &&
+          allowsEmail &&
+          contact.contactEmail &&
+          allowEmailPref &&
+          contact.marketingEmailOptIn,
       );
       if (canSendEmail) {
         const reservation = await reserveDelivery({
@@ -569,12 +615,12 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
           try {
             await sendCrmCampaignEmail({
               to: contact.contactEmail!,
-              subject: emailSubject,
+              subject: resolvedMessage.emailSubject,
               organizationName,
-              title,
-              body,
-              ctaUrl,
-              ctaLabel,
+              title: resolvedMessage.title,
+              body: resolvedMessage.body,
+              ctaUrl: resolvedMessage.ctaUrl,
+              ctaLabel: resolvedMessage.ctaLabel,
               previewText,
               replyTo,
             });
@@ -635,6 +681,7 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
       suppressedByCap,
       suppressedByConsent,
       suppressedByQuietHours: 0,
+      suppressedByExperimentHoldout,
     };
   } catch (err) {
     if (locked && previousStatus) {

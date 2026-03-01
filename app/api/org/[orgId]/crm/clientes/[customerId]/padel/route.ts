@@ -47,7 +47,6 @@ async function _GET(req: NextRequest, context: { params: Promise<{ customerId: s
           level: true,
           preferredSide: true,
           clubName: true,
-          rankingPoints: true,
         },
       },
     },

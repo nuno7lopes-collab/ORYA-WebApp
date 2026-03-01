@@ -19,17 +19,6 @@ const SUBMISSION_STATUSES = new Set([
   "REJECTED",
 ]);
 
-async function ensureInscricoesEnabled(organization: {
-  id: number;
-  username?: string | null;
-}) {
-  const enabled = await prisma.organizationModuleEntry.findFirst({
-    where: { organizationId: organization.id, moduleKey: "INSCRICOES", enabled: true },
-    select: { organizationId: true },
-  });
-  return Boolean(enabled);
-}
-
 function fail(
   ctx: ReturnType<typeof getRequestContext>,
   status: number,
@@ -71,10 +60,6 @@ async function _GET(req: NextRequest, context: { params: Promise<{ id: string }>
         },
         { status: 403 },
       );
-    }
-
-    if (!(await ensureInscricoesEnabled(organization))) {
-      return fail(ctx, 403, "Ferramenta de formulários desativada.");
     }
 
     const { id } = await context.params;
@@ -143,10 +128,6 @@ async function _PATCH(req: NextRequest, context: { params: Promise<{ id: string 
     });
     if (!organization) {
       return fail(ctx, 403, "Sem organização ativa.");
-    }
-
-    if (!(await ensureInscricoesEnabled(organization))) {
-      return fail(ctx, 403, "Ferramenta de formulários desativada.");
     }
 
     const { id } = await context.params;

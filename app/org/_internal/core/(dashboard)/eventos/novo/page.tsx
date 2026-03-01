@@ -366,7 +366,6 @@ export function NewOrganizationEventPage({
   );
   const hasEventosModule = normalizedTools.includes("EVENTOS") || primaryModule === "EVENTOS";
   const hasTorneiosModule = normalizedTools.includes("TORNEIOS") || primaryModule === "TORNEIOS";
-  const hasCurrentModule = isPadelPreset ? hasTorneiosModule : hasEventosModule;
   const canSwitchPreset = !forcePreset && hasEventosModule && hasTorneiosModule;
   const isPadelPaid = isPadelPreset && !isGratisEvent;
   const isTicketsModalOpen = showTicketsModal && !isPadelPreset;
@@ -501,9 +500,6 @@ export function NewOrganizationEventPage({
     if (organizationInactive) {
       return "A tua organização ainda não está ativa.";
     }
-    if (!hasCurrentModule) {
-      return `Ativa a ferramenta de ${primaryLabelPlural} nas ferramentas da organizacao.`;
-    }
     if (!canCreateEvents) {
       return `Sem permissões para criar ${primaryLabelPlural} nesta organização.`;
     }
@@ -513,7 +509,6 @@ export function NewOrganizationEventPage({
     organizationStatus,
     hasActiveOrganization,
     organizationInactive,
-    hasCurrentModule,
     canCreateEvents,
     primaryLabelPlural,
   ]);

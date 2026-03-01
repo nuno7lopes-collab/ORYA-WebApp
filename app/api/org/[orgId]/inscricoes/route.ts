@@ -9,16 +9,6 @@ import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const NO_STORE_HEADERS = { "Cache-Control": "no-store, max-age=0" };
-async function ensureInscricoesEnabled(organization: {
-  id: number;
-  username?: string | null;
-}) {
-  const enabled = await prisma.organizationModuleEntry.findFirst({
-    where: { organizationId: organization.id, moduleKey: "INSCRICOES", enabled: true },
-    select: { organizationId: true },
-  });
-  return Boolean(enabled);
-}
 
 function parseDate(value: unknown) {
   if (typeof value !== "string") return null;
@@ -66,10 +56,6 @@ async function _GET(req: NextRequest) {
         { status: 403 },
       );
     }
-    if (!(await ensureInscricoesEnabled(organization))) {
-      return fail(403, "Ferramenta de formulários desativada.");
-    }
-
     const forms = await prisma.organizationForm.findMany({
       where: { organizationId: organization.id },
       orderBy: [{ createdAt: "desc" }],
@@ -132,10 +118,6 @@ async function _POST(req: NextRequest) {
     if (!organization) {
       return fail(403, "Sem organização ativa.");
     }
-    if (!(await ensureInscricoesEnabled(organization))) {
-      return fail(403, "Ferramenta de formulários desativada.");
-    }
-
     const body = await req.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return fail(400, "INVALID_BODY");

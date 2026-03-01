@@ -2,7 +2,7 @@
 
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
@@ -121,9 +121,55 @@ export default function CrmSegmentDetailPage() {
     segmentId ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/crm/segmentos/${segmentId}/preview`) : null,
     fetcher,
   );
+  const [actionLoading, setActionLoading] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const segment = detail?.segment ?? null;
   const ruleLines = useMemo(() => normalizeRuleLines(segment?.definition ?? segment?.rules), [segment?.definition, segment?.rules]);
+
+  const handleStatusChange = async (status: "ACTIVE" | "PAUSED") => {
+    if (!segment) return;
+    setActionLoading(true);
+    setActionError(null);
+    try {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/crm/segmentos/${segment.id}`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.message ?? json?.error ?? "Falha ao atualizar estado.");
+      }
+      await mutateDetail();
+      await mutatePreview();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Erro ao atualizar estado.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleArchive = async () => {
+    if (!segment) return;
+    setActionLoading(true);
+    setActionError(null);
+    try {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/crm/segmentos/${segment.id}`), {
+        method: "DELETE",
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.message ?? json?.error ?? "Falha ao arquivar segmento.");
+      }
+      await mutateDetail();
+      await mutatePreview();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Erro ao arquivar segmento.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -141,11 +187,38 @@ export default function CrmSegmentDetailPage() {
                 <p className="text-sm font-semibold text-white">{segment.name}</p>
                 <p className="text-[12px] text-white/60">{segment.description || "Sem descrição"}</p>
               </div>
-              <div className="text-right text-[12px] text-white/60">
+              <div className="text-right text-[12px] text-white/60 space-y-2">
                 <p>Status: {segment.status}</p>
                 <p>Atualizado: {formatDate(segment.lastComputedAt)}</p>
+                <div className="flex flex-wrap justify-end gap-2">
+                  <button
+                    type="button"
+                    className={CTA_NEUTRAL}
+                    onClick={() => handleStatusChange("ACTIVE")}
+                    disabled={actionLoading || segment.status === "ACTIVE"}
+                  >
+                    Ativar
+                  </button>
+                  <button
+                    type="button"
+                    className={CTA_NEUTRAL}
+                    onClick={() => handleStatusChange("PAUSED")}
+                    disabled={actionLoading || segment.status === "PAUSED"}
+                  >
+                    Pausar
+                  </button>
+                  <button
+                    type="button"
+                    className={CTA_NEUTRAL}
+                    onClick={handleArchive}
+                    disabled={actionLoading || segment.status === "ARCHIVED"}
+                  >
+                    Arquivar
+                  </button>
+                </div>
               </div>
             </div>
+            {actionError ? <p className="text-[12px] text-rose-200">{actionError}</p> : null}
             <div className="space-y-2 rounded-2xl border border-white/10 bg-white/5 p-3">
               <p className="text-[10px] uppercase tracking-[0.2em] text-white/50">Regras</p>
               {ruleLines.length ? (

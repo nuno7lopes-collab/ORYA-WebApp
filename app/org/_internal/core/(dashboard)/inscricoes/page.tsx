@@ -8,7 +8,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
-import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/org/_internal/core/dashboardUi";
+import { CTA_PRIMARY } from "@/app/org/_internal/core/dashboardUi";
 import { cn } from "@/lib/utils";
 import {
   buildOrgHref,
@@ -106,8 +106,7 @@ export default function InscricoesPage({ embedded }: InscricoesPageProps) {
   const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
 
   const items = useMemo(() => (data?.ok ? data.items : []), [data]);
-  const moduleDisabled = data?.ok === false && data?.error?.includes("Ferramenta");
-  const loadError = data?.ok === false && !moduleDisabled ? data?.error : null;
+  const loadError = data?.ok === false ? data?.error : null;
   const sectionRaw = searchParams?.get("section") ?? searchParams?.get("forms") ?? "forms";
   const activeSection: FormsSection =
     sectionRaw === "responses" || sectionRaw === "settings" ? sectionRaw : "forms";
@@ -310,17 +309,6 @@ export default function InscricoesPage({ embedded }: InscricoesPageProps) {
                 Começa pelo nome e depois ajusta campos, datas e capacidade.
               </p>
             </div>
-            {moduleDisabled && (
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-400/40 bg-amber-400/10 p-3 text-sm text-amber-100">
-                <span>A ferramenta de Formulários está desativada para esta organização.</span>
-                <Link
-                  href={organizationId ? buildOrgHref(organizationId, "/overview", { section: "ferramentas" }) : buildOrgHubHref("/organizations")}
-                  className={`${CTA_SECONDARY} text-[12px]`}
-                >
-                  Gerir ferramentas
-                </Link>
-              </div>
-            )}
             <div className="grid gap-3 md:grid-cols-[1.2fr_1.8fr]">
               <input
                 className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
@@ -338,7 +326,7 @@ export default function InscricoesPage({ embedded }: InscricoesPageProps) {
             {error && <p className="text-sm text-red-300">{error}</p>}
             <button
               type="button"
-              disabled={creating || !title.trim() || moduleDisabled}
+              disabled={creating || !title.trim()}
               onClick={handleCreate}
               className={`${CTA_PRIMARY} px-4 py-2 text-sm disabled:opacity-60`}
             >

@@ -28,7 +28,7 @@ function asObject(value: unknown): Record<string, unknown> {
 
 async function _PATCH(req: NextRequest, context: { params: Promise<{ campaignId: string }> }) {
   const ctx = getRequestContext(req);
-  const access = await resolveCrmRequest({
+const access = await resolveCrmRequest({
     req,
     required: "EDIT",
     requireVerifiedEmailReason: "CRM_CAMPAIGNS",
@@ -53,7 +53,12 @@ async function _PATCH(req: NextRequest, context: { params: Promise<{ campaignId:
     },
   });
   if (!campaign) return crmFail(req, 404, "Campanha não encontrada.");
-  if ([CrmCampaignStatus.SENT, CrmCampaignStatus.SENDING, CrmCampaignStatus.CANCELLED].includes(campaign.status)) {
+  const lockedStatuses = new Set<CrmCampaignStatus>([
+    CrmCampaignStatus.SENT,
+    CrmCampaignStatus.SENDING,
+    CrmCampaignStatus.CANCELLED,
+  ]);
+  if (lockedStatuses.has(campaign.status)) {
     return crmFail(req, 409, "Campanha bloqueada para edição no estado atual.");
   }
 

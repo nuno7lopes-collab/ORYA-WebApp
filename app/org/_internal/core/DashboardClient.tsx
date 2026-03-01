@@ -1,7 +1,6 @@
 "use client";
 
 import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import NextLink from "next/link";
 import Image from "next/image";
 import dynamic from "next/dynamic";
@@ -9,8 +8,6 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestructiveActionDialog";
 import {
-  CORE_ORGANIZATION_MODULES,
-  DEFAULT_PRIMARY_MODULE,
   resolvePrimaryModule,
 } from "@/lib/organizationCategories";
 import { cn } from "@/lib/utils";
@@ -33,16 +30,6 @@ import {
   parseOrganizationId,
   parseOrganizationIdFromPathname,
 } from "@/lib/organizationIdUtils";
-import {
-  canManageOrganizationTools as canManageOrganizationToolsByRole,
-  getEnabledDashboardToolActivationCards,
-  getAvailableDashboardToolActivationCards,
-  NON_DEACTIVABLE_ORGANIZATION_TOOL_MODULE_SET,
-  NON_HIDEABLE_DASHBOARD_TOOL_IDS,
-  sanitizeDashboardHiddenToolIds,
-  shouldShowDashboardToolManagerCta,
-} from "@/lib/organizationDashboardTools";
-import type { DashboardToolActivationCard } from "@/lib/organizationDashboardTools";
 import type { OrganizationMemberRole, OrganizationModule, OrganizationRolePack } from "@prisma/client";
 import { ModuleIcon } from "./moduleIcons";
 import {
@@ -76,24 +63,6 @@ const fetcherStrict = async (url: string) => {
     clearTimeout(timeout);
   }
 };
-
-function extractApiErrorMessage(payload: unknown, fallback: string) {
-  if (!payload || typeof payload !== "object") return fallback;
-  const topLevel = payload as Record<string, unknown>;
-  const data =
-    topLevel.data && typeof topLevel.data === "object"
-      ? (topLevel.data as Record<string, unknown>)
-      : null;
-  const candidate = [
-    topLevel.message,
-    topLevel.error,
-    topLevel.errorCode,
-    data?.message,
-    data?.error,
-    data?.errorCode,
-  ].find((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
-  return candidate ?? fallback;
-}
 const swrOptions = {
   revalidateOnFocus: false,
   revalidateOnReconnect: false,
@@ -437,15 +406,6 @@ type DashboardToolCard = {
   flow: DashboardToolFlow;
 };
 
-type DashboardToolVisibilityResponse = {
-  ok: boolean;
-  hiddenToolIds?: string[];
-  canEdit?: boolean;
-  canManageTools?: boolean;
-  membershipRole?: string | null;
-  error?: string;
-};
-
 const OPERATION_MODULES = ["EVENTOS", "RESERVAS", "TORNEIOS"] as const;
 type OperationModule = (typeof OPERATION_MODULES)[number];
 
@@ -547,9 +507,6 @@ const formatPercent = (value: number | null | undefined) =>
 const formatCurrencyCents = (value: number | null | undefined) =>
   typeof value === "number" && Number.isFinite(value) ? `${(value / 100).toFixed(2)} €` : "—";
 
-const areStringArraysEqual = (a: string[], b: string[]) =>
-  a.length === b.length && a.every((value, index) => value === b[index]);
-
 const mapTabToObjective = (
   tab: string | null | undefined,
   fallbackObjective: ObjectiveTab = "create",
@@ -600,14 +557,7 @@ function OrganizacaoPageInner({
   const [manageFiltersOpen, setManageFiltersOpen] = useState<"status" | "period" | "filters" | null>(null);
   const [eventActionLoading, setEventActionLoading] = useState<number | null>(null);
   const [eventDialog, setEventDialog] = useState<{ mode: "cancel" | "delete"; ev: EventItem } | null>(null);
-  const [toolsModalOpen, setToolsModalOpen] = useState(false);
-  const [moduleActivationLoading, setModuleActivationLoading] = useState<OrganizationModule | null>(null);
-  const [moduleDeactivationLoading, setModuleDeactivationLoading] = useState<OrganizationModule | null>(null);
-  const [moduleActivationError, setModuleActivationError] = useState<string | null>(null);
-  const [moduleActivationSuccess, setModuleActivationSuccess] = useState<string | null>(null);
   const [loadingTimedOut, setLoadingTimedOut] = useState(false);
-  const [pendingToolVisibilityRemoval, setPendingToolVisibilityRemoval] = useState<DashboardToolCard | null>(null);
-  const [pendingModuleDeactivation, setPendingModuleDeactivation] = useState<DashboardToolActivationCard | null>(null);
   const loadingRetryAttemptRef = useRef(false);
   const dashboardLoadStartedAtRef = useRef<number | null>(null);
   const dashboardLoadSuccessTrackedRef = useRef(false);
@@ -713,20 +663,6 @@ function OrganizacaoPageInner({
     };
   }, [manageFiltersOpen]);
 
-  useEffect(() => {
-    if (!toolsModalOpen || typeof window === "undefined") return;
-    const original = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const handleKeydown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setToolsModalOpen(false);
-    };
-    window.addEventListener("keydown", handleKeydown);
-    return () => {
-      document.body.style.overflow = original;
-      window.removeEventListener("keydown", handleKeydown);
-    };
-  }, [toolsModalOpen]);
-
   const organizationIdParam = searchParams?.get("organizationId");
   const organizationIdFromQuery = parseOrganizationId(organizationIdParam);
   const organizationIdFromPath = parseOrganizationIdFromPathname(pathname);
@@ -790,27 +726,10 @@ function OrganizacaoPageInner({
       .map((tool) => tool.trim().toUpperCase())
       .filter((tool) => tool.length > 0);
   }, [organization?.tools]);
-  const normalizedRawTools = useMemo(
-    () => Array.from(new Set(rawTools)),
-    [rawTools],
-  );
   const primaryOperation = useMemo<OperationModule>(
     () => resolvePrimaryModule(primaryModule, rawTools) as OperationModule,
     [primaryModule, rawTools],
   );
-  const baseManagedModuleSet = useMemo(
-    () => new Set(NON_DEACTIVABLE_ORGANIZATION_TOOL_MODULE_SET),
-    [],
-  );
-  const hasReservasModule = useMemo(() => rawTools.includes("RESERVAS"), [rawTools]);
-  const activeModules = useMemo(() => {
-    const base = new Set<string>([
-      ...rawTools,
-      ...CORE_ORGANIZATION_MODULES,
-    ]);
-    base.add(primaryOperation);
-    return Array.from(base);
-  }, [rawTools, primaryOperation]);
   const operationLabel = OPERATION_LABELS[primaryOperation];
   const orgDisplayName =
     organization?.publicName?.trim() ||
@@ -818,7 +737,6 @@ function OrganizacaoPageInner({
     "Clube de padel";
   const isReservasOrg = primaryOperation === "RESERVAS";
   const isTorneiosOrg = primaryOperation === "TORNEIOS";
-  const hasTorneiosModule = activeModules.includes("TORNEIOS");
   const isOrgCanonicalPath = pathname?.startsWith("/org/");
   const isTorneiosRoute =
     pathname?.startsWith("/org/padel") ||
@@ -830,46 +748,10 @@ function OrganizacaoPageInner({
   const isManagePadelSection =
     activeObjective === "manage" &&
     (normalizedSection === PADEL_CLUB_SECTION || normalizedSection === PADEL_TOURNAMENTS_SECTION);
-  const isPadelContext =
-    hasTorneiosModule &&
-    (isManagePadelSection ||
-      isManageEventosSection ||
-      isTorneiosRoute ||
-      isPadelManageSection ||
-      (activeObjective !== "manage" && !isEventosRoute && isTorneiosOrg));
   const eventsScope = "PADEL";
   const eventsScopeQuery = "templateType=PADEL";
   const eventsScopeSuffix = `?${eventsScopeQuery}`;
   const eventsScopeAmp = `&${eventsScopeQuery}`;
-  const showPadelHub = hasTorneiosModule;
-  const hasInscricoesModule = activeModules.includes("INSCRICOES");
-  const hasMarketingModule = activeModules.includes("MARKETING");
-  const primaryCreateMeta =
-    primaryOperation === "RESERVAS"
-      ? { label: "Criar aula ou serviço", href: "/org/bookings/new", singular: "aula/serviço", plural: "aulas/serviços" }
-      : primaryOperation === "TORNEIOS"
-        ? {
-            label: "Criar torneio",
-            href: "/org/padel/tournaments/create",
-            singular: "torneio",
-            plural: "torneios",
-          }
-        : { label: "Criar torneio", href: "/org/padel/tournaments/create", singular: "torneio", plural: "torneios" };
-  const manageCreateMeta = isPadelContext
-    ? {
-        label: "Criar torneio",
-        href: "/org/padel/tournaments/create",
-        singular: "torneio",
-        plural: "torneios",
-      }
-    : primaryCreateMeta;
-  const managePrimaryLabel = "Competição";
-  const managePrimaryLabelLower = "torneio";
-  const managePrimaryLabelTitle = "Torneio";
-  const managePrimarySingularLabel = manageCreateMeta.singular;
-  const salesUnitLabel = isReservasOrg ? "Reservas" : "Inscrições";
-  const salesCountLabel = isReservasOrg ? "Reservas registadas" : "Inscrições registadas";
-  const eventRouteBase = "/org/padel/tournaments";
   const loading =
     organizationLoading ||
     (Boolean(orgMeUrl) && !organizationData && !organizationError) ||
@@ -901,15 +783,9 @@ function OrganizacaoPageInner({
       }),
     [membershipRole, membershipRolePack, moduleOverrides],
   );
-  const enabledModuleSet = useMemo(() => new Set(activeModules), [activeModules]);
-  const isModuleEnabled = useCallback(
-    (moduleKey: OrganizationModule) => enabledModuleSet.has(moduleKey),
-    [enabledModuleSet],
-  );
   const canAccessModule = useCallback(
-    (moduleKey: OrganizationModule) =>
-      isModuleEnabled(moduleKey) && hasModuleAccess(moduleAccess, moduleKey, "EDIT"),
-    [isModuleEnabled, moduleAccess],
+    (moduleKey: OrganizationModule) => hasModuleAccess(moduleAccess, moduleKey, "EDIT"),
+    [moduleAccess],
   );
   const canAccessFinance = canAccessModule("FINANCEIRO");
   const canAccessReservas = canAccessModule("RESERVAS");
@@ -922,6 +798,43 @@ function OrganizacaoPageInner({
   const canAccessStaff = canAccessModule("STAFF");
   const canAccessSettings = canAccessModule("DEFINICOES");
   const canAccessAnalytics = canAccessModule("ANALYTICS");
+  const hasTorneiosModule = canAccessTorneios;
+  const hasInscricoesModule = canAccessInscricoes;
+  const hasMarketingModule = canAccessMarketing;
+  const isPadelContext =
+    hasTorneiosModule &&
+    (isManagePadelSection ||
+      isManageEventosSection ||
+      isTorneiosRoute ||
+      isPadelManageSection ||
+      (activeObjective !== "manage" && !isEventosRoute && isTorneiosOrg));
+  const showPadelHub = hasTorneiosModule;
+  const primaryCreateMeta =
+    primaryOperation === "RESERVAS"
+      ? { label: "Criar aula ou serviço", href: "/org/bookings/new", singular: "aula/serviço", plural: "aulas/serviços" }
+      : primaryOperation === "TORNEIOS"
+        ? {
+            label: "Criar torneio",
+            href: "/org/padel/tournaments/create",
+            singular: "torneio",
+            plural: "torneios",
+          }
+        : { label: "Criar torneio", href: "/org/padel/tournaments/create", singular: "torneio", plural: "torneios" };
+  const manageCreateMeta = isPadelContext
+    ? {
+        label: "Criar torneio",
+        href: "/org/padel/tournaments/create",
+        singular: "torneio",
+        plural: "torneios",
+      }
+    : primaryCreateMeta;
+  const managePrimaryLabel = "Competição";
+  const managePrimaryLabelLower = "torneio";
+  const managePrimaryLabelTitle = "Torneio";
+  const managePrimarySingularLabel = manageCreateMeta.singular;
+  const salesUnitLabel = isReservasOrg ? "Reservas" : "Inscrições";
+  const salesCountLabel = isReservasOrg ? "Reservas registadas" : "Inscrições registadas";
+  const eventRouteBase = "/org/padel/tournaments";
   const roleFlags = useMemo(
     () => getOrganizationRoleFlags(membershipRole, membershipRolePack),
     [membershipRole, membershipRolePack],
@@ -1005,61 +918,9 @@ function OrganizacaoPageInner({
     }
     return MARKETING_TABS;
   }, [canUseMarketing, roleFlags]);
-  const dashboardToolsVisibilityUrl = scopedOrganizationId
-    ? `/api/org/${scopedOrganizationId}/dashboard/tools/visibility`
-    : null;
-  const { data: dashboardToolsVisibility, mutate: mutateDashboardToolsVisibility } =
-    useSWR<DashboardToolVisibilityResponse>(
-      dashboardToolsVisibilityUrl,
-      fetcherStrict,
-      swrOptions,
-    );
-  const visibilityMembershipRole = dashboardToolsVisibility?.membershipRole ?? null;
-  const canManageOrgTools = canManageOrganizationToolsByRole(
-    membershipRole ?? visibilityMembershipRole,
-  ) || dashboardToolsVisibility?.canManageTools === true;
-  const canCustomizeTools = Boolean(dashboardToolsVisibility?.canEdit ?? roleFlags.canEditOrg);
-  const [hiddenToolIds, setHiddenToolIds] = useState<string[]>([]);
-  const [toolVisibilityError, setToolVisibilityError] = useState<string | null>(null);
   const salesUnitHint = isReservasOrg
     ? "Reservas confirmadas nos últimos 30 dias"
     : "Inscrições registadas nos últimos 30 dias";
-
-  useEffect(() => {
-    if (!scopedOrganizationId) {
-      setHiddenToolIds([]);
-      setToolVisibilityError(null);
-      return;
-    }
-    const normalized = sanitizeDashboardHiddenToolIds(dashboardToolsVisibility?.hiddenToolIds);
-    setHiddenToolIds((prev) => (areStringArraysEqual(prev, normalized) ? prev : normalized));
-  }, [dashboardToolsVisibility?.hiddenToolIds, scopedOrganizationId]);
-
-  const persistHiddenToolIds = useCallback(
-    async (nextHidden: string[]) => {
-      const normalized = sanitizeDashboardHiddenToolIds(nextHidden);
-      setHiddenToolIds((prev) => (areStringArraysEqual(prev, normalized) ? prev : normalized));
-      setToolVisibilityError(null);
-      if (!dashboardToolsVisibilityUrl) return;
-      try {
-        const res = await fetch(dashboardToolsVisibilityUrl, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ hiddenToolIds: normalized }),
-        });
-        const json = await res.json().catch(() => null);
-        if (!res.ok || json?.ok === false) {
-          throw new Error((json && (json.error || json.message)) || "Não foi possível guardar a visibilidade.");
-        }
-        const serverHidden = sanitizeDashboardHiddenToolIds(json?.hiddenToolIds ?? normalized);
-        setHiddenToolIds((prev) => (areStringArraysEqual(prev, serverHidden) ? prev : serverHidden));
-      } catch (error) {
-        setToolVisibilityError(error instanceof Error ? error.message : "Falha ao guardar visibilidade das ferramentas.");
-        void mutateDashboardToolsVisibility();
-      }
-    },
-    [dashboardToolsVisibilityUrl, mutateDashboardToolsVisibility],
-  );
   const onboardingParam = searchParams?.get("onboarding");
   const [stripeRequirements, setStripeRequirements] = useState<string[]>([]);
   const [stripeSuccessMessage, setStripeSuccessMessage] = useState<string | null>(null);
@@ -2507,211 +2368,14 @@ function OrganizacaoPageInner({
       scopedOrganizationId,
     ],
   );
-  const hideableToolIds = useMemo(
-    () =>
-      dashboardTools
-        .map((tool) => tool.id)
-        .filter((toolId) => !NON_HIDEABLE_DASHBOARD_TOOL_IDS.has(toolId))
-        .sort(),
-    [dashboardTools],
-  );
-  const validHiddenToolIds = useMemo(() => {
-    const hideableSet = new Set(hideableToolIds);
-    return hiddenToolIds.filter((toolId) => hideableSet.has(toolId)).sort();
-  }, [hiddenToolIds, hideableToolIds]);
-  useEffect(() => {
-    if (areStringArraysEqual(hiddenToolIds, validHiddenToolIds)) return;
-    void persistHiddenToolIds(validHiddenToolIds);
-  }, [hiddenToolIds, persistHiddenToolIds, validHiddenToolIds]);
-  const hiddenToolSet = useMemo(() => new Set(validHiddenToolIds), [validHiddenToolIds]);
-  const visibleDashboardTools = useMemo(
-    () => dashboardTools.filter((tool) => !hiddenToolSet.has(tool.id)),
-    [dashboardTools, hiddenToolSet],
-  );
-  const hiddenDashboardTools = useMemo(
-    () => dashboardTools.filter((tool) => hiddenToolSet.has(tool.id)),
-    [dashboardTools, hiddenToolSet],
-  );
   const toolGroups = useMemo(
     () =>
       TOOL_FLOW_ORDER.map((flow) => ({
         flow,
-        tools: visibleDashboardTools.filter((tool) => tool.flow === flow),
+        tools: dashboardTools.filter((tool) => tool.flow === flow),
       })).filter((group) => group.tools.length > 0),
-    [visibleDashboardTools],
+    [dashboardTools],
   );
-  const hiddenToolGroups = useMemo(
-    () =>
-      TOOL_FLOW_ORDER.map((flow) => ({
-        flow,
-        tools: hiddenDashboardTools.filter((tool) => tool.flow === flow),
-      })).filter((group) => group.tools.length > 0),
-    [hiddenDashboardTools],
-  );
-  const hasHiddenTools = hiddenDashboardTools.length > 0;
-  const availableToolCards = useMemo(
-    () => getAvailableDashboardToolActivationCards(activeModules),
-    [activeModules],
-  );
-  const activeManagedToolCards = useMemo(
-    () => getEnabledDashboardToolActivationCards(activeModules),
-    [activeModules],
-  );
-  const optionalActiveToolCards = useMemo(
-    () =>
-      activeManagedToolCards.filter(
-        (card) => !baseManagedModuleSet.has(card.moduleKey),
-      ),
-    [activeManagedToolCards, baseManagedModuleSet],
-  );
-  const hasAvailableToolCards = availableToolCards.length > 0;
-  const showToolManagementCta = shouldShowDashboardToolManagerCta({
-    canCustomizeTools,
-    hasHiddenTools,
-    canManageTools: canManageOrgTools,
-    hasAvailableToolCards,
-  });
-  const hideDashboardTool = useCallback(
-    (tool: DashboardToolCard) => {
-      if (!canCustomizeTools) return;
-      if (NON_HIDEABLE_DASHBOARD_TOOL_IDS.has(tool.id)) return;
-      if (hiddenToolSet.has(tool.id)) return;
-      void persistHiddenToolIds([...validHiddenToolIds, tool.id]);
-    },
-    [canCustomizeTools, hiddenToolSet, persistHiddenToolIds, validHiddenToolIds],
-  );
-  const showDashboardTool = useCallback(
-    (toolId: string) => {
-      if (!canCustomizeTools) return;
-      if (!hiddenToolSet.has(toolId)) return;
-      void persistHiddenToolIds(validHiddenToolIds.filter((id) => id !== toolId));
-    },
-    [canCustomizeTools, hiddenToolSet, persistHiddenToolIds, validHiddenToolIds],
-  );
-  const activateModule = useCallback(
-    async (card: DashboardToolActivationCard) => {
-      if (!canManageOrgTools) {
-        setModuleActivationError("Apenas Dono, Co-dono e Administrador podem ativar novas ferramentas.");
-        return;
-      }
-      if (!scopedOrganizationId) {
-        setModuleActivationError("Seleciona um clube primeiro.");
-        return;
-      }
-
-      setModuleActivationLoading(card.moduleKey);
-      setModuleActivationError(null);
-      setModuleActivationSuccess(null);
-
-      try {
-        const res = await fetch(`/api/org/${scopedOrganizationId}/tools/${encodeURIComponent(card.moduleKey)}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "enable" }),
-        });
-        const payload = await res.json().catch(() => null);
-        const body =
-          payload && typeof payload === "object" && payload.data && typeof payload.data === "object"
-            ? (payload.data as Record<string, unknown>)
-            : null;
-        const hasErrorFlag =
-          (payload && typeof payload === "object" && (payload as Record<string, unknown>).ok === false) ||
-          body?.ok === false;
-        if (!res.ok || hasErrorFlag) {
-          throw new Error(
-            extractApiErrorMessage(payload, "Nao foi possivel ativar a ferramenta."),
-          );
-        }
-
-        await mutateOrganization();
-        setModuleActivationSuccess(`Ferramenta ${card.title} ativada.`);
-        trackEvent("org_dashboard_module_enabled", {
-          organizationId: scopedOrganizationId ?? organizationId ?? null,
-          moduleKey: card.moduleKey,
-        });
-      } catch (error) {
-        setModuleActivationError(
-          error instanceof Error ? error.message : "Nao foi possivel ativar a ferramenta.",
-        );
-      } finally {
-        setModuleActivationLoading(null);
-      }
-    },
-    [
-      canManageOrgTools,
-      mutateOrganization,
-      organizationId,
-      scopedOrganizationId,
-    ],
-  );
-  const deactivateModule = useCallback(
-    async (card: DashboardToolActivationCard) => {
-      if (!canManageOrgTools) {
-        setModuleActivationError("Apenas Dono, Co-dono e Administrador podem desativar ferramentas.");
-        return;
-      }
-      if (!scopedOrganizationId) {
-        setModuleActivationError("Seleciona um clube primeiro.");
-        return;
-      }
-      if (baseManagedModuleSet.has(card.moduleKey)) {
-        setModuleActivationError(
-          `A ferramenta ${card.title} faz parte da base do clube e nao pode ser desativada.`,
-        );
-        return;
-      }
-
-      setModuleDeactivationLoading(card.moduleKey);
-      setModuleActivationError(null);
-      setModuleActivationSuccess(null);
-
-      try {
-        const res = await fetch(`/api/org/${scopedOrganizationId}/tools/${encodeURIComponent(card.moduleKey)}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "disable" }),
-        });
-        const payload = await res.json().catch(() => null);
-        const body =
-          payload && typeof payload === "object" && payload.data && typeof payload.data === "object"
-            ? (payload.data as Record<string, unknown>)
-            : null;
-        const hasErrorFlag =
-          (payload && typeof payload === "object" && (payload as Record<string, unknown>).ok === false) ||
-          body?.ok === false;
-        if (!res.ok || hasErrorFlag) {
-          throw new Error(
-            extractApiErrorMessage(payload, "Nao foi possivel desativar a ferramenta."),
-          );
-        }
-
-        await mutateOrganization();
-        setModuleActivationSuccess(`Ferramenta ${card.title} desativada.`);
-        trackEvent("org_dashboard_module_disabled", {
-          organizationId: scopedOrganizationId ?? organizationId ?? null,
-          moduleKey: card.moduleKey,
-        });
-      } catch (error) {
-        setModuleActivationError(
-          error instanceof Error ? error.message : "Nao foi possivel desativar a ferramenta.",
-        );
-      } finally {
-        setModuleDeactivationLoading(null);
-      }
-    },
-    [
-      baseManagedModuleSet,
-      canManageOrgTools,
-      mutateOrganization,
-      organizationId,
-      scopedOrganizationId,
-    ],
-  );
-  useEffect(() => {
-    if (!moduleActivationSuccess) return;
-    const timer = window.setTimeout(() => setModuleActivationSuccess(null), 2800);
-    return () => window.clearTimeout(timer);
-  }, [moduleActivationSuccess]);
   useEffect(() => {
     const params = new URLSearchParams(currentQuery);
     const setParam = (key: string, value: string, defaultVal: string) => {
@@ -2807,7 +2471,6 @@ function OrganizacaoPageInner({
       MODULE_ICON_BG_STYLES[tool.iconKey] ??
       "linear-gradient(145deg, rgba(34,211,238,0.82) 0%, rgba(96,165,250,0.72) 48%, rgba(167,139,250,0.82) 100%)";
     const iconSurfaceGlow = "shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_10px_24px_rgba(0,0,0,0.34)]";
-    const canHide = canCustomizeTools && !NON_HIDEABLE_DASHBOARD_TOOL_IDS.has(tool.id);
     const customAppIconSrc = TOOL_CUSTOM_ICON_BY_ID[tool.id];
     const isCustomAppIcon = Boolean(customAppIconSrc);
     const cardInner = (
@@ -2822,36 +2485,8 @@ function OrganizacaoPageInner({
         <div className="pointer-events-none absolute inset-0">
           {!isCustomAppIcon && <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-black/35 to-transparent" />}
         </div>
-        {canHide && !isCustomAppIcon && (
-          <button
-            type="button"
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              setPendingToolVisibilityRemoval(tool);
-            }}
-            aria-label="Ocultar ferramenta"
-            className="absolute right-2 top-2 z-[1] flex h-6 w-6 items-center justify-center rounded-full border border-white/20 bg-black/30 text-[14px] text-white/80 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-white/10"
-          >
-            ×
-          </button>
-        )}
         {customAppIconSrc ? (
           <div className="relative mx-auto flex items-center justify-center">
-            {canHide && (
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setPendingToolVisibilityRemoval(tool);
-                }}
-                aria-label="Ocultar ferramenta"
-                className="absolute -right-2 -top-2 z-[2] flex h-7 w-7 items-center justify-center rounded-full border border-white/25 bg-black/45 text-[14px] text-white/85 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-white/10"
-              >
-                ×
-              </button>
-            )}
             <Image
               src={customAppIconSrc}
               alt=""
@@ -2913,336 +2548,6 @@ function OrganizacaoPageInner({
       </div>
     );
   };
-
-  const toolManagerCtaLabel =
-    canManageOrgTools && hasAvailableToolCards
-      ? "Adicionar ferramenta"
-      : hasHiddenTools
-        ? "Mostrar ferramenta"
-        : "Gerir ferramentas";
-  const openToolManager = () => {
-    setModuleActivationError(null);
-    setModuleActivationSuccess(null);
-    setToolsModalOpen(true);
-  };
-  const renderAddToolGhostCard = () => (
-    <button
-      type="button"
-      onClick={openToolManager}
-      aria-label={toolManagerCtaLabel}
-      className="group block w-full rounded-[20px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b1014]"
-    >
-      <div className="flex min-h-[214px] w-full flex-col items-center justify-center gap-2 px-3 py-2 text-center sm:min-h-[248px] sm:gap-2.5 sm:px-4">
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/22 bg-white/[0.04] text-white/90 transition-colors duration-150 group-hover:border-white/40 group-hover:bg-white/[0.08] sm:h-16 sm:w-16">
-          <span aria-hidden="true" className="-mt-0.5 text-[36px] font-light leading-none sm:text-[40px]">
-            +
-          </span>
-        </div>
-        <span className="mx-auto max-w-[180px] leading-tight text-[13px] font-medium text-white/80 sm:max-w-[200px] sm:text-[14px]">
-          {toolManagerCtaLabel}
-        </span>
-      </div>
-    </button>
-  );
-
-  const renderModuleActivationCard = (card: DashboardToolActivationCard) => {
-    const iconGradient =
-      MODULE_ICON_GRADIENTS[card.iconKey] ??
-      MODULE_ICON_GRADIENTS[card.moduleKey] ??
-      "from-white/15 via-white/5 to-white/10";
-    const isActivating = moduleActivationLoading === card.moduleKey;
-    return (
-      <div
-        key={`activation-${card.moduleKey}`}
-        className="rounded-2xl border border-white/12 bg-white/5 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.4)] transition"
-      >
-        <div className="flex flex-col gap-3">
-          <div className="flex items-start gap-3">
-            <div
-              className={cn(
-                "flex h-14 w-14 items-center justify-center rounded-[16px] border border-white/20 bg-gradient-to-br text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_12px_28px_rgba(0,0,0,0.32)]",
-                iconGradient,
-              )}
-            >
-              <ModuleIcon moduleKey={card.iconKey} className="h-6 w-6" aria-hidden="true" />
-            </div>
-            <div className="flex-1 space-y-2">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-sm font-semibold text-white">{card.title}</p>
-                  <p className="text-[12px] text-white/65">{card.summary}</p>
-                </div>
-                <span className="rounded-full border border-cyan-300/40 bg-cyan-400/10 px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-cyan-100">
-                  Disponivel
-                </span>
-              </div>
-              <ul className="space-y-1 text-[11px] text-white/60">
-                {card.bullets.map((bullet) => (
-                  <li key={`${card.moduleKey}-${bullet}`} className="flex items-start gap-2">
-                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-white/40" />
-                    <span>{bullet}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-[11px] uppercase tracking-[0.2em] text-white/40">{card.flow}</span>
-            <button
-              type="button"
-              onClick={() => void activateModule(card)}
-              disabled={!canManageOrgTools || isActivating}
-              className="rounded-full border border-cyan-300/40 bg-cyan-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100 transition hover:border-cyan-200/60 hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-65"
-            >
-              {isActivating ? "A ativar..." : "Ativar"}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderActiveManagedModuleCard = (card: DashboardToolActivationCard) => {
-    const iconGradient =
-      MODULE_ICON_GRADIENTS[card.iconKey] ??
-      MODULE_ICON_GRADIENTS[card.moduleKey] ??
-      "from-white/15 via-white/5 to-white/10";
-    const isBaseModule = baseManagedModuleSet.has(card.moduleKey);
-    const isDeactivating = moduleDeactivationLoading === card.moduleKey;
-    return (
-      <div
-        key={`active-${card.moduleKey}`}
-        className="rounded-2xl border border-white/12 bg-white/5 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.4)] transition"
-      >
-        <div className="flex flex-col gap-3">
-          <div className="flex items-start gap-3">
-            <div
-              className={cn(
-                "flex h-14 w-14 items-center justify-center rounded-[16px] border border-white/20 bg-gradient-to-br text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_12px_28px_rgba(0,0,0,0.32)]",
-                iconGradient,
-              )}
-            >
-              <ModuleIcon moduleKey={card.iconKey} className="h-6 w-6" aria-hidden="true" />
-            </div>
-            <div className="flex-1 space-y-2">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-sm font-semibold text-white">{card.title}</p>
-                  <p className="text-[12px] text-white/65">{card.summary}</p>
-                </div>
-                <span
-                  className={cn(
-                    "rounded-full px-2 py-1 text-[10px] uppercase tracking-[0.18em]",
-                    isBaseModule
-                      ? "border border-white/30 bg-white/10 text-white/90"
-                      : "border border-emerald-300/40 bg-emerald-400/10 text-emerald-100",
-                  )}
-                >
-                  {isBaseModule ? "Base" : "Ativa"}
-                </span>
-              </div>
-              <ul className="space-y-1 text-[11px] text-white/60">
-                {card.bullets.map((bullet) => (
-                  <li key={`${card.moduleKey}-${bullet}`} className="flex items-start gap-2">
-                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-white/40" />
-                    <span>{bullet}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-[11px] uppercase tracking-[0.2em] text-white/40">{card.flow}</span>
-            <button
-              type="button"
-              onClick={() => setPendingModuleDeactivation(card)}
-              disabled={!canManageOrgTools || isBaseModule || isDeactivating}
-              className="rounded-full border border-rose-300/40 bg-rose-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-100 transition hover:border-rose-200/60 hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-65"
-            >
-              {isBaseModule ? "Nao removivel" : isDeactivating ? "A desativar..." : "Desativar"}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderToolPickerCard = (tool: DashboardToolCard) => {
-    const iconGradient = MODULE_ICON_GRADIENTS[tool.iconKey] ?? MODULE_ICON_GRADIENTS[tool.moduleKey] ?? "from-white/15 via-white/5 to-white/10";
-    const customAppIconSrc = TOOL_CUSTOM_ICON_BY_ID[tool.id];
-    return (
-      <div
-        key={`picker-${tool.id}`}
-        className="rounded-2xl border border-white/12 bg-white/5 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.4)] transition"
-      >
-        <div className="flex flex-col gap-3">
-          <div className="flex items-start gap-3">
-            {customAppIconSrc ? (
-              <div className="relative h-14 w-14 overflow-hidden rounded-[16px] border border-white/20 bg-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_12px_28px_rgba(0,0,0,0.32)]">
-                <Image
-                  src={customAppIconSrc}
-                  alt=""
-                  fill
-                  sizes="56px"
-                  loading="lazy"
-                  decoding="async"
-                  className="object-cover"
-                  aria-hidden="true"
-                />
-              </div>
-            ) : (
-              <div
-                className={cn(
-                  "flex h-14 w-14 items-center justify-center rounded-[16px] border border-white/20 bg-gradient-to-br text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_12px_28px_rgba(0,0,0,0.32)]",
-                  iconGradient,
-                )}
-              >
-                <ModuleIcon moduleKey={tool.iconKey} className="h-6 w-6" aria-hidden="true" />
-              </div>
-            )}
-            <div className="flex-1 space-y-2">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-sm font-semibold text-white">{tool.title}</p>
-                  <p className="text-[12px] text-white/65">{tool.summary}</p>
-                </div>
-                <span className="rounded-full border border-emerald-300/40 bg-emerald-400/10 px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-emerald-100">
-                  Oculta
-                </span>
-              </div>
-              <ul className="space-y-1 text-[11px] text-white/60">
-                {tool.bullets.map((bullet) => (
-                  <li key={`${tool.id}-${bullet}`} className="flex items-start gap-2">
-                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-white/40" />
-                    <span>{bullet}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-[11px] uppercase tracking-[0.2em] text-white/40">{tool.flow}</span>
-            <button
-              type="button"
-              onClick={() => showDashboardTool(tool.id)}
-              className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-white transition hover:border-white/40 hover:bg-white/15"
-            >
-              Mostrar
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const toolsModal =
-    toolsModalOpen && typeof document !== "undefined"
-      ? createPortal(
-          <div
-            className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Gestor de ferramentas"
-            onClick={(event) => {
-              if (event.target === event.currentTarget) setToolsModalOpen(false);
-            }}
-          >
-            <div className="w-full max-w-5xl overflow-hidden rounded-3xl border border-white/12 bg-[#050915]/95 p-5 text-white shadow-[0_28px_80px_rgba(0,0,0,0.75)]">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="space-y-1">
-                  <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Gestor de ferramentas</p>
-                  <h3 className="text-xl font-semibold text-white">Ativar e organizar ferramentas</h3>
-                  <p className="text-[12px] text-white/65">
-                    Ativa, desativa e mostra ferramentas ocultas do dashboard.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setToolsModalOpen(false)}
-                  className="self-end rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-[11px] uppercase tracking-[0.2em] text-white/70 hover:border-white/30 hover:bg-white/10"
-                >
-                  Fechar
-                </button>
-              </div>
-
-              <div className="mt-4 max-h-[60vh] space-y-6 overflow-y-auto pr-1">
-                {canManageOrgTools && (
-                  <div className="space-y-6">
-                    {moduleActivationError ? (
-                      <p className="rounded-xl border border-rose-400/35 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-100">
-                        {moduleActivationError}
-                      </p>
-                    ) : null}
-                    {moduleActivationSuccess ? (
-                      <p className="rounded-xl border border-emerald-300/35 bg-emerald-500/10 px-3 py-2 text-[12px] text-emerald-100">
-                        {moduleActivationSuccess}
-                      </p>
-                    ) : null}
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <p className="text-[11px] uppercase tracking-[0.24em] text-white/50">Ferramentas disponiveis</p>
-                        <span className="text-[11px] text-white/45">{availableToolCards.length} por ativar</span>
-                      </div>
-                      {availableToolCards.length > 0 ? (
-                        <div className="grid gap-3 lg:grid-cols-2">
-                          {availableToolCards.map((card) => renderModuleActivationCard(card))}
-                        </div>
-                      ) : (
-                        <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-sm text-white/70">
-                          Nao existem mais ferramentas opcionais disponiveis para ativacao neste clube.
-                        </div>
-                      )}
-                    </div>
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <p className="text-[11px] uppercase tracking-[0.24em] text-white/50">Ferramentas ativas</p>
-                        <span className="text-[11px] text-white/45">
-                          {optionalActiveToolCards.length} opcionais desativaveis
-                        </span>
-                      </div>
-                      {activeManagedToolCards.length > 0 ? (
-                        <div className="grid gap-3 lg:grid-cols-2">
-                          {activeManagedToolCards.map((card) => renderActiveManagedModuleCard(card))}
-                        </div>
-                      ) : (
-                        <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-sm text-white/70">
-                          Nao existem ferramentas opcionais ativas neste clube.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {canCustomizeTools && (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <p className="text-[11px] uppercase tracking-[0.24em] text-white/50">Ferramentas ocultas</p>
-                    </div>
-                    {hiddenToolGroups.length > 0 ? (
-                      hiddenToolGroups.map((group) => (
-                        <div key={group.flow} className="space-y-3">
-                          <div className="flex items-center justify-between">
-                            <p className="text-[11px] uppercase tracking-[0.24em] text-white/50">{group.flow}</p>
-                          </div>
-                          <div className="grid gap-3 lg:grid-cols-2">
-                            {group.tools.map((tool) => renderToolPickerCard(tool))}
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-sm text-white/70">
-                        Nao tens ferramentas ocultas neste momento.
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-            </div>
-          </div>,
-          document.body,
-        )
-      : null;
 
   if (loading && !loadingTimedOut) {
     return (
@@ -3442,15 +2747,6 @@ function OrganizacaoPageInner({
               <Link href={primaryCreateMeta.href} className={CTA_PRIMARY}>
                 {primaryCreateMeta.label}
               </Link>
-              {showToolManagementCta && (
-                <button
-                  type="button"
-                  onClick={openToolManager}
-                  className={CTA_SECONDARY}
-                >
-                  Gerir ferramentas
-                </button>
-              )}
             </div>
           </div>
 
@@ -3585,9 +2881,6 @@ function OrganizacaoPageInner({
                   <p className="text-[12px] text-white/65">Acesso direto por ferramenta.</p>
                 </div>
               </div>
-              {toolVisibilityError && (
-                <p className="mt-3 text-[12px] text-amber-200">{toolVisibilityError}</p>
-              )}
               <div className="mt-4 space-y-4">
                 {toolGroups.map((group) => (
                   <div key={`flow-${group.flow}`} className="space-y-2.5">
@@ -3599,7 +2892,6 @@ function OrganizacaoPageInner({
                     </div>
                     <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8">
                       {group.tools.map((tool) => renderToolCard(tool))}
-                      {showToolManagementCta && group.flow === "Operação" && renderAddToolGhostCard()}
                     </div>
                   </div>
                 ))}
@@ -5327,24 +4619,6 @@ function OrganizacaoPageInner({
             </div>
           )}
 
-          {canPromote && !hasMarketingModule && (
-            <div className="mt-4 rounded-2xl border border-white/12 bg-white/5 px-4 py-4 text-sm text-white/70">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="font-semibold text-white">Ferramenta de Promoções desativada.</p>
-                  <p className="text-[12px] text-white/60">Ativa a ferramenta para usar promoções e campanhas.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={openToolManager}
-                  className={cn(CTA_SECONDARY, "text-[12px]")}
-                >
-                  Gerir ferramentas
-                </button>
-              </div>
-            </div>
-          )}
-
           {canUseMarketing && marketingSection === "overview" && (
             <div className={cn("mt-4 space-y-4", fadeClass)}>
             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
@@ -5795,43 +5069,6 @@ function OrganizacaoPageInner({
         </div>
       )}
 
-      {toolsModal}
-      {pendingToolVisibilityRemoval && (
-        <ConfirmDestructiveActionDialog
-          open
-          title={`Ocultar ${pendingToolVisibilityRemoval.title}?`}
-          description="Esta ferramenta deixa de aparecer no dashboard, mas continua ativa no sistema."
-          consequences={[
-            "Podes voltar a mostrar a qualquer momento no gestor de ferramentas.",
-            "As configurações e os dados da ferramenta mantêm-se.",
-          ]}
-          confirmLabel="Ocultar ferramenta"
-          dangerLevel="medium"
-          onConfirm={() => {
-            hideDashboardTool(pendingToolVisibilityRemoval);
-            setPendingToolVisibilityRemoval(null);
-          }}
-          onClose={() => setPendingToolVisibilityRemoval(null)}
-        />
-      )}
-      {pendingModuleDeactivation && (
-        <ConfirmDestructiveActionDialog
-          open
-          title={`Desativar ${pendingModuleDeactivation.title}?`}
-          description="Esta ferramenta deixa de estar ativa no dominio e pode desaparecer do perfil publico."
-          consequences={[
-            "A desativacao e bloqueada automaticamente quando existem operacoes ativas dessa ferramenta.",
-            "Podes voltar a ativar a ferramenta mais tarde no gestor de ferramentas.",
-          ]}
-          confirmLabel="Desativar ferramenta"
-          dangerLevel="high"
-          onConfirm={() => {
-            void deactivateModule(pendingModuleDeactivation);
-            setPendingModuleDeactivation(null);
-          }}
-          onClose={() => setPendingModuleDeactivation(null)}
-        />
-      )}
       {eventDialog && (
         <ConfirmDestructiveActionDialog
           open

@@ -153,6 +153,14 @@ async function _GET(req: NextRequest) {
               avatarUrl: true,
             },
           },
+          padelProfile: {
+            select: {
+              activityStatus: true,
+              churnRiskScore: true,
+              reactivationPropensityScore: true,
+              matches30d: true,
+            },
+          },
         },
       }),
     ]);
@@ -200,6 +208,14 @@ async function _GET(req: NextRequest) {
         totalStoreOrders: item.totalStoreOrders,
         tags: item.tags,
         notesCount: item.notesCount,
+        padel: item.padelProfile
+          ? {
+              activityStatus: item.padelProfile.activityStatus,
+              churnRiskScore: item.padelProfile.churnRiskScore,
+              reactivationPropensityScore: item.padelProfile.reactivationPropensityScore,
+              matches30d: item.padelProfile.matches30d,
+            }
+          : null,
       };
     });
 

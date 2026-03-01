@@ -84,6 +84,7 @@ async function _POST(req: NextRequest, context: { params: Promise<{ campaignId: 
       suppressedByCap: result.suppressedByCap,
       suppressedByConsent: result.suppressedByConsent,
       suppressedByQuietHours: result.suppressedByQuietHours,
+      suppressedByExperimentHoldout: result.suppressedByExperimentHoldout,
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {

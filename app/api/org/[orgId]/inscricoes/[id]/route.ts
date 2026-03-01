@@ -10,16 +10,6 @@ import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const NO_STORE_HEADERS = { "Cache-Control": "no-store, max-age=0" };
-async function ensureInscricoesEnabled(organization: {
-  id: number;
-  username?: string | null;
-}) {
-  const enabled = await prisma.organizationModuleEntry.findFirst({
-    where: { organizationId: organization.id, moduleKey: "INSCRICOES", enabled: true },
-    select: { organizationId: true },
-  });
-  return Boolean(enabled);
-}
 
 const FIELD_TYPES = new Set<OrganizationFormFieldType>([
   "TEXT",
@@ -92,10 +82,6 @@ async function _GET(req: NextRequest, context: { params: Promise<{ id: string }>
         { status: 403 },
       );
     }
-    if (!(await ensureInscricoesEnabled(organization))) {
-      return fail(ctx, 403, "Ferramenta de formulários desativada.");
-    }
-
     const { id } = await context.params;
     const formId = Number(id);
     if (!formId || Number.isNaN(formId)) {
@@ -178,10 +164,6 @@ async function _PATCH(req: NextRequest, context: { params: Promise<{ id: string 
         { status: 403 },
       );
     }
-    if (!(await ensureInscricoesEnabled(organization))) {
-      return fail(ctx, 403, "Ferramenta de formulários desativada.");
-    }
-
     const { id } = await context.params;
     const formId = Number(id);
     if (!formId || Number.isNaN(formId)) {
@@ -346,10 +328,6 @@ async function _DELETE(req: NextRequest, context: { params: Promise<{ id: string
     if (!organization) {
       return fail(ctx, 403, "Sem organização ativa.");
     }
-    if (!(await ensureInscricoesEnabled(organization))) {
-      return fail(ctx, 403, "Ferramenta de formulários desativada.");
-    }
-
     const { id } = await context.params;
     const formId = Number(id);
     if (!formId || Number.isNaN(formId)) {
