@@ -48,10 +48,13 @@ describe("resolveOrganizationTool", () => {
   it("resolves canonical tools", () => {
     expect(resolveOrganizationTool("/org/50/overview")).toBe("dashboard");
     expect(resolveOrganizationTool("/org/50/events")).toBe("events");
-    expect(resolveOrganizationTool("/org/50/bookings")).toBe("bookings");
-    expect(resolveOrganizationTool("/org/50/servicos")).toBe("bookings");
-    expect(resolveOrganizationTool("/org/50/reservas")).toBe("bookings");
-    expect(resolveOrganizationTool("/org/50/agenda")).toBe("bookings");
+    expect(resolveOrganizationTool("/org/50/bookings")).toBe("academy");
+    expect(resolveOrganizationTool("/org/50/bookings/classes")).toBe("academy");
+    expect(resolveOrganizationTool("/org/50/bookings/professionals")).toBe("academy");
+    expect(resolveOrganizationTool("/org/50/bookings/customers")).toBe("academy");
+    expect(resolveOrganizationTool("/org/50/servicos")).toBe("academy");
+    expect(resolveOrganizationTool("/org/50/reservas")).toBe("academy");
+    expect(resolveOrganizationTool("/org/50/agenda")).toBe("academy");
     expect(resolveOrganizationTool("/org/50/calendar/day")).toBe("calendar");
     expect(resolveOrganizationTool("/org/50/check-in/scanner")).toBe("check-in");
     expect(resolveOrganizationTool("/org/50/policies?view=booking")).toBe("policies");

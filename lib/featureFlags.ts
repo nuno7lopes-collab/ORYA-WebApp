@@ -8,3 +8,7 @@ export function isWidgetsEnabled() {
 export function isPublicApiEnabled() {
   return env.publicApiEnabled;
 }
+
+export function isDiscoverV2TabsEnabled() {
+  return env.discoverV2TabsEnabled;
+}

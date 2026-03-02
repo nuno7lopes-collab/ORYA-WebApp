@@ -16,6 +16,30 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Codespaces (setup automatico)
+
+Este repo inclui bootstrap automatico para Codespaces:
+
+- Comando de setup: `npm run codespace:setup`
+- Comando completo (setup + dev server): `npm run codespace:dev`
+
+O setup:
+- le segredos AWS (`orya/<env>/<group>`) e cria `.env.local`;
+- instala dependencias (`npm ci`) quando necessario.
+
+Variaveis uteis:
+- `ORYA_SECRETS_ENV=prod` (default) ou `dev`
+- `ORYA_SECRETS_GROUPS=app,supabase,payments,apple,email,admin`
+- `AWS_PROFILE=codex` (default)
+- `AWS_REGION=eu-west-1` (default)
+
+Se AWS nao estiver autenticado no Codespace:
+
+```bash
+aws sso login --profile codex
+npm run codespace:dev
+```
+
 ## Database gates
 - Prisma deve ser corrido via scripts (`npm run db:gates`).
 - Os scripts aplicam caches locais em `.cache/` (não usar env inline).

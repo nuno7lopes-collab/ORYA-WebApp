@@ -2,7 +2,7 @@ export type CatalogBackground = {
   id: string;
   labelKey: string;
   descriptionKey: string;
-  category: "global" | "landing" | "admin" | "fallback" | "event";
+  category: "global" | "admin" | "fallback" | "event";
   color: string;
   image: string;
   overlay: string;
@@ -53,16 +53,6 @@ export const BACKGROUND_CATALOG: CatalogBackground[] = [
       "radial-gradient(circle at 16% 20%, rgba(255, 203, 232, 0.45), transparent 58%), radial-gradient(circle at 82% 16%, rgba(176, 210, 255, 0.45), transparent 58%), radial-gradient(circle at 40% 88%, rgba(255, 225, 196, 0.35), transparent 60%), linear-gradient(160deg, #f8f9fd 0%, #f2f4fb 55%, #eef1f9 100%)",
     overlay:
       "linear-gradient(180deg, rgba(255, 255, 255, 0.75) 0%, rgba(246, 248, 252, 0.92) 60%, rgba(236, 240, 248, 0.98) 100%)",
-    overlayOpacity: 1,
-  },
-  {
-    id: "landing-flow",
-    labelKey: "landingFlow",
-    descriptionKey: "landingFlow",
-    category: "landing",
-    color: "#0b1014",
-    image: "none",
-    overlay: "none",
     overlayOpacity: 1,
   },
   {

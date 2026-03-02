@@ -1,0 +1,12 @@
+{
+  "name": "ORYA WebApp",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:20",
+  "features": {
+    "ghcr.io/devcontainers/features/aws-cli:1": {}
+  },
+  "remoteEnv": {
+    "AWS_PROFILE": "codex",
+    "AWS_REGION": "eu-west-1"
+  },
+  "postCreateCommand": "npm run codespace:setup || true"
+}

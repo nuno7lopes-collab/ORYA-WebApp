@@ -163,8 +163,6 @@ export default async function HomePage() {
 
   const basePopular = buildPopularEvents(feed.events);
   let popularEvents = basePopular.slice(0, 12);
-  let isCityScoped = Boolean(city && basePopular.length > 0);
-
   if (city && basePopular.length < 6) {
     const fallbackFeed = await fetchDiscoverFeed({
       worlds: ["padel"],
@@ -173,7 +171,6 @@ export default async function HomePage() {
     });
     const fallbackPopular = buildPopularEvents(fallbackFeed.events);
     if (basePopular.length === 0) {
-      isCityScoped = false;
       popularEvents = fallbackPopular.slice(0, 12);
     } else {
       const seen = new Set(basePopular.map((event) => event.id));
@@ -207,17 +204,14 @@ export default async function HomePage() {
   });
 
   const discoverHref = city
-    ? `/descobrir/torneios?city=${encodeURIComponent(city)}`
-    : "/descobrir/torneios";
-  const padelHubHref = "/padel";
+    ? `/descobrir?tab=torneios&city=${encodeURIComponent(city)}`
+    : "/descobrir";
   const cityLabel = city ?? location.region ?? "perto de ti";
   const finalCarouselItems =
     carouselItems.length > 0 ? carouselItems : buildDemoCarouselItems(discoverHref, cityLabel);
   const usingDemoCarousel = carouselItems.length === 0;
   const primaryCtaClass =
     "inline-flex items-center justify-center rounded-full border border-white/60 bg-white px-6 py-3 text-[13px] font-semibold !text-black shadow-[0_18px_40px_rgba(0,0,0,0.45)] transition hover:-translate-y-[1px] hover:shadow-[0_22px_50px_rgba(0,0,0,0.5)]";
-  const ghostCtaClass =
-    "inline-flex items-center justify-center rounded-full border border-white/20 bg-white/5 px-6 py-3 text-[13px] text-white/85 hover:border-white/35 hover:bg-white/10 transition";
 
   return (
     <main className="min-h-0 flex flex-1 flex-col bg-[linear-gradient(180deg,#0b1014_0%,#0d1320_50%,#101826_100%)] text-white">
@@ -226,28 +220,25 @@ export default async function HomePage() {
       <section className="orya-page-width px-4 md:px-8 pt-36 md:pt-40 pb-6 lg:pt-44">
         <div className="mx-auto max-w-[920px] text-center">
           <h1 className="text-4xl font-semibold leading-[0.98] tracking-[-0.02em] text-white drop-shadow-[0_2px_14px_rgba(0,0,0,0.55)] md:text-5xl lg:text-[64px]">
-            O backoffice completo de padel SEM MENSALIDADE. Pagas só 5% quando ganhas.
+            A melhor app de padel.
           </h1>
           <p className="mx-auto mt-6 max-w-[700px] text-sm leading-relaxed text-white/90 drop-shadow-[0_2px_10px_rgba(0,0,0,0.5)] md:text-lg">
-            Backoffice para clubes + marketplace para jogadores. Torneios, duplas, aulas e campos numa só plataforma 100% padel.
+            Instala a ORYA para descobrir torneios perto de ti e entrar em jogo mais rápido.
           </p>
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+          <div className="mt-8 flex items-center justify-center">
             <a href={ORYA_APP_INSTALL_URL} className={primaryCtaClass}>
               {ORYA_APP_INSTALL_CTA_LABEL}
             </a>
-            <Link href={padelHubHref} className={ghostCtaClass}>
-              Abrir Padel Hub
-            </Link>
           </div>
           <p className="mt-3 text-[12px] text-white/62">{ORYA_APP_INSTALL_HINT}</p>
         </div>
       </section>
 
-      <section className="orya-page-width px-4 md:px-8 pb-10 md:pb-6 mt-10 md:mt-14">
+      <section className="orya-page-width mt-10 px-4 pb-16 md:mt-14 md:px-8 md:pb-14">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="space-y-2">
             <p className="text-[28px] font-semibold leading-none tracking-[-0.02em] text-white md:text-[40px]">
-              Torneios de padel perto de ti
+              Torneios perto de ti
             </p>
           </div>
           <Link href={discoverHref} className="text-[12px] text-white/75 hover:text-white/95 transition">

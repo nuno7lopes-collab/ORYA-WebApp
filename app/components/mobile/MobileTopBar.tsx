@@ -21,13 +21,13 @@ export default function MobileTopBar({
   logoHref = "/",
   notificationsHref = "/social?tab=notifications",
   showSearch = true,
-  showNotifications = true,
+  showNotifications = false,
   variant = "default",
   searchPlaceholder = "Pesquisar",
 }: MobileTopBarProps) {
   const { isLoggedIn } = useUser();
   const { data } = useSWR(
-    isLoggedIn ? "/api/me/notifications/feed?limit=1&scope=user" : null,
+    showNotifications && isLoggedIn ? "/api/me/notifications/feed?limit=1&scope=user" : null,
     fetcher,
   );
   const unreadCount = data?.unreadCount ?? 0;
@@ -62,7 +62,7 @@ export default function MobileTopBar({
                   className="h-full w-full object-contain"
                 />
               </span>
-              <span className="text-[11px] font-semibold tracking-[0.18em] text-white/85">ORYA PADEL</span>
+              <span className="text-[11px] font-semibold tracking-[0.18em] text-white/85">ORYA</span>
             </Link>
             <div className="flex items-center gap-2">
               {showSearch && (

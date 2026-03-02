@@ -15,7 +15,7 @@ export default function PadelHubPage() {
           </p>
           <div className="flex flex-wrap gap-2 text-[11px] text-white/70">
             <Link
-              href="/descobrir/torneios"
+              href="/descobrir"
               className="rounded-full border border-white/20 bg-white/5 px-3 py-1 hover:bg-white/10"
             >
               Abrir discovery padel
@@ -31,7 +31,7 @@ export default function PadelHubPage() {
       </section>
 
       <section className="orya-page-width grid gap-4 px-6 pb-16 md:grid-cols-2 md:px-10 xl:grid-cols-3">
-        <Link href="/descobrir/torneios" className={CARD_CLASS}>
+        <Link href="/descobrir" className={CARD_CLASS}>
           <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Torneios</p>
           <h2 className="mt-2 text-xl font-semibold">Competições e inscrições</h2>
           <p className="mt-2 text-sm text-white/70">

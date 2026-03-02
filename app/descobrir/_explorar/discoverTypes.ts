@@ -167,6 +167,7 @@ export type PadelServicesResponse = {
 export type DateFilter = "all" | "today" | "weekend" | "upcoming" | "custom";
 export type TypeFilter = "all" | "event";
 export type ExploreWorld = "EVENTOS" | "PADEL" | "RESERVAS";
+export type DiscoverTab = "torneios" | "clubes" | "reservas" | "jogadores" | "academia";
 
 export type WorldMeta = {
   title: string;

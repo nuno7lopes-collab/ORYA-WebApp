@@ -6,6 +6,8 @@
     "dev": "node scripts/run-next-dev.mjs --webpack",
     "dev:fast": "node scripts/run-next-dev.mjs --turbo",
     "dev:all": "cross-env DEV_ALL_CLEAN_NEXT=1 DEV_ALL_CLEAN_TOOL_CACHE=1 DEV_ALL_NEXT_SCRIPT=dev node scripts/dev-all.js",
+    "codespace:setup": "scripts/codespaces-bootstrap.sh",
+    "codespace:dev": "RUN_DEV=1 scripts/codespaces-bootstrap.sh",
     "mobile:cache:clean": "node scripts/mobile-clean-cache.js",
     "mobile:cache:clean:hard": "node scripts/mobile-clean-cache.js --aggressive",
     "mobile:dev": "npm run mobile:cache:clean && cross-env EXPO_PUBLIC_API_BASE_URL=http://localhost:3000 npm --prefix apps/mobile run start -- -c --go --host lan",

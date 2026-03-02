@@ -4,7 +4,6 @@ export function shouldHideUserNavbar(pathname: string | null | undefined): boole
     pathname === "/org" ||
     pathname.startsWith("/org/") ||
     pathname === "/org-hub" ||
-    pathname.startsWith("/org-hub/") ||
-    pathname.startsWith("/landing")
+    pathname.startsWith("/org-hub/")
   );
 }

@@ -11,7 +11,7 @@ describe("dashboard tool icons", () => {
     const content = readLocal("app/org/_internal/core/DashboardClient.tsx");
     expect(content).toContain('id: "eventos"');
     expect(content).toContain('iconKey: "TOOL_EVENTOS"');
-    expect(content).toContain('id: "reservas"');
+    expect(content).toContain('id: "academia"');
     expect(content).toContain('iconKey: "TOOL_RESERVAS"');
     expect(content).toContain('id: "calendar"');
     expect(content).toContain('iconKey: "TOOL_CALENDARIO"');
@@ -21,9 +21,9 @@ describe("dashboard tool icons", () => {
     expect(content).toContain('iconKey: "TOOL_ANALYTICS"');
   });
 
-  it("ensures bookings and calendar do not share the same icon key", () => {
+  it("ensures academy and calendar do not share the same icon key", () => {
     const content = readLocal("app/org/_internal/core/DashboardClient.tsx");
-    expect(content).toContain('id: "reservas"');
+    expect(content).toContain('id: "academia"');
     expect(content).toContain('iconKey: "TOOL_RESERVAS"');
     expect(content).toContain('id: "calendar"');
     expect(content).toContain('iconKey: "TOOL_CALENDARIO"');

@@ -6,7 +6,6 @@ import { isReservedUsername } from "@/lib/reservedUsernames";
 
 type MobileBottomNavProps = {
   pathname: string;
-  socialBadgeCount?: number;
 };
 
 type IconProps = SVGProps<SVGSVGElement>;
@@ -33,10 +32,9 @@ type Item = {
   icon: IconComponent;
   path: string;
   active: (path: string) => boolean;
-  badge?: number;
 };
 
-export default function MobileBottomNav({ pathname, socialBadgeCount }: MobileBottomNavProps) {
+export default function MobileBottomNav({ pathname }: MobileBottomNavProps) {
   const router = useRouter();
   const currentPathname = normalizePathname(pathname);
 
@@ -67,9 +65,8 @@ export default function MobileBottomNav({ pathname, socialBadgeCount }: MobileBo
       icon: IconUsers,
       path: "/rede",
       active: (p) => p.startsWith("/rede"),
-      badge: typeof socialBadgeCount === "number" && socialBadgeCount > 0 ? socialBadgeCount : undefined,
     }),
-    [socialBadgeCount],
+    [],
   );
 
   const itemAgora: Item = useMemo(
@@ -134,8 +131,6 @@ type NavItemProps = {
 };
 
 function NavItem({ item, isActive, onClick }: NavItemProps) {
-  const badgeValue = typeof item.badge === "number" ? item.badge : 0;
-  const showBadge = badgeValue > 0;
   const Icon = item.icon;
 
   return (
@@ -162,11 +157,6 @@ function NavItem({ item, isActive, onClick }: NavItemProps) {
           }`}
           aria-hidden="true"
         />
-        {showBadge && (
-          <span className="absolute -right-1 -top-1 min-w-[16px] rounded-full bg-[#ff5a7a] px-1 text-[9px] font-semibold text-white shadow-[0_0_10px_rgba(255,90,122,0.65)]">
-            {badgeValue > 9 ? "9+" : badgeValue}
-          </span>
-        )}
       </span>
       <span
         className={`relative leading-none transition duration-200 ${

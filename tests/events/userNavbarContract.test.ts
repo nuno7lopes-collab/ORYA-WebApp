@@ -15,6 +15,10 @@ describe("user navbar contract", () => {
     expect(source).toContain("currentY > 88 && scrollTrendRef.current.down > 20");
     expect(source).toContain("scrollTrendRef.current.up > 16");
     expect(source).not.toContain("rounded-b-[24px]");
+    expect(source).toContain('label: "Descobrir"');
+    expect(source).toContain('href: "/descobrir"');
+    expect(source).toContain("Iniciar sessão");
+    expect(source).not.toContain("UserNotificationBell");
   });
 
   it("alinha o topbar mobile publico com a mesma shell de user", () => {

@@ -19,16 +19,13 @@ describe("shouldHideUserNavbar", () => {
     expect(shouldHideUserNavbar("/org-hub/organizations")).toBe(true);
   });
 
-  it("esconde em landing", () => {
-    expect(shouldHideUserNavbar("/landing")).toBe(true);
-    expect(shouldHideUserNavbar("/landing/invite")).toBe(true);
-  });
-
   it("nao esconde nas rotas de utilizador/publicas", () => {
     expect(shouldHideUserNavbar("/")).toBe(false);
     expect(shouldHideUserNavbar("/descobrir")).toBe(false);
     expect(shouldHideUserNavbar("/me")).toBe(false);
     expect(shouldHideUserNavbar("/eventos/abc")).toBe(false);
+    expect(shouldHideUserNavbar("/landing")).toBe(false);
+    expect(shouldHideUserNavbar("/landing/invite")).toBe(false);
   });
 
   it("nao esconde quando pathname e null", () => {

@@ -138,6 +138,10 @@ export const env = {
     process.env.PUBLIC_API_ENABLED ?? process.env.FEATURE_PUBLIC_API,
     false,
   ),
+  discoverV2TabsEnabled: parseBoolean(
+    process.env.FEATURE_DISCOVER_V2_TABS ?? process.env.NEXT_PUBLIC_FEATURE_DISCOVER_V2_TABS,
+    false,
+  ),
   appleWalletPassEnabled: parseBoolean(process.env.APPLE_WALLET_PASS_ENABLED, false),
   appleWalletPassTypeId: process.env.APPLE_WALLET_PASS_TYPE_ID ?? "",
   appleWalletTeamId: process.env.APPLE_WALLET_TEAM_ID ?? "",

@@ -45,7 +45,7 @@ test("@web install app CTA uniformizado aponta para TestFlight", async ({ page }
   if (homeAvailable) {
     const homeInstallLinks = page.getByRole("link", { name: INSTALL_APP_LABEL });
     const homeCount = await homeInstallLinks.count();
-    expect(homeCount, "home install CTA count").toBeGreaterThanOrEqual(2);
+    expect(homeCount, "home install CTA count").toBe(1);
     await assertInstallLinksPointToTestFlight(page, "home");
     await expect(page.getByText(INSTALL_APP_HINT).first()).toBeVisible();
   } else {

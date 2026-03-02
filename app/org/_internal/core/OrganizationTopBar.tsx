@@ -20,7 +20,10 @@ import {
 } from "@/app/org/_internal/core/topbarRouteUtils";
 import { resolveClubDashboardViewModel } from "@/app/org/_internal/core/ClubDashboardViewModel";
 import { buildOrgHref, buildOrgHubHref } from "@/lib/organizationIdUtils";
-import BookingsSubnav from "@/app/org/_components/subnav/BookingsSubnav";
+import AcademySubnav from "@/app/org/_components/subnav/AcademySubnav";
+import CalendarSubnav from "@/app/org/_components/subnav/CalendarSubnav";
+import CheckInSubnav from "@/app/org/_components/subnav/CheckInSubnav";
+import EventsSubnav from "@/app/org/_components/subnav/EventsSubnav";
 import PoliciesSubnav from "@/app/org/_components/subnav/PoliciesSubnav";
 import FinanceSubnav from "@/app/org/_components/subnav/FinanceSubnav";
 import AnalyticsSubnav from "@/app/org/_components/subnav/AnalyticsSubnav";
@@ -96,6 +99,7 @@ type OrganizationMeResponse = {
 const TOPBAR_CUSTOM_ICON_BY_TOOL: Record<OrgToolKey, string | null> = {
   dashboard: null,
   events: "/icons/tools/eventos.avif",
+  academy: "/icons/tools/reservas.avif",
   bookings: "/icons/tools/reservas.avif",
   calendar: "/icons/tools/calendario.avif",
   "check-in": "/icons/tools/checkin.avif",
@@ -164,10 +168,13 @@ export default function OrganizationTopBar({
   const resolvedToolSubnav = useMemo(() => {
     const orgId = activeOrg?.id ?? null;
     if (!orgId || activeTool === "dashboard") return null;
-    if (activeTool === "bookings" || activeTool === "calendar" || activeTool === "check-in") {
-      return <BookingsSubnav orgId={orgId} className="w-full max-w-full" />;
+    if (activeTool === "academy" || activeTool === "bookings") {
+      return <AcademySubnav orgId={orgId} className="w-full max-w-full" />;
     }
-    if (activeTool === "events" || activeTool === "padel-tournaments") {
+    if (activeTool === "calendar") return <CalendarSubnav orgId={orgId} className="w-full max-w-full" />;
+    if (activeTool === "check-in") return <CheckInSubnav orgId={orgId} className="w-full max-w-full" />;
+    if (activeTool === "events") return <EventsSubnav orgId={orgId} className="w-full max-w-full" />;
+    if (activeTool === "padel-tournaments") {
       return <PadelTournamentsSubnav orgId={orgId} className="w-full max-w-full" />;
     }
     if (activeTool === "policies") return <PoliciesSubnav orgId={orgId} className="w-full max-w-full" />;

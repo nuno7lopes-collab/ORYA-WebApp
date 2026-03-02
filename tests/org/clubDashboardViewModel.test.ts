@@ -20,12 +20,16 @@ describe("club dashboard view model", () => {
   });
 
   it("maps org tool keys to club areas and labels", () => {
+    expect(resolveClubDashboardViewModel("academy")).toMatchObject({
+      label: "Academia",
+      area: "Academia",
+    });
     expect(resolveClubDashboardViewModel("bookings")).toMatchObject({
-      label: "Operação",
-      area: "Operação",
+      label: "Academia",
+      area: "Academia",
     });
     expect(resolveClubDashboardViewModel("padel-tournaments")).toMatchObject({
-      label: "Competição",
+      label: "Torneios",
       area: "Competição",
     });
     expect(resolveClubDashboardAreaByTool("chat")).toBe("Comunidade");

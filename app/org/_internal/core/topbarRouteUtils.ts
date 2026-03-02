@@ -1,6 +1,7 @@
 export type OrgToolKey =
   | "dashboard"
   | "events"
+  | "academy"
   | "bookings"
   | "calendar"
   | "check-in"
@@ -47,10 +48,10 @@ export function resolveOrganizationTool(pathname: string | null): OrgToolKey | n
   const rest = `/${canonicalMatch[1] ?? "overview"}`;
   if (rest === "/overview") return "dashboard";
   if (rest.startsWith("/events")) return "events";
-  if (rest.startsWith("/bookings")) return "bookings";
-  if (rest.startsWith("/servicos")) return "bookings";
-  if (rest.startsWith("/reservas")) return "bookings";
-  if (rest.startsWith("/agenda")) return "bookings";
+  if (rest.startsWith("/bookings")) return "academy";
+  if (rest.startsWith("/servicos")) return "academy";
+  if (rest.startsWith("/reservas")) return "academy";
+  if (rest.startsWith("/agenda")) return "academy";
   if (rest.startsWith("/calendar")) return "calendar";
   if (rest.startsWith("/check-in")) return "check-in";
   if (rest.startsWith("/policies")) return "policies";
