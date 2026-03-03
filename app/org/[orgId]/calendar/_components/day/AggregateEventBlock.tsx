@@ -3,6 +3,7 @@
 import { cn } from "@/lib/utils";
 import type { AggregateAgendaItem } from "../week/aggregation";
 import type { CalendarEvent } from "./types";
+import { resolveAggregateItemsToneClass } from "../eventTones";
 
 type AggregateEventBlockProps = {
   aggregate: AggregateAgendaItem<CalendarEvent>;
@@ -21,26 +22,6 @@ function formatTime(date: Date, timezone: string) {
   }).format(date);
 }
 
-function toneClass(items: AggregateAgendaItem<CalendarEvent>["items"]) {
-  const hasCancelled = items.some((entry) => {
-    const status = entry.item.status.trim().toUpperCase();
-    return status.startsWith("CANCELLED") || status === "NO_SHOW";
-  });
-  if (hasCancelled) {
-    return "border-rose-300/60 bg-[linear-gradient(135deg,rgba(244,63,94,0.26),rgba(244,63,94,0.09))]";
-  }
-
-  const hasPending = items.some((entry) => {
-    const status = entry.item.status.trim().toUpperCase();
-    return status === "PENDING" || status === "PENDING_CONFIRMATION";
-  });
-  if (hasPending) {
-    return "border-amber-200/60 bg-[linear-gradient(135deg,rgba(251,191,36,0.26),rgba(251,191,36,0.1))]";
-  }
-
-  return "border-cyan-200/55 bg-[linear-gradient(135deg,rgba(34,211,238,0.24),rgba(16,185,129,0.12))]";
-}
-
 export function AggregateEventBlock({
   aggregate,
   timezone,
@@ -55,7 +36,7 @@ export function AggregateEventBlock({
       className={cn(
         "absolute z-20 cursor-pointer rounded-xl border px-2 py-1.5 text-left text-[11px] text-white shadow-[0_20px_40px_rgba(0,0,0,0.5)]",
         "backdrop-blur-[1px]",
-        toneClass(aggregate.items),
+        resolveAggregateItemsToneClass(aggregate.items.map((entry) => entry.item)),
         isSelected && "ring-1 ring-cyan-200/80",
       )}
       style={{

@@ -37,7 +37,7 @@ const CERTIFICATIONS_OPTIONS = [
 const MAX_SPECIALTIES = 8;
 const MAX_CERTIFICATIONS = 6;
 
-type TrainerProfile = {
+type CoachProfile = {
   id: number;
   bio: string | null;
   specialties: string[];
@@ -50,7 +50,7 @@ type TrainerProfile = {
 
 type ProfileResponse = {
   ok: boolean;
-  profile: TrainerProfile | null;
+  profile: CoachProfile | null;
   organization: { id: number; username: string | null; publicName: string | null } | null;
   user: { id: string; fullName: string | null; username: string | null; avatarUrl: string | null } | null;
   role: string | null;
@@ -59,13 +59,13 @@ type ProfileResponse = {
   error?: string;
 };
 
-export default function TrainerProfilePage() {
+export default function CoachProfilePage() {
   const { user } = useUser();
   const { openModal } = useAuthModal();
   const browserOrgId = getOrganizationIdFromBrowser();
-  const loginRedirectHref = appendOrganizationIdToHref("/org/team/trainers", browserOrgId);
+  const loginRedirectHref = appendOrganizationIdToHref("/org/team/coaches", browserOrgId);
   const { data, isLoading, mutate } = useSWR<ProfileResponse>(
-    user ? resolveCanonicalOrgApiPath("/api/org/[orgId]/trainers/profile") : null,
+    user ? resolveCanonicalOrgApiPath("/api/org/[orgId]/padel/coaches/profile") : null,
     fetcher,
     { revalidateOnFocus: false },
   );
@@ -83,8 +83,8 @@ export default function TrainerProfilePage() {
   const organization = data?.organization ?? profile?.organization ?? null;
   const profileUser = profile?.user ?? data?.user ?? null;
   const canEdit = data?.canEdit === true;
-  const manageTrainerRoleHref = appendOrganizationIdToHref(
-    "/org/team/trainers",
+  const manageCoachRoleHref = appendOrganizationIdToHref(
+    "/org/team/coaches",
     organization?.id ?? browserOrgId,
   );
   const displayName = profileUser?.fullName || profileUser?.username || "Treinador";
@@ -108,9 +108,9 @@ export default function TrainerProfilePage() {
 
   const previewHref = useMemo(() => {
     if (!organization?.username || !profileUser) return null;
-    const trainerSlug = profileUser.username || profileUser.id;
-    if (!trainerSlug) return null;
-    return `/${organization.username}/treinadores/${trainerSlug}`;
+    const coachSlug = profileUser.username || profileUser.id;
+    if (!coachSlug) return null;
+    return `/${organization.username}/treinadores/${coachSlug}`;
   }, [organization?.username, profileUser]);
   const coverPreviewUrl = coverImageUrl
     ? getProfileCoverUrl(coverImageUrl, {
@@ -160,7 +160,7 @@ export default function TrainerProfilePage() {
     setSaving(true);
     setMessage(null);
     try {
-      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/trainers/profile"), {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/padel/coaches/profile"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -218,10 +218,10 @@ export default function TrainerProfilePage() {
                 Ver calendário
               </Link>
               <Link
-                href={appendOrganizationIdToHref("/org/bookings/new", organization?.id ?? browserOrgId)}
+                href={appendOrganizationIdToHref("/org/academy/classes/new", organization?.id ?? browserOrgId)}
                 className={CTA_SECONDARY}
               >
-                Criar serviço
+                Criar aula
               </Link>
             </div>
           )}
@@ -231,7 +231,7 @@ export default function TrainerProfilePage() {
           <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
             <p>O perfil só pode ser editado por membros associados como treinador.</p>
             <div className="mt-3">
-              <Link href={manageTrainerRoleHref} className={CTA_SECONDARY}>
+              <Link href={manageCoachRoleHref} className={CTA_SECONDARY}>
                 Associar treinador na equipa
               </Link>
             </div>

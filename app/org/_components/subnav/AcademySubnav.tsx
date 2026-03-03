@@ -10,10 +10,9 @@ export default function AcademySubnav({ orgId, className }: { orgId: number | nu
     <ToolSubnavShell
       className={className}
       items={[
-        { id: "services", label: "Aulas & serviços", href: buildOrgHref(orgId, "/bookings") },
-        { id: "classes", label: "Aulas", href: buildOrgHref(orgId, "/bookings/classes") },
-        { id: "professionals", label: "Treinadores", href: buildOrgHref(orgId, "/bookings/professionals") },
-        { id: "customers", label: "Jogadores & alunos", href: buildOrgHref(orgId, "/bookings/customers") },
+        { id: "classes", label: "Aulas", href: buildOrgHref(orgId, "/academy/classes") },
+        { id: "trainers", label: "Treinadores", href: buildOrgHref(orgId, "/academy/trainers") },
+        { id: "students", label: "Alunos", href: buildOrgHref(orgId, "/academy/students") },
       ]}
     />
   );

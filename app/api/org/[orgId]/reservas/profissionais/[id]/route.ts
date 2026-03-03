@@ -5,10 +5,12 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
+import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { OrganizationMemberRole } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { runAcademyTrainerHardCutHygiene } from "@/lib/academy/trainerHardCutHygiene";
 
 const VIEW_ROLES: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -21,6 +23,13 @@ const EDIT_ROLES: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
   OrganizationMemberRole.CO_OWNER,
   OrganizationMemberRole.ADMIN,
+];
+
+const TRAINER_ELIGIBLE_TEAM_ROLES: OrganizationMemberRole[] = [
+  OrganizationMemberRole.OWNER,
+  OrganizationMemberRole.CO_OWNER,
+  OrganizationMemberRole.ADMIN,
+  OrganizationMemberRole.STAFF,
 ];
 
 function parseId(value: string) {
@@ -40,6 +49,10 @@ function fail(
     { errorCode, message, retryable: status >= 500, ...(details ? { details } : {}) },
     { status },
   );
+}
+
+function isTrainerEligibleRole(role: OrganizationMemberRole) {
+  return TRAINER_ELIGIBLE_TEAM_ROLES.includes(role);
 }
 
 async function _PATCH(
@@ -65,7 +78,7 @@ async function _PATCH(
     const organizationId = resolveOrganizationIdFromRequest(req);
     const { organization, membership } = await getActiveOrganizationForUser(profile.id, {
       organizationId: organizationId ?? undefined,
-      roles: [...VIEW_ROLES],
+      roles: [...EDIT_ROLES],
     });
 
     if (!organization || !membership) {
@@ -77,6 +90,7 @@ async function _PATCH(
     if (!reservasAccess.ok) {
       return fail(ctx, 403, "RESERVAS_UNAVAILABLE", reservasAccess.error ?? "Reservas indisponíveis.");
     }
+    await runAcademyTrainerHardCutHygiene(organization.id);
 
     const professional = await prisma.reservationProfessional.findFirst({
       where: { id: professionalId, organizationId: organization.id },
@@ -88,25 +102,44 @@ async function _PATCH(
     }
 
     const payload = await req.json().catch(() => ({}));
-    const nameRaw = typeof payload?.name === "string" ? payload.name.trim() : "";
-    const roleTitleRaw = typeof payload?.roleTitle === "string" ? payload.roleTitle.trim() : "";
+    if (
+      Object.prototype.hasOwnProperty.call(payload ?? {}, "name") ||
+      Object.prototype.hasOwnProperty.call(payload ?? {}, "roleTitle")
+    ) {
+      return fail(
+        ctx,
+        400,
+        "TRAINER_PROFILE_MANAGED_BY_TEAM",
+        "Nome e função interna do treinador são geridos a partir da Equipa.",
+      );
+    }
     const isActiveRaw = typeof payload?.isActive === "boolean" ? payload.isActive : null;
     const priorityRaw = Number.isFinite(Number(payload?.priority)) ? Number(payload.priority) : null;
-
-    const isStaff = membership.role === OrganizationMemberRole.STAFF;
-    if (isStaff && professional.userId !== profile.id) {
-      return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
+    if (!professional.userId) {
+      return fail(
+        ctx,
+        409,
+        "PROFESSIONAL_NOT_LINKED_TO_TEAM",
+        "Treinador sem ligação a membro de equipa. Remove e volta a adicionar via Equipa.",
+      );
     }
 
-    if (!isStaff && !EDIT_ROLES.includes(membership.role)) {
-      return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
+    const member = await resolveGroupMemberForOrg({
+      organizationId: organization.id,
+      userId: professional.userId,
+    });
+    if (!member || !isTrainerEligibleRole(member.role)) {
+      return fail(
+        ctx,
+        409,
+        "PROFESSIONAL_NOT_LINKED_TO_TEAM",
+        "Treinador sem ligação válida à Equipa.",
+      );
     }
 
     const data: Record<string, unknown> = {};
-    if (nameRaw) data.name = nameRaw;
-    if (roleTitleRaw || roleTitleRaw === "") data.roleTitle = roleTitleRaw || null;
-    if (!isStaff && isActiveRaw !== null) data.isActive = isActiveRaw;
-    if (!isStaff && priorityRaw !== null) data.priority = priorityRaw;
+    if (isActiveRaw !== null) data.isActive = isActiveRaw;
+    if (priorityRaw !== null) data.priority = priorityRaw;
 
     if (Object.keys(data).length === 0) {
       return fail(ctx, 400, "NOTHING_TO_UPDATE", "Nada para atualizar.");
@@ -125,7 +158,19 @@ async function _PATCH(
       },
     });
 
-    return respondOk(ctx, { professional: updated });
+    return respondOk(ctx, {
+      professional: {
+        ...updated,
+        name:
+          updated.user?.fullName?.trim() ||
+          updated.user?.username?.trim() ||
+          updated.name ||
+          "Equipa",
+        roleTitle: null,
+        membershipRole: member.role,
+        membershipRolePack: member.rolePack ?? null,
+      },
+    });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return fail(ctx, 401, "UNAUTHENTICATED", "Não autenticado.");
@@ -170,6 +215,7 @@ async function _DELETE(
     if (!reservasAccess.ok) {
       return fail(ctx, 403, "RESERVAS_UNAVAILABLE", reservasAccess.error ?? "Reservas indisponíveis.");
     }
+    await runAcademyTrainerHardCutHygiene(organization.id);
 
     const professional = await prisma.reservationProfessional.findFirst({
       where: { id: professionalId, organizationId: organization.id },

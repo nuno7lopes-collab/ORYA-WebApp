@@ -32,14 +32,15 @@ const USER_BG_PRESET: BackgroundPreset = {
 };
 
 const ORG_BG_PRESET: BackgroundPreset = {
-  color: "#0b1014",
-  image: FUNDO_1_BG_IMAGE,
+  color: "#101113",
+  image:
+    "radial-gradient(circle at 20% 0%, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 34%), linear-gradient(180deg, #141518 0%, #101113 56%, #0b0c0d 100%)",
   overlay: "none",
   overlayOpacity: 1,
   skeletonSurface:
-    "linear-gradient(180deg, rgba(14, 18, 24, 0.96) 0%, rgba(10, 13, 18, 0.98) 100%)",
+    "linear-gradient(180deg, rgba(26, 27, 30, 0.96) 0%, rgba(17, 18, 20, 0.98) 100%)",
   skeletonSurfaceStrong:
-    "linear-gradient(180deg, rgba(10, 13, 18, 0.98) 0%, rgba(8, 10, 14, 1) 100%)",
+    "linear-gradient(180deg, rgba(17, 18, 20, 0.98) 0%, rgba(11, 12, 14, 1) 100%)",
 };
 
 type BackgroundLayerPreset = Pick<BackgroundPreset, "color" | "image" | "overlay" | "overlayOpacity">;

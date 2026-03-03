@@ -26,7 +26,7 @@ describe("normalizeOrganizationPathname", () => {
     expect(normalizeOrganizationPathname("/org/50/padel/torneios")).toBe("/org/50/padel/torneios");
     expect(normalizeOrganizationPathname("/org/50/padel/torneios/novo")).toBe("/org/50/padel/torneios/novo");
     expect(normalizeOrganizationPathname("/org/50/padel/tournaments/new")).toBe("/org/50/padel/tournaments/new");
-    expect(normalizeOrganizationPathname("/org/50/trainers")).toBe("/org/50/trainers");
+    expect(normalizeOrganizationPathname("/org/50/coaches")).toBe("/org/50/coaches");
   });
 
   it("keeps non-org routes untouched", () => {

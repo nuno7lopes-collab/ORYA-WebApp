@@ -51,6 +51,13 @@ function failFactory(ctx: ReturnType<typeof getRequestContext>) {
   };
 }
 
+function resolveListLimit(raw: string | null, fallback = 200, max = 500) {
+  if (typeof raw !== "string") return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(parsed, max);
+}
+
 async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   const fail = failFactory(ctx);
@@ -66,21 +73,9 @@ async function _GET(req: NextRequest) {
     }
 
     const url = new URL(req.url);
-    const eventIdRaw = url.searchParams.get("eventId");
     const orgResolution = resolveOrganizationIdStrict({ req, allowFallback: false });
     const orgResolutionReason = orgResolution.ok ? null : orgResolution.reason;
-    let organizationId = orgResolution.ok ? orgResolution.organizationId : null;
-
-    if (!organizationId && orgResolutionReason === "MISSING" && eventIdRaw) {
-      const eventId = Number(eventIdRaw);
-      if (eventId && !Number.isNaN(eventId)) {
-        const ev = await prisma.event.findUnique({
-          where: { id: eventId },
-          select: { organizationId: true },
-        });
-        organizationId = ev?.organizationId ?? null;
-      }
-    }
+    const organizationId = orgResolution.ok ? orgResolution.organizationId : null;
 
     if (!organizationId) {
       if (orgResolutionReason === "CONFLICT") {
@@ -92,7 +87,7 @@ async function _GET(req: NextRequest) {
       return fail(400, "INVALID_ORGANIZATION_ID");
     }
 
-    const limit = Math.min(Number(url.searchParams.get("limit") ?? 200), 500);
+    const limit = resolveListLimit(url.searchParams.get("limit"));
 
     const callerMembership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
     if (!callerMembership) {
@@ -181,7 +176,7 @@ async function _PATCH(req: NextRequest) {
     if (!organizationId || !targetUserId || !role) {
       return fail(400, "INVALID_PAYLOAD");
     }
-    if (!Object.values(OrganizationMemberRole).includes(role as OrganizationMemberRole) || role === "TRAINER") {
+    if (!Object.values(OrganizationMemberRole).includes(role as OrganizationMemberRole)) {
       return fail(400, "INVALID_ROLE");
     }
 
@@ -336,7 +331,7 @@ async function _PATCH(req: NextRequest) {
         entityId: targetUserId,
         correlationId: targetUserId,
         fromUserId: targetUserId,
-        metadata: { newRole: role },
+        metadata: { newRole: role, rolePack: normalizedRolePack },
         ip: resolveIp(req),
         userAgent: req.headers.get("user-agent"),
       });

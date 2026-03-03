@@ -72,6 +72,10 @@ function normalizeCapacity(raw: unknown) {
   return capacity;
 }
 
+function hasAcademyBridgeHeader(req: NextRequest) {
+  return req.headers.get("x-orya-academy-bridge") === "1";
+}
+
 function errorCodeForStatus(status: number) {
   if (status === 401) return "UNAUTHENTICATED";
   if (status === 403) return "FORBIDDEN";
@@ -120,6 +124,12 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
     });
     if (!service) return fail(404, "Serviço não encontrado.");
     if (service.kind !== "CLASS") return fail(409, "Serviço não suporta aulas recorrentes.");
+    if (!hasAcademyBridgeHeader(req)) {
+      return fail(
+        410,
+        "ACADEMY_LEGACY_GONE: usa /api/org/[orgId]/academy/classes/[classId]/series.",
+      );
+    }
 
     const items = await prisma.classSeries.findMany({
       where: { serviceId, organizationId: organization.id },

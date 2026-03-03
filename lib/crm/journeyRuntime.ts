@@ -22,6 +22,7 @@ import {
   resolveCrmAbMessage,
   type CrmAbAssignment,
 } from "@/lib/crm/abTesting";
+import { isCrmPadelJourneyTriggerToken } from "@/lib/crm/padelInteractionTypes";
 
 const DEFAULT_JOURNEY_LIMIT = 20;
 const MAX_JOURNEY_LIMIT = 100;
@@ -1227,6 +1228,7 @@ function parseJourneyTrigger(payload: {
         })();
 
   const eventType = (Object.values(CrmInteractionType) as string[]).includes(eventTypeRaw)
+    && isCrmPadelJourneyTriggerToken(eventTypeRaw)
     ? (eventTypeRaw as CrmInteractionType)
     : undefined;
   const segmentId = segmentIdRaw || undefined;

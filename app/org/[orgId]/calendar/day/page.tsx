@@ -1,5 +1,34 @@
-import CalendarReadClient from "../_components/CalendarReadClient";
+import { redirect } from "next/navigation";
+import { buildOrgHref, parseOrganizationId } from "@/lib/organizationIdUtils";
 
-export default function OrgCalendarDayPage() {
-  return <CalendarReadClient view="day" />;
+type LegacyCalendarDayPageProps = {
+  params: {
+    orgId?: string;
+  };
+  searchParams?: Record<string, string | string[] | undefined>;
+};
+
+export default function LegacyCalendarDayPage({ params, searchParams }: LegacyCalendarDayPageProps) {
+  const organizationId = parseOrganizationId(params?.orgId ?? null);
+  if (!organizationId) {
+    return <div className="p-6 text-sm text-white/70">Organização inválida.</div>;
+  }
+
+  const query = new URLSearchParams();
+  Object.entries(searchParams ?? {}).forEach(([key, value]) => {
+    if (typeof value === "string") {
+      query.set(key, value);
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach((entry) => {
+        if (typeof entry === "string") query.append(key, entry);
+      });
+    }
+  });
+  query.set("view", "day");
+
+  const destination = buildOrgHref(organizationId, "/calendar");
+  const serialized = query.toString();
+  redirect(serialized ? `${destination}?${serialized}` : destination);
 }

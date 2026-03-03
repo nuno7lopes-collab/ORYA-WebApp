@@ -16,7 +16,7 @@ import { useUser } from "@/app/hooks/useUser";
 import { Avatar } from "@/components/ui/avatar";
 import { formatDateTime } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { getOrganizationIdFromBrowser, parseOrganizationId } from "@/lib/organizationIdUtils";
+import { buildOrgHref, getOrganizationIdFromBrowser, parseOrganizationId } from "@/lib/organizationIdUtils";
 import {
   CTA_GHOST,
   CTA_NEUTRAL,
@@ -83,6 +83,8 @@ type ConversationItem = {
   mutedUntil?: string | null;
   notifLevel?: "ALL" | "MENTIONS_ONLY" | "OFF";
 };
+
+type ConversationScope = "ALL" | "COMMUNITIES" | "CHANNELS" | "DIRECT" | "UNREAD";
 
 type ContactRequest = {
   grantId: string;
@@ -405,6 +407,28 @@ function buildConversationTitle(conversation: ConversationItem, viewerId: string
   return other.fullName?.trim() || (other.username ? `@${other.username}` : "Conversa");
 }
 
+function isCommunityConversation(conversation: ConversationItem) {
+  return conversation.type === "CHANNEL" && conversation.contextType === "ORG_COMMUNITY";
+}
+
+function isOrgChannelConversation(conversation: ConversationItem) {
+  return conversation.type === "CHANNEL" && conversation.contextType === "ORG_CHANNEL";
+}
+
+function isCustomerConversation(conversation: ConversationItem) {
+  if (!conversation.contextType) return false;
+  return !isOrgChannelConversation(conversation) && !isCommunityConversation(conversation);
+}
+
+function resolveConversationKindLabel(conversation: ConversationItem) {
+  if (isCommunityConversation(conversation)) return "Comunidade";
+  if (isOrgChannelConversation(conversation)) return "Canal";
+  if (conversation.type === "DIRECT") return "Direta";
+  if (conversation.type === "GROUP") return "Grupo";
+  if (isCustomerConversation(conversation)) return "Cliente";
+  return "Conversa";
+}
+
 function reactionLabel(reaction: Reaction) {
   const name = reaction.user?.fullName?.trim();
   if (name) return name;
@@ -453,6 +477,7 @@ export default function ChatInternoV2Client() {
   const [conversationsError, setConversationsError] = useState<string | null>(null);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [conversationSearch, setConversationSearch] = useState("");
+  const [conversationScope, setConversationScope] = useState<ConversationScope>("ALL");
   const [contactRequests, setContactRequests] = useState<ContactRequest[]>([]);
   const [contactRequestsLoading, setContactRequestsLoading] = useState(false);
   const [contactRequestsError, setContactRequestsError] = useState<string | null>(null);
@@ -623,14 +648,35 @@ export default function ChatInternoV2Client() {
     );
   }, [firstUnreadMessageId, timelineItems]);
 
+  const conversationScopeStats = useMemo(() => {
+    const all = conversations.length;
+    const communities = conversations.filter((conversation) => isCommunityConversation(conversation)).length;
+    const channels = conversations.filter(
+      (conversation) => conversation.type === "CHANNEL" && !isCommunityConversation(conversation),
+    ).length;
+    const directs = conversations.filter((conversation) => conversation.type === "DIRECT").length;
+    const unread = conversations.filter((conversation) => conversation.unreadCount > 0).length;
+    return { all, communities, channels, directs, unread };
+  }, [conversations]);
+
   const conversationFiltered = useMemo(() => {
     const term = conversationSearch.trim().toLowerCase();
     return conversations.filter((conversation) => {
+      const passesScope = (() => {
+        if (conversationScope === "ALL") return true;
+        if (conversationScope === "COMMUNITIES") return isCommunityConversation(conversation);
+        if (conversationScope === "CHANNELS") {
+          return conversation.type === "CHANNEL" && !isCommunityConversation(conversation);
+        }
+        if (conversationScope === "DIRECT") return conversation.type === "DIRECT";
+        return conversation.unreadCount > 0;
+      })();
+      if (!passesScope) return false;
       if (!term) return true;
       const title = buildConversationTitle(conversation, user?.id ?? null).toLowerCase();
       return title.includes(term);
     });
-  }, [conversationSearch, conversations, user?.id]);
+  }, [conversationScope, conversationSearch, conversations, user?.id]);
 
   const orderedConversations = useMemo(() => {
     const sortByLast = (a: ConversationItem, b: ConversationItem) => {

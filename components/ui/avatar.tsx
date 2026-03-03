@@ -168,7 +168,7 @@ export function Avatar({
     <div
       ref={containerRef}
       className={cn(
-        "orya-avatar relative inline-flex items-center justify-center rounded-full",
+        "orya-avatar relative inline-flex shrink-0 aspect-square items-center justify-center rounded-full",
         resolvedRingVariant !== "none" && "orya-avatar--with-ring",
         resolvedRingVariant === "subtle" && "orya-avatar--ring-subtle",
         resolvedRingVariant === "story-soft" && "orya-avatar--ring-story-soft",

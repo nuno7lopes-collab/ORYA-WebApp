@@ -100,38 +100,32 @@ export async function rebuildCrmContacts(options?: { organizationId?: number | n
         MAX(occurred_at) AS last_activity_at,
         MAX(CASE
           WHEN type IN (
-            'STORE_ORDER_PAID'::app_v3."CrmInteractionType",
-            'EVENT_TICKET'::app_v3."CrmInteractionType",
-            'BOOKING_CONFIRMED'::app_v3."CrmInteractionType",
             'PADEL_BOOKING_CONFIRMED'::app_v3."CrmInteractionType",
             'PADEL_MATCH_PAYMENT'::app_v3."CrmInteractionType"
           ) THEN occurred_at
         END) AS last_purchase_at,
         COALESCE(SUM(CASE
           WHEN type IN (
-            'STORE_ORDER_PAID'::app_v3."CrmInteractionType",
-            'EVENT_TICKET'::app_v3."CrmInteractionType",
-            'BOOKING_CONFIRMED'::app_v3."CrmInteractionType",
             'PADEL_BOOKING_CONFIRMED'::app_v3."CrmInteractionType",
             'PADEL_MATCH_PAYMENT'::app_v3."CrmInteractionType"
           ) THEN amount_cents ELSE 0 END), 0) AS total_spent_cents,
-        COUNT(CASE WHEN type = 'EVENT_TICKET'::app_v3."CrmInteractionType" THEN 1 END) AS total_orders,
+        COUNT(CASE WHEN type = 'PADEL_MATCH_PAYMENT'::app_v3."CrmInteractionType" THEN 1 END) AS total_orders,
+        COUNT(CASE
+          WHEN type = 'PADEL_BOOKING_CONFIRMED'::app_v3."CrmInteractionType"
+          THEN 1 END) AS total_bookings,
         COUNT(CASE
           WHEN type IN (
-            'BOOKING_CONFIRMED'::app_v3."CrmInteractionType",
-            'PADEL_BOOKING_CONFIRMED'::app_v3."CrmInteractionType"
-          ) THEN 1 END) AS total_bookings,
-        COUNT(CASE
-          WHEN type IN (
-            'EVENT_CHECKIN'::app_v3."CrmInteractionType",
-            'PADEL_CLASS_ATTENDED'::app_v3."CrmInteractionType"
+            'PADEL_CLASS_ATTENDED'::app_v3."CrmInteractionType",
+            'PADEL_MATCH_PLAYED'::app_v3."CrmInteractionType"
           ) THEN 1 END) AS total_attendances,
         COUNT(CASE
           WHEN type IN (
             'PADEL_TOURNAMENT_ENTRY'::app_v3."CrmInteractionType",
-            'PADEL_TOURNAMENT_REGISTERED'::app_v3."CrmInteractionType"
+            'PADEL_TOURNAMENT_REGISTERED'::app_v3."CrmInteractionType",
+            'PADEL_TOURNAMENT_PLAYED'::app_v3."CrmInteractionType",
+            'PADEL_TOURNAMENT_PODIUM'::app_v3."CrmInteractionType"
           ) THEN 1 END) AS total_tournaments,
-        COUNT(CASE WHEN type = 'STORE_ORDER_PAID'::app_v3."CrmInteractionType" THEN 1 END) AS total_store_orders
+        0 AS total_store_orders
       FROM app_v3.crm_interactions
       WHERE contact_id IS NOT NULL
       ${orgFilter}

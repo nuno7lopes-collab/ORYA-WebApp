@@ -6,6 +6,7 @@ import { useMemo, useState, type DragEvent } from "react";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
 import { formatDateTime } from "@/lib/i18n";
+import { CRM_PADEL_JOURNEY_TRIGGER_VALUES } from "@/lib/crm/padelInteractionTypes";
 import {
   DASHBOARD_CARD,
   DASHBOARD_LABEL,
@@ -17,17 +18,7 @@ import {
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
-const TRIGGER_OPTIONS = [
-  "STORE_ORDER_PAID",
-  "BOOKING_COMPLETED",
-  "EVENT_CHECKIN",
-  "PADEL_TOURNAMENT_ENTRY",
-  "PADEL_MATCH_PLAYED",
-  "PADEL_BOOKING_NO_SHOW",
-  "PADEL_CLASS_ATTENDED",
-  "PADEL_TOURNAMENT_PODIUM",
-  "ORG_FOLLOWED",
-] as const;
+const TRIGGER_OPTIONS = [...CRM_PADEL_JOURNEY_TRIGGER_VALUES] as const;
 
 const CONDITION_FIELDS = [
   { value: "lastActivityAt", label: "Última atividade" },
@@ -138,6 +129,20 @@ type CrmConfigResponse = {
   message?: string;
 };
 
+type CrmTagOption = {
+  id: string;
+  name: string;
+  color: string;
+  usageCount: number;
+};
+
+type CrmTagListResponse = {
+  ok: boolean;
+  tags?: CrmTagOption[];
+  error?: string;
+  message?: string;
+};
+
 type JourneySimulationContact = {
   lastActivityDays: string;
   totalSpentCents: string;
@@ -237,6 +242,18 @@ function parseTokens(value: string) {
     .split(",")
     .map((item) => item.trim().toLowerCase())
     .filter(Boolean);
+}
+
+function appendCsvToken(current: string, token: string, multi: boolean) {
+  if (!multi) return token;
+  const values = current
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (values.some((item) => item.toLowerCase() === token.toLowerCase())) {
+    return values.join(",");
+  }
+  return [...values, token].join(",");
 }
 
 function isWithinQuietHours(minuteOfDay: number, start: number, end: number) {
@@ -405,8 +422,14 @@ export default function CrmJourneysPage() {
     resolveCanonicalOrgApiPath("/api/org/[orgId]/crm/config"),
     fetcher,
   );
+  const { data: tagsData } = useSWR<CrmTagListResponse>(
+    resolveCanonicalOrgApiPath("/api/org/[orgId]/crm/tags"),
+    fetcher,
+    { keepPreviousData: true },
+  );
   const journeys = data?.ok ? data.items ?? [] : [];
   const policy = configData?.ok && configData.config ? configData.config : null;
+  const availableTags = useMemo(() => (tagsData?.ok ? tagsData.tags ?? [] : []), [tagsData]);
 
   const [editingJourneyId, setEditingJourneyId] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -995,12 +1018,40 @@ export default function CrmJourneysPage() {
                   </label>
                   <label className="text-[11px] text-white/75">
                     Valor
-                    <input
-                      className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-2 py-2 text-sm text-white outline-none focus:border-white/40"
-                      value={step.value}
-                      onChange={(event) => updateStep(step.id, { value: event.target.value })}
-                      placeholder="Ex.: 30d, VIP, 10000"
-                    />
+                    {step.field === "tag" ? (
+                      <div className="space-y-2">
+                        <input
+                          className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-2 py-2 text-sm text-white outline-none focus:border-white/40"
+                          value={step.value}
+                          list="crm-journey-tag-options"
+                          onChange={(event) => updateStep(step.id, { value: event.target.value })}
+                          placeholder="Ex.: Newcomer, Winback"
+                        />
+                        <div className="flex flex-wrap gap-1">
+                          {availableTags.slice(0, 8).map((tag) => (
+                            <button
+                              key={`${step.id}-${tag.id}`}
+                              type="button"
+                              className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/70"
+                              onClick={() =>
+                                updateStep(step.id, {
+                                  value: appendCsvToken(step.value, tag.name, step.op === "in" || step.op === "not_in"),
+                                })
+                              }
+                            >
+                              {tag.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <input
+                        className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-2 py-2 text-sm text-white outline-none focus:border-white/40"
+                        value={step.value}
+                        onChange={(event) => updateStep(step.id, { value: event.target.value })}
+                        placeholder="Ex.: 30d, VIP, 10000"
+                      />
+                    )}
                   </label>
                   <label className="text-[11px] text-white/75">
                     Janela (dias)
@@ -1182,12 +1233,32 @@ export default function CrmJourneysPage() {
             </label>
             <label className="text-[11px] text-white/70">
               Tags
-              <input
-                className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-2 py-2 text-sm text-white outline-none focus:border-white/40"
-                value={simulationContact.tags}
-                onChange={(event) => setSimulationContact((prev) => ({ ...prev, tags: event.target.value }))}
-                placeholder="vip,padel"
-              />
+              <div className="space-y-2">
+                <input
+                  className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-2 py-2 text-sm text-white outline-none focus:border-white/40"
+                  value={simulationContact.tags}
+                  list="crm-journey-tag-options"
+                  onChange={(event) => setSimulationContact((prev) => ({ ...prev, tags: event.target.value }))}
+                  placeholder="newcomer,winback"
+                />
+                <div className="flex flex-wrap gap-1">
+                  {availableTags.slice(0, 8).map((tag) => (
+                    <button
+                      key={`sim-tag-${tag.id}`}
+                      type="button"
+                      className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/70"
+                      onClick={() =>
+                        setSimulationContact((prev) => ({
+                          ...prev,
+                          tags: appendCsvToken(prev.tags, tag.name, true),
+                        }))
+                      }
+                    >
+                      {tag.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </label>
           </div>
 
@@ -1310,6 +1381,12 @@ export default function CrmJourneysPage() {
           ) : null}
         </div>
       </section>
+
+      <datalist id="crm-journey-tag-options">
+        {availableTags.map((tag) => (
+          <option key={`journey-tag-option-${tag.id}`} value={tag.name} />
+        ))}
+      </datalist>
     </div>
   );
 }

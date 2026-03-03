@@ -11,20 +11,25 @@ import {
   OrganizationRolePack,
 } from "@prisma/client";
 
-describe("role packs v7", () => {
+describe("role packs v8", () => {
   it("club manager scopes", () => {
     const access = resolveMemberModuleAccess({
-      role: OrganizationMemberRole.ADMIN,
+      role: OrganizationMemberRole.STAFF,
       rolePack: OrganizationRolePack.CLUB_MANAGER,
       overrides: [],
     });
 
     expect(hasModuleAccess(access, OrganizationModule.RESERVAS, "EDIT")).toBe(true);
     expect(hasModuleAccess(access, OrganizationModule.TORNEIOS, "EDIT")).toBe(true);
+    expect(hasModuleAccess(access, OrganizationModule.INSCRICOES, "EDIT")).toBe(true);
     expect(hasModuleAccess(access, OrganizationModule.CRM, "EDIT")).toBe(true);
+    expect(hasModuleAccess(access, OrganizationModule.MARKETING, "EDIT")).toBe(true);
+    expect(hasModuleAccess(access, OrganizationModule.MENSAGENS, "EDIT")).toBe(true);
     expect(hasModuleAccess(access, OrganizationModule.STAFF, "VIEW")).toBe(true);
     expect(hasModuleAccess(access, OrganizationModule.DEFINICOES, "VIEW")).toBe(true);
     expect(hasModuleAccess(access, OrganizationModule.FINANCEIRO, "VIEW")).toBe(true);
+    expect(hasModuleAccess(access, OrganizationModule.ANALYTICS, "VIEW")).toBe(true);
+    expect(hasModuleAccess(access, OrganizationModule.EVENTOS, "EDIT")).toBe(true);
   });
 
   it("tournament director scopes", () => {
@@ -35,9 +40,12 @@ describe("role packs v7", () => {
     });
 
     expect(hasModuleAccess(access, OrganizationModule.TORNEIOS, "EDIT")).toBe(true);
-    expect(hasModuleAccess(access, OrganizationModule.EVENTOS, "EDIT")).toBe(true);
+    expect(hasModuleAccess(access, OrganizationModule.INSCRICOES, "EDIT")).toBe(true);
     expect(hasModuleAccess(access, OrganizationModule.RESERVAS, "VIEW")).toBe(true);
     expect(hasModuleAccess(access, OrganizationModule.RESERVAS, "EDIT")).toBe(false);
+    expect(hasModuleAccess(access, OrganizationModule.MENSAGENS, "EDIT")).toBe(true);
+    expect(hasModuleAccess(access, OrganizationModule.CRM, "VIEW")).toBe(true);
+    expect(hasModuleAccess(access, OrganizationModule.EVENTOS, "EDIT")).toBe(true);
   });
 
   it("front desk checkin access", () => {
@@ -47,6 +55,16 @@ describe("role packs v7", () => {
     });
 
     expect(accessLevelSatisfies(access, "EDIT")).toBe(true);
+  });
+
+  it("coach checkin is view-only", () => {
+    const access = resolveCheckinAccess({
+      role: OrganizationMemberRole.STAFF,
+      rolePack: OrganizationRolePack.COACH,
+    });
+
+    expect(access).toBe("VIEW");
+    expect(accessLevelSatisfies(access, "EDIT")).toBe(false);
   });
 
   it("referee checkin is view-only", () => {
@@ -75,18 +93,23 @@ describe("role packs v7", () => {
       rolePack: null,
       overrides: [],
     });
+    const checkin = resolveCheckinAccess({
+      role: OrganizationMemberRole.STAFF,
+      rolePack: null,
+    });
 
     expect(hasModuleAccess(access, OrganizationModule.EVENTOS, "EDIT")).toBe(false);
+    expect(accessLevelSatisfies(checkin, "EDIT")).toBe(false);
   });
 
-  it("staff with club manager pack cannot edit events", () => {
+  it("staff with club manager pack can edit events", () => {
     const access = resolveMemberModuleAccess({
       role: OrganizationMemberRole.STAFF,
       rolePack: OrganizationRolePack.CLUB_MANAGER,
       overrides: [],
     });
 
-    expect(hasModuleAccess(access, OrganizationModule.EVENTOS, "EDIT")).toBe(false);
+    expect(hasModuleAccess(access, OrganizationModule.EVENTOS, "EDIT")).toBe(true);
   });
 
   it("staff with explicit event scopes can edit events", () => {

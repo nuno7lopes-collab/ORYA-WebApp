@@ -11,7 +11,7 @@ import {
   formatCommunityAccessModeLabel,
   formatCommunityTalkPolicyLabel,
 } from "@/lib/messages/communityUi";
-import { getOrganizationIdFromBrowser, parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
+import { buildOrgHref, getOrganizationIdFromBrowser, parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
 
 type CommunityItem = {
   conversationId: string;
@@ -105,6 +105,8 @@ type FormState = {
   coverImageUrl: string;
   talkPolicy: "EVERYONE" | "TEAM_ONLY";
   accessMode: "PUBLIC" | "FOLLOWERS" | "APPROVAL" | "INVITE";
+  seedAdminIds: string;
+  seedMemberIds: string;
 };
 
 type PanelTab = "requests" | "participants" | "invites";
@@ -122,6 +124,8 @@ const formDefaults: FormState = {
   coverImageUrl: "",
   talkPolicy: "EVERYONE",
   accessMode: "PUBLIC",
+  seedAdminIds: "",
+  seedMemberIds: "",
 };
 
 const invitePresetOptions: Array<{ value: "" | string; label: string }> = [
@@ -272,7 +276,45 @@ function resolveInviteLinkUrl(invitePath: string) {
   return invitePath;
 }
 
+function formatRelativeTime(value: string | null | undefined) {
+  if (!value) return "sem atividade";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "sem atividade";
+
+  const diffMs = date.getTime() - Date.now();
+  const minute = 60_000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  const rtf = new Intl.RelativeTimeFormat("pt-PT", { numeric: "auto" });
+
+  if (Math.abs(diffMs) < hour) {
+    return rtf.format(Math.round(diffMs / minute), "minute");
+  }
+  if (Math.abs(diffMs) < day) {
+    return rtf.format(Math.round(diffMs / hour), "hour");
+  }
+  return rtf.format(Math.round(diffMs / day), "day");
+}
+
+function buildCommunityChatPath(conversationId: string) {
+  if (typeof window === "undefined") return "";
+
+  const organizationId = resolveActiveOrganizationId();
+  if (organizationId) {
+    return buildOrgHref(organizationId, "/chat", { conversationId });
+  }
+
+  const current = new URL(window.location.href);
+  if (current.pathname.endsWith("/comunidades")) {
+    current.pathname = current.pathname.replace(/\/comunidades$/, "");
+  }
+  current.searchParams.delete("tab");
+  current.searchParams.set("conversationId", conversationId);
+  return `${current.pathname}${current.search}${current.hash}`;
+}
+
 function CommunityFormModal(props: {
+  mode: "create" | "edit";
   title: string;
   submitLabel: string;
   initial: FormState;
@@ -286,6 +328,8 @@ function CommunityFormModal(props: {
   const [showCoverCropModal, setShowCoverCropModal] = useState(false);
   const [coverCropFile, setCoverCropFile] = useState<File | null>(null);
   const coverInputRef = useRef<HTMLInputElement | null>(null);
+  const inputClass =
+    "rounded-xl border border-white/20 bg-[#060a14] px-3 py-2 text-white outline-none transition focus:border-cyan-300 focus:ring-2 focus:ring-cyan-500/35";
 
   const uploadCoverFile = async (file: File) => {
     const organizationId = resolveActiveOrganizationId();
@@ -373,41 +417,46 @@ function CommunityFormModal(props: {
       title: normalizedTitle,
       description: normalizedDescription,
       coverImageUrl: normalizedCover,
+      seedAdminIds: state.seedAdminIds.trim(),
+      seedMemberIds: state.seedMemberIds.trim(),
     });
   };
 
   return (
     <>
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-        <div className="w-full max-w-xl rounded-2xl border border-white/15 bg-[#090d17] p-5 text-white shadow-[0_24px_80px_rgba(0,0,0,0.6)]">
+        <div className="w-full max-w-2xl rounded-2xl border border-white/20 bg-[#090d17] p-5 text-white shadow-[0_24px_80px_rgba(0,0,0,0.6)]">
           <h3 className="text-lg font-semibold">{props.title}</h3>
+          <p className="mt-1 text-sm text-white/80">
+            Define a configuração da comunidade e garante uma experiência de chat clara para desktop e mobile.
+          </p>
           <div className="mt-4 grid gap-3">
             <label className="grid gap-1 text-sm">
-              <span className="text-white/70">Título</span>
+              <span className="text-white/90">Título</span>
               <input
                 value={state.title}
                 onChange={(e) => setState((prev) => ({ ...prev, title: e.target.value }))}
-                className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-cyan-300"
+                className={inputClass}
                 placeholder="Ex.: Comunidade Intermédio"
                 maxLength={120}
               />
-              <span className="text-[11px] text-white/45">{state.title.trim().length}/120</span>
+              <span className="text-[11px] text-white/70">{state.title.trim().length}/120</span>
             </label>
 
             <label className="grid gap-1 text-sm">
-              <span className="text-white/70">Descrição</span>
+              <span className="text-white/90">Descrição</span>
               <textarea
                 value={state.description}
                 onChange={(e) => setState((prev) => ({ ...prev, description: e.target.value }))}
-                className="min-h-[80px] rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-cyan-300"
+                className={`${inputClass} min-h-[80px]`}
                 placeholder="Descrição opcional"
                 maxLength={1000}
               />
-              <span className="text-[11px] text-white/45">{state.description.trim().length}/1000</span>
+              <span className="text-[11px] text-white/70">{state.description.trim().length}/1000</span>
             </label>
 
             <div className="grid gap-2 text-sm">
-              <span className="text-white/70">Foto da capa (opcional)</span>
+              <span className="text-white/90">Foto da capa (opcional)</span>
               <div className="rounded-xl border border-white/15 bg-black/25 p-2">
                 <div
                   className="h-24 rounded-lg bg-cover bg-center"
@@ -452,7 +501,7 @@ function CommunityFormModal(props: {
 
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="grid gap-1 text-sm">
-                <span className="text-white/70">Política de fala</span>
+                <span className="text-white/90">Política de fala</span>
                 <select
                   value={state.talkPolicy}
                   onChange={(e) =>
@@ -461,7 +510,7 @@ function CommunityFormModal(props: {
                       talkPolicy: e.target.value as FormState["talkPolicy"],
                     }))
                   }
-                  className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-cyan-300"
+                  className={inputClass}
                 >
                   {COMMUNITY_TALK_POLICY_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -472,7 +521,7 @@ function CommunityFormModal(props: {
               </label>
 
               <label className="grid gap-1 text-sm">
-                <span className="text-white/70">Acesso</span>
+                <span className="text-white/90">Acesso</span>
                 <select
                   value={state.accessMode}
                   onChange={(e) =>
@@ -481,7 +530,7 @@ function CommunityFormModal(props: {
                       accessMode: e.target.value as FormState["accessMode"],
                     }))
                   }
-                  className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-cyan-300"
+                  className={inputClass}
                 >
                   {COMMUNITY_ACCESS_MODE_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -491,6 +540,35 @@ function CommunityFormModal(props: {
                 </select>
               </label>
             </div>
+
+            {props.mode === "create" ? (
+              <div className="grid gap-3 rounded-xl border border-white/15 bg-black/20 p-3">
+                <p className="text-sm text-white/90">
+                  Participantes iniciais (opcional)
+                </p>
+                <p className="text-xs text-white/75">
+                  Podes pré-configurar quem entra logo no chat da comunidade. O criador é sempre admin.
+                </p>
+                <label className="grid gap-1 text-sm">
+                  <span className="text-white/90">User IDs para admins</span>
+                  <textarea
+                    value={state.seedAdminIds}
+                    onChange={(e) => setState((prev) => ({ ...prev, seedAdminIds: e.target.value }))}
+                    className={`${inputClass} min-h-[64px]`}
+                    placeholder="user_admin_1, user_admin_2"
+                  />
+                </label>
+                <label className="grid gap-1 text-sm">
+                  <span className="text-white/90">User IDs para membros</span>
+                  <textarea
+                    value={state.seedMemberIds}
+                    onChange={(e) => setState((prev) => ({ ...prev, seedMemberIds: e.target.value }))}
+                    className={`${inputClass} min-h-[64px]`}
+                    placeholder="user_member_1, user_member_2"
+                  />
+                </label>
+              </div>
+            ) : null}
 
             {error ? <p className="text-sm text-red-300">{error}</p> : null}
 
@@ -646,13 +724,28 @@ export default function CommunitiesManagerClient() {
     setSavingForm(true);
     setFeedback(null);
     try {
+      const adminIds = parseUserIdsInput(form.seedAdminIds);
+      const memberIds = parseUserIdsInput(form.seedMemberIds).filter((userId) => !adminIds.includes(userId));
       await apiRequest<CommunitiesResponse>("/api/messages/communities", {
         method: "POST",
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          title: form.title,
+          description: form.description,
+          coverImageUrl: form.coverImageUrl,
+          talkPolicy: form.talkPolicy,
+          accessMode: form.accessMode,
+          adminIds,
+          memberIds,
+        }),
       });
       setCreateOpen(false);
       await mutateCommunities();
-      setFeedback({ tone: "success", message: "Comunidade criada com sucesso." });
+      setFeedback({
+        tone: "success",
+        message: adminIds.length || memberIds.length
+          ? "Comunidade criada e participantes iniciais configurados."
+          : "Comunidade criada com sucesso.",
+      });
     } catch (err) {
       setFeedback({
         tone: "error",
@@ -669,7 +762,13 @@ export default function CommunitiesManagerClient() {
     try {
       await apiRequest<CommunitiesResponse>(`/api/messages/communities/${encodeURIComponent(communityId)}`, {
         method: "PATCH",
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          title: form.title,
+          description: form.description,
+          coverImageUrl: form.coverImageUrl,
+          talkPolicy: form.talkPolicy,
+          accessMode: form.accessMode,
+        }),
       });
       setEditing(null);
       await mutateCommunities();
@@ -834,19 +933,38 @@ export default function CommunitiesManagerClient() {
     }
   };
 
+  const stats = useMemo(() => {
+    const totalParticipants = communities.reduce((sum, community) => sum + community.participantsCount, 0);
+    const totalPending = communities.reduce((sum, community) => sum + community.pendingRequestsCount, 0);
+    const inviteModeTotal = communities.filter((community) => community.accessMode === "INVITE").length;
+    const teamOnlyTalkTotal = communities.filter((community) => community.talkPolicy === "TEAM_ONLY").length;
+    return {
+      totalParticipants,
+      totalPending,
+      inviteModeTotal,
+      teamOnlyTalkTotal,
+    };
+  }, [communities]);
+
+  const openCommunityChat = useCallback((conversationId: string) => {
+    const path = buildCommunityChatPath(conversationId);
+    if (!path || typeof window === "undefined") return;
+    window.location.assign(path);
+  }, []);
+
   return (
-    <div className="h-full min-h-0 overflow-y-auto text-white">
-      <div className="space-y-4 pb-6">
-        <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#0e1630]/90 via-[#0a1021]/90 to-[#05080f]/95 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)]">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Mensagens</p>
-              <h2 className="text-2xl font-semibold">Comunidades</h2>
-              <p className="mt-1 text-sm text-white/70">
-                Cria, modera e gere convites/pedidos de entrada de cada comunidade.
+    <div className="h-full min-h-0 overflow-y-auto pb-8 text-white">
+      <div className="space-y-5">
+        <header className="rounded-3xl border border-white/20 bg-gradient-to-br from-[#10213d] via-[#0a1a33] to-[#050c1d] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.5)]">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="max-w-3xl">
+              <p className="text-[11px] uppercase tracking-[0.22em] text-cyan-100/90">Mensagens</p>
+              <h2 className="mt-1 text-2xl font-semibold text-white">Comunidades</h2>
+              <p className="mt-2 text-sm text-white/90">
+                Gestão completa de comunidades com foco em moderação, qualidade de conversação e fluxo direto para o chat de grupo.
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => {
@@ -870,25 +988,52 @@ export default function CommunitiesManagerClient() {
             </div>
           </div>
 
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-xl border border-white/20 bg-black/25 p-3">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-white/75">Comunidades</p>
+              <p className="mt-1 text-2xl font-semibold text-white">{communities.length}</p>
+            </div>
+            <div className="rounded-xl border border-white/20 bg-black/25 p-3">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-white/75">Participantes</p>
+              <p className="mt-1 text-2xl font-semibold text-white">{stats.totalParticipants}</p>
+            </div>
+            <div className="rounded-xl border border-white/20 bg-black/25 p-3">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-white/75">Pedidos pendentes</p>
+              <p className="mt-1 text-2xl font-semibold text-white">{stats.totalPending}</p>
+            </div>
+            <div className="rounded-xl border border-white/20 bg-black/25 p-3">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-white/75">Regras</p>
+              <p className="mt-1 text-sm font-semibold text-white">
+                {stats.inviteModeTotal} em INVITE · {stats.teamOnlyTalkTotal} com fala da equipa
+              </p>
+            </div>
+          </div>
+
           {feedback ? (
-            <p className={`mt-3 text-sm ${feedback.tone === "error" ? "text-red-300" : "text-emerald-300"}`}>
+            <p
+              className={`mt-4 rounded-xl border px-3 py-2 text-sm ${
+                feedback.tone === "error"
+                  ? "border-red-300/40 bg-red-500/15 text-red-100"
+                  : "border-emerald-300/40 bg-emerald-500/15 text-emerald-100"
+              }`}
+            >
               {feedback.message}
             </p>
           ) : null}
 
           {communitiesError ? (
-            <p className="mt-3 text-sm text-red-300">
+            <p className="mt-3 rounded-xl border border-red-300/40 bg-red-500/15 px-3 py-2 text-sm text-red-100">
               {communitiesError instanceof Error ? communitiesError.message : "Erro ao carregar comunidades."}
             </p>
           ) : null}
-        </div>
+        </header>
 
         {communitiesLoading ? (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {Array.from({ length: 3 }).map((_, idx) => (
               <div
                 key={`community-skeleton-${idx}`}
-                className="h-56 animate-pulse rounded-2xl border border-white/10 bg-white/5"
+                className="h-64 animate-pulse rounded-2xl border border-white/15 bg-white/[0.04]"
               />
             ))}
           </div>
@@ -899,53 +1044,68 @@ export default function CommunitiesManagerClient() {
               const isActiveCard = selectedCommunityId === community.conversationId;
               const coverStyle = community.coverImageUrl
                 ? {
-                    backgroundImage: `linear-gradient(180deg, rgba(7,9,17,0.28), rgba(7,9,17,0.84)), url(${community.coverImageUrl})`,
+                    backgroundImage: `linear-gradient(180deg, rgba(5,10,20,0.25), rgba(5,10,20,0.9)), url(${community.coverImageUrl})`,
                   }
                 : {
                     backgroundImage:
-                      "linear-gradient(135deg, rgba(34,211,238,0.28), rgba(59,130,246,0.18) 42%, rgba(2,6,23,0.95))",
+                      "linear-gradient(140deg, rgba(30,64,175,0.7), rgba(2,132,199,0.4) 45%, rgba(2,6,23,0.95))",
                   };
 
               return (
                 <article
                   key={community.conversationId}
-                  className={`rounded-2xl border bg-[#070b15]/90 shadow-[0_16px_50px_rgba(0,0,0,0.5)] ${
-                    isActiveCard ? "border-cyan-300/45" : "border-white/12"
+                  className={`overflow-hidden rounded-2xl border bg-[#060d1a] shadow-[0_16px_52px_rgba(0,0,0,0.5)] ${
+                    isActiveCard ? "border-cyan-300/65 ring-1 ring-cyan-300/30" : "border-white/20"
                   }`}
                 >
-                  <div className="h-28 rounded-t-2xl bg-cover bg-center" style={coverStyle}>
-                    <div className="flex h-full items-end justify-between p-3">
-                      <span className="rounded-full border border-white/25 bg-black/35 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/85">
+                  <div className="h-28 bg-cover bg-center" style={coverStyle}>
+                    <div className="flex h-full items-end justify-between gap-2 p-3">
+                      <span className="rounded-full border border-white/35 bg-black/45 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white">
                         {formatCommunityTalkPolicyLabel(community.talkPolicy)}
                       </span>
-                      <span className="rounded-full border border-white/25 bg-black/35 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/85">
+                      <span className="rounded-full border border-white/35 bg-black/45 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white">
                         {formatCommunityAccessModeLabel(community.accessMode)}
                       </span>
                     </div>
                   </div>
 
-                  <div className="space-y-3 p-3">
-                    <div>
-                      <h3 className="text-base font-semibold">{community.title}</h3>
-                      <p className="mt-1 line-clamp-2 text-sm text-white/65">
-                        {community.description || "Sem descrição."}
-                      </p>
+                  <div className="space-y-3 p-4">
+                    <div className="space-y-1.5">
+                      <h3 className="text-base font-semibold text-white">{community.title}</h3>
+                      <p className="line-clamp-2 text-sm text-white/85">{community.description || "Sem descrição."}</p>
                     </div>
 
-                    <div className="flex items-center justify-between text-xs text-white/60">
-                      <span>{community.participantsCount} participantes</span>
-                      <span>{community.pendingRequestsCount} pendentes</span>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-lg border border-white/15 bg-white/[0.03] px-2 py-1.5 text-white/90">
+                        <p className="text-[10px] uppercase tracking-[0.12em] text-white/70">Participantes</p>
+                        <p className="mt-0.5 font-semibold text-white">{community.participantsCount}</p>
+                      </div>
+                      <div className="rounded-lg border border-white/15 bg-white/[0.03] px-2 py-1.5 text-white/90">
+                        <p className="text-[10px] uppercase tracking-[0.12em] text-white/70">Pendentes</p>
+                        <p className="mt-0.5 font-semibold text-white">{community.pendingRequestsCount}</p>
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-white/15 bg-black/30 px-2.5 py-2 text-xs text-white/85">
+                      Última atividade {formatRelativeTime(community.lastMessageAt)} · Atualizada em{" "}
+                      {formatDateTime(community.updatedAt)}
                     </div>
 
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        onClick={() => setEditing(community)}
+                        onClick={() => openCommunityChat(community.conversationId)}
+                        className={`${CTA_PRIMARY} text-xs`}
+                      >
+                        Abrir chat
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openPanel(community.conversationId, "participants")}
                         className={`${CTA_SECONDARY} text-xs`}
                       >
-                        Editar
+                        Gerir participantes
                       </button>
-
                       <button
                         type="button"
                         onClick={() => openPanel(community.conversationId, "requests")}
@@ -953,21 +1113,19 @@ export default function CommunitiesManagerClient() {
                       >
                         Pedidos
                       </button>
-
-                      <button
-                        type="button"
-                        onClick={() => openPanel(community.conversationId, "participants")}
-                        className={`${CTA_SECONDARY} text-xs`}
-                      >
-                        Participantes
-                      </button>
-
                       <button
                         type="button"
                         onClick={() => openPanel(community.conversationId, "invites")}
                         className={`${CTA_SECONDARY} text-xs`}
                       >
                         Convites
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditing(community)}
+                        className={`${CTA_SECONDARY} text-xs`}
+                      >
+                        Editar
                       </button>
 
                       {community.pendingRequestsCount > 0 ? (
@@ -990,24 +1148,41 @@ export default function CommunitiesManagerClient() {
             })}
 
             {!communities.length ? (
-              <div className="col-span-full rounded-2xl border border-white/12 bg-white/5 p-4 text-sm text-white/70">
-                Ainda não existem comunidades. Cria a primeira para começar.
+              <div className="col-span-full rounded-2xl border border-white/20 bg-[#060d1a] p-5 text-sm text-white/90">
+                Ainda não existem comunidades. Cria a primeira para começar o chat de grupo com regras e convites.
               </div>
             ) : null}
           </div>
         )}
 
         {activePanel && selectedCommunity ? (
-          <section className="rounded-2xl border border-white/12 bg-[#060a14]/90 p-4">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <section className="rounded-2xl border border-white/20 bg-[#060d1a] p-4 shadow-[0_16px_52px_rgba(0,0,0,0.4)]">
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h3 className="text-base font-semibold">{selectedCommunity.title}</h3>
-                <p className="text-xs text-white/60">
+                <h3 className="text-lg font-semibold text-white">{selectedCommunity.title}</h3>
+                <p className="text-sm text-white/85">
                   {formatCommunityTalkPolicyLabel(selectedCommunity.talkPolicy)} ·{" "}
                   {formatCommunityAccessModeLabel(selectedCommunity.accessMode)}
                 </p>
+                <p className="mt-1 text-xs text-white/75">
+                  {selectedCommunity.participantsCount} participantes · {selectedCommunity.pendingRequestsCount} pedidos pendentes
+                </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => openCommunityChat(selectedCommunity.conversationId)}
+                  className={`${CTA_PRIMARY} text-xs`}
+                >
+                  Abrir chat do grupo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditing(selectedCommunity)}
+                  className={`${CTA_SECONDARY} text-xs`}
+                >
+                  Editar comunidade
+                </button>
                 <button
                   type="button"
                   onClick={() => setActivePanel(null)}
@@ -1022,18 +1197,14 @@ export default function CommunitiesManagerClient() {
               <button
                 type="button"
                 onClick={() => openPanel(selectedCommunity.conversationId, "requests")}
-                className={`${
-                  selectedTab === "requests" ? CTA_PRIMARY : CTA_SECONDARY
-                } text-xs`}
+                className={`${selectedTab === "requests" ? CTA_PRIMARY : CTA_SECONDARY} text-xs`}
               >
                 Pedidos ({selectedCommunity.pendingRequestsCount})
               </button>
               <button
                 type="button"
                 onClick={() => openPanel(selectedCommunity.conversationId, "participants")}
-                className={`${
-                  selectedTab === "participants" ? CTA_PRIMARY : CTA_SECONDARY
-                } text-xs`}
+                className={`${selectedTab === "participants" ? CTA_PRIMARY : CTA_SECONDARY} text-xs`}
               >
                 Participantes
               </button>
@@ -1047,10 +1218,10 @@ export default function CommunitiesManagerClient() {
             </div>
 
             {selectedTab === "requests" ? (
-              <>
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-xs text-white/60">Aprova ou recusa entradas pendentes.</p>
-                  <div className="flex gap-2">
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm text-white/85">Aprova ou recusa entradas pendentes nesta comunidade.</p>
+                  <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
                       onClick={() => void mutateRequests()}
@@ -1072,9 +1243,9 @@ export default function CommunitiesManagerClient() {
                 </div>
 
                 {requestsLoading ? (
-                  <div className="h-24 animate-pulse rounded-xl border border-white/10 bg-white/5" />
+                  <div className="h-24 animate-pulse rounded-xl border border-white/15 bg-white/[0.03]" />
                 ) : requestsError ? (
-                  <div className="rounded-xl border border-red-300/30 bg-red-500/10 p-3 text-sm text-red-200">
+                  <div className="rounded-xl border border-red-300/40 bg-red-500/15 p-3 text-sm text-red-100">
                     {requestsError instanceof Error ? requestsError.message : "Erro ao carregar pedidos."}
                   </div>
                 ) : (
@@ -1084,19 +1255,17 @@ export default function CommunitiesManagerClient() {
                       const declineKey = `decline:${request.id}`;
                       const isBusy = pendingActionKey === approveKey || pendingActionKey === declineKey;
                       return (
-                        <div
+                        <article
                           key={request.id}
-                          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2"
+                          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/15 bg-black/25 px-3 py-2.5"
                         >
                           <div>
                             <p className="text-sm font-semibold text-white">
-                              {request.requester
-                                ? getUserLabel(request.requester)
-                                : request.requesterId || "Utilizador"}
+                              {request.requester ? getUserLabel(request.requester) : request.requesterId || "Utilizador"}
                             </p>
-                            <p className="text-xs text-white/55">
+                            <p className="text-xs text-white/80">
                               Pedido em {formatDateTime(request.createdAt)}
-                              {request.expiresAt ? ` · expira ${formatDateTime(request.expiresAt)}` : ""}
+                              {request.expiresAt ? ` · Expira ${formatDateTime(request.expiresAt)}` : ""}
                             </p>
                           </div>
                           <div className="flex items-center gap-2">
@@ -1117,67 +1286,66 @@ export default function CommunitiesManagerClient() {
                               Aprovar
                             </button>
                           </div>
-                        </div>
+                        </article>
                       );
                     })}
                     {!requestsData?.items?.length ? (
-                      <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-white/65">
+                      <div className="rounded-xl border border-white/15 bg-black/25 p-3 text-sm text-white/85">
                         Sem pedidos pendentes.
                       </div>
                     ) : null}
                   </div>
                 )}
-              </>
+              </div>
             ) : null}
 
             {selectedTab === "participants" ? (
-              <>
-                <div className="mb-3 space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <input
-                      value={participantSearch}
-                      onChange={(e) => setParticipantSearch(e.target.value)}
-                      placeholder="Pesquisar por nome, username ou user id"
-                      className="min-w-[260px] flex-1 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300"
-                    />
-                    <select
-                      value={participantView}
-                      onChange={(e) => setParticipantView(e.target.value as "ACTIVE" | "ALL")}
-                      className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300"
-                    >
-                      <option value="ACTIVE">Ativos</option>
-                      <option value="ALL">Todos</option>
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => void mutateParticipants()}
-                      className={`${CTA_SECONDARY} text-xs`}
-                    >
-                      Atualizar
-                    </button>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-black/25 p-2">
-                    <input
-                      value={adminDraftUserId}
-                      onChange={(e) => setAdminDraftUserId(e.target.value)}
-                      placeholder="User id da equipa para promover a admin"
-                      className="min-w-[260px] flex-1 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => void promoteAdminByUserId()}
-                      disabled={pendingActionKey === `PROMOTE_ADMIN:${selectedCommunity.conversationId}:${adminDraftUserId.trim()}`}
-                      className={`${CTA_PRIMARY} text-xs disabled:opacity-60`}
-                    >
-                      Promover admin (ID)
-                    </button>
-                  </div>
+              <div className="space-y-3">
+                <div className="grid gap-2 lg:grid-cols-[1fr_auto_auto]">
+                  <input
+                    value={participantSearch}
+                    onChange={(e) => setParticipantSearch(e.target.value)}
+                    placeholder="Pesquisar por nome, username ou user id"
+                    className="w-full rounded-full border border-white/20 bg-[#050b16] px-3 py-2 text-sm text-white outline-none transition focus:border-cyan-300 focus:ring-2 focus:ring-cyan-500/35"
+                  />
+                  <select
+                    value={participantView}
+                    onChange={(e) => setParticipantView(e.target.value as "ACTIVE" | "ALL")}
+                    className="rounded-full border border-white/20 bg-[#050b16] px-3 py-2 text-sm text-white outline-none transition focus:border-cyan-300 focus:ring-2 focus:ring-cyan-500/35"
+                  >
+                    <option value="ACTIVE">Ativos</option>
+                    <option value="ALL">Todos</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => void mutateParticipants()}
+                    className={`${CTA_SECONDARY} text-xs`}
+                  >
+                    Atualizar
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/15 bg-black/20 p-2">
+                  <input
+                    value={adminDraftUserId}
+                    onChange={(e) => setAdminDraftUserId(e.target.value)}
+                    placeholder="User id da equipa para promover a admin"
+                    className="min-w-[250px] flex-1 rounded-full border border-white/20 bg-[#050b16] px-3 py-2 text-sm text-white outline-none transition focus:border-cyan-300 focus:ring-2 focus:ring-cyan-500/35"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void promoteAdminByUserId()}
+                    disabled={pendingActionKey === `PROMOTE_ADMIN:${selectedCommunity.conversationId}:${adminDraftUserId.trim()}`}
+                    className={`${CTA_PRIMARY} text-xs disabled:opacity-60`}
+                  >
+                    Promover admin (ID)
+                  </button>
                 </div>
 
                 {participantsLoading ? (
-                  <div className="h-24 animate-pulse rounded-xl border border-white/10 bg-white/5" />
+                  <div className="h-24 animate-pulse rounded-xl border border-white/15 bg-white/[0.03]" />
                 ) : participantsError ? (
-                  <div className="rounded-xl border border-red-300/30 bg-red-500/10 p-3 text-sm text-red-200">
+                  <div className="rounded-xl border border-red-300/40 bg-red-500/15 p-3 text-sm text-red-100">
                     {participantsError instanceof Error
                       ? participantsError.message
                       : "Erro ao carregar participantes."}
@@ -1192,28 +1360,51 @@ export default function CommunitiesManagerClient() {
                       const isBanned = Boolean(participant.bannedAt);
                       const isMuted = isMutedParticipant(participant);
                       const isActive = isActiveParticipant(participant);
+                      const userLabel = getUserLabel(participant.user);
+                      const avatarSeed = userLabel.trim().charAt(0).toUpperCase() || "U";
 
                       return (
-                        <div
+                        <article
                           key={participant.userId}
-                          className="rounded-xl border border-white/10 bg-white/5 px-3 py-2"
+                          className="rounded-xl border border-white/15 bg-black/25 px-3 py-3"
                         >
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div>
-                              <p className="text-sm font-semibold text-white">{getUserLabel(participant.user)}</p>
-                              <p className="text-xs text-white/55">
-                                {participant.role} · {participant.isTeamMember ? "Equipa" : "Cliente"}
-                                {isActive ? " · Ativo" : " · Inativo"}
-                                {isBanned ? " · Banido" : ""}
-                                {isMuted ? " · Mute" : ""}
-                              </p>
-                              <p className="text-[11px] text-white/45">
-                                Entrou: {formatDateTime(participant.joinedAt)}
-                                {participant.followGraceEndsAt
-                                  ? ` · grace seguidores até ${formatDateTime(participant.followGraceEndsAt)}`
-                                  : ""}
-                              </p>
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="flex min-w-0 items-start gap-3">
+                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-cyan-200/40 bg-cyan-400/10 text-sm font-semibold text-cyan-100">
+                                {avatarSeed}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold text-white">{userLabel}</p>
+                                <p className="text-xs text-white/80">
+                                  {participant.role} · {participant.isTeamMember ? "Equipa" : "Cliente"} ·{" "}
+                                  {isActive ? "Ativo" : "Inativo"}
+                                </p>
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                  {isBanned ? (
+                                    <span className="rounded-full border border-red-300/35 bg-red-500/20 px-2 py-0.5 text-[10px] text-red-100">
+                                      Banido
+                                    </span>
+                                  ) : null}
+                                  {isMuted ? (
+                                    <span className="rounded-full border border-amber-300/35 bg-amber-500/20 px-2 py-0.5 text-[10px] text-amber-100">
+                                      Mute ativo
+                                    </span>
+                                  ) : null}
+                                  {!isBanned && !isMuted && isActive ? (
+                                    <span className="rounded-full border border-emerald-300/35 bg-emerald-500/20 px-2 py-0.5 text-[10px] text-emerald-100">
+                                      Estado normal
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <p className="mt-1 text-[11px] text-white/75">
+                                  Entrou: {formatDateTime(participant.joinedAt)}
+                                  {participant.followGraceEndsAt
+                                    ? ` · grace seguidores até ${formatDateTime(participant.followGraceEndsAt)}`
+                                    : ""}
+                                </p>
+                              </div>
                             </div>
+
                             <div className="flex flex-wrap gap-2">
                               {canPromote ? (
                                 <button
@@ -1365,31 +1556,31 @@ export default function CommunitiesManagerClient() {
                               </button>
                             </div>
                           </div>
-                        </div>
+                        </article>
                       );
                     })}
 
                     {!filteredParticipants.length ? (
-                      <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-white/65">
+                      <div className="rounded-xl border border-white/15 bg-black/25 p-3 text-sm text-white/85">
                         Nenhum participante encontrado com os filtros atuais.
                       </div>
                     ) : null}
                   </div>
                 )}
-              </>
+              </div>
             ) : null}
 
             {selectedTab === "invites" ? (
               <div className="space-y-4">
                 {selectedCommunity.accessMode !== "INVITE" ? (
-                  <div className="rounded-xl border border-amber-300/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+                  <div className="rounded-xl border border-amber-300/40 bg-amber-500/15 p-3 text-sm text-amber-100">
                     Esta comunidade não está no modo INVITE. Altera o modo de acesso para usar convites.
                   </div>
                 ) : null}
 
-                <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-                  <h4 className="text-sm font-semibold">Convite manual</h4>
-                  <p className="mt-1 text-xs text-white/60">
+                <div className="rounded-xl border border-white/15 bg-black/25 p-3">
+                  <h4 className="text-sm font-semibold text-white">Convite manual</h4>
+                  <p className="mt-1 text-xs text-white/85">
                     Introduz user ids separados por vírgula, espaço ou nova linha.
                   </p>
 
@@ -1397,18 +1588,18 @@ export default function CommunitiesManagerClient() {
                     <textarea
                       value={inviteUserIdsInput}
                       onChange={(e) => setInviteUserIdsInput(e.target.value)}
-                      className="min-h-[90px] rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300"
+                      className="min-h-[100px] rounded-xl border border-white/20 bg-[#050b16] px-3 py-2 text-sm text-white outline-none transition focus:border-cyan-300 focus:ring-2 focus:ring-cyan-500/35"
                       placeholder="user_id_1, user_id_2"
                     />
                     <input
                       value={inviteMessage}
                       onChange={(e) => setInviteMessage(e.target.value)}
-                      className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300"
+                      className="rounded-xl border border-white/20 bg-[#050b16] px-3 py-2 text-sm text-white outline-none transition focus:border-cyan-300 focus:ring-2 focus:ring-cyan-500/35"
                       placeholder="Mensagem opcional do convite"
                       maxLength={600}
                     />
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] text-white/45">{inviteMessage.trim().length}/600</span>
+                      <span className="text-[11px] text-white/75">{inviteMessage.trim().length}/600</span>
                       <button
                         type="button"
                         disabled={
@@ -1426,13 +1617,9 @@ export default function CommunitiesManagerClient() {
                   </div>
 
                   {manualInviteResult ? (
-                    <div className="mt-3 rounded-lg border border-white/10 bg-black/30 p-2 text-xs text-white/75">
-                      <p>
-                        Enviados: <strong>{manualInviteResult.invitedCount}</strong>
-                      </p>
-                      {manualInviteResult.skipped.length ? (
-                        <p>Ignorados: {manualInviteResult.skipped.length}</p>
-                      ) : null}
+                    <div className="mt-3 space-y-1 rounded-lg border border-white/20 bg-black/30 p-2 text-xs text-white/85">
+                      <p>Enviados: <strong>{manualInviteResult.invitedCount}</strong></p>
+                      {manualInviteResult.skipped.length ? <p>Ignorados: {manualInviteResult.skipped.length}</p> : null}
                       {manualInviteResult.missingUserIds.length ? (
                         <p>Utilizadores em falta: {manualInviteResult.missingUserIds.length}</p>
                       ) : null}
@@ -1440,17 +1627,15 @@ export default function CommunitiesManagerClient() {
                   ) : null}
                 </div>
 
-                <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-                  <h4 className="text-sm font-semibold">Link de convite</h4>
-                  <p className="mt-1 text-xs text-white/60">
-                    Gerar novo link inválida o link anterior.
-                  </p>
+                <div className="rounded-xl border border-white/15 bg-black/25 p-3">
+                  <h4 className="text-sm font-semibold text-white">Link de convite</h4>
+                  <p className="mt-1 text-xs text-white/85">Gerar novo link invalida o link anterior.</p>
 
                   <div className="mt-3 flex flex-wrap items-center gap-2">
                     <select
                       value={invitePreset}
                       onChange={(e) => setInvitePreset(e.target.value)}
-                      className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300"
+                      className="rounded-full border border-white/20 bg-[#050b16] px-3 py-2 text-sm text-white outline-none transition focus:border-cyan-300 focus:ring-2 focus:ring-cyan-500/35"
                     >
                       {invitePresetOptions.map((option) => (
                         <option key={option.label} value={option.value}>
@@ -1477,17 +1662,17 @@ export default function CommunitiesManagerClient() {
                   </div>
 
                   {generatedInviteLink ? (
-                    <div className="mt-3 space-y-2 rounded-lg border border-white/10 bg-black/30 p-2">
-                      <label className="grid gap-1 text-[11px] text-white/60">
+                    <div className="mt-3 space-y-2 rounded-lg border border-white/20 bg-black/30 p-2">
+                      <label className="grid gap-1 text-[11px] text-white/85">
                         <span>Link</span>
                         <input
                           value={resolveInviteLinkUrl(generatedInviteLink.invitePath)}
                           readOnly
-                          className="rounded-md border border-white/12 bg-black/35 px-2 py-1.5 text-xs text-white"
+                          className="rounded-md border border-white/20 bg-[#050b16] px-2 py-1.5 text-xs text-white"
                         />
                       </label>
 
-                      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-white/60">
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-white/80">
                         <span>Criado em {formatDateTime(generatedInviteLink.createdAt)}</span>
                         <span>
                           {generatedInviteLink.expiresAt
@@ -1496,24 +1681,38 @@ export default function CommunitiesManagerClient() {
                         </span>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => void copyInviteLink()}
-                        className={`${CTA_SECONDARY} text-xs`}
-                      >
-                        {copiedInviteLink ? "Copiado" : "Copiar link"}
-                      </button>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void copyInviteLink()}
+                          className={`${CTA_SECONDARY} text-xs`}
+                        >
+                          {copiedInviteLink ? "Copiado" : "Copiar link"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openCommunityChat(selectedCommunity.conversationId)}
+                          className={`${CTA_PRIMARY} text-xs`}
+                        >
+                          Ver chat desta comunidade
+                        </button>
+                      </div>
                     </div>
                   ) : null}
                 </div>
               </div>
             ) : null}
           </section>
-        ) : null}
+        ) : (
+          <section className="rounded-2xl border border-dashed border-white/25 bg-[#060d1a] p-4 text-sm text-white/85">
+            Seleciona uma comunidade para abrir o painel avançado de gestão de pedidos, participantes e convites.
+          </section>
+        )}
       </div>
 
       {createOpen ? (
         <CommunityFormModal
+          mode="create"
           title="Criar comunidade"
           submitLabel="Criar"
           initial={formDefaults}
@@ -1525,6 +1724,7 @@ export default function CommunitiesManagerClient() {
 
       {editing ? (
         <CommunityFormModal
+          mode="edit"
           title={`Editar · ${editing.title}`}
           submitLabel="Guardar"
           initial={{
@@ -1533,6 +1733,8 @@ export default function CommunitiesManagerClient() {
             coverImageUrl: editing.coverImageUrl ?? "",
             talkPolicy: editing.talkPolicy,
             accessMode: editing.accessMode,
+            seedAdminIds: "",
+            seedMemberIds: "",
           }}
           pending={savingForm}
           onClose={() => setEditing(null)}

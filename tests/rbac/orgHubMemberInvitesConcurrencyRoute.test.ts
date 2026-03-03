@@ -200,6 +200,26 @@ describe("org-hub invite transitions concurrent guardrails", () => {
     expect(recordOrganizationAudit).toHaveBeenCalledTimes(1);
   });
 
+  it("bloqueia ACCEPT quando convite STAFF chega sem função da equipa", async () => {
+    runtime.currentMember = null;
+    runtime.invite = {
+      ...runtime.invite!,
+      role: "STAFF",
+      rolePack: null,
+      targetIdentifier: "target@example.com",
+    };
+    resolveRolePackForRole.mockReturnValueOnce({
+      ok: false,
+      errorCode: "ROLE_PACK_REQUIRED",
+    });
+
+    const res = await PATCH(buildRequest("ACCEPT"));
+
+    expect(res.status).toBe(400);
+    expect(setGroupMemberRoleForOrg).not.toHaveBeenCalled();
+    expect(ensureUserIsOrganization).not.toHaveBeenCalled();
+  });
+
   it("allows only one winner for simultaneous CANCEL", async () => {
     runtime.authUser = { id: "admin-user", email: "admin@example.com" };
     runtime.membership = { memberId: "gm-1", groupId: 7, role: "ADMIN", rolePack: null };

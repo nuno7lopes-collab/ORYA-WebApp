@@ -9,7 +9,7 @@ export default function PadelClubSubnav({ orgId, className }: { orgId: number | 
   const resolvePadelTab = (searchParams: URLSearchParams) => {
     const value = searchParams.get("padel");
     if (!value) return "clubs";
-    if (value === "partnerships" || value === "players" || value === "trainers" || value === "lessons") {
+    if (value === "partnerships" || value === "players" || value === "coaches" || value === "lessons") {
       return value;
     }
     return "clubs";
@@ -38,10 +38,10 @@ export default function PadelClubSubnav({ orgId, className }: { orgId: number | 
           isActive: ({ searchParams }) => resolvePadelTab(searchParams) === "players",
         },
         {
-          id: "trainers",
+          id: "coaches",
           label: "Treinadores",
-          href: buildOrgHref(orgId, "/padel/clubs", { tab: "manage", section: "padel-club", padel: "trainers" }),
-          isActive: ({ searchParams }) => resolvePadelTab(searchParams) === "trainers",
+          href: buildOrgHref(orgId, "/padel/clubs", { tab: "manage", section: "padel-club", padel: "coaches" }),
+          isActive: ({ searchParams }) => resolvePadelTab(searchParams) === "coaches",
         },
         {
           id: "lessons",

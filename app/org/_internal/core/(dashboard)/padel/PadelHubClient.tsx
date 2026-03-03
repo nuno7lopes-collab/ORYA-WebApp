@@ -26,6 +26,7 @@ import { buildOrgHref, buildOrgHubHref } from "@/lib/organizationIdUtils";
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
 import { lockBodyScroll } from "@/lib/dom/bodyScrollLock";
+import { getRolePackLabel, parseOrganizationRolePack } from "@/lib/organizationRolePackPolicy";
 import { parsePadelFormat } from "@/domain/padel/formatCatalog";
 import { PADEL_FORMAT_LABELS_PT } from "@/domain/padel/formatPresentation";
 import PartnershipsPageClient from "./parcerias/PartnershipsPageClient";
@@ -163,7 +164,7 @@ type OrganizationStaffResponse = {
   organizationId?: number | null;
 };
 
-type TrainerItem = {
+type CoachItem = {
   userId: string;
   fullName: string | null;
   username: string | null;
@@ -174,11 +175,17 @@ type TrainerItem = {
   professionalIsActive?: boolean | null;
 };
 
-type TrainersResponse = {
+type CoachesResponse = {
   ok: boolean;
-  items: TrainerItem[];
+  items: CoachItem[];
   error?: string;
 };
+
+function formatRolePackLabel(rolePack?: string | null) {
+  const parsedRolePack = parseOrganizationRolePack(rolePack);
+  if (!parsedRolePack) return rolePack?.trim() || null;
+  return getRolePackLabel(parsedRolePack);
+}
 
 type LessonService = {
   id: number;
@@ -574,7 +581,7 @@ const PADEL_TABS = [
   "categories",
   "teams",
   "players",
-  "trainers",
+  "coaches",
   "lessons",
 ] as const;
 type PadelTab = (typeof PADEL_TABS)[number];
@@ -584,7 +591,7 @@ const CLUB_TOOL_TABS: ReadonlyArray<PadelTab> = [
   "clubs",
   "partnerships",
   "players",
-  "trainers",
+  "coaches",
   "lessons",
 ];
 const TOURNAMENTS_TOOL_TABS: ReadonlyArray<PadelTab> = [
@@ -640,7 +647,7 @@ const resolvePadelTabParam = (value: string | null, toolMode: PadelToolMode): Pa
     if (
       resolved === "clubs" ||
       resolved === "partnerships" ||
-      resolved === "trainers" ||
+      resolved === "coaches" ||
       resolved === "lessons"
     ) {
       return null;
@@ -1269,15 +1276,15 @@ export default function PadelHubClient({
   const [showCategoryEditor, setShowCategoryEditor] = useState(false);
   const [categoryDeletingId, setCategoryDeletingId] = useState<number | null>(null);
   const [deleteCategoryDialog, setDeleteCategoryDialog] = useState<PadelCategory | null>(null);
-  const [trainerActionLoading, setTrainerActionLoading] = useState<string | null>(null);
-  const [trainerCreateUserId, setTrainerCreateUserId] = useState("");
-  const [trainerCreating, setTrainerCreating] = useState(false);
-  const [trainerError, setTrainerError] = useState<string | null>(null);
-  const [trainerMessage, setTrainerMessage] = useState<string | null>(null);
+  const [coachActionLoading, setCoachActionLoading] = useState<string | null>(null);
+  const [coachCreateUserId, setCoachCreateUserId] = useState("");
+  const [coachCreating, setCoachCreating] = useState(false);
+  const [coachError, setCoachError] = useState<string | null>(null);
+  const [coachMessage, setCoachMessage] = useState<string | null>(null);
   const [lessonTitle, setLessonTitle] = useState("");
   const [lessonDuration, setLessonDuration] = useState(String(LESSON_DURATION_OPTIONS[0]));
   const [lessonPrice, setLessonPrice] = useState("20");
-  const [lessonTrainerUserId, setLessonTrainerUserId] = useState("");
+  const [lessonCoachUserId, setLessonCoachUserId] = useState("");
   const [lessonCourtId, setLessonCourtId] = useState("");
   const [lessonWeekday, setLessonWeekday] = useState(String(new Date().getDay()));
   const [lessonStartTime, setLessonStartTime] = useState(LESSON_DEFAULT_START_TIME);
@@ -1285,7 +1292,7 @@ export default function PadelHubClient({
   const [lessonValidUntil, setLessonValidUntil] = useState("");
   const [lessonCapacity, setLessonCapacity] = useState("4");
   const [lessonCreating, setLessonCreating] = useState(false);
-  const [lessonProvisioningTrainer, setLessonProvisioningTrainer] = useState(false);
+  const [lessonProvisioningCoach, setLessonProvisioningCoach] = useState(false);
   const [lessonError, setLessonError] = useState<string | null>(null);
   const [lessonMessage, setLessonMessage] = useState<string | null>(null);
   const [teamName, setTeamName] = useState("");
@@ -1526,8 +1533,8 @@ export default function PadelHubClient({
     fetcher,
     { revalidateOnFocus: false },
   );
-  const { data: trainersRes, isLoading: trainersLoading, mutate: mutateTrainers } = useSWR<TrainersResponse>(
-    buildOrgApiPath("/padel/trainers"),
+  const { data: coachesRes, isLoading: coachesLoading, mutate: mutateCoaches } = useSWR<CoachesResponse>(
+    buildOrgApiPath("/padel/coaches"),
     fetcher,
     { revalidateOnFocus: false },
   );
@@ -2052,30 +2059,30 @@ export default function PadelHubClient({
     });
   }, [players, search, genderFilter, levelFilter, historyFilter, noShowFilter]);
 
-  const trainers = trainersRes?.items ?? [];
-  const lessonTrainerOptions = useMemo(
+  const coaches = coachesRes?.items ?? [];
+  const lessonCoachOptions = useMemo(
     () =>
-      [...trainers].sort((a, b) =>
+      [...coaches].sort((a, b) =>
         (a.fullName || a.username || "").localeCompare((b.fullName || b.username || ""), "pt-PT"),
       ),
-    [trainers],
+    [coaches],
   );
-  const selectedLessonTrainer = useMemo(
-    () => trainers.find((trainer) => trainer.userId === lessonTrainerUserId) ?? null,
-    [lessonTrainerUserId, trainers],
+  const selectedLessonCoach = useMemo(
+    () => coaches.find((coach) => coach.userId === lessonCoachUserId) ?? null,
+    [lessonCoachUserId, coaches],
   );
   const activeLessonCourts = useMemo(
     () => courts.filter((court) => court.isActive).sort((a, b) => a.displayOrder - b.displayOrder || a.id - b.id),
     [courts],
   );
-  const trainersError = trainersRes?.ok === false ? sanitizeUiErrorMessage(trainersRes.error, "Erro ao carregar treinadores.") : null;
-  const trainerUserIds = useMemo(() => new Set(trainers.map((trainer) => trainer.userId)), [trainers]);
-  const trainerMemberCandidates = useMemo(() => {
+  const coachesError = coachesRes?.ok === false ? sanitizeUiErrorMessage(coachesRes.error, "Erro ao carregar treinadores.") : null;
+  const coachUserIds = useMemo(() => new Set(coaches.map((coach) => coach.userId)), [coaches]);
+  const coachMemberCandidates = useMemo(() => {
     const allowedRoles = new Set(["OWNER", "CO_OWNER", "ADMIN", "STAFF"]);
     return (organizationStaff?.items ?? [])
       .filter((member) => member.userId && member.role && allowedRoles.has(member.role))
-      .filter((member) => !trainerUserIds.has(member.userId));
-  }, [organizationStaff?.items, trainerUserIds]);
+      .filter((member) => !coachUserIds.has(member.userId));
+  }, [organizationStaff?.items, coachUserIds]);
   const services = servicesRes?.items ?? [];
   const lessonsError = servicesRes?.ok === false ? sanitizeUiErrorMessage(servicesRes.error, "Erro ao carregar aulas.") : null;
   const lessonServices = useMemo(() => {
@@ -2085,22 +2092,22 @@ export default function PadelHubClient({
       return kind === "CLASS" || tag.includes("aula") || tag.includes("treino");
     });
   }, [services]);
-  const trainerErrorLabel = useMemo(() => {
-    if (!trainersError) return null;
-    if (trainersError === "FORBIDDEN") return "Sem permissões para gerir treinadores.";
-    if (trainersError === "UNAUTHENTICATED") return "Inicia sessão para gerir treinadores.";
-    return trainersError;
-  }, [trainersError]);
+  const coachErrorLabel = useMemo(() => {
+    if (!coachesError) return null;
+    if (coachesError === "FORBIDDEN") return "Sem permissões para gerir treinadores.";
+    if (coachesError === "UNAUTHENTICATED") return "Inicia sessão para gerir treinadores.";
+    return coachesError;
+  }, [coachesError]);
   const lessonsErrorLabel = useMemo(() => {
     if (!lessonsError) return null;
     return lessonsError;
   }, [lessonsError]);
 
   useEffect(() => {
-    if (lessonTrainerUserId && !trainers.some((trainer) => trainer.userId === lessonTrainerUserId)) {
-      setLessonTrainerUserId("");
+    if (lessonCoachUserId && !coaches.some((coach) => coach.userId === lessonCoachUserId)) {
+      setLessonCoachUserId("");
     }
-  }, [lessonTrainerUserId, trainers]);
+  }, [lessonCoachUserId, coaches]);
 
   useEffect(() => {
     if (lessonCourtId && !activeLessonCourts.some((court) => String(court.id) === lessonCourtId)) {
@@ -2109,10 +2116,10 @@ export default function PadelHubClient({
   }, [activeLessonCourts, lessonCourtId]);
 
   useEffect(() => {
-    if (trainerCreateUserId && !trainerMemberCandidates.some((member) => member.userId === trainerCreateUserId)) {
-      setTrainerCreateUserId("");
+    if (coachCreateUserId && !coachMemberCandidates.some((member) => member.userId === coachCreateUserId)) {
+      setCoachCreateUserId("");
     }
-  }, [trainerCreateUserId, trainerMemberCandidates]);
+  }, [coachCreateUserId, coachMemberCandidates]);
 
   const defaultCategorySeeds = useMemo(() => buildPadelDefaultCategories(), []);
   const defaultCategoryKeys = useMemo(() => {
@@ -2401,26 +2408,26 @@ export default function PadelHubClient({
     }
   };
 
-  const handleEnsureTrainerOperational = async (trainer: TrainerItem, source: "trainers" | "lessons" = "trainers") => {
+  const handleEnsureCoachOperational = async (coach: CoachItem, source: "coaches" | "lessons" = "coaches") => {
     if (!organizationId) return;
-    if (source === "trainers") {
-      setTrainerActionLoading(trainer.userId);
-      setTrainerError(null);
-      setTrainerMessage(null);
+    if (source === "coaches") {
+      setCoachActionLoading(coach.userId);
+      setCoachError(null);
+      setCoachMessage(null);
     } else {
-      setLessonProvisioningTrainer(true);
+      setLessonProvisioningCoach(true);
       setLessonError(null);
       setLessonMessage(null);
     }
     try {
-      const trainersApiPath = buildOrgApiPath("/padel/trainers");
-      if (!trainersApiPath) throw new Error("Organização indisponível.");
-      const res = await fetch(trainersApiPath, {
+      const coachesApiPath = buildOrgApiPath("/padel/coaches");
+      if (!coachesApiPath) throw new Error("Organização indisponível.");
+      const res = await fetch(coachesApiPath, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           organizationId,
-          userId: trainer.userId,
+          userId: coach.userId,
         }),
       });
       const json = await res.json().catch(() => null);
@@ -2432,9 +2439,9 @@ export default function PadelHubClient({
           ),
         );
       }
-      if (mutateTrainers) await mutateTrainers();
-      if (source === "trainers") {
-        setTrainerMessage("Treinador ligado a Reservas.");
+      if (mutateCoaches) await mutateCoaches();
+      if (source === "coaches") {
+        setCoachMessage("Treinador ligado a Reservas.");
         toast("Treinador ligado a Reservas.", "ok");
       } else {
         setLessonMessage("Treinador criado em reservas.");
@@ -2444,96 +2451,96 @@ export default function PadelHubClient({
       const message =
         err instanceof Error
           ? err.message
-          : source === "trainers"
+          : source === "coaches"
             ? "Erro ao ligar treinador a Reservas."
             : "Erro ao criar treinador em Reservas.";
-      if (source === "trainers") {
-        setTrainerError(message);
+      if (source === "coaches") {
+        setCoachError(message);
       } else {
         setLessonError(message);
       }
       toast(message, "err");
     } finally {
-      if (source === "trainers") {
-        setTrainerActionLoading(null);
+      if (source === "coaches") {
+        setCoachActionLoading(null);
       } else {
-        setLessonProvisioningTrainer(false);
+        setLessonProvisioningCoach(false);
       }
     }
   };
 
-  const handleAddTrainer = async () => {
-    if (!organizationId || !trainerCreateUserId || trainerCreating) return;
-    setTrainerCreating(true);
-    setTrainerError(null);
-    setTrainerMessage(null);
+  const handleAddCoach = async () => {
+    if (!organizationId || !coachCreateUserId || coachCreating) return;
+    setCoachCreating(true);
+    setCoachError(null);
+    setCoachMessage(null);
     try {
-      const trainersApiPath = buildOrgApiPath("/padel/trainers");
-      if (!trainersApiPath) throw new Error("Organização indisponível.");
-      const res = await fetch(trainersApiPath, {
+      const coachesApiPath = buildOrgApiPath("/padel/coaches");
+      if (!coachesApiPath) throw new Error("Organização indisponível.");
+      const res = await fetch(coachesApiPath, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           organizationId,
-          userId: trainerCreateUserId,
+          userId: coachCreateUserId,
         }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
         throw new Error(sanitizeUiErrorMessage(json?.error, "Não foi possível adicionar o treinador."));
       }
-      setTrainerCreateUserId("");
-      setTrainerMessage("Treinador associado com sucesso.");
-      if (mutateTrainers) await mutateTrainers();
+      setCoachCreateUserId("");
+      setCoachMessage("Treinador associado com sucesso.");
+      if (mutateCoaches) await mutateCoaches();
       toast("Treinador associado.", "ok");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erro ao adicionar treinador.";
-      setTrainerError(message);
+      setCoachError(message);
       toast(message, "err");
     } finally {
-      setTrainerCreating(false);
+      setCoachCreating(false);
     }
   };
 
-  const handleRemoveTrainer = async (trainer: TrainerItem) => {
+  const handleRemoveCoach = async (coach: CoachItem) => {
     if (!organizationId) return;
     const confirmed = window.confirm(
-      `Remover ${trainer.fullName || trainer.username || "este treinador"} da lista de treinadores?`,
+      `Remover ${coach.fullName || coach.username || "este treinador"} da lista de treinadores?`,
     );
     if (!confirmed) return;
-    setTrainerActionLoading(trainer.userId);
-    setTrainerError(null);
-    setTrainerMessage(null);
+    setCoachActionLoading(coach.userId);
+    setCoachError(null);
+    setCoachMessage(null);
     try {
-      const trainersApiPath = buildOrgApiPath("/padel/trainers");
-      if (!trainersApiPath) throw new Error("Organização indisponível.");
-      const res = await fetch(trainersApiPath, {
+      const coachesApiPath = buildOrgApiPath("/padel/coaches");
+      if (!coachesApiPath) throw new Error("Organização indisponível.");
+      const res = await fetch(coachesApiPath, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           organizationId,
-          userId: trainer.userId,
+          userId: coach.userId,
         }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
         throw new Error(sanitizeUiErrorMessage(json?.error, "Não foi possível remover o treinador."));
       }
-      if (mutateTrainers) await mutateTrainers();
-      setTrainerMessage("Treinador removido.");
+      if (mutateCoaches) await mutateCoaches();
+      setCoachMessage("Treinador removido.");
       toast("Treinador removido.", "ok");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erro ao remover treinador.";
-      setTrainerError(message);
+      setCoachError(message);
       toast(message, "err");
     } finally {
-      setTrainerActionLoading(null);
+      setCoachActionLoading(null);
     }
   };
 
-  const handleProvisionLessonTrainer = async () => {
-    if (!organizationId || !selectedLessonTrainer || lessonProvisioningTrainer) return;
-    await handleEnsureTrainerOperational(selectedLessonTrainer, "lessons");
+  const handleProvisionLessonCoach = async () => {
+    if (!organizationId || !selectedLessonCoach || lessonProvisioningCoach) return;
+    await handleEnsureCoachOperational(selectedLessonCoach, "lessons");
   };
 
   const handleCreateLesson = async () => {
@@ -2581,20 +2588,20 @@ export default function PadelHubClient({
       return;
     }
 
-    if (!lessonTrainerUserId) {
+    if (!lessonCoachUserId) {
       setLessonError("Seleciona um treinador para criar a aula.");
       return;
     }
-    const selectedTrainer = selectedLessonTrainer;
-    if (!selectedTrainer) {
+    const selectedCoach = selectedLessonCoach;
+    if (!selectedCoach) {
       setLessonError("Treinador inválido.");
       return;
     }
-    if (!selectedTrainer.professionalId || selectedTrainer.professionalIsActive !== true) {
+    if (!selectedCoach.professionalId || selectedCoach.professionalIsActive !== true) {
       setLessonError('Treinador sem profissional ativo. Usa "Criar em reservas".');
       return;
     }
-    const professionalIds = [selectedTrainer.professionalId];
+    const professionalIds = [selectedCoach.professionalId];
     const courtId = lessonCourtId ? Number(lessonCourtId) : null;
     setLessonCreating(true);
     setLessonError(null);
@@ -2612,7 +2619,7 @@ export default function PadelHubClient({
           unitPriceCents: Math.round(priceValue * 100),
           currency: "EUR",
           kind: "CLASS",
-          instructorId: lessonTrainerUserId,
+          instructorId: lessonCoachUserId,
           assignmentMode: "PROFESSIONAL_ONLY",
           professionalIds,
           categoryTag: LESSON_TAG,
@@ -2640,7 +2647,7 @@ export default function PadelHubClient({
           capacity: Math.floor(capacityValue),
           validFrom: lessonValidFrom,
           validUntil: lessonValidUntil || null,
-          professionalId: selectedTrainer.professionalId,
+          professionalId: selectedCoach.professionalId,
           courtId,
           isActive: true,
         }),
@@ -2662,7 +2669,7 @@ export default function PadelHubClient({
       setLessonTitle("");
       setLessonPrice("20");
       setLessonDuration(String(LESSON_DURATION_OPTIONS[0]));
-      setLessonTrainerUserId("");
+      setLessonCoachUserId("");
       setLessonCourtId("");
       setLessonWeekday(String(new Date().getDay()));
       setLessonStartTime(LESSON_DEFAULT_START_TIME);
@@ -6632,10 +6639,10 @@ export default function PadelHubClient({
         enabled: toolMode === "CLUB",
       },
       {
-        id: "open-trainers",
+        id: "open-coaches",
         label: "Treinadores",
         description: "Perfis e ligação operacional a Reservas.",
-        run: () => setPadelSection("trainers"),
+        run: () => setPadelSection("coaches"),
         enabled: toolMode === "CLUB",
       },
       {
@@ -7935,7 +7942,7 @@ export default function PadelHubClient({
         </div>
       )}
 
-      {!switchingTab && activeTab === "trainers" && (
+      {!switchingTab && activeTab === "coaches" && (
         <div className="space-y-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)] transition-all duration-250 ease-out opacity-100 translate-y-0">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -7958,15 +7965,15 @@ export default function PadelHubClient({
             </div>
           </div>
 
-          {trainersLoading && <p className="text-[12px] text-white/60">A carregar treinadores…</p>}
+          {coachesLoading && <p className="text-[12px] text-white/60">A carregar treinadores…</p>}
 
-          {trainerErrorLabel && (
+          {coachErrorLabel && (
             <div className="rounded-xl border border-amber-300/40 bg-amber-400/10 px-4 py-3 text-[12px] text-amber-100">
-              {trainerErrorLabel}
+              {coachErrorLabel}
             </div>
           )}
 
-          {!trainerErrorLabel && (
+          {!coachErrorLabel && (
             <div className="rounded-2xl border border-white/12 bg-white/5 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
               <p className="text-sm font-semibold text-white">Adicionar treinador da equipa</p>
               <p className="mt-1 text-[11px] text-white/60">
@@ -7976,29 +7983,29 @@ export default function PadelHubClient({
                 <label className="min-w-[260px] flex-1">
                   <span className="mb-1 block text-[11px] uppercase tracking-[0.16em] text-white/50">Membro</span>
                   <select
-                    value={trainerCreateUserId}
-                    onChange={(e) => setTrainerCreateUserId(e.target.value)}
+                    value={coachCreateUserId}
+                    onChange={(e) => setCoachCreateUserId(e.target.value)}
                     className="w-full rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
                   >
                     <option value="">Seleciona um membro</option>
-                    {trainerMemberCandidates.map((member) => (
-                      <option key={`trainer-member-${member.userId}`} value={member.userId}>
+                    {coachMemberCandidates.map((member) => (
+                      <option key={`coach-member-${member.userId}`} value={member.userId}>
                         {member.fullName || member.username || member.email || "Sem nome"} · {member.role}
-                        {member.rolePack ? ` (${member.rolePack})` : ""}
+                        {member.rolePack ? ` (${formatRolePackLabel(member.rolePack)})` : ""}
                       </option>
                     ))}
                   </select>
                 </label>
                 <button
                   type="button"
-                  onClick={handleAddTrainer}
-                  disabled={!trainerCreateUserId || trainerCreating}
+                  onClick={handleAddCoach}
+                  disabled={!coachCreateUserId || coachCreating}
                   className={CTA_PAD_PRIMARY_SM}
                 >
-                  {trainerCreating ? "A associar…" : "Adicionar treinador"}
+                  {coachCreating ? "A associar…" : "Adicionar treinador"}
                 </button>
               </div>
-              {trainerMemberCandidates.length === 0 && (
+              {coachMemberCandidates.length === 0 && (
                 <p className="mt-2 text-[11px] text-white/50">
                   Todos os membros elegíveis já estão associados como treinadores.
                 </p>
@@ -8006,40 +8013,40 @@ export default function PadelHubClient({
             </div>
           )}
 
-          {!trainersLoading && !trainerErrorLabel && trainers.length === 0 && (
+          {!coachesLoading && !coachErrorLabel && coaches.length === 0 && (
             <div className="rounded-2xl border border-white/15 bg-white/5 p-6 text-white shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
               <p className="text-lg font-semibold">Sem treinadores.</p>
               <p className="text-sm text-white/70">Adiciona um membro da equipa para começar.</p>
             </div>
           )}
 
-          {!trainerErrorLabel && trainers.length > 0 && (
+          {!coachErrorLabel && coaches.length > 0 && (
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {trainers.map((trainer) => {
-                const busy = trainerActionLoading === trainer.userId;
+              {coaches.map((coach) => {
+                const busy = coachActionLoading === coach.userId;
                 return (
                   <div
-                    key={trainer.userId}
+                    key={coach.userId}
                     className="rounded-2xl border border-white/12 bg-white/5 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.45)]"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-3">
                         <Avatar
-                          src={trainer.avatarUrl}
-                          name={trainer.fullName || trainer.username || "Treinador"}
+                          src={coach.avatarUrl}
+                          name={coach.fullName || coach.username || "Treinador"}
                           className="h-10 w-10 rounded-full border border-white/10"
                           textClassName="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/80"
                         />
                         <div>
                           <p className="text-sm font-semibold text-white">
-                            {trainer.fullName || trainer.username || "Treinador"}
+                            {coach.fullName || coach.username || "Treinador"}
                           </p>
-                          {trainer.username && (
-                            <p className="text-[11px] text-white/60">@{trainer.username}</p>
+                          {coach.username && (
+                            <p className="text-[11px] text-white/60">@{coach.username}</p>
                           )}
                           <p className="text-[10px] text-white/45">
-                            {trainer.role || "STAFF"}
-                            {trainer.rolePack ? ` · ${trainer.rolePack}` : ""}
+                            {coach.role || "STAFF"}
+                            {coach.rolePack ? ` · ${formatRolePackLabel(coach.rolePack)}` : ""}
                           </p>
                         </div>
                       </div>
@@ -8051,12 +8058,12 @@ export default function PadelHubClient({
                         </span>
                         <span
                           className={`rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.16em] ${
-                            trainer.professionalId && trainer.professionalIsActive === true
+                            coach.professionalId && coach.professionalIsActive === true
                               ? "border-emerald-300/50 bg-emerald-400/10 text-emerald-100"
                               : "border-amber-300/45 bg-amber-400/10 text-amber-100"
                           }`}
                         >
-                          {trainer.professionalId && trainer.professionalIsActive === true
+                          {coach.professionalId && coach.professionalIsActive === true
                             ? "Profissional ativo"
                             : "Profissional pendente"}
                         </span>
@@ -8064,13 +8071,13 @@ export default function PadelHubClient({
                     </div>
 
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {trainer.professionalId && trainer.professionalIsActive === true ? (
+                      {coach.professionalId && coach.professionalIsActive === true ? (
                         <Link
                           href={
                             organizationId
                               ? buildOrgHref(organizationId, `/calendar/availability`, {
                                   scopeType: "PROFESSIONAL",
-                                  scopeId: trainer.professionalId,
+                                  scopeId: coach.professionalId,
                                 })
                               : buildOrgHubHref("/organizations")
                           }
@@ -8081,7 +8088,7 @@ export default function PadelHubClient({
                       ) : (
                         <button
                           type="button"
-                          onClick={() => handleEnsureTrainerOperational(trainer, "trainers")}
+                          onClick={() => handleEnsureCoachOperational(coach, "coaches")}
                           disabled={busy}
                           className="rounded-full border border-amber-300/50 bg-amber-500/10 px-3 py-1.5 text-[11px] text-amber-100 hover:border-amber-200/70 disabled:opacity-60"
                         >
@@ -8090,7 +8097,7 @@ export default function PadelHubClient({
                       )}
                       <button
                         type="button"
-                        onClick={() => handleRemoveTrainer(trainer)}
+                        onClick={() => handleRemoveCoach(coach)}
                         disabled={busy}
                         className="rounded-full border border-rose-300/50 bg-rose-500/10 px-3 py-1.5 text-[11px] text-rose-100 hover:border-rose-200/70 disabled:opacity-60"
                       >
@@ -8103,10 +8110,10 @@ export default function PadelHubClient({
             </div>
           )}
 
-          {(trainerError || trainerMessage) && (
+          {(coachError || coachMessage) && (
             <div className="rounded-2xl border border-white/12 bg-white/5 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
-              <p className={`text-[12px] ${trainerError ? "text-rose-200" : "text-emerald-200"}`}>
-                {trainerError || trainerMessage}
+              <p className={`text-[12px] ${coachError ? "text-rose-200" : "text-emerald-200"}`}>
+                {coachError || coachMessage}
               </p>
             </div>
           )}
@@ -8123,7 +8130,7 @@ export default function PadelHubClient({
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => setPadelSection("trainers")}
+                onClick={() => setPadelSection("coaches")}
                 className="rounded-full border border-white/25 px-4 py-2 text-[12px] font-semibold text-white hover:border-white/40"
               >
                 Ver treinadores
@@ -8230,14 +8237,14 @@ export default function PadelHubClient({
                   className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
                 />
                 <select
-                  value={lessonTrainerUserId}
-                  onChange={(e) => setLessonTrainerUserId(e.target.value)}
+                  value={lessonCoachUserId}
+                  onChange={(e) => setLessonCoachUserId(e.target.value)}
                   className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
                 >
                   <option value="">Seleciona treinador</option>
-                  {lessonTrainerOptions.map((trainer) => (
-                    <option key={`lesson-trainer-${trainer.userId}`} value={trainer.userId}>
-                      {trainer.fullName || trainer.username || "Treinador"}
+                  {lessonCoachOptions.map((coach) => (
+                    <option key={`lesson-coach-${coach.userId}`} value={coach.userId}>
+                      {coach.fullName || coach.username || "Treinador"}
                     </option>
                   ))}
                 </select>
@@ -8295,27 +8302,27 @@ export default function PadelHubClient({
                   className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
                 />
               </div>
-              {lessonTrainerOptions.length === 0 && (
+              {lessonCoachOptions.length === 0 && (
                 <p className="text-[11px] text-white/50">
                   Sem treinadores disponíveis. Adiciona primeiro um treinador à organização.
                 </p>
               )}
-              {selectedLessonTrainer &&
-                (!selectedLessonTrainer.professionalId || selectedLessonTrainer.professionalIsActive !== true) && (
+              {selectedLessonCoach &&
+                (!selectedLessonCoach.professionalId || selectedLessonCoach.professionalIsActive !== true) && (
                   <div className="rounded-xl border border-amber-300/40 bg-amber-400/10 px-3 py-2 text-[11px] text-amber-100">
                     Este treinador ainda não tem profissional ativo em Reservas.
                   </div>
                 )}
               <div className="flex flex-wrap items-center gap-2">
-                {selectedLessonTrainer &&
-                  (!selectedLessonTrainer.professionalId || selectedLessonTrainer.professionalIsActive !== true) && (
+                {selectedLessonCoach &&
+                  (!selectedLessonCoach.professionalId || selectedLessonCoach.professionalIsActive !== true) && (
                     <button
                       type="button"
-                      onClick={handleProvisionLessonTrainer}
-                      disabled={lessonProvisioningTrainer}
+                      onClick={handleProvisionLessonCoach}
+                      disabled={lessonProvisioningCoach}
                       className={CTA_SECONDARY}
                     >
-                      {lessonProvisioningTrainer ? "A criar em reservas…" : "Criar em reservas"}
+                      {lessonProvisioningCoach ? "A criar em reservas…" : "Criar em reservas"}
                     </button>
                   )}
                 <button
@@ -8323,9 +8330,9 @@ export default function PadelHubClient({
                   onClick={handleCreateLesson}
                   disabled={
                     lessonCreating ||
-                    !lessonTrainerUserId ||
-                    (selectedLessonTrainer
-                      ? !selectedLessonTrainer.professionalId || selectedLessonTrainer.professionalIsActive !== true
+                    !lessonCoachUserId ||
+                    (selectedLessonCoach
+                      ? !selectedLessonCoach.professionalId || selectedLessonCoach.professionalIsActive !== true
                       : false)
                   }
                   className={CTA_PAD_PRIMARY_SM}

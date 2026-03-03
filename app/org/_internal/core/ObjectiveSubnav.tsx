@@ -103,6 +103,7 @@ export default function ObjectiveSubnav({
           ? "TORNEIOS"
           : null;
   const pathnameOperationOverride =
+    pathname?.startsWith("/org/academy") ||
     pathname?.startsWith("/org/bookings") ||
     (isCanonicalOrgPath && (pathname?.includes("/bookings") || pathname?.includes("/servicos") || pathname?.includes("/services")))
       ? "RESERVAS"

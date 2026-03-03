@@ -25,6 +25,7 @@ import {
 } from "@/lib/reservas/availability";
 import { CALENDAR_TIMEZONE_OPTIONS, normalizeCalendarTimezone } from "./timezones";
 import { summarizeAgendaItemsByStatus } from "./statusSummary";
+import { resolveAggregateItemsToneClass, resolveEventToneClass } from "./eventTones";
 import type { OrganizationOperationalMode } from "@/lib/organizationOperationalMode";
 
 type AgendaItem = {
@@ -453,40 +454,11 @@ function resolveKindLabel(kind: AgendaItem["kind"]) {
 }
 
 function resolveCardTone(item: AgendaItem) {
-  const status = item.status.trim().toUpperCase();
-  if (status.startsWith("CANCELLED") || status === "NO_SHOW") {
-    return "border-rose-300/60 bg-[linear-gradient(135deg,rgba(244,63,94,0.24),rgba(244,63,94,0.08))]";
-  }
-  if (status === "PENDING" || status === "PENDING_CONFIRMATION") {
-    return "border-amber-200/60 bg-[linear-gradient(135deg,rgba(251,191,36,0.26),rgba(251,191,36,0.09))]";
-  }
-  if (item.kind === "TOURNAMENT") {
-    return "border-cyan-200/55 bg-[linear-gradient(135deg,rgba(34,211,238,0.26),rgba(14,116,144,0.12))]";
-  }
-  if (item.kind === "EVENT") {
-    return "border-fuchsia-200/55 bg-[linear-gradient(135deg,rgba(217,70,239,0.24),rgba(126,34,206,0.1))]";
-  }
-  if (item.kind === "CLASS") {
-    return "border-sky-200/55 bg-[linear-gradient(135deg,rgba(56,189,248,0.25),rgba(14,116,144,0.1))]";
-  }
-  return "border-emerald-300/55 bg-[linear-gradient(135deg,rgba(16,185,129,0.3),rgba(16,185,129,0.12))]";
+  return resolveEventToneClass({ status: item.status, kind: item.kind });
 }
 
 function resolveAggregateTone(items: ProjectedAgendaItem[]) {
-  if (items.length === 0) {
-    return "border-white/25 bg-[linear-gradient(135deg,rgba(255,255,255,0.16),rgba(255,255,255,0.06))]";
-  }
-  const cancelled = items.find((entry) => {
-    const status = entry.item.status.trim().toUpperCase();
-    return status.startsWith("CANCELLED") || status === "NO_SHOW";
-  });
-  if (cancelled) return resolveCardTone(cancelled.item);
-  const pending = items.find((entry) => {
-    const status = entry.item.status.trim().toUpperCase();
-    return status === "PENDING" || status === "PENDING_CONFIRMATION";
-  });
-  if (pending) return resolveCardTone(pending.item);
-  return resolveCardTone(items[0].item);
+  return resolveAggregateItemsToneClass(items.map((entry) => entry.item));
 }
 
 function formatDateTime(dateRaw: string, timezone: string) {
@@ -575,12 +547,25 @@ export default function WeekCalendarReadClient() {
     nextCourts?: number[];
     nextProfessionals?: number[];
     nextTimezone?: string;
+    nextShowAvailabilityOverlay?: boolean;
   }) => {
     if (!Number.isFinite(organizationId) || organizationId <= 0) return;
     const nextParams = new URLSearchParams(searchParams.toString());
     setIdListParam(nextParams, "resources", input.nextResources ?? selectedResourceIds);
     setIdListParam(nextParams, "courts", input.nextCourts ?? selectedCourtIds);
     setIdListParam(nextParams, "professionals", input.nextProfessionals ?? selectedProfessionalIds);
+    const selectedScopesCountRaw =
+      (input.nextProfessionals ?? selectedProfessionalIds).length +
+      (input.nextResources ?? selectedResourceIds).length +
+      (input.nextCourts ?? selectedCourtIds).length;
+    const defaultOverlay = selectedScopesCountRaw === 1;
+    const rawOverlay = searchParams.get("showAvailabilityOverlay");
+    const currentOverlay = rawOverlay === "1" ? true : rawOverlay === "0" ? false : defaultOverlay;
+    const nextOverlay =
+      typeof input.nextShowAvailabilityOverlay === "boolean"
+        ? input.nextShowAvailabilityOverlay
+        : currentOverlay;
+    nextParams.set("showAvailabilityOverlay", nextOverlay ? "1" : "0");
     const nextTimezone = normalizeCalendarTimezone(input.nextTimezone ?? timezone);
     nextParams.set("tz", nextTimezone);
     const nextDate =
@@ -589,6 +574,7 @@ export default function WeekCalendarReadClient() {
         ? buildZonedDate(getDateParts(anchorDate, timezone), nextTimezone, 12, 0)
         : anchorDate);
     nextParams.set("date", formatDateParam(nextDate, nextTimezone));
+    nextParams.set("view", "week");
     nextParams.delete("scopeMode");
     const nextPath = buildOrgHref(organizationId, "/calendar");
     const search = nextParams.toString();
@@ -750,6 +736,15 @@ export default function WeekCalendarReadClient() {
     (selectedProfessionalIds.length > 0 || selectedResourceIds.length > 0 || selectedCourtIds.length > 0);
   const selectedScopesCount =
     scopeSelectionEnabled ? selectedProfessionalIds.length + selectedResourceIds.length + selectedCourtIds.length : 0;
+  const hasSingleScopeSelection = scopeSelectionEnabled && selectedScopesCount === 1;
+  const showAvailabilityOverlayParam = searchParams.get("showAvailabilityOverlay");
+  const showAvailabilityOverlay =
+    showAvailabilityOverlayParam === "1"
+      ? true
+      : showAvailabilityOverlayParam === "0"
+        ? false
+        : hasSingleScopeSelection;
+  const renderAvailabilityOverlay = showAvailabilityOverlay && hasSingleScopeSelection;
   const selectedScopesLabel = useMemo(() => {
     const parts: string[] = [];
     if (selectedProfessionalIds.length > 0) {
@@ -768,8 +763,20 @@ export default function WeekCalendarReadClient() {
     const nextParams = new URLSearchParams(searchParams.toString());
     nextParams.set("date", formatDateParam(anchorDate, timezone));
     nextParams.set("tz", timezone);
+    nextParams.set("view", "day");
     nextParams.delete("scopeMode");
-    const nextPath = buildOrgHref(organizationId, "/calendar/day");
+    const nextPath = buildOrgHref(organizationId, "/calendar");
+    const search = nextParams.toString();
+    return search ? `${nextPath}?${search}` : nextPath;
+  }, [anchorDate, organizationId, searchParams, timezone]);
+  const monthViewHref = useMemo(() => {
+    if (!Number.isFinite(organizationId) || organizationId <= 0) return "#";
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.set("date", formatDateParam(anchorDate, timezone));
+    nextParams.set("tz", timezone);
+    nextParams.set("view", "month");
+    nextParams.delete("scopeMode");
+    const nextPath = buildOrgHref(organizationId, "/calendar");
     const search = nextParams.toString();
     return search ? `${nextPath}?${search}` : nextPath;
   }, [anchorDate, organizationId, searchParams, timezone]);
@@ -827,15 +834,69 @@ export default function WeekCalendarReadClient() {
   const selectedAggregate = selectedAggregateKey ? aggregatesByKey.get(selectedAggregateKey) ?? null : null;
   const hoveredAggregate = hoveredAggregateKey ? aggregatesByKey.get(hoveredAggregateKey) ?? null : null;
   const hoverPreviewAggregate = selectedAggregate ? null : hoveredAggregate;
+  const singleScopeSelection = useMemo(() => {
+    if (!hasSingleScopeSelection) return null;
+    if (
+      selectedProfessionalIds.length === 1 &&
+      selectedResourceIds.length === 0 &&
+      selectedCourtIds.length === 0
+    ) {
+      return {
+        scopeType: "PROFESSIONAL" as const,
+        scopeId: selectedProfessionalIds[0],
+      };
+    }
+    if (
+      selectedResourceIds.length === 1 &&
+      selectedProfessionalIds.length === 0 &&
+      selectedCourtIds.length === 0
+    ) {
+      return {
+        scopeType: "RESOURCE" as const,
+        scopeId: selectedResourceIds[0],
+      };
+    }
+    if (
+      selectedCourtIds.length === 1 &&
+      selectedProfessionalIds.length === 0 &&
+      selectedResourceIds.length === 0
+    ) {
+      const court = courtsById.get(selectedCourtIds[0]);
+      const scopeId = court?.availabilityScopeId ?? court?.courtId ?? court?.id ?? null;
+      if (!scopeId || !Number.isFinite(scopeId) || scopeId <= 0) return null;
+      return {
+        scopeType: "RESOURCE" as const,
+        scopeId,
+      };
+    }
+    return null;
+  }, [
+    courtsById,
+    hasSingleScopeSelection,
+    selectedCourtIds,
+    selectedProfessionalIds,
+    selectedResourceIds,
+  ]);
 
-  const organizationAvailabilityKey =
-    reservationsEnabled && Number.isFinite(organizationId) && organizationId > 0
-      ? `org-availability:${organizationId}`
+  const selectedScopeAvailabilityKey =
+    reservationsEnabled &&
+    Number.isFinite(organizationId) &&
+    organizationId > 0 &&
+    singleScopeSelection &&
+    Number.isFinite(singleScopeSelection.scopeId) &&
+    singleScopeSelection.scopeId > 0
+      ? `scope-availability:${organizationId}:${singleScopeSelection.scopeType}:${singleScopeSelection.scopeId}`
       : null;
-  const { data: organizationAvailability } = useSWR<NormalizedAvailability | undefined>(
-    organizationAvailabilityKey,
+  const { data: selectedScopeAvailability } = useSWR<NormalizedAvailability | undefined>(
+    selectedScopeAvailabilityKey,
     async () => {
-      const url = `/api/org/${organizationId}/reservas/disponibilidade?scopeType=ORGANIZATION&includeTemplates=all`;
+      if (!singleScopeSelection) return undefined;
+      const query = new URLSearchParams({
+        scopeType: singleScopeSelection.scopeType,
+        scopeId: String(singleScopeSelection.scopeId),
+      });
+      query.set("includeTemplates", "all");
+      const url = `/api/org/${organizationId}/reservas/disponibilidade?${query.toString()}`;
       try {
         const payload = await fetchJson<AvailabilityResponse>(url);
         if (!payload?.ok) return undefined;
@@ -845,13 +906,24 @@ export default function WeekCalendarReadClient() {
       }
     },
   );
-  const organizationAvailabilityByDay = useMemo(() => {
+  const availabilityOverlayByDay = useMemo(() => {
     const map = new Map<string, Interval[]>();
+    const source =
+      renderAvailabilityOverlay && singleScopeSelection
+        ? selectedScopeAvailability
+        : undefined;
     days.forEach((day) => {
-      map.set(getDayKey(day, timezone), resolveIntervalsForDay(organizationAvailability, day, timezone));
+      map.set(getDayKey(day, timezone), resolveIntervalsForDay(source, day, timezone));
     });
     return map;
-  }, [days, organizationAvailability, timezone]);
+  }, [days, renderAvailabilityOverlay, selectedScopeAvailability, singleScopeSelection, timezone]);
+  const availabilityOverlayHint = renderAvailabilityOverlay
+    ? "Sobreposição de disponibilidade ativa para o escopo selecionado."
+    : hasActiveSelection
+      ? showAvailabilityOverlay
+        ? "Sobreposição desativada para múltiplos escopos."
+        : "Sobreposição de disponibilidade desligada."
+      : "Seleciona um único escopo para ativar a sobreposição de disponibilidade.";
 
   const now = new Date();
   const isTodayInRange = days.some((day) => isSameDay(day, now, timezone));
@@ -958,11 +1030,16 @@ export default function WeekCalendarReadClient() {
       if (key === "d" && dayViewHref !== "#") {
         event.preventDefault();
         router.push(dayViewHref, { scroll: false });
+        return;
+      }
+      if (key === "m" && monthViewHref !== "#") {
+        event.preventDefault();
+        router.push(monthViewHref, { scroll: false });
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [dayViewHref, router, setToday, shiftRange]);
+  }, [dayViewHref, monthViewHref, router, setToday, shiftRange]);
 
   if (!range) {
     return <div className="p-6 text-sm text-white/70">Organização inválida.</div>;
@@ -970,7 +1047,7 @@ export default function WeekCalendarReadClient() {
 
   return (
     <div className="space-y-4 p-4 md:p-6">
-      <div className="rounded-2xl border border-white/10 bg-[linear-gradient(150deg,rgba(34,211,238,0.14),rgba(16,24,39,0.82))] p-4 shadow-[0_24px_90px_rgba(0,0,0,0.45)]">
+      <div className="rounded-2xl border border-white/10 bg-[rgba(10,14,26,0.9)] p-4 shadow-[0_24px_90px_rgba(0,0,0,0.45)]">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="max-w-3xl">
             <p className="text-xs uppercase tracking-[0.22em] text-cyan-100/70">{operationalGuidance.badge}</p>
@@ -1160,7 +1237,7 @@ export default function WeekCalendarReadClient() {
                   Total {statusSummary.total}
                 </span>
                 {statusSummary.confirmed > 0 ? (
-                  <span className="rounded-full border border-emerald-300/45 bg-emerald-400/12 px-2 py-0.5 text-emerald-100">
+                  <span className="rounded-full border border-sky-300/45 bg-sky-400/12 px-2 py-0.5 text-sky-100">
                     Confirmado {statusSummary.confirmed}
                   </span>
                 ) : null}
@@ -1202,6 +1279,18 @@ export default function WeekCalendarReadClient() {
               >
                 Ir para agora
               </button>
+              <button
+                type="button"
+                onClick={() => replaceState({ nextShowAvailabilityOverlay: !showAvailabilityOverlay })}
+                className={cn(
+                  "rounded-full border px-3 py-1 text-xs transition",
+                  showAvailabilityOverlay
+                    ? "border-cyan-300/45 bg-cyan-400/12 text-cyan-100 hover:border-cyan-300/75"
+                    : "border-white/20 text-white/75 hover:border-white/35 hover:text-white",
+                )}
+              >
+                Disponibilidade {showAvailabilityOverlay ? "ON" : "OFF"}
+              </button>
               {reservationsEnabled ? (
                 <Link
                   href={buildOrgHref(organizationId, "/calendar/availability")}
@@ -1213,12 +1302,13 @@ export default function WeekCalendarReadClient() {
             </div>
           </div>
           <div className="mb-3 flex flex-wrap items-center gap-2 px-1 text-[10px] text-white/65">
-            <span className="rounded-full border border-emerald-300/45 bg-emerald-400/12 px-2 py-0.5 text-emerald-100">Confirmado</span>
+            <span className="rounded-full border border-sky-300/45 bg-sky-400/12 px-2 py-0.5 text-sky-100">Confirmado</span>
             <span className="rounded-full border border-amber-300/45 bg-amber-400/12 px-2 py-0.5 text-amber-100">Pendente</span>
             <span className="rounded-full border border-rose-300/45 bg-rose-400/12 px-2 py-0.5 text-rose-100">Cancelado/No-show</span>
             <span className="rounded-full border border-fuchsia-300/45 bg-fuchsia-400/12 px-2 py-0.5 text-fuchsia-100">Disputa</span>
             <span className="text-white/45">Click fixa detalhe · hover pré-visualiza</span>
           </div>
+          <p className="mb-3 px-1 text-[11px] text-white/50">{availabilityOverlayHint}</p>
           <div className="mb-3 h-[92px]">
             {hoverPreviewAggregate ? (
               <article className="h-full rounded-xl border border-cyan-300/25 bg-cyan-400/8 p-3">
@@ -1284,7 +1374,7 @@ export default function WeekCalendarReadClient() {
                       style={{
                         height: gridHeight,
                         backgroundImage:
-                          "linear-gradient(to bottom, rgba(255,255,255,0.035) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.08) 1px, transparent 1px)",
+                          "linear-gradient(to bottom, rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.06) 1px, transparent 1px)",
                         backgroundSize: `100% ${hourHeight / 4}px, 100% ${hourHeight}px`,
                       }}
                     >
@@ -1310,8 +1400,8 @@ export default function WeekCalendarReadClient() {
                       {days.map((day) => {
                         const key = getDayKey(day, timezone);
                         const dayItems = aggregateByDay.get(key) ?? [];
-                        const dayAvailability = organizationAvailabilityByDay.get(key) ?? [];
-                        const outsideIntervals = invertIntervals(dayAvailability);
+                        const dayAvailability = availabilityOverlayByDay.get(key) ?? [];
+                        const outsideIntervals = renderAvailabilityOverlay ? invertIntervals(dayAvailability) : [];
                         const isToday = isSameDay(day, now, timezone);
                         return (
                           <div
@@ -1323,14 +1413,14 @@ export default function WeekCalendarReadClient() {
                             style={{
                               height: gridHeight,
                               backgroundImage:
-                                "linear-gradient(to bottom, rgba(255,255,255,0.035) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.08) 1px, transparent 1px)",
+                                "linear-gradient(to bottom, rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.06) 1px, transparent 1px)",
                               backgroundSize: `100% ${hourHeight / 4}px, 100% ${hourHeight}px`,
                             }}
                           >
                             {outsideIntervals.map((interval) => (
                               <div
                                 key={`${key}-outside-${interval.startMinute}-${interval.endMinute}`}
-                                className="pointer-events-none absolute left-0 right-0 border-y border-white/5 bg-[repeating-linear-gradient(135deg,rgba(4,8,16,0.7),rgba(4,8,16,0.7)_8px,rgba(255,255,255,0.06)_8px,rgba(255,255,255,0.06)_16px)]"
+                                className="pointer-events-none absolute left-0 right-0 border-y border-white/5 bg-[repeating-linear-gradient(135deg,rgba(4,8,16,0.42),rgba(4,8,16,0.42)_8px,rgba(255,255,255,0.035)_8px,rgba(255,255,255,0.035)_16px)]"
                                 style={{
                                   top: interval.startMinute * minuteHeight,
                                   height: (interval.endMinute - interval.startMinute) * minuteHeight,

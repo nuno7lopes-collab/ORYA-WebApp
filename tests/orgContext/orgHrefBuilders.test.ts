@@ -44,6 +44,7 @@ describe("organization canonical href helpers", () => {
     );
     expect(appendOrganizationIdToHref("/org/overview?organizationId=7&org=7", 7)).toBe("/org/7/overview");
     expect(appendOrganizationIdToHref("/org/staff", 7)).toBe("/org/7/staff");
+    expect(appendOrganizationIdToHref("/org/academy/students", 7)).toBe("/org/7/academy/students");
     expect(appendOrganizationIdToHref("/org/analyze?section=ops", 7)).toBe("/org/7/analyze?section=ops");
     expect(appendOrganizationIdToHref("/org/padel/tournaments/create", 7)).toBe(
       "/org/7/padel/tournaments/create",

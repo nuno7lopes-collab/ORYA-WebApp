@@ -55,7 +55,7 @@ export function normalizeCrmConfigInput(raw: unknown, current?: CrmConfig): CrmC
     1439,
   );
 
-  const capPerDay = clampInt(parseIntValue(data.capPerDay) ?? fallback.capPerDay, 0, 100);
+  const capPerDay = clampInt(parseIntValue(data.capPerDay) ?? fallback.capPerDay, 1, 100);
   const capPerWeek = clampInt(parseIntValue(data.capPerWeek) ?? fallback.capPerWeek, capPerDay, 500);
   const capPerMonth = clampInt(parseIntValue(data.capPerMonth) ?? fallback.capPerMonth, capPerWeek, 3000);
 
@@ -111,15 +111,7 @@ export async function ensureCrmPolicy(
 ) {
   return client.crmOrganizationPolicy.upsert({
     where: { organizationId },
-    update: {
-      quietHoursStartMinute: CRM_CONFIG_DEFAULTS.quietHoursStartMinute,
-      quietHoursEndMinute: CRM_CONFIG_DEFAULTS.quietHoursEndMinute,
-      capPerDay: CRM_CONFIG_DEFAULTS.capPerDay,
-      capPerWeek: CRM_CONFIG_DEFAULTS.capPerWeek,
-      capPerMonth: CRM_CONFIG_DEFAULTS.capPerMonth,
-      approvalEscalationHours: CRM_CONFIG_DEFAULTS.approvalEscalationHours,
-      approvalExpireHours: CRM_CONFIG_DEFAULTS.approvalExpireHours,
-    },
+    update: {},
     create: {
       organizationId,
       timezone: timezoneFallback,

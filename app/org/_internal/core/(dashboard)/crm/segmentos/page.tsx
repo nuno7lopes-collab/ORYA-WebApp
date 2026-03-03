@@ -8,6 +8,7 @@ import { usePathname } from "next/navigation";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
 import { formatDateTime } from "@/lib/i18n";
+import { CRM_PADEL_INTERACTION_TYPE_VALUES } from "@/lib/crm/padelInteractionTypes";
 import { appendOrganizationIdToHref, parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
 import {
   DASHBOARD_CARD,
@@ -20,7 +21,13 @@ import {
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
-const DATE_FIELDS = new Set(["firstInteractionAt", "lastActivityAt", "lastPurchaseAt", "padel.lastMatchAt"]);
+const DATE_FIELDS = new Set([
+  "firstInteractionAt",
+  "lastActivityAt",
+  "lastPurchaseAt",
+  "padel.lastMatchAt",
+  "padel.lastNoShowAt",
+]);
 const NUMBER_FIELDS = new Set([
   "totalSpentCents",
   "totalOrders",
@@ -33,6 +40,11 @@ const NUMBER_FIELDS = new Set([
   "padel.matches30d",
   "padel.winRate90d",
   "padel.noShowRate90d",
+  "padel.offPeakRatio30d",
+  "padel.reservationCount90d",
+  "padel.lessonCount90d",
+  "padel.tournamentCount90d",
+  "padel.avgSpendPerSessionCents90d",
   "padel.rfmScore",
   "padel.churnRiskScore",
   "padel.reactivationPropensityScore",
@@ -51,13 +63,20 @@ const FIELD_OPTIONS = [
   { value: "sourceType", label: "Origem do contacto" },
   { value: "padel.level", label: "Padel nível" },
   { value: "padel.preferredSide", label: "Padel lado preferido" },
+  { value: "padel.preferredTimeBucket", label: "Padel horário preferido" },
   { value: "padel.clubName", label: "Padel clube" },
   { value: "padel.lastMatchAt", label: "Padel último jogo" },
+  { value: "padel.lastNoShowAt", label: "Padel último no-show" },
   { value: "padel.tournamentsCount", label: "Padel torneios (contagem)" },
+  { value: "padel.tournamentCount90d", label: "Padel torneios 90d" },
   { value: "padel.noShowCount", label: "Padel no-shows (contagem)" },
   { value: "padel.matches30d", label: "Padel jogos 30d" },
   { value: "padel.winRate90d", label: "Padel win rate 90d" },
   { value: "padel.noShowRate90d", label: "Padel no-show rate 90d" },
+  { value: "padel.offPeakRatio30d", label: "Padel off-peak ratio 30d" },
+  { value: "padel.reservationCount90d", label: "Padel reservas 90d" },
+  { value: "padel.lessonCount90d", label: "Padel aulas 90d" },
+  { value: "padel.avgSpendPerSessionCents90d", label: "Padel gasto médio por sessão 90d (cêntimos)" },
   { value: "padel.activityStatus", label: "Padel estado de atividade" },
   { value: "padel.competitiveTier", label: "Padel tier competitivo" },
   { value: "padel.rfmScore", label: "Padel score RFM" },
@@ -95,33 +114,7 @@ const OP_OPTIONS: Record<string, Array<{ value: string; label: string }>> = {
   default: [{ value: "eq", label: "Igual" }],
 };
 
-const INTERACTION_TYPES = [
-  "EVENT_TICKET",
-  "EVENT_CHECKIN",
-  "PADEL_TOURNAMENT_ENTRY",
-  "PADEL_MATCH_PAYMENT",
-  "PADEL_BOOKING_CONFIRMED",
-  "PADEL_BOOKING_CANCELLED",
-  "PADEL_BOOKING_NO_SHOW",
-  "PADEL_MATCH_PLAYED",
-  "PADEL_MATCH_WIN",
-  "PADEL_MATCH_LOSS",
-  "PADEL_CLASS_ATTENDED",
-  "PADEL_CLASS_MISSED",
-  "PADEL_TOURNAMENT_REGISTERED",
-  "PADEL_TOURNAMENT_PLAYED",
-  "PADEL_TOURNAMENT_PODIUM",
-  "BOOKING_CONFIRMED",
-  "BOOKING_CANCELLED",
-  "BOOKING_COMPLETED",
-  "STORE_ORDER_PAID",
-  "ORG_FOLLOWED",
-  "ORG_UNFOLLOWED",
-  "PROFILE_VIEWED",
-  "EVENT_VIEWED",
-  "EVENT_SAVED",
-  "FORM_SUBMITTED",
-];
+const INTERACTION_TYPES = [...CRM_PADEL_INTERACTION_TYPE_VALUES];
 
 const CONTACT_TYPES = ["CUSTOMER", "LEAD", "FOLLOWER", "STAFF", "GUEST"];
 
@@ -188,6 +181,21 @@ type SavedViewListResponse = {
   message?: string;
 };
 
+type CrmTagOption = {
+  id: string;
+  name: string;
+  color: string;
+  isSystem: boolean;
+  usageCount: number;
+};
+
+type CrmTagListResponse = {
+  ok: boolean;
+  tags?: CrmTagOption[];
+  error?: string;
+  message?: string;
+};
+
 const SEGMENT_SYSTEM_VIEWS: Array<{ id: string; label: string; patch: Partial<SegmentListFilters> }> = [
   { id: "active", label: "Ativos", patch: { status: "ACTIVE" } },
   { id: "largest", label: "Maior audiência", patch: { sortBy: "size_desc" } },
@@ -221,6 +229,7 @@ function resolveValueHint(field: string, op: string) {
   if (field === "sourceType") return "Ex.: EVENT, BOOKING, STORE";
   if (field === "padel.activityStatus") return "Ex.: ACTIVE, WARM, COLD, DORMANT";
   if (field === "padel.competitiveTier") return "Ex.: RECREATIONAL, INTERMEDIATE, ADVANCED, COMPETITIVE";
+  if (field === "padel.preferredTimeBucket") return "Ex.: MORNING, AFTERNOON, EVENING, NIGHT";
   if (field === "tag" && (op === "in" || op === "not_in")) return "VIP, premium";
   return "Ex.: valor";
 }
@@ -289,6 +298,12 @@ export default function CrmSegmentosPage() {
   const organizationId = parseOrganizationIdFromPathname(pathname);
   const { data, isLoading, mutate } = useSWR<SegmentListResponse>(resolveCanonicalOrgApiPath("/api/org/[orgId]/crm/segmentos"), fetcher);
   const segments = data?.ok ? data.items ?? [] : [];
+  const { data: tagsData } = useSWR<CrmTagListResponse>(
+    resolveCanonicalOrgApiPath("/api/org/[orgId]/crm/tags"),
+    fetcher,
+    { keepPreviousData: true },
+  );
+  const availableTags = useMemo(() => (tagsData?.ok ? tagsData.tags ?? [] : []), [tagsData]);
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -305,6 +320,16 @@ export default function CrmSegmentosPage() {
   const [defaultApplied, setDefaultApplied] = useState(false);
   const [savingView, setSavingView] = useState(false);
   const [viewActionId, setViewActionId] = useState<string | null>(null);
+
+  const appendTagToken = (currentValue: string, tagName: string, multi: boolean) => {
+    if (!multi) return tagName;
+    const tokens = currentValue
+      .split(",")
+      .map((token) => token.trim())
+      .filter(Boolean);
+    if (tokens.includes(tagName)) return tokens.join(", ");
+    return [...tokens, tagName].join(", ");
+  };
 
   const savedViewsUrl = resolveCanonicalOrgApiPath("/api/org/[orgId]/crm/saved-views?scope=SEGMENTS");
   const {
@@ -759,6 +784,32 @@ export default function CrmSegmentosPage() {
                         </option>
                       ))}
                     </select>
+                  ) : rule.field === "tag" ? (
+                    <div className="space-y-2">
+                      <input
+                        className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-2 py-2 text-sm text-white outline-none focus:border-white/40"
+                        placeholder={valueHint}
+                        value={rule.value}
+                        list="crm-tag-options"
+                        onChange={(event) => handleRuleChange(rule.id, { value: event.target.value })}
+                      />
+                      <div className="flex flex-wrap gap-1">
+                        {availableTags.slice(0, 8).map((tag) => (
+                          <button
+                            key={`${rule.id}-${tag.id}`}
+                            type="button"
+                            className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/70"
+                            onClick={() =>
+                              handleRuleChange(rule.id, {
+                                value: appendTagToken(rule.value, tag.name, rule.op === "in" || rule.op === "not_in"),
+                              })
+                            }
+                          >
+                            {tag.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   ) : (
                     <input
                       className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-2 py-2 text-sm text-white outline-none focus:border-white/40"
@@ -1010,6 +1061,12 @@ export default function CrmSegmentosPage() {
           ) : null}
         </div>
       </section>
+
+      <datalist id="crm-tag-options">
+        {availableTags.map((tag) => (
+          <option key={`tag-option-${tag.id}`} value={tag.name} />
+        ))}
+      </datalist>
     </div>
   );
 }

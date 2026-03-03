@@ -13,13 +13,25 @@ import { Avatar } from "@/components/ui/avatar";
 import { ViewState } from "@/components/ui/view-state";
 import { useToast } from "@/components/ui/toast-provider";
 import { cn } from "@/lib/utils";
-import { ACCESS_LABELS, MODULE_LABELS, getDefaultModuleAccess, normalizeAccessLevel } from "@/lib/organizationRbac";
+import { ACCESS_LABELS, MODULE_LABELS, normalizeAccessLevel, resolveMemberModuleAccess } from "@/lib/organizationRbac";
 import { parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
 import { resolveInviteActionFeedback } from "@/lib/invites/actionFeedback";
-import type { OrganizationModule, OrganizationRolePack } from "@prisma/client";
+import {
+  ROLE_PACK_LABELS,
+  getAllowedRolePacksForRole,
+  getDefaultRolePackForRole,
+  parseOrganizationRolePack,
+} from "@/lib/organizationRolePackPolicy";
+import type { OrganizationMemberRole, OrganizationModule, OrganizationRolePack } from "@prisma/client";
 
 type MemberRole = "OWNER" | "CO_OWNER" | "ADMIN" | "STAFF";
 type StaffTabKey = "membros" | "permissoes" | "auditoria";
+type RoleAssignmentOption = {
+  value: string;
+  label: string;
+  role: MemberRole;
+  rolePack: OrganizationRolePack | null;
+};
 
 type Member = {
   userId: string;
@@ -77,6 +89,47 @@ type MemberPermissionsResponse = {
   organizationId?: number | null;
   error?: string;
 };
+type ReservasScopeType = "COURT" | "RESOURCE" | "PROFESSIONAL";
+type ReservasResourceCatalogItem = {
+  id: number;
+  label: string;
+  isActive: boolean;
+  sourceType?: "RESOURCE" | "COURT";
+  resourceId?: number | null;
+  courtId?: number | null;
+  availabilityScopeId?: number | null;
+  clubName?: string | null;
+};
+type ReservasResourcesResponse = {
+  ok: boolean;
+  items?: ReservasResourceCatalogItem[];
+  error?: string;
+};
+type ReservasProfessionalCatalogItem = {
+  id: number;
+  name: string;
+  isActive: boolean;
+};
+type ReservasProfessionalsResponse = {
+  ok: boolean;
+  items?: ReservasProfessionalCatalogItem[];
+  error?: string;
+};
+type CommunityScopeCatalogItem = {
+  conversationId: string;
+  title: string;
+  participantsCount: number;
+};
+type CommunityScopesResponse = {
+  ok: boolean;
+  items?: CommunityScopeCatalogItem[];
+  error?: string;
+};
+type ReservasScopeOption = {
+  scopeId: string;
+  label: string;
+  hint?: string | null;
+};
 type AuditLogEntry = {
   id: string;
   action: string;
@@ -99,7 +152,7 @@ const roleLabels: Record<MemberRole, string> = {
   OWNER: "Dono",
   CO_OWNER: "Co-dono",
   ADMIN: "Administrador",
-  STAFF: "Colaborador",
+  STAFF: "Equipa",
 };
 
 const roleOrder: Record<MemberRole, number> = {
@@ -109,21 +162,21 @@ const roleOrder: Record<MemberRole, number> = {
   STAFF: 3,
 };
 
-const rolePackLabels: Record<OrganizationRolePack, string> = {
-  CLUB_MANAGER: "Gestor de Clube",
-  TOURNAMENT_DIRECTOR: "Diretor de Torneio",
-  FRONT_DESK: "Front Desk",
-  COACH: "Coach",
-  REFEREE: "Árbitro",
-};
-
-const rolePackOptionsByRole: Partial<Record<MemberRole, OrganizationRolePack[]>> = {
-  STAFF: ["CLUB_MANAGER", "TOURNAMENT_DIRECTOR", "FRONT_DESK", "COACH", "REFEREE"],
-};
-
-const defaultRolePackByRole: Partial<Record<MemberRole, OrganizationRolePack>> = {
-  STAFF: "FRONT_DESK",
-};
+const rolePackLabels: Record<OrganizationRolePack, string> = ROLE_PACK_LABELS;
+const STAFF_ROLE_PACK_OPTIONS = [...getAllowedRolePacksForRole("STAFF" as OrganizationMemberRole)] as OrganizationRolePack[];
+const DEFAULT_STAFF_ROLE_PACK =
+  (getDefaultRolePackForRole("STAFF" as OrganizationMemberRole) ?? STAFF_ROLE_PACK_OPTIONS[0] ?? null) as OrganizationRolePack | null;
+const GOVERNANCE_ASSIGNMENT_OPTIONS: RoleAssignmentOption[] = [
+  { value: "OWNER", label: roleLabels.OWNER, role: "OWNER", rolePack: null },
+  { value: "CO_OWNER", label: roleLabels.CO_OWNER, role: "CO_OWNER", rolePack: null },
+  { value: "ADMIN", label: roleLabels.ADMIN, role: "ADMIN", rolePack: null },
+];
+const STAFF_ASSIGNMENT_OPTIONS: RoleAssignmentOption[] = STAFF_ROLE_PACK_OPTIONS.map((pack) => ({
+  value: `STAFF:${pack}`,
+  label: rolePackLabels[pack] ?? pack,
+  role: "STAFF",
+  rolePack: pack,
+}));
 
 const moduleOrder: OrganizationModule[] = [
   "EVENTOS",
@@ -151,9 +204,26 @@ const auditActionLabels: Record<string, string> = {
   MEMBER_REMOVED: "Membro removido",
   OWNER_PROMOTED: "Dono promovido",
   OWNER_DEMOTED: "Dono despromovido",
-  PERMISSION_UPDATED: "Permissao atualizada",
-  PERMISSION_CLEARED: "Permissao removida",
+  PERMISSION_UPDATED: "Permissão atualizada",
+  PERMISSION_CLEARED: "Permissão removida",
 };
+
+const RESERVAS_SCOPE_TYPE_LABELS: Record<ReservasScopeType, string> = {
+  COURT: "Campo",
+  RESOURCE: "Recurso",
+  PROFESSIONAL: "Profissional",
+};
+
+function toPositiveInt(value: string | number | null | undefined) {
+  const parsed = typeof value === "number" || typeof value === "string" ? Number(value) : NaN;
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return Math.trunc(parsed);
+}
+
+function buildScopedPermissionKey(scopeType: string | null | undefined, scopeId: string | null | undefined) {
+  if (!scopeType) return "";
+  return `${scopeType}:${scopeId ?? ""}`;
+}
 
 const statusTone: Record<InviteStatus, string> = {
   PENDING:
@@ -190,8 +260,25 @@ function canAssignRole(actorRole: MemberRole | null, targetRole: MemberRole, des
   return false;
 }
 
+function canAssignInviteRole(actorRole: MemberRole | null, desiredRole: MemberRole) {
+  if (!actorRole) return false;
+  if (actorRole === "OWNER") return true;
+  if (actorRole === "CO_OWNER") return desiredRole !== "OWNER";
+  if (actorRole === "ADMIN") return desiredRole === "ADMIN" || desiredRole === "STAFF";
+  return false;
+}
+
+function parseMemberRole(value: unknown): MemberRole | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toUpperCase();
+  if (normalized === "OWNER" || normalized === "CO_OWNER" || normalized === "ADMIN" || normalized === "STAFF") {
+    return normalized;
+  }
+  return null;
+}
+
 function getRolePackOptions(role: MemberRole) {
-  return rolePackOptionsByRole[role] ?? [];
+  return [...getAllowedRolePacksForRole(role as OrganizationMemberRole)] as OrganizationRolePack[];
 }
 
 function resolveRolePackForRole(
@@ -201,7 +288,60 @@ function resolveRolePackForRole(
   const options = getRolePackOptions(role);
   if (options.length === 0) return null;
   if (rolePack && options.includes(rolePack)) return rolePack;
-  return defaultRolePackByRole[role] ?? options[0] ?? null;
+  const fallback = getDefaultRolePackForRole(role as OrganizationMemberRole);
+  return (fallback && options.includes(fallback) ? fallback : options[0]) ?? null;
+}
+
+function resolveRoleAssignmentValue(
+  role: MemberRole,
+  rolePack: OrganizationRolePack | null | undefined,
+) {
+  if (role !== "STAFF") return role;
+  const normalizedRolePack = resolveRolePackForRole("STAFF", rolePack);
+  return normalizedRolePack ? `STAFF:${normalizedRolePack}` : "STAFF";
+}
+
+function parseRoleAssignmentValue(value: string): { role: MemberRole; rolePack: OrganizationRolePack | null } {
+  const normalized = value.trim().toUpperCase();
+  if (normalized === "OWNER" || normalized === "CO_OWNER" || normalized === "ADMIN") {
+    return { role: normalized, rolePack: null };
+  }
+  if (normalized.startsWith("STAFF:")) {
+    const parsedPack = parseOrganizationRolePack(normalized.slice("STAFF:".length));
+    return { role: "STAFF", rolePack: resolveRolePackForRole("STAFF", parsedPack) };
+  }
+  return { role: "STAFF", rolePack: resolveRolePackForRole("STAFF", null) ?? DEFAULT_STAFF_ROLE_PACK };
+}
+
+function resolveRoleAssignmentLabel(
+  role: MemberRole,
+  rolePack: OrganizationRolePack | null | undefined,
+) {
+  if (role !== "STAFF") return roleLabels[role] ?? role;
+  const normalizedRolePack = resolveRolePackForRole("STAFF", rolePack);
+  if (normalizedRolePack) return rolePackLabels[normalizedRolePack] ?? normalizedRolePack;
+  return roleLabels.STAFF;
+}
+
+function RoleAssignmentBadge({
+  role,
+  rolePack,
+  subtle,
+}: {
+  role: MemberRole;
+  rolePack?: OrganizationRolePack | null;
+  subtle?: boolean;
+}) {
+  if (role === "STAFF") {
+    const label = resolveRoleAssignmentLabel(role, rolePack);
+    const padding = subtle ? "px-2 py-[2px]" : "px-3 py-[6px]";
+    return (
+      <span className={`inline-flex items-center rounded-full border border-cyan-300/30 bg-cyan-400/10 ${padding} text-[11px] uppercase tracking-[0.16em] text-cyan-100`}>
+        {label}
+      </span>
+    );
+  }
+  return <RoleBadge role={role} subtle={subtle} />;
 }
 
 function resolveUserLabel(
@@ -219,37 +359,56 @@ function formatAuditAction(action: string) {
 function formatAuditMeta(metadata: Record<string, unknown> | null | undefined) {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
   const parts: string[] = [];
-  const fromRole = typeof metadata.fromRole === "string" ? metadata.fromRole : null;
-  const toRole = typeof metadata.toRole === "string" ? metadata.toRole : null;
-  const newRole = typeof metadata.newRole === "string" ? metadata.newRole : null;
-  if (fromRole || toRole) {
-    const fromLabel = roleLabels[fromRole as MemberRole] ?? fromRole ?? "";
-    const toLabel = roleLabels[toRole as MemberRole] ?? toRole ?? "";
+  const fromRoleRaw = typeof metadata.fromRole === "string" ? metadata.fromRole : null;
+  const toRoleRaw = typeof metadata.toRole === "string" ? metadata.toRole : null;
+  const newRoleRaw = typeof metadata.newRole === "string" ? metadata.newRole : null;
+  const fromRolePackRaw = typeof metadata.fromRolePack === "string" ? metadata.fromRolePack : null;
+  const toRolePackRaw = typeof metadata.toRolePack === "string" ? metadata.toRolePack : null;
+  const rolePackRaw = typeof metadata.rolePack === "string" ? metadata.rolePack : null;
+  const fromRole = parseMemberRole(fromRoleRaw);
+  const toRole = parseMemberRole(toRoleRaw);
+  const newRole = parseMemberRole(newRoleRaw);
+  const fromRolePack = parseOrganizationRolePack(fromRolePackRaw);
+  const toRolePack = parseOrganizationRolePack(toRolePackRaw);
+  const rolePack = parseOrganizationRolePack(rolePackRaw);
+  if (fromRole || toRole || fromRoleRaw || toRoleRaw) {
+    const fromLabel = fromRole
+      ? resolveRoleAssignmentLabel(fromRole, fromRolePack)
+      : fromRoleRaw ?? "";
+    const toLabel = toRole
+      ? resolveRoleAssignmentLabel(toRole, toRolePack)
+      : toRoleRaw ?? "";
     if (fromLabel && toLabel) {
       parts.push(`Função: ${fromLabel} → ${toLabel}`);
     } else if (fromLabel || toLabel) {
       parts.push(`Função: ${fromLabel || toLabel}`);
     }
-  } else if (newRole) {
-    const newLabel = roleLabels[newRole as MemberRole] ?? newRole;
+  } else if (newRole || newRoleRaw) {
+    const newLabel = newRole
+      ? resolveRoleAssignmentLabel(newRole, rolePack)
+      : newRoleRaw ?? "";
     parts.push(`Função: ${newLabel}`);
   }
-  const fromRolePack = typeof metadata.fromRolePack === "string" ? metadata.fromRolePack : null;
-  const toRolePack = typeof metadata.toRolePack === "string" ? metadata.toRolePack : null;
-  const rolePack = typeof metadata.rolePack === "string" ? metadata.rolePack : null;
-  if (fromRolePack || toRolePack) {
+  const hasRolePayload = Boolean(fromRoleRaw || toRoleRaw || newRoleRaw);
+  if (!hasRolePayload && (fromRolePack || toRolePack || fromRolePackRaw || toRolePackRaw)) {
     const fromPackLabel = fromRolePack
-      ? rolePackLabels[fromRolePack as OrganizationRolePack] ?? fromRolePack
-      : "";
-    const toPackLabel = toRolePack ? rolePackLabels[toRolePack as OrganizationRolePack] ?? toRolePack : "";
+      ? rolePackLabels[fromRolePack] ?? fromRolePack
+      : fromRolePackRaw ?? "";
+    const toPackLabel = toRolePack
+      ? rolePackLabels[toRolePack] ?? toRolePack
+      : toRolePackRaw ?? "";
     if (fromPackLabel && toPackLabel) {
-      parts.push(`Pacote: ${fromPackLabel} → ${toPackLabel}`);
+      parts.push(`Função da equipa: ${fromPackLabel} → ${toPackLabel}`);
     } else if (fromPackLabel || toPackLabel) {
-      parts.push(`Pacote: ${fromPackLabel || toPackLabel}`);
+      parts.push(`Função da equipa: ${fromPackLabel || toPackLabel}`);
     }
-  } else if (rolePack) {
-    const rolePackLabel = rolePackLabels[rolePack as OrganizationRolePack] ?? rolePack;
-    parts.push(`Pacote: ${rolePackLabel}`);
+  } else if (!hasRolePayload && (rolePack || rolePackRaw)) {
+    const rolePackLabel = rolePack
+      ? rolePackLabels[rolePack] ?? rolePack
+      : rolePackRaw ?? "";
+    if (rolePackLabel) {
+      parts.push(`Função da equipa: ${rolePackLabel}`);
+    }
   }
   const moduleKey = typeof metadata.moduleKey === "string" ? metadata.moduleKey : null;
   if (moduleKey && Object.prototype.hasOwnProperty.call(MODULE_LABELS, moduleKey)) {
@@ -301,7 +460,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [inviteIdentifier, setInviteIdentifier] = useState("");
   const [inviteRole, setInviteRole] = useState<MemberRole>("STAFF");
-  const [inviteRolePack, setInviteRolePack] = useState<OrganizationRolePack | null>("FRONT_DESK");
+  const [inviteRolePack, setInviteRolePack] = useState<OrganizationRolePack | null>(DEFAULT_STAFF_ROLE_PACK);
   const [inviteLoading, setInviteLoading] = useState(false);
 
   const [transferModalOpen, setTransferModalOpen] = useState(false);
@@ -317,21 +476,18 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   const [roleConfirm, setRoleConfirm] = useState<{ userId: string; newRole: MemberRole; newRolePack: OrganizationRolePack | null; currentRole: MemberRole; label: string }>({
     userId: "",
     newRole: "STAFF",
-    newRolePack: "FRONT_DESK",
+    newRolePack: DEFAULT_STAFF_ROLE_PACK,
     currentRole: "STAFF",
     label: "",
   });
   const [roleConfirmOpen, setRoleConfirmOpen] = useState(false);
   const [selectedPermissionUserId, setSelectedPermissionUserId] = useState<string>("");
   const [permissionSavingKey, setPermissionSavingKey] = useState<string | null>(null);
-  const [scopeDraftType, setScopeDraftType] = useState<string>("COURT");
+  const [scopeDraftType, setScopeDraftType] = useState<ReservasScopeType>("COURT");
   const [scopeDraftId, setScopeDraftId] = useState<string>("");
-  const [scopeDraftLevel, setScopeDraftLevel] = useState<string>("VIEW");
+  const [scopeDraftLevel, setScopeDraftLevel] = useState<"VIEW" | "EDIT">("VIEW");
   const [communityScopeDraftId, setCommunityScopeDraftId] = useState<string>("GLOBAL");
-  const [communityScopeDraftLevel, setCommunityScopeDraftLevel] = useState<string>("EDIT");
 
-  const eventIdParam = searchParams?.get("eventId");
-  const eventId = eventIdParam ? Number(eventIdParam) : null;
   const organizationIdParam = searchParams?.get("organizationId") ?? null;
   const organizationIdParsed = organizationIdParam ? Number(organizationIdParam) : null;
   const organizationIdFromPath = parseOrganizationIdFromPathname(pathname);
@@ -359,16 +515,14 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   const membersKey = useMemo(() => {
     if (!user) return null;
     if (organizationId) return `/api/org-hub/organizations/members?organizationId=${organizationId}`;
-    if (eventId && !Number.isNaN(eventId)) return `/api/org-hub/organizations/members?eventId=${eventId}`;
     return null;
-  }, [user, organizationId, eventId]);
+  }, [user, organizationId]);
 
   const invitesKey = useMemo(() => {
     if (!user) return null;
     if (organizationId) return `/api/org-hub/organizations/members/invites?organizationId=${organizationId}`;
-    if (eventId && !Number.isNaN(eventId)) return `/api/org-hub/organizations/members/invites?eventId=${eventId}`;
     return null;
-  }, [user, organizationId, eventId]);
+  }, [user, organizationId]);
 
   const { data: invitesData, isLoading: isInvitesLoading, mutate: mutateInvites } = useSWR<InvitesResponse>(
     invitesKey,
@@ -402,6 +556,27 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   const { data: permissionsData, isLoading: isPermissionsLoading, mutate: mutatePermissions } =
     useSWR<MemberPermissionsResponse>(permissionsKey, fetcher, { revalidateOnFocus: false });
   const permissions = permissionsData?.items ?? [];
+  const reservasResourcesKey = useMemo(() => {
+    if (!user || !resolvedOrganizationId || !canManagePermissions) return null;
+    if (activeStaffTab !== "permissoes") return null;
+    return `/api/org/${resolvedOrganizationId}/reservas/recursos?includeCourts=1`;
+  }, [activeStaffTab, canManagePermissions, resolvedOrganizationId, user]);
+  const reservasProfessionalsKey = useMemo(() => {
+    if (!user || !resolvedOrganizationId || !canManagePermissions) return null;
+    if (activeStaffTab !== "permissoes") return null;
+    return `/api/org/${resolvedOrganizationId}/reservas/profissionais`;
+  }, [activeStaffTab, canManagePermissions, resolvedOrganizationId, user]);
+  const communitiesKey = useMemo(() => {
+    if (!user || !resolvedOrganizationId || !canManagePermissions) return null;
+    if (activeStaffTab !== "permissoes") return null;
+    return `/api/messages/communities?organizationId=${resolvedOrganizationId}`;
+  }, [activeStaffTab, canManagePermissions, resolvedOrganizationId, user]);
+  const { data: reservasResourcesData } =
+    useSWR<ReservasResourcesResponse>(reservasResourcesKey, fetcher, { revalidateOnFocus: false });
+  const { data: reservasProfessionalsData } =
+    useSWR<ReservasProfessionalsResponse>(reservasProfessionalsKey, fetcher, { revalidateOnFocus: false });
+  const { data: communitiesData } =
+    useSWR<CommunityScopesResponse>(communitiesKey, fetcher, { revalidateOnFocus: false });
 
   const auditKey = useMemo(() => {
     if (!user || !resolvedOrganizationId || !canManagePermissions) return null;
@@ -440,7 +615,6 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
     setScopeDraftId("");
     setScopeDraftLevel("VIEW");
     setCommunityScopeDraftId("GLOBAL");
-    setCommunityScopeDraftLevel("EDIT");
   }, [selectedMember?.userId]);
 
   useEffect(() => {
@@ -468,9 +642,107 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
     return map;
   }, [permissionsByUser, selectedMember]);
   const selectedDefaults = useMemo(
-    () => getDefaultModuleAccess(selectedMember?.role ?? null),
-    [selectedMember?.role],
+    () =>
+      resolveMemberModuleAccess({
+        role: selectedMember?.role ?? null,
+        rolePack: selectedMember?.rolePack ?? null,
+        overrides: [],
+      }),
+    [selectedMember?.role, selectedMember?.rolePack],
   );
+  const reservasScopeOptionsByType = useMemo<Record<ReservasScopeType, ReservasScopeOption[]>>(() => {
+    const items = (reservasResourcesData?.items ?? []).filter((item) => item.isActive !== false);
+    const courts = new Map<string, ReservasScopeOption>();
+    const resources = new Map<string, ReservasScopeOption>();
+    for (const item of items) {
+      if ((item.sourceType ?? "RESOURCE") === "COURT") {
+        const scopeId = toPositiveInt(item.courtId ?? item.id);
+        if (!scopeId) continue;
+        courts.set(String(scopeId), {
+          scopeId: String(scopeId),
+          label: item.label,
+          hint: item.clubName ?? null,
+        });
+        continue;
+      }
+      const scopeId = toPositiveInt(item.resourceId ?? item.availabilityScopeId ?? item.id);
+      if (!scopeId) continue;
+      resources.set(String(scopeId), {
+        scopeId: String(scopeId),
+        label: item.label,
+        hint: item.clubName ?? null,
+      });
+    }
+
+    const professionals = new Map<string, ReservasScopeOption>();
+    for (const professional of reservasProfessionalsData?.items ?? []) {
+      if (professional.isActive === false) continue;
+      const scopeId = toPositiveInt(professional.id);
+      if (!scopeId) continue;
+      professionals.set(String(scopeId), {
+        scopeId: String(scopeId),
+        label: professional.name || `Profissional #${scopeId}`,
+      });
+    }
+
+    return {
+      COURT: Array.from(courts.values()).sort((a, b) => a.label.localeCompare(b.label, "pt-PT")),
+      RESOURCE: Array.from(resources.values()).sort((a, b) => a.label.localeCompare(b.label, "pt-PT")),
+      PROFESSIONAL: Array.from(professionals.values()).sort((a, b) => a.label.localeCompare(b.label, "pt-PT")),
+    };
+  }, [reservasProfessionalsData?.items, reservasResourcesData?.items]);
+  const reservasDraftOptions = useMemo(
+    () => reservasScopeOptionsByType[scopeDraftType] ?? [],
+    [reservasScopeOptionsByType, scopeDraftType],
+  );
+  const reservasScopeLabelMap = useMemo(() => {
+    const map = new Map<string, string>();
+    (Object.keys(reservasScopeOptionsByType) as ReservasScopeType[]).forEach((scopeType) => {
+      reservasScopeOptionsByType[scopeType].forEach((option) => {
+        map.set(buildScopedPermissionKey(scopeType, option.scopeId), option.label);
+      });
+    });
+    return map;
+  }, [reservasScopeOptionsByType]);
+  const communityScopeOptions = useMemo(() => {
+    const options: Array<{ scopeId: string; label: string }> = [
+      { scopeId: "GLOBAL", label: "Todas as comunidades" },
+    ];
+    for (const community of communitiesData?.items ?? []) {
+      const scopeId = typeof community.conversationId === "string" ? community.conversationId.trim() : "";
+      if (!scopeId) continue;
+      options.push({
+        scopeId,
+        label: community.title?.trim() || `Comunidade ${scopeId.slice(0, 8)}`,
+      });
+    }
+    return options;
+  }, [communitiesData?.items]);
+  const communityScopeLabelMap = useMemo(() => {
+    const map = new Map<string, string>();
+    communityScopeOptions.forEach((option) => {
+      map.set(buildScopedPermissionKey("CHAT_COMMUNITIES", option.scopeId), option.label);
+    });
+    return map;
+  }, [communityScopeOptions]);
+
+  useEffect(() => {
+    if (reservasDraftOptions.length === 0) {
+      if (scopeDraftId) setScopeDraftId("");
+      return;
+    }
+    const hasCurrent = reservasDraftOptions.some((option) => option.scopeId === scopeDraftId);
+    if (!hasCurrent) {
+      setScopeDraftId(reservasDraftOptions[0].scopeId);
+    }
+  }, [reservasDraftOptions, scopeDraftId]);
+
+  useEffect(() => {
+    const hasCurrent = communityScopeOptions.some((option) => option.scopeId === communityScopeDraftId);
+    if (!hasCurrent) {
+      setCommunityScopeDraftId("GLOBAL");
+    }
+  }, [communityScopeDraftId, communityScopeOptions]);
 
   const isOrganizationProfile = profile?.roles?.includes("organization") ?? false;
   const hasMembership = !!viewerRole;
@@ -528,13 +800,13 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
       pushToast("Indica o email ou username a convidar.");
       return;
     }
-    if (!canInvite || !canAssignRole(viewerRole, inviteRole, inviteRole)) {
+    if (!canInvite || !canAssignInviteRole(viewerRole, inviteRole)) {
       pushToast("Não tens permissão para enviar este convite.");
       return;
     }
     const normalizedInviteRolePack = resolveRolePackForRole(inviteRole, inviteRolePack);
     if (getRolePackOptions(inviteRole).length > 0 && !normalizedInviteRolePack) {
-      pushToast("Seleciona um pacote para este papel.");
+      pushToast("Seleciona uma função para este papel.");
       return;
     }
     setInviteLoading(true);
@@ -561,7 +833,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
         });
         setInviteIdentifier("");
         setInviteRole("STAFF");
-        setInviteRolePack("FRONT_DESK");
+        setInviteRolePack(DEFAULT_STAFF_ROLE_PACK);
         setInviteModalOpen(false);
         mutateInvites();
       }
@@ -613,14 +885,18 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
     }
   };
 
-  const handleRoleChange = (member: Member, newRole: MemberRole) => {
+  const handleRoleChange = (
+    member: Member,
+    newRole: MemberRole,
+    newRolePack: OrganizationRolePack | null,
+  ) => {
     if (!canAssignRole(viewerRole, member.role, newRole)) {
       pushToast("Não tens permissão para definir este papel.");
       return;
     }
-    const normalizedRolePack = resolveRolePackForRole(newRole, member.rolePack);
+    const normalizedRolePack = resolveRolePackForRole(newRole, newRolePack);
     if (getRolePackOptions(newRole).length > 0 && !normalizedRolePack) {
-      pushToast("Seleciona um pacote válido para esse papel.");
+      pushToast("Seleciona uma função válida para esse papel.");
       return;
     }
 
@@ -860,7 +1136,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <h2 className="text-sm font-semibold">Permissões por membro</h2>
-                    <p className="text-[12px] text-white/60">Overrides por ferramenta e por role.</p>
+                    <p className="text-[12px] text-white/60">Overrides por ferramenta e por função base.</p>
                   </div>
                   <div className="text-[11px] text-white/60">
                     {isMembersLoading
@@ -923,8 +1199,8 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                               />
                               <div>
                                 <p className="text-sm font-semibold text-white">{displayName}</p>
-                                <div className="text-[11px] text-white/60">
-                                  <RoleBadge role={member.role} />
+                                <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/60">
+                                  <RoleAssignmentBadge role={member.role} rolePack={member.rolePack ?? null} subtle />
                                 </div>
                               </div>
                             </div>
@@ -971,7 +1247,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                           {selectedMember.fullName || selectedMember.username || "Utilizador"}
                         </p>
                         <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/60">
-                          <RoleBadge role={selectedMember.role} />
+                          <RoleAssignmentBadge role={selectedMember.role} rolePack={selectedMember.rolePack ?? null} subtle />
                         </div>
                       </div>
                     </div>
@@ -1031,197 +1307,214 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                     {selectedMember && (
                       <div className="mt-4 space-y-4">
                         <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div>
-                            <p className="text-sm font-semibold text-white">Scopes de Reservas</p>
-                            <p className="text-[11px] text-white/60">Por campo, recurso ou profissional.</p>
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <p className="text-sm font-semibold text-white">Âmbitos de Operação</p>
+                              <p className="text-[11px] text-white/60">Seleciona por campo, recurso ou profissional.</p>
+                            </div>
+                            <span className="text-[11px] text-white/50">
+                              {(permissionsByUser.get(selectedMember.userId) ?? []).filter((perm) => perm.moduleKey === "RESERVAS" && perm.scopeType).length} âmbito(s)
+                            </span>
                           </div>
-                          <span className="text-[11px] text-white/50">
-                            {(permissionsByUser.get(selectedMember.userId) ?? []).filter((perm) => perm.moduleKey === "RESERVAS" && perm.scopeType).length} scope(s)
-                          </span>
-                        </div>
 
-                        <div className="mt-3 space-y-2">
-                          {(permissionsByUser.get(selectedMember.userId) ?? [])
-                            .filter((perm) => perm.moduleKey === "RESERVAS" && perm.scopeType)
-                            .map((perm) => {
-                              const isSaving =
-                                permissionSavingKey ===
-                                `${selectedMember.userId}:${perm.moduleKey}:${perm.scopeType}:${perm.scopeId ?? "ALL"}`;
-                              return (
-                                <div
-                                  key={`${perm.id}:${perm.scopeType}:${perm.scopeId}`}
-                                  className="flex flex-col gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 md:flex-row md:items-center md:justify-between"
-                                >
-                                  <div className="space-y-1">
-                                    <p className="text-sm font-semibold text-white">
-                                      {perm.scopeType} · {perm.scopeId}
-                                    </p>
-                                    <p className="text-[11px] text-white/60">
-                                      Acesso: {ACCESS_LABELS[normalizeAccessLevel(perm.accessLevel) ?? "VIEW"]}
-                                    </p>
-                                  </div>
-                                  <select
-                                    value={normalizeAccessLevel(perm.accessLevel) ?? "VIEW"}
-                                    disabled={!canManageMember(viewerRole, selectedMember.role) || isSaving}
-                                    onChange={(e) =>
-                                      handlePermissionUpdate(
-                                        selectedMember.userId,
-                                        perm.moduleKey,
-                                        e.target.value,
-                                        perm.scopeType,
-                                        perm.scopeId,
-                                      )
-                                    }
-                                    className="rounded-full border border-white/15 bg-black/40 px-4 py-2 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,0.35)] outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)] disabled:opacity-60"
+                          <div className="mt-3 space-y-2">
+                            {(permissionsByUser.get(selectedMember.userId) ?? [])
+                              .filter((perm) => perm.moduleKey === "RESERVAS" && perm.scopeType)
+                              .map((perm) => {
+                                const isSaving =
+                                  permissionSavingKey ===
+                                  `${selectedMember.userId}:${perm.moduleKey}:${perm.scopeType}:${perm.scopeId ?? "ALL"}`;
+                                const scopeType = perm.scopeType as ReservasScopeType;
+                                const scopeTypeLabel = RESERVAS_SCOPE_TYPE_LABELS[scopeType] ?? perm.scopeType ?? "Scope";
+                                const scopeLabel =
+                                  reservasScopeLabelMap.get(buildScopedPermissionKey(perm.scopeType, perm.scopeId)) ??
+                                  perm.scopeId ??
+                                  "—";
+                                return (
+                                  <div
+                                    key={`${perm.id}:${perm.scopeType}:${perm.scopeId}`}
+                                    className="flex flex-col gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 md:flex-row md:items-center md:justify-between"
                                   >
-                                    <option value="DEFAULT">Remover</option>
-                                    <option value="VIEW">Ver</option>
-                                    <option value="EDIT">Editar</option>
-                                  </select>
-                                </div>
-                              );
-                            })}
-                        </div>
+                                    <div className="space-y-1">
+                                      <p className="text-sm font-semibold text-white">
+                                        {scopeTypeLabel}: {scopeLabel}
+                                      </p>
+                                      <p className="text-[11px] text-white/60">
+                                        Acesso: {ACCESS_LABELS[normalizeAccessLevel(perm.accessLevel) ?? "VIEW"]}
+                                      </p>
+                                    </div>
+                                    <select
+                                      value={normalizeAccessLevel(perm.accessLevel) ?? "VIEW"}
+                                      disabled={!canManageMember(viewerRole, selectedMember.role) || isSaving}
+                                      onChange={(e) =>
+                                        handlePermissionUpdate(
+                                          selectedMember.userId,
+                                          perm.moduleKey,
+                                          e.target.value,
+                                          perm.scopeType,
+                                          perm.scopeId,
+                                        )
+                                      }
+                                      className="rounded-full border border-white/15 bg-black/40 px-4 py-2 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,0.35)] outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)] disabled:opacity-60"
+                                    >
+                                      <option value="DEFAULT">Remover</option>
+                                      <option value="VIEW">Ver</option>
+                                      <option value="EDIT">Editar</option>
+                                    </select>
+                                  </div>
+                                );
+                              })}
+                          </div>
 
-                        <div className="mt-3 flex flex-wrap items-center gap-2">
-                          <select
-                            value={scopeDraftType}
-                            onChange={(e) => setScopeDraftType(e.target.value)}
-                            className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
-                          >
-                            <option value="COURT">COURT</option>
-                            <option value="RESOURCE">RESOURCE</option>
-                            <option value="PROFESSIONAL">PROFESSIONAL</option>
-                          </select>
-                          <input
-                            value={scopeDraftId}
-                            onChange={(e) => setScopeDraftId(e.target.value)}
-                            placeholder="ID"
-                            className="min-w-[120px] flex-1 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
-                          />
-                          <select
-                            value={scopeDraftLevel}
-                            onChange={(e) => setScopeDraftLevel(e.target.value)}
-                            className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
-                          >
-                            <option value="VIEW">Ver</option>
-                            <option value="EDIT">Editar</option>
-                          </select>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handlePermissionUpdate(
-                                selectedMember.userId,
-                                "RESERVAS",
-                                scopeDraftLevel,
-                                scopeDraftType,
-                                scopeDraftId.trim(),
-                              )
-                            }
-                            disabled={!scopeDraftId.trim() || !canManageMember(viewerRole, selectedMember.role)}
-                            className="rounded-full border border-cyan-200/50 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(34,211,238,0.25)] transition hover:border-cyan-200/80 disabled:opacity-60"
-                          >
-                            Adicionar scope
-                          </button>
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <select
+                              value={scopeDraftType}
+                              onChange={(e) => setScopeDraftType(e.target.value as ReservasScopeType)}
+                              className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
+                            >
+                              {(Object.keys(RESERVAS_SCOPE_TYPE_LABELS) as ReservasScopeType[]).map((scopeType) => (
+                                <option key={scopeType} value={scopeType}>
+                                  {RESERVAS_SCOPE_TYPE_LABELS[scopeType]}
+                                </option>
+                              ))}
+                            </select>
+                            <select
+                              value={scopeDraftId}
+                              onChange={(e) => setScopeDraftId(e.target.value)}
+                              disabled={reservasDraftOptions.length === 0}
+                              className="min-w-[220px] flex-1 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)] disabled:opacity-60"
+                            >
+                              {reservasDraftOptions.length === 0 && (
+                                <option value="">Sem opções disponíveis</option>
+                              )}
+                              {reservasDraftOptions.map((option) => (
+                                <option key={`${scopeDraftType}:${option.scopeId}`} value={option.scopeId}>
+                                  {option.hint ? `${option.label} · ${option.hint}` : option.label}
+                                </option>
+                              ))}
+                            </select>
+                            <select
+                              value={scopeDraftLevel}
+                              onChange={(e) => setScopeDraftLevel(e.target.value as "VIEW" | "EDIT")}
+                              className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
+                            >
+                              <option value="VIEW">Ver</option>
+                              <option value="EDIT">Editar</option>
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handlePermissionUpdate(
+                                  selectedMember.userId,
+                                  "RESERVAS",
+                                  scopeDraftLevel,
+                                  scopeDraftType,
+                                  scopeDraftId,
+                                )
+                              }
+                              disabled={!scopeDraftId || !canManageMember(viewerRole, selectedMember.role)}
+                              className="rounded-full border border-cyan-200/50 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(34,211,238,0.25)] transition hover:border-cyan-200/80 disabled:opacity-60"
+                            >
+                              Adicionar scope
+                            </button>
+                          </div>
                         </div>
-                      </div>
 
                         <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div>
-                            <p className="text-sm font-semibold text-white">Comunidades</p>
-                            <p className="text-[11px] text-white/60">
-                              Scope `CHAT_COMMUNITIES` no módulo Mensagens.
-                            </p>
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <p className="text-sm font-semibold text-white">Comunidades</p>
+                              <p className="text-[11px] text-white/60">
+                                Define acesso por comunidade no módulo Comunidade.
+                              </p>
+                            </div>
+                            <span className="text-[11px] text-white/50">
+                              {(permissionsByUser.get(selectedMember.userId) ?? []).filter(
+                                (perm) =>
+                                  perm.moduleKey === "MENSAGENS" &&
+                                  perm.scopeType === "CHAT_COMMUNITIES",
+                              ).length}{" "}
+                              âmbito(s)
+                            </span>
                           </div>
-                          <span className="text-[11px] text-white/50">
-                            {(permissionsByUser.get(selectedMember.userId) ?? []).filter(
-                              (perm) =>
-                                perm.moduleKey === "MENSAGENS" &&
-                                perm.scopeType === "CHAT_COMMUNITIES",
-                            ).length}{" "}
-                            scope(s)
-                          </span>
-                        </div>
 
-                        <div className="mt-3 space-y-2">
-                          {(permissionsByUser.get(selectedMember.userId) ?? [])
-                            .filter(
-                              (perm) =>
-                                perm.moduleKey === "MENSAGENS" &&
-                                perm.scopeType === "CHAT_COMMUNITIES",
-                            )
-                            .map((perm) => {
-                              const isSaving =
-                                permissionSavingKey ===
-                                `${selectedMember.userId}:${perm.moduleKey}:${perm.scopeType}:${perm.scopeId ?? "ALL"}`;
-                              return (
-                                <div
-                                  key={`${perm.id}:${perm.scopeType}:${perm.scopeId ?? "GLOBAL"}`}
-                                  className="flex flex-col gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 md:flex-row md:items-center md:justify-between"
-                                >
-                                  <div className="space-y-1">
-                                    <p className="text-sm font-semibold text-white">
-                                      {perm.scopeId || "GLOBAL"}
-                                    </p>
-                                    <p className="text-[11px] text-white/60">
-                                      Acesso: {ACCESS_LABELS[normalizeAccessLevel(perm.accessLevel) ?? "EDIT"]}
-                                    </p>
-                                  </div>
-                                  <select
-                                    value={normalizeAccessLevel(perm.accessLevel) ?? "EDIT"}
-                                    disabled={!canManageMember(viewerRole, selectedMember.role) || isSaving}
-                                    onChange={(e) =>
-                                      handlePermissionUpdate(
-                                        selectedMember.userId,
-                                        "MENSAGENS",
-                                        e.target.value,
-                                        "CHAT_COMMUNITIES",
-                                        perm.scopeId || "GLOBAL",
-                                      )
-                                    }
-                                    className="rounded-full border border-white/15 bg-black/40 px-4 py-2 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,0.35)] outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)] disabled:opacity-60"
-                                  >
-                                    <option value="DEFAULT">Remover</option>
-                                    <option value="EDIT">Editar</option>
-                                  </select>
-                                </div>
-                              );
-                            })}
-                        </div>
-
-                        <div className="mt-3 flex flex-wrap items-center gap-2">
-                          <input
-                            value={communityScopeDraftId}
-                            onChange={(e) => setCommunityScopeDraftId(e.target.value)}
-                            placeholder="GLOBAL ou conversationId"
-                            className="min-w-[220px] flex-1 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
-                          />
-                          <select
-                            value={communityScopeDraftLevel}
-                            onChange={(e) => setCommunityScopeDraftLevel(e.target.value)}
-                            className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
-                          >
-                            <option value="EDIT">Editar</option>
-                          </select>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handlePermissionUpdate(
-                                selectedMember.userId,
-                                "MENSAGENS",
-                                communityScopeDraftLevel,
-                                "CHAT_COMMUNITIES",
-                                communityScopeDraftId.trim() || "GLOBAL",
+                          <div className="mt-3 space-y-2">
+                            {(permissionsByUser.get(selectedMember.userId) ?? [])
+                              .filter(
+                                (perm) =>
+                                  perm.moduleKey === "MENSAGENS" &&
+                                  perm.scopeType === "CHAT_COMMUNITIES",
                               )
-                            }
-                            disabled={!canManageMember(viewerRole, selectedMember.role)}
-                            className="rounded-full border border-cyan-200/50 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(34,211,238,0.25)] transition hover:border-cyan-200/80 disabled:opacity-60"
-                          >
-                            Adicionar scope
-                          </button>
-                        </div>
+                              .map((perm) => {
+                                const isSaving =
+                                  permissionSavingKey ===
+                                  `${selectedMember.userId}:${perm.moduleKey}:${perm.scopeType}:${perm.scopeId ?? "ALL"}`;
+                                const scopeLabel =
+                                  communityScopeLabelMap.get(
+                                    buildScopedPermissionKey("CHAT_COMMUNITIES", perm.scopeId || "GLOBAL"),
+                                  ) ?? (perm.scopeId || "GLOBAL");
+                                return (
+                                  <div
+                                    key={`${perm.id}:${perm.scopeType}:${perm.scopeId ?? "GLOBAL"}`}
+                                    className="flex flex-col gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 md:flex-row md:items-center md:justify-between"
+                                  >
+                                    <div className="space-y-1">
+                                      <p className="text-sm font-semibold text-white">{scopeLabel}</p>
+                                      <p className="text-[11px] text-white/60">
+                                        Acesso: {ACCESS_LABELS[normalizeAccessLevel(perm.accessLevel) ?? "EDIT"]}
+                                      </p>
+                                    </div>
+                                    <select
+                                      value={normalizeAccessLevel(perm.accessLevel) ?? "EDIT"}
+                                      disabled={!canManageMember(viewerRole, selectedMember.role) || isSaving}
+                                      onChange={(e) =>
+                                        handlePermissionUpdate(
+                                          selectedMember.userId,
+                                          "MENSAGENS",
+                                          e.target.value,
+                                          "CHAT_COMMUNITIES",
+                                          perm.scopeId || "GLOBAL",
+                                        )
+                                      }
+                                      className="rounded-full border border-white/15 bg-black/40 px-4 py-2 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,0.35)] outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)] disabled:opacity-60"
+                                    >
+                                      <option value="DEFAULT">Remover</option>
+                                      <option value="EDIT">Editar</option>
+                                    </select>
+                                  </div>
+                                );
+                              })}
+                          </div>
+
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <select
+                              value={communityScopeDraftId}
+                              onChange={(e) => setCommunityScopeDraftId(e.target.value)}
+                              className="min-w-[220px] flex-1 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
+                            >
+                              {communityScopeOptions.map((option) => (
+                                <option key={option.scopeId} value={option.scopeId}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handlePermissionUpdate(
+                                  selectedMember.userId,
+                                  "MENSAGENS",
+                                  "EDIT",
+                                  "CHAT_COMMUNITIES",
+                                  communityScopeDraftId || "GLOBAL",
+                                )
+                              }
+                              disabled={!canManageMember(viewerRole, selectedMember.role)}
+                              className="rounded-full border border-cyan-200/50 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(34,211,238,0.25)] transition hover:border-cyan-200/80 disabled:opacity-60"
+                            >
+                              Adicionar scope
+                            </button>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -1318,7 +1611,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
             <div>
               <h2 className="text-sm font-semibold">Membros</h2>
               <p className="text-[12px] text-white/60">
-                Papéis: Dono, Co-dono, Administrador e Colaborador.
+                Papéis: Dono, Co-dono, Administrador e funções da equipa (Receção, Treinador, etc.).
               </p>
             </div>
             <div className="text-[11px] text-white/60">
@@ -1358,10 +1651,8 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                 const isOwnerRow = m.role === "OWNER";
                 const isOnlyOwner = isOwnerRow && ownerCount <= 1;
                 const canManageMemberRow = canManageMember(viewerRole, m.role);
-                const rolePackOptions = getRolePackOptions(m.role);
-                const hasRolePackOptions = rolePackOptions.length > 0;
+                const roleAssignmentValue = resolveRoleAssignmentValue(m.role, m.rolePack);
                 const roleDisabled = !canManageMemberRow || memberActionLoading === m.userId;
-                const rolePackDisabled = !canManageMemberRow || memberActionLoading === m.userId;
                 const removeDisabled = memberActionLoading === m.userId || !canManageMemberRow || isOnlyOwner;
                 const displayName = m.fullName || m.username || "Utilizador";
                 return (
@@ -1380,12 +1671,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                       <div className="space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="font-semibold text-white">{displayName}</span>
-                          <RoleBadge role={m.role} />
-                          {m.rolePack && (
-                            <span className="rounded-full border border-cyan-300/30 bg-cyan-400/10 px-2 py-[2px] text-[10px] uppercase tracking-[0.15em] text-cyan-100">
-                              {rolePackLabels[m.rolePack]}
-                            </span>
-                          )}
+                          <RoleAssignmentBadge role={m.role} rolePack={m.rolePack ?? null} />
                           <span className="text-[11px] text-white/50">
                             {new Date(m.createdAt).toLocaleDateString("pt-PT")}
                           </span>
@@ -1399,45 +1685,37 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <select
-                        value={m.role}
+                        value={roleAssignmentValue}
                         disabled={roleDisabled || memberActionLoading === m.userId}
-                        onChange={(e) => handleRoleChange(m, e.target.value as MemberRole)}
+                        onChange={(e) => {
+                          const nextAssignment = parseRoleAssignmentValue(e.target.value);
+                          handleRoleChange(m, nextAssignment.role, nextAssignment.rolePack);
+                        }}
                         className="rounded-full border border-white/15 bg-black/40 px-4 py-2 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,0.35)] outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)] disabled:opacity-60"
                       >
-                        <option value="OWNER" disabled={!canAssignRole(viewerRole, m.role, "OWNER")}>
-                          Dono
-                        </option>
-                        <option value="CO_OWNER" disabled={!canAssignRole(viewerRole, m.role, "CO_OWNER")}>
-                          Co-dono
-                        </option>
-                        <option value="ADMIN" disabled={!canAssignRole(viewerRole, m.role, "ADMIN")}>
-                          Administrador
-                        </option>
-                        <option value="STAFF" disabled={!canAssignRole(viewerRole, m.role, "STAFF")}>
-                          Colaborador
-                        </option>
-                      </select>
-                      {hasRolePackOptions && (
-                        <select
-                          value={m.rolePack ?? ""}
-                          disabled={rolePackDisabled}
-                          onChange={(e) => {
-                            const value = e.target.value.trim();
-                            const nextPack = value ? (value as OrganizationRolePack) : null;
-                            applyRoleChange(m.userId, m.role, nextPack);
-                          }}
-                          className="rounded-full border border-white/15 bg-black/40 px-4 py-2 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,0.35)] outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)] disabled:opacity-60"
-                        >
-                          <option value="" disabled>
-                            Selecionar pacote
-                          </option>
-                          {rolePackOptions.map((pack) => (
-                            <option key={pack} value={pack}>
-                              {rolePackLabels[pack]}
+                        <optgroup label="Governança">
+                          {GOVERNANCE_ASSIGNMENT_OPTIONS.map((option) => (
+                            <option
+                              key={`member-governance-${option.value}`}
+                              value={option.value}
+                              disabled={!canAssignRole(viewerRole, m.role, option.role)}
+                            >
+                              {option.label}
                             </option>
                           ))}
-                        </select>
-                      )}
+                        </optgroup>
+                        <optgroup label="Funções da equipa">
+                          {STAFF_ASSIGNMENT_OPTIONS.map((option) => (
+                            <option
+                              key={`member-staff-${option.value}`}
+                              value={option.value}
+                              disabled={!canAssignRole(viewerRole, m.role, option.role)}
+                            >
+                              {option.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                      </select>
                       <button
                         type="button"
                         onClick={() => setRemoveTarget(m)}
@@ -1505,12 +1783,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
                           <span className="font-semibold text-white">{targetLabel}</span>
-                          <RoleBadge role={inv.role} />
-                          {inv.rolePack && (
-                            <span className="rounded-full border border-cyan-300/30 bg-cyan-400/10 px-2 py-[2px] text-[10px] uppercase tracking-[0.15em] text-cyan-100">
-                              {rolePackLabels[inv.rolePack]}
-                            </span>
-                          )}
+                          <RoleAssignmentBadge role={inv.role} rolePack={inv.rolePack ?? null} subtle />
                           <InviteBadge status={inv.status} />
                         </div>
                         <div className="text-[12px] text-white/60 space-x-2">
@@ -1605,7 +1878,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
               <p className="text-[11px] uppercase tracking-[0.22em] text-white/50">Confirmar</p>
               <h3 className="text-xl font-semibold text-white">Despromover Dono?</h3>
               <p className="text-sm text-white/70">
-                Vais descer o papel de <span className="font-semibold text-white">{roleConfirm.label}</span> de Dono para {roleLabels[roleConfirm.newRole]}. Garante que fica pelo menos um Dono ativo.
+                Vais descer o papel de <span className="font-semibold text-white">{roleConfirm.label}</span> de Dono para {resolveRoleAssignmentLabel(roleConfirm.newRole, roleConfirm.newRolePack)}. Garante que fica pelo menos um Dono ativo.
               </p>
             </div>
             <div className="flex justify-end gap-2">
@@ -1651,43 +1924,38 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
               <div className="space-y-1">
                 <label className="text-[12px] text-white/70">Função proposta</label>
                 <select
-                  value={inviteRole}
-                  onChange={(e) => setInviteRole(e.target.value as MemberRole)}
+                  value={resolveRoleAssignmentValue(inviteRole, inviteRolePack)}
+                  onChange={(e) => {
+                    const nextAssignment = parseRoleAssignmentValue(e.target.value);
+                    setInviteRole(nextAssignment.role);
+                    setInviteRolePack(nextAssignment.rolePack);
+                  }}
                   className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
                 >
-                  <option value="OWNER" disabled={!canAssignRole(viewerRole, inviteRole, "OWNER")}>
-                    Dono
-                  </option>
-                  <option value="CO_OWNER" disabled={!canAssignRole(viewerRole, inviteRole, "CO_OWNER")}>
-                    Co-dono
-                  </option>
-                  <option value="ADMIN" disabled={!canAssignRole(viewerRole, inviteRole, "ADMIN")}>
-                    Administrador
-                  </option>
-                  <option value="STAFF" disabled={!canAssignRole(viewerRole, inviteRole, "STAFF")}>
-                    Colaborador
-                  </option>
-                </select>
-              </div>
-              {getRolePackOptions(inviteRole).length > 0 && (
-                <div className="space-y-1">
-                  <label className="text-[12px] text-white/70">Pack</label>
-                  <select
-                    value={inviteRolePack ?? ""}
-                    onChange={(e) => {
-                      const value = e.target.value.trim();
-                      setInviteRolePack(value ? (value as OrganizationRolePack) : null);
-                    }}
-                    className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
-                  >
-                    {getRolePackOptions(inviteRole).map((pack) => (
-                      <option key={pack} value={pack}>
-                        {rolePackLabels[pack]}
+                  <optgroup label="Governança">
+                    {GOVERNANCE_ASSIGNMENT_OPTIONS.map((option) => (
+                      <option
+                        key={`invite-governance-${option.value}`}
+                        value={option.value}
+                        disabled={!canAssignInviteRole(viewerRole, option.role)}
+                      >
+                        {option.label}
                       </option>
                     ))}
-                  </select>
-                </div>
-              )}
+                  </optgroup>
+                  <optgroup label="Funções da equipa">
+                    {STAFF_ASSIGNMENT_OPTIONS.map((option) => (
+                      <option
+                        key={`invite-staff-${option.value}`}
+                        value={option.value}
+                        disabled={!canAssignInviteRole(viewerRole, option.role)}
+                      >
+                        {option.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+              </div>
             </div>
             <div className="flex justify-end gap-2">
               <button

@@ -41,9 +41,11 @@ describe("calendar ux guardrails", () => {
 
     expect(dayClient).toContain('key === "f"');
     expect(dayClient).toContain('key === "g"');
+    expect(dayClient).toContain('key === "m"');
     expect(dayClient).toContain('key === "escape"');
     expect(dayClient).not.toContain("Atalhos:");
     expect(weekClient).toContain('key === "g"');
+    expect(weekClient).toContain('key === "m"');
     expect(weekClient).not.toContain("Atalhos: ← → · T · D · G");
 
     expect(datePicker).toContain("OryaDateField");
@@ -57,6 +59,22 @@ describe("calendar ux guardrails", () => {
     expect(sharedDateField).toContain('event.key === "PageDown"');
     expect(sharedDateField).toContain('event.key === "Enter" || event.key === " "');
     expect(sharedDateField).toContain('event.key === "Escape"');
+  });
+
+  it("usa calendário single-page com switch de vista e redirect legado", () => {
+    const calendarReadClient = readLocal("app/org/[orgId]/calendar/_components/CalendarReadClient.tsx");
+    const viewSwitcher = readLocal("app/org/[orgId]/calendar/_components/ViewSwitcher.tsx");
+    const legacyDayPage = readLocal("app/org/[orgId]/calendar/day/page.tsx");
+    const monthClient = readLocal("app/org/[orgId]/calendar/_components/month/MonthCalendarReadClient.tsx");
+
+    expect(calendarReadClient).toContain("view === \"day\"");
+    expect(calendarReadClient).toContain("view === \"week\"");
+    expect(calendarReadClient).toContain("view === \"month\"");
+    expect(viewSwitcher).toContain("Dia");
+    expect(viewSwitcher).toContain("Semana");
+    expect(viewSwitcher).toContain("Mês");
+    expect(legacyDayPage).toContain('query.set("view", "day")');
+    expect(monthClient).toContain("Ver semana");
   });
 
   it("keeps booking flow accessibility and mobile continuity cues", () => {

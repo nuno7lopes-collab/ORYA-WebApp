@@ -65,6 +65,18 @@
   --orya-user-nav-mobile-blur: 18px;
   --orya-user-nav-mobile-shadow-alpha: 0.36;
   --org-topbar-height: 64px;
+  --org-sidebar-width: 288px;
+  --org-sidebar-collapsed-width: 52px;
+  --org-sidebar-drawer-width: min(86vw, 360px);
+  --org-sidebar-bg: #191b20;
+  --org-content-bg: #0f1115;
+  --org-shell-border: rgba(255, 255, 255, 0.07);
+  --org-hover: rgba(255, 255, 255, 0.06);
+  --org-hover-soft: rgba(255, 255, 255, 0.04);
+  --org-active-bg: rgba(255, 255, 255, 0.1);
+  --org-text-muted: rgba(255, 255, 255, 0.74);
+  --org-text-strong: rgba(255, 255, 255, 0.94);
+  --org-active: rgba(255, 255, 255, 0.94);
 
   --glass-bg: rgba(255, 255, 255, 0.06);
   --glass-border: rgba(255, 255, 255, 0.1);
@@ -166,6 +178,15 @@ html[data-theme-mode="light"] {
   --orya-badge-bg: rgba(10, 15, 26, 0.06);
   --orya-badge-border: rgba(10, 15, 26, 0.18);
   --orya-badge-text: rgba(10, 15, 26, 0.75);
+  --org-sidebar-bg: #eef1f5;
+  --org-content-bg: #f7f9fc;
+  --org-shell-border: rgba(10, 15, 26, 0.12);
+  --org-hover: rgba(10, 15, 26, 0.08);
+  --org-hover-soft: rgba(10, 15, 26, 0.05);
+  --org-active-bg: rgba(10, 15, 26, 0.12);
+  --org-text-muted: rgba(10, 15, 26, 0.72);
+  --org-text-strong: rgba(10, 15, 26, 0.94);
+  --org-active: rgba(10, 15, 26, 0.9);
 }
 
 html[data-theme-mode="light"] body:is([data-orya-bg="orya-bg-user"], [data-orya-bg="orya-bg-org"], .orya-bg-user, .orya-bg-org),
@@ -292,9 +313,50 @@ body[data-theme-mode="light"]:is([data-orya-bg="orya-bg-user"], [data-orya-bg="o
 
 /* Dashboard: superfícies e contraste unificados (modo escuro). */
 html:not([data-theme-mode="light"]) [data-org-dashboard-shell] {
-  --orya-dashboard-surface-rgb: 8 16 30;
-  --orya-dashboard-surface-rgb-soft: 11 22 40;
-  --orya-dashboard-surface-rgb-accent: 16 34 58;
+  --orya-dashboard-surface-rgb: 10 10 11;
+  --orya-dashboard-surface-rgb-soft: 15 15 17;
+  --orya-dashboard-surface-rgb-accent: 24 24 27;
+  --org-sidebar-bg: #191b20;
+  --org-content-bg: #0f1115;
+  --org-shell-border: rgba(255, 255, 255, 0.07);
+  --org-hover: rgba(255, 255, 255, 0.06);
+  --org-hover-soft: rgba(255, 255, 255, 0.04);
+  --org-active-bg: rgba(255, 255, 255, 0.1);
+  --org-text-muted: rgba(255, 255, 255, 0.74);
+  --org-text-strong: rgba(255, 255, 255, 0.94);
+  --org-active: rgba(255, 255, 255, 0.94);
+}
+
+[data-org-dashboard-shell].org-shell-root {
+  background-color: var(--org-content-bg);
+}
+
+[data-org-dashboard-shell] .org-shell-sidebar {
+  background-color: var(--org-sidebar-bg);
+  border-color: var(--org-shell-border);
+  box-shadow: 14px 0 34px rgb(0 0 0 / 0.34);
+}
+
+[data-org-dashboard-shell] .org-shell-main {
+  background-color: var(--org-content-bg);
+}
+
+html[data-theme-mode="light"] [data-org-dashboard-shell] {
+  --org-sidebar-bg: #eef1f5;
+  --org-content-bg: #f7f9fc;
+  --org-shell-border: rgba(10, 15, 26, 0.12);
+  --org-hover: rgba(10, 15, 26, 0.08);
+  --org-hover-soft: rgba(10, 15, 26, 0.05);
+  --org-active-bg: rgba(10, 15, 26, 0.12);
+  --org-text-muted: rgba(10, 15, 26, 0.72);
+  --org-text-strong: rgba(10, 15, 26, 0.94);
+  --org-active: rgba(10, 15, 26, 0.9);
+}
+
+html[data-theme-mode="light"] [data-org-dashboard-shell] .org-shell-sidebar {
+  box-shadow:
+    inset -1px 0 0 rgb(10 15 26 / 0.06),
+    14px 0 28px rgb(15 23 42 / 0.08);
 }
 
 html:not([data-theme-mode="light"]) [data-org-dashboard-shell] .bg-black {
@@ -1497,6 +1559,51 @@ body:not([data-nav-hidden="true"]) .main-shell {
   background: rgba(255, 255, 255, 0.28);
 }
 
+/* Scrollbar fino e sempre visível para áreas com scroll independente (sidebar/main). */
+.orya-scrollbar-subtle {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+  scrollbar-gutter: stable both-edges;
+}
+
+.orya-scrollbar-subtle::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.orya-scrollbar-subtle::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.orya-scrollbar-subtle::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.orya-scrollbar-subtle::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.24);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+html[data-theme-mode="light"] .orya-scrollbar-subtle {
+  scrollbar-color: rgba(10, 15, 26, 0.28) transparent;
+}
+
+html[data-theme-mode="light"] .orya-scrollbar-subtle::-webkit-scrollbar-thumb {
+  background: rgba(10, 15, 26, 0.28);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+html[data-theme-mode="light"] .orya-scrollbar-subtle::-webkit-scrollbar-thumb:hover {
+  background: rgba(10, 15, 26, 0.42);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
 /* Scroll horizontal discreto (sem barras visiveis) */
 .orya-scrollbar-hide {
   scrollbar-width: none;
@@ -2130,4 +2237,171 @@ html[data-theme-mode="light"][data-theme-badge="badge-gold"] .theme-badge {
 
 .animate-popover {
   animation: popover-in 0.18s ease-out;
+}
+
+/* Dashboard organização: conteúdo plano e contraste alto (dark). */
+html:not([data-theme-mode="light"]) [data-org-dashboard-shell] .org-shell-main .org-content-frame {
+  color: rgb(var(--theme-text-rgb) / 0.94);
+}
+
+html:not([data-theme-mode="light"]) [data-org-dashboard-shell] .org-shell-main .org-content-frame .text-white\/40 {
+  color: rgb(var(--theme-text-rgb) / 0.7) !important;
+}
+
+html:not([data-theme-mode="light"]) [data-org-dashboard-shell] .org-shell-main .org-content-frame .text-white\/50 {
+  color: rgb(var(--theme-text-rgb) / 0.78) !important;
+}
+
+html:not([data-theme-mode="light"]) [data-org-dashboard-shell] .org-shell-main .org-content-frame .text-white\/60 {
+  color: rgb(var(--theme-text-rgb) / 0.85) !important;
+}
+
+html:not([data-theme-mode="light"]) [data-org-dashboard-shell] .org-shell-main .org-content-frame .text-white\/70 {
+  color: rgb(var(--theme-text-rgb) / 0.9) !important;
+}
+
+html:not([data-theme-mode="light"]) [data-org-dashboard-shell] .org-shell-main .org-content-frame .text-white\/80 {
+  color: rgb(var(--theme-text-rgb) / 0.95) !important;
+}
+
+html:not([data-theme-mode="light"]) [data-org-dashboard-shell] .org-shell-main .org-content-frame input::placeholder,
+html:not([data-theme-mode="light"]) [data-org-dashboard-shell] .org-shell-main .org-content-frame textarea::placeholder {
+  color: rgb(var(--theme-text-rgb) / 0.7) !important;
+}
+
+html:not([data-theme-mode="light"]) [data-org-dashboard-shell] .org-shell-main .org-content-frame :is(
+    div,
+    section,
+    article,
+    aside,
+    header,
+    footer,
+    main,
+    form,
+    fieldset,
+    nav
+  )[class*="rounded-2xl"][class*="border"],
+html:not([data-theme-mode="light"]) [data-org-dashboard-shell] .org-shell-main .org-content-frame :is(
+    div,
+    section,
+    article,
+    aside,
+    header,
+    footer,
+    main,
+    form,
+    fieldset,
+    nav
+  )[class*="rounded-3xl"][class*="border"] {
+  background-color: transparent !important;
+  background-image: none !important;
+  border-color: rgb(var(--theme-text-rgb) / 0.14) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+html:not([data-theme-mode="light"]) [data-org-dashboard-shell] .org-shell-main .org-content-frame :is(
+    div,
+    section,
+    article,
+    aside,
+    header,
+    footer,
+    main,
+    form,
+    fieldset,
+    nav
+  )[class*="bg-gradient"],
+html:not([data-theme-mode="light"]) [data-org-dashboard-shell] .org-shell-main .org-content-frame :is(
+    div,
+    section,
+    article,
+    aside,
+    header,
+    footer,
+    main,
+    form,
+    fieldset,
+    nav
+  )[class*="bg-[linear-gradient"] {
+  background-image: none !important;
+  background-color: rgb(var(--theme-text-rgb) / 0.02) !important;
+}
+
+html:not([data-theme-mode="light"]) [data-org-dashboard-shell] .org-shell-main .org-content-frame :is(
+    div,
+    section,
+    article,
+    aside,
+    header,
+    footer,
+    main,
+    form,
+    fieldset,
+    nav
+  )[class*="bg-black/"],
+html:not([data-theme-mode="light"]) [data-org-dashboard-shell] .org-shell-main .org-content-frame :is(
+    div,
+    section,
+    article,
+    aside,
+    header,
+    footer,
+    main,
+    form,
+    fieldset,
+    nav
+  )[class*="bg-white/"],
+html:not([data-theme-mode="light"]) [data-org-dashboard-shell] .org-shell-main .org-content-frame :is(
+    div,
+    section,
+    article,
+    aside,
+    header,
+    footer,
+    main,
+    form,
+    fieldset,
+    nav
+  )[class*="bg-[#0"],
+html:not([data-theme-mode="light"]) [data-org-dashboard-shell] .org-shell-main .org-content-frame :is(
+    div,
+    section,
+    article,
+    aside,
+    header,
+    footer,
+    main,
+    form,
+    fieldset,
+    nav
+  )[class*="bg-[#1"],
+html:not([data-theme-mode="light"]) [data-org-dashboard-shell] .org-shell-main .org-content-frame :is(
+    div,
+    section,
+    article,
+    aside,
+    header,
+    footer,
+    main,
+    form,
+    fieldset,
+    nav
+  )[class*="bg-[rgba("] {
+  background-color: rgb(var(--theme-text-rgb) / 0.02) !important;
+}
+
+html:not([data-theme-mode="light"]) [data-org-dashboard-shell] .org-shell-main .org-content-frame :is(
+    div,
+    section,
+    article,
+    aside,
+    header,
+    footer,
+    main,
+    form,
+    fieldset,
+    nav
+  )[class*="shadow-["] {
+  box-shadow: none !important;
 }

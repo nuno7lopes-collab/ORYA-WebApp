@@ -100,6 +100,25 @@ function toDraft(item: CourtConfigItem): CourtDraft {
   };
 }
 
+function resolveStatusMeta(status: CourtConfigItem["status"]) {
+  if (status === "READY") {
+    return {
+      label: "Configurado",
+      tone: "border-emerald-300/40 bg-emerald-400/10 text-emerald-100",
+    };
+  }
+  if (status === "INACTIVE") {
+    return {
+      label: "Inativo",
+      tone: "border-amber-300/40 bg-amber-400/10 text-amber-100",
+    };
+  }
+  return {
+    label: "Por configurar",
+    tone: "border-rose-300/40 bg-rose-400/10 text-rose-100",
+  };
+}
+
 export default function ReservasCamposPage() {
   const params = useParams();
   const orgIdRaw = Array.isArray(params?.orgId) ? params.orgId[0] : params?.orgId;
@@ -141,7 +160,7 @@ export default function ReservasCamposPage() {
     if (!configApiPath) return;
     const backingServiceId = draft.backingServiceId ? Number(draft.backingServiceId) : null;
     if (backingServiceId != null && !Number.isFinite(backingServiceId)) {
-      setFeedback("Seleciona um serviço de base válido.");
+      setFeedback("Seleciona uma base de campo válida.");
       return;
     }
     const categoryId = draft.categoryId ? Number(draft.categoryId) : null;
@@ -195,19 +214,19 @@ export default function ReservasCamposPage() {
     <div className="space-y-5">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-2">
-          <p className={DASHBOARD_LABEL}>Reservas</p>
+          <p className={DASHBOARD_LABEL}>Academia</p>
           <h1 className="text-xl font-semibold text-white">Campos</h1>
-          <p className={DASHBOARD_MUTED}>Mapeamento de campo para serviço base COURT, categoria e visibilidade pública.</p>
+          <p className={DASHBOARD_MUTED}>Mapeamento de campo para base COURT, categoria e visibilidade pública.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Link href={appendOrganizationIdToHref("/org/bookings/classes", canonicalOrganizationId)} className={CTA_SECONDARY}>
+          <Link href={appendOrganizationIdToHref("/org/bookings", canonicalOrganizationId)} className={CTA_SECONDARY}>
             Aulas
           </Link>
-          <Link href={appendOrganizationIdToHref("/org/bookings", canonicalOrganizationId)} className={CTA_SECONDARY}>
-            Serviços
+          <Link href={appendOrganizationIdToHref("/org/bookings/professionals", canonicalOrganizationId)} className={CTA_SECONDARY}>
+            Treinadores
           </Link>
-          <Link href={appendOrganizationIdToHref("/org/bookings/new", canonicalOrganizationId)} className={CTA_PRIMARY}>
-            Novo serviço COURT
+          <Link href={appendOrganizationIdToHref("/org/bookings/new?kind=COURT", canonicalOrganizationId)} className={CTA_PRIMARY}>
+            Novo campo
           </Link>
         </div>
       </header>
@@ -225,6 +244,7 @@ export default function ReservasCamposPage() {
         <div className="space-y-3">
           {rows.map((item) => {
             const draft = item.draft;
+            const statusMeta = resolveStatusMeta(item.status);
             return (
               <article key={item.court.id} className="rounded-2xl border border-white/12 bg-white/5 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2">
@@ -235,26 +255,22 @@ export default function ReservasCamposPage() {
                   <span
                     className={cn(
                       "rounded-full border px-2 py-0.5 text-[10px]",
-                      item.status === "READY"
-                        ? "border-emerald-300/40 bg-emerald-400/10 text-emerald-100"
-                        : item.status === "INACTIVE"
-                          ? "border-amber-300/40 bg-amber-400/10 text-amber-100"
-                          : "border-rose-300/40 bg-rose-400/10 text-rose-100",
+                      statusMeta.tone,
                     )}
                   >
-                    {item.status}
+                    {statusMeta.label}
                   </span>
                 </div>
 
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
                   <label className="space-y-1">
-                    <span className="text-[11px] text-white/65">Serviço base COURT</span>
+                    <span className="text-[11px] text-white/65">Base COURT</span>
                     <select
                       value={draft.backingServiceId}
                       onChange={(event) => setDraft(item.court.id, { backingServiceId: event.target.value })}
                       className="w-full rounded-xl border border-white/12 bg-white/10 px-2 py-2 text-[12px] text-white outline-none"
                     >
-                      <option value="">Selecionar serviço</option>
+                      <option value="">Selecionar base</option>
                       {courtServices.map((service) => (
                         <option key={service.id} value={service.id}>
                           {service.title}

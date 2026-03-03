@@ -29,7 +29,7 @@ import { evaluateCandidate, type AgendaCandidate } from "@/domain/agenda/conflic
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
-import { intersectIds, resolveReservasScopesForMember, resolveTrainerProfessionalIds } from "@/lib/reservas/memberScopes";
+import { intersectIds, resolveReservasScopesForMember, resolveCoachProfessionalIds } from "@/lib/reservas/memberScopes";
 import { computeBookingPriceComponents } from "@/lib/reservas/bookingPricing";
 import { getConflictWindowStart } from "@/lib/reservas/conflictWindow";
 import {
@@ -187,13 +187,13 @@ async function _POST(
         return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
       }
       if (isCoach) {
-        const trainerProfessionalIds = await resolveTrainerProfessionalIds({
+        const coachProfessionalIds = await resolveCoachProfessionalIds({
           organizationId: organization.id,
           userId: profile.id,
         });
         const allowedProfessionals = scopes.professionalIds.length
-          ? intersectIds(trainerProfessionalIds, scopes.professionalIds)
-          : trainerProfessionalIds;
+          ? intersectIds(coachProfessionalIds, scopes.professionalIds)
+          : coachProfessionalIds;
         if (!allowedProfessionals.length || !booking.professionalId || !allowedProfessionals.includes(booking.professionalId)) {
           return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
         }

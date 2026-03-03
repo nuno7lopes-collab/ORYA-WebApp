@@ -17,8 +17,8 @@ const ROLE_STYLES: Record<Role, string> = {
 const ROLE_LABEL: Record<Role, string> = {
   OWNER: "Dono",
   CO_OWNER: "Co-dono",
-  ADMIN: "Admin",
-  STAFF: "Colaborador",
+  ADMIN: "Administrador",
+  STAFF: "Equipa",
 };
 
 export function RoleBadge({ role, subtle }: Props) {

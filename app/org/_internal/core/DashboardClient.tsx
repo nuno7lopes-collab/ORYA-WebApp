@@ -404,12 +404,6 @@ type DashboardToolCard = {
 const OPERATION_MODULES = ["EVENTOS", "RESERVAS", "TORNEIOS"] as const;
 type OperationModule = (typeof OPERATION_MODULES)[number];
 
-const OPERATION_LABELS: Record<OperationModule, string> = {
-  EVENTOS: "Competição",
-  RESERVAS: "Operação",
-  TORNEIOS: "Competição",
-};
-
 const PADEL_CLUB_SECTION = "padel-club";
 const PADEL_TOURNAMENTS_SECTION = "padel-tournaments";
 const PADEL_MANAGE_SECTIONS = [PADEL_CLUB_SECTION, PADEL_TOURNAMENTS_SECTION] as const;
@@ -461,43 +455,6 @@ const MODULE_ICON_GRADIENTS: Record<string, string> = {
   TOOL_EQUIPA: "from-[#60A5FA]/52 via-[#22D3EE]/42 to-[#F59E0B]/48",
   TOOL_DEFINICOES: "from-[#94A3B8]/52 via-[#64748B]/38 to-[#60A5FA]/48",
   TOOL_POLITICAS: "from-[#60A5FA]/54 via-[#22D3EE]/42 to-[#A78BFA]/50",
-};
-const MODULE_ICON_BG_STYLES: Record<string, string> = {
-  TOOL_EVENTOS: "linear-gradient(145deg, rgba(255,78,205,0.85) 0%, rgba(127,224,255,0.72) 46%, rgba(106,123,255,0.86) 100%)",
-  TOOL_RESERVAS: "linear-gradient(145deg, rgba(34,211,238,0.84) 0%, rgba(77,180,255,0.7) 46%, rgba(106,123,255,0.84) 100%)",
-  TOOL_CALENDARIO: "linear-gradient(145deg, rgba(34,211,238,0.8) 0%, rgba(96,165,250,0.72) 46%, rgba(139,92,246,0.84) 100%)",
-  TOOL_PADEL_CLUBE: "linear-gradient(145deg, rgba(245,158,11,0.84) 0%, rgba(251,113,133,0.7) 44%, rgba(106,123,255,0.82) 100%)",
-  TOOL_PADEL_TORNEIOS: "linear-gradient(145deg, rgba(34,211,238,0.86) 0%, rgba(167,139,250,0.7) 44%, rgba(245,158,11,0.8) 100%)",
-  TOOL_CHECKIN: "linear-gradient(145deg, rgba(34,211,238,0.82) 0%, rgba(52,211,153,0.72) 46%, rgba(96,165,250,0.82) 100%)",
-  TOOL_FORMULARIOS: "linear-gradient(145deg, rgba(20,184,166,0.82) 0%, rgba(34,211,238,0.7) 46%, rgba(167,139,250,0.78) 100%)",
-  TOOL_CHAT_INTERNO: "linear-gradient(145deg, rgba(167,139,250,0.82) 0%, rgba(96,165,250,0.7) 44%, rgba(52,211,153,0.78) 100%)",
-  TOOL_FINANCAS: "linear-gradient(145deg, rgba(249,115,22,0.86) 0%, rgba(245,158,11,0.74) 44%, rgba(251,113,133,0.82) 100%)",
-  TOOL_ANALYTICS: "linear-gradient(145deg, rgba(34,211,238,0.88) 0%, rgba(106,123,255,0.72) 44%, rgba(167,139,250,0.84) 100%)",
-  TOOL_PROMOCOES: "linear-gradient(145deg, rgba(255,122,209,0.86) 0%, rgba(251,113,133,0.72) 44%, rgba(245,158,11,0.82) 100%)",
-  TOOL_CRM: "linear-gradient(145deg, rgba(56,189,248,0.84) 0%, rgba(34,211,238,0.72) 46%, rgba(249,115,22,0.8) 100%)",
-  TOOL_LOJA: "linear-gradient(145deg, rgba(251,113,133,0.86) 0%, rgba(245,158,11,0.72) 44%, rgba(251,146,60,0.82) 100%)",
-  TOOL_EQUIPA: "linear-gradient(145deg, rgba(96,165,250,0.82) 0%, rgba(34,211,238,0.72) 46%, rgba(245,158,11,0.78) 100%)",
-  TOOL_DEFINICOES: "linear-gradient(145deg, rgba(148,163,184,0.82) 0%, rgba(100,116,139,0.68) 46%, rgba(96,165,250,0.74) 100%)",
-  TOOL_POLITICAS: "linear-gradient(145deg, rgba(96,165,250,0.86) 0%, rgba(34,211,238,0.72) 44%, rgba(167,139,250,0.8) 100%)",
-};
-const TOOL_CUSTOM_ICON_BY_ID: Record<string, string> = {
-  eventos: "/icons/tools/eventos.avif",
-  reservas: "/icons/tools/reservas.avif",
-  academia: "/icons/tools/reservas.avif",
-  calendar: "/icons/tools/calendario.avif",
-  "padel-club": "/icons/tools/padel-club.avif",
-  "padel-tournaments": "/icons/tools/padel-tournaments.avif",
-  checkin: "/icons/tools/checkin.avif",
-  inscricoes: "/icons/tools/formularios.avif",
-  mensagens: "/icons/tools/mensagens.avif",
-  financeiro: "/icons/tools/financas.avif",
-  analytics: "/icons/tools/analises.avif",
-  marketing: "/icons/tools/marketing.avif",
-  crm: "/icons/tools/crm.avif",
-  loja: "/icons/tools/loja.avif",
-  staff: "/icons/tools/equipa.avif",
-  politicas: "/icons/tools/politicas.avif",
-  settings: "/icons/tools/definicoes.avif",
 };
 
 const OBJECTIVE_TABS: ObjectiveTab[] = ["create", "manage", "promote", "analyze"];
@@ -742,7 +699,6 @@ function OrganizacaoPageInner({
     () => resolvePrimaryModule(primaryModule, rawTools) as OperationModule,
     [primaryModule, rawTools],
   );
-  const operationLabel = OPERATION_LABELS[primaryOperation];
   const orgDisplayName =
     organization?.publicName?.trim() ||
     organization?.businessName?.trim() ||
@@ -802,6 +758,7 @@ function OrganizacaoPageInner({
   const canAccessFinance = canAccessModule("FINANCEIRO");
   const canAccessReservas = canAccessModule("RESERVAS");
   const canAccessTorneios = canAccessModule("TORNEIOS");
+  const canAccessEventos = canAccessModule("EVENTOS");
   const canAccessInscricoes = canAccessModule("INSCRICOES");
   const canAccessMensagens = canAccessModule("MENSAGENS");
   const canAccessLoja = canAccessModule("LOJA");
@@ -823,7 +780,7 @@ function OrganizacaoPageInner({
   const showPadelHub = hasTorneiosModule;
   const primaryCreateMeta =
     primaryOperation === "RESERVAS"
-      ? { label: "Criar aula ou serviço", href: "/org/bookings/new", singular: "aula/serviço", plural: "aulas/serviços" }
+      ? { label: "Criar aula", href: "/org/academy/classes/new", singular: "aula", plural: "aulas" }
       : primaryOperation === "TORNEIOS"
         ? {
             label: "Criar torneio",
@@ -1925,11 +1882,11 @@ function OrganizacaoPageInner({
     primaryOperation === "RESERVAS" ? "RESERVAS" : "TORNEIOS";
   const primaryLabel =
     primaryOperation === "RESERVAS"
-      ? "Primeiro serviço criado"
+      ? "Primeira aula criada"
       : "Primeiro torneio criado";
   const primaryDescription =
     primaryOperation === "RESERVAS"
-      ? "Cria um serviço com disponibilidade."
+      ? "Cria uma aula com disponibilidade."
       : "Publica o primeiro torneio.";
   const summarySteps = [
     {
@@ -1973,7 +1930,7 @@ function OrganizacaoPageInner({
             label: "Horários publicados",
             description: "Define slots para reservas.",
             done: servicesStats.availabilityCount > 0,
-            href: "/org/bookings",
+            href: "/org/academy/classes",
             iconKey: "RESERVAS",
           },
         ]
@@ -2097,8 +2054,8 @@ function OrganizacaoPageInner({
               iconKey: "TOOL_RESERVAS",
               title: "Academia",
               summary: "Aulas, treinadores e alunos.",
-              bullets: ["Aulas & serviços", "Aulas", "Treinadores", "Jogadores & alunos"],
-              href: scopedOrganizationId ? `/org/${scopedOrganizationId}/bookings` : undefined,
+              bullets: ["Aulas", "Treinadores", "Alunos"],
+              href: scopedOrganizationId ? `/org/${scopedOrganizationId}/academy/classes` : undefined,
             }
           : null,
         checkin: canUseCheckin
@@ -2123,10 +2080,10 @@ function OrganizacaoPageInner({
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/padel/tournaments` : undefined,
             }
           : null,
-        eventos: canAccessTorneios
+        eventos: canAccessEventos
           ? {
               id: "eventos",
-              moduleKey: "TORNEIOS",
+              moduleKey: "EVENTOS",
               iconKey: "TOOL_EVENTOS",
               title: "Eventos",
               summary: "Lista e criação de eventos.",
@@ -2207,7 +2164,7 @@ function OrganizacaoPageInner({
               iconKey: "TOOL_PROMOCOES",
               title: "Marketing",
               summary: "Promoções e conteúdos.",
-              bullets: ["Resumo", "Promoções", "Promotores", "Conteúdo"],
+              bullets: ["Resumo", "Promoções", "Conteúdo"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/marketing` : undefined,
             }
           : null,
@@ -2264,6 +2221,7 @@ function OrganizacaoPageInner({
     [
       canAccessReservas,
       canAccessTorneios,
+      canAccessEventos,
       canUseCalendar,
       canUseCheckin,
       canAccessInscricoes,
@@ -2368,90 +2326,6 @@ function OrganizacaoPageInner({
       </div>
     );
   };
-  const renderToolCard = (tool: DashboardToolCard) => {
-    const iconGradient = MODULE_ICON_GRADIENTS[tool.iconKey] ?? MODULE_ICON_GRADIENTS[tool.moduleKey] ?? "from-white/15 via-white/5 to-white/10";
-    const iconBgStyle =
-      MODULE_ICON_BG_STYLES[tool.iconKey] ??
-      "linear-gradient(145deg, rgba(34,211,238,0.82) 0%, rgba(96,165,250,0.72) 48%, rgba(167,139,250,0.82) 100%)";
-    const iconSurfaceGlow = "shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_10px_24px_rgba(0,0,0,0.34)]";
-    const customAppIconSrc = TOOL_CUSTOM_ICON_BY_ID[tool.id];
-    const isCustomAppIcon = Boolean(customAppIconSrc);
-    const cardInner = (
-      <div
-        className={cn(
-          "group relative flex min-h-[118px] flex-col items-center justify-center gap-2 px-2 py-3 text-center sm:min-h-[130px] sm:gap-2.5 sm:px-3 sm:py-3",
-          isCustomAppIcon
-            ? "w-full min-h-[126px] overflow-visible sm:min-h-[136px]"
-            : "overflow-hidden rounded-[20px] border border-white/18 bg-[#0c1424]/90 shadow-[0_10px_30px_rgba(0,0,0,0.42)]",
-        )}
-      >
-        <div className="pointer-events-none absolute inset-0">
-          {!isCustomAppIcon && <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-black/35 to-transparent" />}
-        </div>
-        {customAppIconSrc ? (
-          <div className="relative mx-auto flex items-center justify-center">
-            <Image
-              src={customAppIconSrc}
-              alt=""
-              aria-hidden="true"
-              width={384}
-              height={384}
-              loading="lazy"
-              sizes="(min-width: 1280px) 160px, (min-width: 640px) 144px, 124px"
-              decoding="async"
-              className="tool-custom-icon pointer-events-none h-[124px] w-[124px] select-none object-contain [transform:translateZ(0)] sm:h-[144px] sm:w-[144px]"
-              draggable={false}
-            />
-          </div>
-        ) : (
-          <div
-            className={cn(
-              "relative flex items-center justify-center border border-white/26 text-white",
-              "h-[84px] w-[84px] rounded-full sm:h-[102px] sm:w-[102px]",
-              iconGradient,
-              iconSurfaceGlow,
-            )}
-            style={{ background: iconBgStyle }}
-          >
-            <span className="pointer-events-none absolute inset-[2px] rounded-full bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.34),rgba(255,255,255,0.1)_40%,rgba(255,255,255,0)_70%)]" />
-            <span className="pointer-events-none absolute inset-[8px] rounded-full border border-white/18" />
-            <ModuleIcon moduleKey={tool.iconKey} className="relative h-9 w-9 sm:h-11 sm:w-11" aria-hidden="true" />
-          </div>
-        )}
-        <span
-          className={cn(
-            "relative mx-auto leading-tight text-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.62)]",
-            isCustomAppIcon
-              ? "max-w-[140px] text-[12px] font-semibold sm:max-w-[156px] sm:text-[13px]"
-              : "text-[13px] font-extrabold sm:text-[14px]",
-          )}
-        >
-          {tool.title}
-        </span>
-      </div>
-    );
-
-    if (tool.href) {
-      return (
-        <Link
-          key={tool.id}
-          href={tool.href}
-          className={cn(
-            "block rounded-[24px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b1014]",
-            isCustomAppIcon && "rounded-[32px]",
-          )}
-        >
-          {cardInner}
-        </Link>
-      );
-    }
-    return (
-      <div key={tool.id} className="block">
-        {cardInner}
-      </div>
-    );
-  };
-
   if (loading && !loadingTimedOut) {
     return (
       <div className={`${containerClasses} space-y-6`}>
@@ -2643,7 +2517,7 @@ function OrganizacaoPageInner({
               <p className="text-[11px] uppercase tracking-[0.26em] text-white/60">Clube de Padel</p>
               <h1 className="text-2xl sm:text-3xl font-semibold text-white">Dashboard do clube</h1>
               <p className="text-sm text-white/70">
-                {orgDisplayName} · {operationLabel}
+                {orgDisplayName}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -2656,23 +2530,24 @@ function OrganizacaoPageInner({
           <div className={cn("space-y-4", fadeClass)}>
             <div
               id="ferramentas"
-              className="rounded-3xl border border-white/16 bg-[#0c1424]/90 p-4 shadow-[0_10px_28px_rgba(0,0,0,0.42)] sm:p-5"
+              className="rounded-3xl border border-white/12 bg-[#111214]/92 p-4 shadow-[0_12px_30px_rgba(0,0,0,0.5)]"
             >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="space-y-1">
-                  <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Ferramentas</p>
-                  <h2 className="text-xl font-semibold text-white">Catálogo do clube</h2>
-                  <p className="text-[12px] text-white/65">Acesso direto por ferramenta, numa grelha única.</p>
-                </div>
-              </div>
-              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
-                {dashboardTools.map((tool) => renderToolCard(tool))}
-              </div>
-              {dashboardTools.length === 0 ? (
-                <p className="mt-4 rounded-2xl border border-white/12 bg-white/5 px-3 py-3 text-[12px] text-white/70">
-                  Não existem ferramentas disponíveis para o teu perfil neste clube.
+              <div className="space-y-2">
+                <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Navegação</p>
+                <h2 className="text-lg font-semibold text-white">Usa a barra lateral para abrir as ferramentas.</h2>
+                <p className="text-[13px] text-white/70">
+                  A dashboard agora é minimalista: tens acesso direto a todas as ferramentas na sidebar, com subnavegação expandível.
                 </p>
-              ) : null}
+                {dashboardTools.length > 0 ? (
+                  <p className="rounded-2xl border border-white/12 bg-white/5 px-3 py-3 text-[12px] text-white/70">
+                    Ferramentas disponíveis: {dashboardTools.map((tool) => tool.title).join(" · ")}.
+                  </p>
+                ) : (
+                  <p className="rounded-2xl border border-white/12 bg-white/5 px-3 py-3 text-[12px] text-white/70">
+                    Não existem ferramentas disponíveis para o teu perfil neste clube.
+                  </p>
+                )}
+              </div>
             </div>
           </div>
 

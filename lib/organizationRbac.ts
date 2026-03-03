@@ -28,19 +28,19 @@ export const ACCESS_LABELS: Record<ModuleAccessLevel, string> = {
 };
 
 export const MODULE_LABELS: Record<OrganizationModule, string> = {
-  EVENTOS: "Competicao",
-  RESERVAS: "Operacao",
-  TORNEIOS: "Competicao padel",
+  EVENTOS: "Eventos",
+  RESERVAS: "Operação",
+  TORNEIOS: "Torneios de Padel",
   STAFF: "Equipa",
-  FINANCEIRO: "Negocio",
+  FINANCEIRO: "Financeiro",
   MENSAGENS: "Comunidade",
   CRM: "CRM",
   MARKETING: "Marketing",
   LOJA: "Loja",
-  ANALYTICS: "Relatorios",
-  DEFINICOES: "Configuracoes",
-  PERFIL_PUBLICO: "Perfil clube",
-  INSCRICOES: "Inscricoes",
+  ANALYTICS: "Relatórios",
+  DEFINICOES: "Configurações",
+  PERFIL_PUBLICO: "Perfil do Clube",
+  INSCRICOES: "Inscrições",
 };
 
 const ROLE_BASE_ACCESS: Partial<Record<OrganizationMemberRole, Partial<Record<OrganizationModule, ModuleAccessLevel>>>> = {
@@ -91,11 +91,10 @@ const ROLE_BASE_ACCESS: Partial<Record<OrganizationMemberRole, Partial<Record<Or
   },
   STAFF: {
     EVENTOS: "VIEW",
-    RESERVAS: "EDIT",
-    TORNEIOS: "EDIT",
-    MENSAGENS: "EDIT",
-    LOJA: "EDIT",
-    INSCRICOES: "EDIT",
+    RESERVAS: "VIEW",
+    TORNEIOS: "VIEW",
+    MENSAGENS: "VIEW",
+    INSCRICOES: "VIEW",
   },
 };
 
@@ -107,9 +106,17 @@ type RolePackAccess = {
 const ROLE_PACK_ACCESS: Record<OrganizationRolePack, RolePackAccess> = {
   CLUB_MANAGER: {
     modules: {
+      EVENTOS: "EDIT",
       TORNEIOS: "EDIT",
       RESERVAS: "EDIT",
+      INSCRICOES: "EDIT",
       CRM: "EDIT",
+      MARKETING: "EDIT",
+      MENSAGENS: "EDIT",
+      ANALYTICS: "VIEW",
+      FINANCEIRO: "VIEW",
+      LOJA: "VIEW",
+      PERFIL_PUBLICO: "EDIT",
       STAFF: "VIEW",
       DEFINICOES: "VIEW",
     },
@@ -117,32 +124,47 @@ const ROLE_PACK_ACCESS: Record<OrganizationRolePack, RolePackAccess> = {
   },
   TOURNAMENT_DIRECTOR: {
     modules: {
-      TORNEIOS: "EDIT",
       EVENTOS: "EDIT",
+      TORNEIOS: "EDIT",
+      INSCRICOES: "EDIT",
       RESERVAS: "VIEW",
+      MENSAGENS: "EDIT",
+      CRM: "VIEW",
+      ANALYTICS: "VIEW",
     },
     checkin: "EDIT",
   },
   FRONT_DESK: {
     modules: {
-      RESERVAS: "EDIT",
       EVENTOS: "VIEW",
-      CRM: "VIEW",
+      RESERVAS: "EDIT",
+      TORNEIOS: "VIEW",
+      INSCRICOES: "EDIT",
+      CRM: "EDIT",
+      MENSAGENS: "EDIT",
+      PERFIL_PUBLICO: "VIEW",
     },
     checkin: "EDIT",
   },
   COACH: {
     modules: {
+      EVENTOS: "VIEW",
       RESERVAS: "EDIT",
       TORNEIOS: "VIEW",
+      INSCRICOES: "VIEW",
       CRM: "VIEW",
+      MENSAGENS: "VIEW",
     },
-    checkin: "NONE",
+    checkin: "VIEW",
   },
   REFEREE: {
     modules: {
-      TORNEIOS: "EDIT",
       EVENTOS: "VIEW",
+      TORNEIOS: "EDIT",
+      INSCRICOES: "EDIT",
+      RESERVAS: "VIEW",
+      MENSAGENS: "VIEW",
+      ANALYTICS: "VIEW",
     },
     checkin: "VIEW",
   },
@@ -152,7 +174,7 @@ const ROLE_CHECKIN_ACCESS: Partial<Record<OrganizationMemberRole, CheckinAccessL
   OWNER: "EDIT",
   CO_OWNER: "EDIT",
   ADMIN: "EDIT",
-  STAFF: "EDIT",
+  STAFF: "NONE",
 };
 
 const ADMIN_ROLE_SET = new Set<OrganizationMemberRole>(["OWNER", "CO_OWNER", "ADMIN"]);

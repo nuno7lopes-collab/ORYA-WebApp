@@ -52,7 +52,7 @@ export default function ReservasAulasPage() {
   const canonicalOrganizationId = Number.isFinite(organizationId) && organizationId > 0 ? organizationId : null;
 
   const { data, isLoading } = useSWR<{ ok: boolean; items: ServiceItem[] }>(
-    resolveCanonicalOrgApiPath("/api/org/[orgId]/servicos"),
+    resolveCanonicalOrgApiPath("/api/org/[orgId]/academy/classes"),
     fetcher,
   );
   const services = data?.items ?? [];
@@ -62,18 +62,18 @@ export default function ReservasAulasPage() {
     <div className="space-y-5">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-2">
-          <p className={DASHBOARD_LABEL}>Reservas</p>
+          <p className={DASHBOARD_LABEL}>Academia</p>
           <h1 className="text-xl font-semibold text-white">Aulas</h1>
           <p className={DASHBOARD_MUTED}>Catálogo dedicado a aulas (vertical CLASS).</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Link href={appendOrganizationIdToHref("/org/bookings/courts", canonicalOrganizationId)} className={CTA_SECONDARY}>
-            Campos
+          <Link href={appendOrganizationIdToHref("/org/academy/trainers", canonicalOrganizationId)} className={CTA_SECONDARY}>
+            Treinadores
           </Link>
-          <Link href={appendOrganizationIdToHref("/org/bookings", canonicalOrganizationId)} className={CTA_SECONDARY}>
-            Serviços
+          <Link href={appendOrganizationIdToHref("/org/academy/students", canonicalOrganizationId)} className={CTA_SECONDARY}>
+            Alunos
           </Link>
-          <Link href={appendOrganizationIdToHref("/org/bookings/new", canonicalOrganizationId)} className={CTA_PRIMARY}>
+          <Link href={appendOrganizationIdToHref("/org/academy/classes/new", canonicalOrganizationId)} className={CTA_PRIMARY}>
             Nova aula
           </Link>
         </div>
@@ -88,7 +88,7 @@ export default function ReservasAulasPage() {
           {classServices.map((service) => (
             <Link
               key={service.id}
-              href={appendOrganizationIdToHref(`/org/bookings/${service.id}`, canonicalOrganizationId)}
+              href={appendOrganizationIdToHref(`/org/academy/classes/${service.id}`, canonicalOrganizationId)}
               className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 transition hover:bg-white/10"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">

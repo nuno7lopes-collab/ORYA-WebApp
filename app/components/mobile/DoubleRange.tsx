@@ -159,6 +159,7 @@ export default function DoubleRange({ min, max, step, valueMin, valueMax, onComm
         <button
           type="button"
           role="slider"
+          aria-label="Preço mínimo"
           aria-valuemin={min}
           aria-valuemax={max}
           aria-valuenow={valueMin}
@@ -178,6 +179,7 @@ export default function DoubleRange({ min, max, step, valueMin, valueMax, onComm
         <button
           type="button"
           role="slider"
+          aria-label="Preço máximo"
           aria-valuemin={min}
           aria-valuemax={max}
           aria-valuenow={valueMax}

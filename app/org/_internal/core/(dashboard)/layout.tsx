@@ -196,7 +196,7 @@ export default async function OrganizationDashboardLayout({
 
   return (
     <div
-      className="flex min-h-screen w-full flex-col text-white"
+      className="flex h-full min-h-0 w-full flex-col overflow-hidden text-white"
       style={
         {
           "--brand-primary": brandPrimary,

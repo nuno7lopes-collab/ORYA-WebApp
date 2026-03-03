@@ -25,11 +25,11 @@ describe("bookings x calendar boundary guardrails", () => {
     expect(legacyAvailabilityPage).toContain("redirect(");
   });
 
-  it("keeps services as canonical bookings home and operations in dedicated route", () => {
+  it("keeps classes as canonical bookings home and operations in dedicated route", () => {
     const bookingsHomePage = readLocal("app/org/[orgId]/bookings/page.tsx");
     const operationsPage = readLocal("app/org/[orgId]/bookings/operations/page.tsx");
 
-    expect(bookingsHomePage).toContain("reservas/servicos/page");
+    expect(bookingsHomePage).toContain("reservas/aulas/page");
     expect(bookingsHomePage).not.toContain("DashboardClient");
     expect(bookingsHomePage).not.toContain("reservas/page");
     expect(operationsPage).toContain("reservas/page");

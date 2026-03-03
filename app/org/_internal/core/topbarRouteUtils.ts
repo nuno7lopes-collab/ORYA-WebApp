@@ -48,6 +48,7 @@ export function resolveOrganizationTool(pathname: string | null): OrgToolKey | n
   const rest = `/${canonicalMatch[1] ?? "overview"}`;
   if (rest === "/overview") return "dashboard";
   if (rest.startsWith("/events")) return "events";
+  if (rest.startsWith("/academy")) return "academy";
   if (rest.startsWith("/bookings")) return "academy";
   if (rest.startsWith("/servicos")) return "academy";
   if (rest.startsWith("/reservas")) return "academy";

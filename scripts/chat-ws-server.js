@@ -24,7 +24,7 @@ const TYPING_TTL_SECONDS = Number(process.env.CHAT_TYPING_TTL_SECONDS || 5);
 const LAST_SEEN_DEBOUNCE_SECONDS = Number(process.env.CHAT_LAST_SEEN_DEBOUNCE_SECONDS || 300);
 const AUTH_RECHECK_MS = Number(process.env.CHAT_WS_AUTH_RECHECK_MS || 10 * 60 * 1000);
 
-const ALLOWED_ROLES = new Set(["OWNER", "CO_OWNER", "ADMIN", "STAFF", "TRAINER"]);
+const ALLOWED_ROLES = new Set(["OWNER", "CO_OWNER", "ADMIN", "STAFF"]);
 const B2C_CONTEXT_TYPES = new Set(["EVENT", "USER_DM", "USER_GROUP", "ORG_CONTACT", "BOOKING", "SERVICE", "ORG_COMMUNITY"]);
 
 function emitWsMetric(metricName, payload = {}) {

@@ -8,7 +8,6 @@ const DISALLOWED_ROUTE_FILES = [
   "app/org/[orgId]/manage/page.tsx",
   "app/org/[orgId]/promote/page.tsx",
   "app/org/[orgId]/servicos/page.tsx",
-  "app/org/[orgId]/trainers/page.tsx",
   "app/org/[orgId]/tournaments/page.tsx",
   "app/org/[orgId]/tournaments/new/page.tsx",
   "app/org/[orgId]/padel/page.tsx",

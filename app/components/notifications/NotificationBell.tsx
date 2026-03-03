@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type SVGProps } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type SVGProps } from "react";
 import useSWR from "swr";
 import { useUser } from "@/app/hooks/useUser";
 import Link from "next/link";
 import PairingInviteCard from "@/app/components/notifications/PairingInviteCard";
 import { useSearchParams } from "next/navigation";
 import { resolveLocale, t } from "@/lib/i18n";
+import { createPortal } from "react-dom";
 
 type NotificationDto = {
   id: string;
@@ -43,6 +44,11 @@ const INVITE_TYPES = new Set([
   "PAIRING_INVITE",
 ]);
 
+const PANEL_MARGIN = 12;
+const PANEL_GAP = 10;
+const PANEL_MIN_WIDTH = 240;
+const PANEL_MAX_WIDTH = 360;
+
 export function NotificationBell({ scope, organizationId }: NotificationBellProps) {
   const { user } = useUser();
   const searchParams = useSearchParams();
@@ -59,7 +65,9 @@ export function NotificationBell({ scope, organizationId }: NotificationBellProp
   );
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<"all" | "invites">("all");
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const [panelStyle, setPanelStyle] = useState<CSSProperties | null>(null);
   const queryParams = useMemo(() => {
     if (!user) return null;
     if (resolvedScope === "organization" && !parsedOrganizationId) return null;
@@ -126,13 +134,59 @@ export function NotificationBell({ scope, organizationId }: NotificationBellProp
   );
 
   useEffect(() => {
+    const updatePanelPosition = () => {
+      const trigger = triggerRef.current;
+      if (!trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const computedWidth = Math.min(PANEL_MAX_WIDTH, Math.max(PANEL_MIN_WIDTH, viewportWidth - PANEL_MARGIN * 2));
+      let left = rect.right - computedWidth;
+      if (left < PANEL_MARGIN) left = PANEL_MARGIN;
+      if (left + computedWidth > viewportWidth - PANEL_MARGIN) left = viewportWidth - PANEL_MARGIN - computedWidth;
+      let top = rect.bottom + PANEL_GAP;
+      const maxTop = Math.max(PANEL_MARGIN, viewportHeight - PANEL_MARGIN - 80);
+      if (top > maxTop) top = maxTop;
+      setPanelStyle({
+        position: "fixed",
+        left: Math.round(left),
+        top: Math.round(top),
+        width: Math.round(computedWidth),
+        maxHeight: `calc(100dvh - ${Math.round(top + PANEL_MARGIN)}px)`,
+        transformOrigin: rect.right > viewportWidth / 2 ? "top right" : "top left",
+      });
+    };
+
+    if (!open) return;
+    updatePanelPosition();
+
+    const onReposition = () => updatePanelPosition();
+    window.addEventListener("resize", onReposition);
+    window.addEventListener("scroll", onReposition, true);
+    return () => {
+      window.removeEventListener("resize", onReposition);
+      window.removeEventListener("scroll", onReposition, true);
+    };
+  }, [open]);
+
+  useEffect(() => {
     const onClick = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      const target = e.target as Node;
+      if (panelRef.current?.contains(target)) return;
+      if (triggerRef.current?.contains(target)) return;
+      setOpen(false);
     };
     if (open) document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, [open]);
 
   const markAll = async () => {
@@ -175,6 +229,7 @@ export function NotificationBell({ scope, organizationId }: NotificationBellProp
   return (
     <div className="relative">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="relative flex h-11 w-11 items-center justify-center rounded-full border border-amber-400/60 bg-amber-500/15 text-amber-100 hover:bg-amber-500/20 transition sm:h-10 sm:w-10"
@@ -188,10 +243,18 @@ export function NotificationBell({ scope, organizationId }: NotificationBellProp
         )}
       </button>
 
-      {open && (
+      {open && typeof document !== "undefined" && createPortal(
         <div
           ref={panelRef}
-          className="absolute right-0 mt-2 w-80 rounded-2xl orya-menu-surface p-3 text-white/80 backdrop-blur-xl z-50"
+          style={{
+            ...panelStyle,
+            backgroundColor: "var(--orya-menu-bg-solid)",
+            backgroundImage: "var(--orya-menu-bg)",
+            borderColor: "var(--orya-menu-border)",
+            boxShadow:
+              "0 28px 68px rgba(0,0,0,0.62), 0 0 0 1px rgba(255,255,255,0.05), inset 0 1px 0 rgba(255,255,255,0.04)",
+          }}
+          className="orya-scrollbar-subtle animate-popover z-[130] overflow-y-auto rounded-2xl border p-3 text-white/80 backdrop-blur-[20px]"
         >
           <div className="mb-2 flex items-center justify-between text-xs">
             <span className="font-semibold text-white">
@@ -295,7 +358,8 @@ export function NotificationBell({ scope, organizationId }: NotificationBellProp
               </div>
             </div>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

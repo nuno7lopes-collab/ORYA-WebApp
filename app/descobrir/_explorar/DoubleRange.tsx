@@ -158,6 +158,7 @@ export function DoubleRange({ min, max, step, valueMin, valueMax, onCommit }: Do
         <button
           type="button"
           role="slider"
+          aria-label="Preço mínimo"
           aria-valuemin={min}
           aria-valuemax={max}
           aria-valuenow={valueMin}
@@ -177,6 +178,7 @@ export function DoubleRange({ min, max, step, valueMin, valueMax, onCommit }: Do
         <button
           type="button"
           role="slider"
+          aria-label="Preço máximo"
           aria-valuemin={min}
           aria-valuemax={max}
           aria-valuenow={valueMax}

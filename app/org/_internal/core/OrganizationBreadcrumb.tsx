@@ -16,7 +16,7 @@ const SECTION_LABELS: Record<string, string> = {
   courts: "Campos",
   categories: "Categorias",
   players: "Jogadores",
-  trainers: "Treinadores",
+  coaches: "Treinadores",
   teams: "Equipas",
   community: "Comunidade",
   lessons: "Aulas",
@@ -24,8 +24,8 @@ const SECTION_LABELS: Record<string, string> = {
   reservas: "Operação",
   agenda: "Agenda",
   disponibilidade: "Disponibilidade",
-  servicos: "Aulas & serviços",
-  clientes: "Jogadores & alunos",
+  servicos: "Aulas",
+  clientes: "Alunos",
   profissionais: "Treinadores",
   recursos: "Campos",
   politicas: "Políticas",
@@ -98,8 +98,8 @@ function resolveLabel(
     return "Calendário · Disponibilidade";
   }
   if (/^\/org\/(?:\d+\/)?calendar(?:\/|$)/.test(pathname)) return "Calendário";
-  if (/^\/org\/(?:\d+\/)?bookings\/new(?:\/|$)/.test(pathname)) return "Operação · Criar aula/serviço";
-  if (/^\/org\/(?:\d+\/)?bookings\/customers(?:\/|$)/.test(pathname)) return "Operação · Jogadores & alunos";
+  if (/^\/org\/(?:\d+\/)?bookings\/new(?:\/|$)/.test(pathname)) return "Operação · Criar aula";
+  if (/^\/org\/(?:\d+\/)?bookings\/customers(?:\/|$)/.test(pathname)) return "Operação · Alunos";
   if (/^\/org\/(?:\d+\/)?bookings\/professionals(?:\/|$)/.test(pathname)) return "Operação · Treinadores";
   if (/^\/org\/(?:\d+\/)?bookings\/resources(?:\/|$)/.test(pathname)) return "Operação · Campos";
   if (/^\/org\/(?:\d+\/)?bookings(?:\/|$)/.test(pathname)) {

@@ -34,16 +34,22 @@ export function normalizeOrganizationUiRole(role?: string | null): OrganizationU
 
 export function getOrganizationRoleFlags(role?: string | null, rolePack?: string | null) {
   const normalized = normalizeOrganizationUiRole(role);
-  const normalizedPack = rolePack && ROLE_PACK_SET.has(rolePack as OrganizationUiRolePack)
-    ? (rolePack as OrganizationUiRolePack)
-    : null;
+  const normalizedRolePackRaw = typeof rolePack === "string" ? rolePack.trim().toUpperCase() : null;
+  const normalizedPack =
+    normalizedRolePackRaw && ROLE_PACK_SET.has(normalizedRolePackRaw as OrganizationUiRolePack)
+      ? (normalizedRolePackRaw as OrganizationUiRolePack)
+      : null;
   const isOwner = normalized === "OWNER";
   const isCoOwner = normalized === "CO_OWNER";
   const isAdmin = normalized === "ADMIN";
   const isStaff = normalized === "STAFF";
   const isAdminOrAbove = isOwner || isCoOwner || isAdmin;
-  const isManager = isAdminOrAbove;
+  const isClubManager = isStaff && normalizedPack === "CLUB_MANAGER";
+  const isTournamentDirector = isStaff && normalizedPack === "TOURNAMENT_DIRECTOR";
+  const isFrontDesk = isStaff && normalizedPack === "FRONT_DESK";
   const isCoach = normalized === "STAFF" && normalizedPack === "COACH";
+  const isReferee = normalized === "STAFF" && normalizedPack === "REFEREE";
+  const isOperationalLead = isAdminOrAbove || isClubManager || isTournamentDirector;
   return {
     role: normalized,
     rolePack: normalizedPack,
@@ -51,15 +57,18 @@ export function getOrganizationRoleFlags(role?: string | null, rolePack?: string
     isCoOwner,
     isAdmin,
     isStaff,
-    isTrainer: false,
+    isClubManager,
+    isTournamentDirector,
+    isFrontDesk,
     isCoach,
+    isReferee,
     isAdminOrAbove,
-    canViewFinance: isManager,
-    canManageMembers: isManager,
-    canEditOrg: isManager,
-    canViewOperationalSettings: isManager,
-    canViewTrainerHub: isCoach || isManager,
+    canViewFinance: isAdminOrAbove || isClubManager,
+    canManageMembers: isAdminOrAbove,
+    canEditOrg: isAdminOrAbove,
+    canViewOperationalSettings: isAdminOrAbove || isClubManager,
+    canViewCoachHub: isCoach || isOperationalLead,
     // "Promote" aqui significa acesso a ferramenta/flows de marketing.
-    canPromote: isAdminOrAbove,
+    canPromote: isAdminOrAbove || isClubManager,
   };
 }

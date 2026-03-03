@@ -1,5 +1,21 @@
 import { OrganizationMemberRole, OrganizationRolePack } from "@prisma/client";
 
+export const ROLE_PACK_LABELS: Record<OrganizationRolePack, string> = {
+  CLUB_MANAGER: "Gestor de Clube",
+  TOURNAMENT_DIRECTOR: "Diretor de Torneio",
+  FRONT_DESK: "Receção",
+  COACH: "Treinador",
+  REFEREE: "Árbitro",
+};
+
+export const ROLE_PACK_DESCRIPTIONS: Record<OrganizationRolePack, string> = {
+  CLUB_MANAGER: "Gestão transversal do clube: operação, CRM, marketing e supervisão.",
+  TOURNAMENT_DIRECTOR: "Coordenação competitiva: torneios, inscrições e operação de prova.",
+  FRONT_DESK: "Operação diária de balcão: reservas, inscrições e atendimento CRM.",
+  COACH: "Execução técnica: aulas/treinos e acompanhamento operacional de atletas.",
+  REFEREE: "Operação de jogo: validação competitiva, conflitos e integridade da prova.",
+};
+
 const ROLE_PACKS_BY_ROLE: Partial<Record<OrganizationMemberRole, readonly OrganizationRolePack[]>> = {
   OWNER: [],
   CO_OWNER: [],
@@ -43,6 +59,14 @@ export function getAllowedRolePacksForRole(role: OrganizationMemberRole) {
 
 export function getDefaultRolePackForRole(role: OrganizationMemberRole) {
   return DEFAULT_ROLE_PACK_BY_ROLE[role] ?? null;
+}
+
+export function getRolePackLabel(rolePack: OrganizationRolePack) {
+  return ROLE_PACK_LABELS[rolePack] ?? rolePack;
+}
+
+export function getRolePackDescription(rolePack: OrganizationRolePack) {
+  return ROLE_PACK_DESCRIPTIONS[rolePack] ?? rolePack;
 }
 
 export function parseOrganizationRolePack(value: unknown): OrganizationRolePack | null {

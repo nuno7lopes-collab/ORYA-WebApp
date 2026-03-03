@@ -6,7 +6,6 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import MobileTopBar from "@/app/components/mobile/MobileTopBar";
 import { trackEvent } from "@/lib/analytics";
-import { OryaDateField } from "@/components/ui/datetime";
 import { PADEL_FORMAT_OPTIONS_PT } from "@/domain/padel/formatPresentation";
 import { PORTUGAL_CITIES } from "@/config/cities";
 import {
@@ -731,6 +730,7 @@ export function DiscoverPadelTabsContent() {
               <div className="flex flex-wrap items-center gap-2">
                 <select
                   value={dateFilter === "custom" ? "custom" : dateFilter}
+                  aria-label="Filtro de data dos torneios"
                   onChange={(event) => {
                     const next = event.target.value as "all" | "today" | "weekend" | "upcoming" | "custom";
                     if (next === "custom") {
@@ -749,21 +749,21 @@ export function DiscoverPadelTabsContent() {
                   <option value="custom">Dia específico</option>
                 </select>
 
-                <div className="min-w-[170px]">
-                  <OryaDateField
-                    value={customDate}
-                    onChange={(next) => {
-                      setCustomDate(next);
-                      setDateFilter(next ? "custom" : "all");
-                    }}
-                    placeholder="Escolher dia"
-                    className="w-full"
-                    buttonClassName={`${FIELD_CLASS} h-[36px] w-full justify-start`}
-                  />
-                </div>
+                <input
+                  type="date"
+                  aria-label="Escolher dia específico dos torneios"
+                  value={customDate}
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    setCustomDate(next);
+                    setDateFilter(next ? "custom" : "all");
+                  }}
+                  className={`${FIELD_CLASS} min-w-[170px]`}
+                />
 
                 <select
                   value={padelFormatFilter}
+                  aria-label="Filtro de formato dos torneios"
                   onChange={(event) => setPadelFormatFilter(event.target.value)}
                   className={SELECT_CLASS}
                 >
@@ -776,6 +776,7 @@ export function DiscoverPadelTabsContent() {
 
                 <select
                   value={padelEligibilityFilter}
+                  aria-label="Filtro de elegibilidade dos torneios"
                   onChange={(event) => setPadelEligibilityFilter(event.target.value)}
                   className={SELECT_CLASS}
                 >
@@ -788,6 +789,7 @@ export function DiscoverPadelTabsContent() {
 
                 <select
                   value={padelLevelFilter}
+                  aria-label="Filtro de nível dos torneios"
                   onChange={(event) => setPadelLevelFilter(event.target.value)}
                   className={SELECT_CLASS}
                 >
@@ -834,6 +836,7 @@ export function DiscoverPadelTabsContent() {
               <div className="flex flex-wrap items-center gap-2">
                 <select
                   value={periodDays}
+                  aria-label="Período temporal do ranking"
                   onChange={(event) => setPeriodDays(parsePeriodDays(event.target.value))}
                   className={SELECT_CLASS}
                 >

@@ -9,7 +9,7 @@ import { OrganizationMemberRole, OrganizationModule, OrganizationRolePack, Sourc
 import { getAgendaItemsForOrganization } from "@/domain/agendaReadModel/query";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { prisma } from "@/lib/prisma";
-import { resolveReservasScopesForMember, resolveTrainerProfessionalIds, intersectIds } from "@/lib/reservas/memberScopes";
+import { resolveReservasScopesForMember, resolveCoachProfessionalIds, intersectIds } from "@/lib/reservas/memberScopes";
 import { getOrganizationActiveModules } from "@/lib/organizationModules";
 import { resolveOrganizationOperationalMode } from "@/lib/organizationOperationalMode";
 import { getOrganizationReservasOperationalState } from "@/lib/reservas/operationalState";
@@ -151,17 +151,17 @@ async function _GET(req: NextRequest) {
       return jsonWrap({ ok: true, items: [], capabilities, operationalMode, reservasOperational }, { status: 200 });
     }
     if (isCoach) {
-      const trainerProfessionalIds = await resolveTrainerProfessionalIds({
+      const coachProfessionalIds = await resolveCoachProfessionalIds({
         organizationId: organization.id,
         userId: user.id,
       });
-      if (trainerProfessionalIds.length === 0) {
+      if (coachProfessionalIds.length === 0) {
         return jsonWrap({ ok: true, items: [], capabilities, operationalMode, reservasOperational }, { status: 200 });
       }
       scopeFilter = {
         courtIds: scopes.courtIds,
         resourceIds: scopes.resourceIds,
-        professionalIds: intersectIds(trainerProfessionalIds, scopes.professionalIds),
+        professionalIds: intersectIds(coachProfessionalIds, scopes.professionalIds),
       };
       scopeMode = "AND";
     } else {

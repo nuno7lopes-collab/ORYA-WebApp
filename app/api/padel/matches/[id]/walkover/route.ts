@@ -15,6 +15,7 @@ import { listTournamentDirectorUserIds, resolveIncidentAuthority } from "@/domai
 import { createNotification, shouldNotify } from "@/lib/notifications";
 import { isPadelOfficialStatus } from "@/domain/padel/liveStatus";
 import { buildIdempotencyScope, readIdempotencyReplay, writeIdempotencyRecord } from "@/domain/padel/resultWorkflow";
+import { ingestPadelMatchInteractions } from "@/lib/crm/padelMatchInteractions";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
@@ -66,6 +67,11 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
             select: {
               id: true,
               playerProfileId: true,
+              playerProfile: {
+                select: {
+                  userId: true,
+                },
+              },
             },
           },
         },
@@ -262,6 +268,22 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       confirmedByRole: authority.confirmedByRole,
       confirmationSource: authority.confirmationSource,
     },
+  });
+
+  await ingestPadelMatchInteractions({
+    organizationId,
+    eventId: match.eventId,
+    categoryId: match.categoryId ?? null,
+    matchId: match.id,
+    winnerSide: winner,
+    resultType,
+    statusVersion: clientRequestId,
+    participants: matchParticipants.map((participant) => ({
+      participantId: participant.participantId,
+      side: participant.side === "B" ? "B" : "A",
+      userId: participant.participant?.playerProfile?.userId ?? null,
+    })),
+    occurredAt: new Date(),
   });
 
   if (authority.confirmedByRole === "REFEREE") {

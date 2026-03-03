@@ -87,6 +87,25 @@ type SavedViewListResponse = {
   message?: string;
 };
 
+type CrmTagOption = {
+  id: string;
+  name: string;
+  slug: string;
+  color: string;
+  isSystem: boolean;
+  isActive: boolean;
+  sortOrder: number;
+  usageCount: number;
+};
+
+type CrmTagListResponse = {
+  ok: boolean;
+  tags?: CrmTagOption[];
+  tag?: CrmTagOption;
+  error?: string;
+  message?: string;
+};
+
 const CONTACT_TYPE_LABELS: Record<string, string> = {
   CUSTOMER: "Cliente",
   LEAD: "Lead",
@@ -160,6 +179,21 @@ function parseEuroToCents(value: string) {
   return Math.round(parsed * 100);
 }
 
+function parseTagTokens(value: string) {
+  return Array.from(
+    new Set(
+      value
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function stringifyTagTokens(values: string[]) {
+  return parseTagTokens(values.join(",")).join(", ");
+}
+
 function countActiveFilters(filters: CustomerFilters) {
   let count = 0;
   if (filters.query.trim()) count += 1;
@@ -184,6 +218,19 @@ export default function CrmClientesPage() {
   const [defaultApplied, setDefaultApplied] = useState(false);
   const [savingView, setSavingView] = useState(false);
   const [viewActionId, setViewActionId] = useState<string | null>(null);
+  const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
+  const [bulkTagId, setBulkTagId] = useState("");
+  const [bulkMode, setBulkMode] = useState<"ADD" | "REMOVE" | "REPLACE">("ADD");
+  const [bulkActionNotice, setBulkActionNotice] = useState<string | null>(null);
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [newTagName, setNewTagName] = useState("");
+  const [newTagColor, setNewTagColor] = useState("#22D3EE");
+  const [newTagSaving, setNewTagSaving] = useState(false);
+  const [manageTagId, setManageTagId] = useState("");
+  const [manageTagName, setManageTagName] = useState("");
+  const [manageTagColor, setManageTagColor] = useState("#22D3EE");
+  const [manageTagSaving, setManageTagSaving] = useState(false);
+  const [archiveTagSaving, setArchiveTagSaving] = useState(false);
 
   const savedViewsUrl = resolveCanonicalOrgApiPath("/api/org/[orgId]/crm/saved-views?scope=CUSTOMERS");
   const {
@@ -194,6 +241,35 @@ export default function CrmClientesPage() {
     keepPreviousData: true,
   });
   const savedViewsApiError = savedViewsData?.ok === false;
+
+  const tagsUrl = resolveCanonicalOrgApiPath("/api/org/[orgId]/crm/tags");
+  const {
+    data: tagsData,
+    mutate: mutateTags,
+    isLoading: isLoadingTags,
+  } = useSWR<CrmTagListResponse>(tagsUrl, fetcher, {
+    keepPreviousData: true,
+  });
+  const availableTags = useMemo(() => (tagsData?.ok ? tagsData.tags ?? [] : []), [tagsData]);
+  const tagByNormalizedName = useMemo(() => {
+    return new Map(availableTags.map((tag) => [tag.name.toLocaleLowerCase("pt-PT"), tag]));
+  }, [availableTags]);
+
+  useEffect(() => {
+    if (!manageTagId) {
+      setManageTagName("");
+      setManageTagColor("#22D3EE");
+      return;
+    }
+    const selected = availableTags.find((tag) => tag.id === manageTagId);
+    if (!selected) {
+      setManageTagName("");
+      setManageTagColor("#22D3EE");
+      return;
+    }
+    setManageTagName(selected.name);
+    setManageTagColor(selected.color);
+  }, [manageTagId, availableTags]);
 
   const savedViews = useMemo<CustomerSavedView[]>(() => {
     if (!savedViewsData?.ok) return [];
@@ -246,7 +322,7 @@ export default function CrmClientesPage() {
     return resolveCanonicalOrgApiPath(`/api/org/[orgId]/crm/clientes?${params.toString()}`);
   }, [page, filters]);
 
-  const { data, isLoading, isValidating } = useSWR<CustomerListResponse>(url, fetcher, {
+  const { data, isLoading, isValidating, mutate: mutateCustomers } = useSWR<CustomerListResponse>(url, fetcher, {
     keepPreviousData: true,
   });
 
@@ -260,12 +336,16 @@ export default function CrmClientesPage() {
     [activeSavedViewId, savedViews],
   );
 
+  useEffect(() => {
+    setSelectedContactIds((prev) => prev.filter((id) => items.some((item) => item.id === id)));
+  }, [items]);
+
   const applyFilters = () => {
     setPage(1);
     setFilters({
       ...draftFilters,
       query: draftFilters.query.trim(),
-      tags: draftFilters.tags.trim(),
+      tags: stringifyTagTokens(parseTagTokens(draftFilters.tags)),
     });
     setActiveSavedViewId(null);
   };
@@ -367,6 +447,192 @@ export default function CrmClientesPage() {
       setDraftFilters((prev) => ({ ...prev, [key]: value }));
     };
 
+  const draftSelectedTags = useMemo(() => parseTagTokens(draftFilters.tags), [draftFilters.tags]);
+  const isAllVisibleSelected = items.length > 0 && items.every((item) => selectedContactIds.includes(item.id));
+
+  const toggleDraftTag = (tagName: string) => {
+    setDraftFilters((prev) => {
+      const selected = parseTagTokens(prev.tags);
+      const exists = selected.includes(tagName);
+      const next = exists ? selected.filter((tag) => tag !== tagName) : [...selected, tagName];
+      return { ...prev, tags: stringifyTagTokens(next) };
+    });
+  };
+
+  const toggleContactSelection = (contactId: string) => {
+    setSelectedContactIds((prev) =>
+      prev.includes(contactId) ? prev.filter((id) => id !== contactId) : [...prev, contactId],
+    );
+  };
+
+  const toggleSelectAllVisible = () => {
+    setSelectedContactIds((prev) => {
+      if (!items.length) return prev;
+      if (isAllVisibleSelected) {
+        return prev.filter((id) => !items.some((item) => item.id === id));
+      }
+      const merged = new Set(prev);
+      for (const item of items) merged.add(item.id);
+      return Array.from(merged);
+    });
+  };
+
+  const handleCreateTag = async () => {
+    const name = newTagName.trim();
+    if (name.length < 2) {
+      setBulkActionNotice("Nome da tag inválido (mínimo 2 caracteres).");
+      return;
+    }
+    setNewTagSaving(true);
+    setBulkActionNotice(null);
+    try {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/crm/tags"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, color: newTagColor }),
+      });
+      const json = (await res.json().catch(() => null)) as CrmTagListResponse | null;
+      if (!res.ok || !json?.ok || !json.tag) {
+        throw new Error(json?.message ?? json?.error ?? "Falha ao criar tag.");
+      }
+      await mutateTags();
+      setNewTagName("");
+      setBulkTagId(json.tag.id);
+      setManageTagId(json.tag.id);
+      setBulkActionNotice(`Tag criada: ${json.tag.name}`);
+    } catch (err) {
+      setBulkActionNotice(err instanceof Error ? err.message : "Falha ao criar tag.");
+    } finally {
+      setNewTagSaving(false);
+    }
+  };
+
+  const handleBulkApplyTags = async () => {
+    if (!selectedContactIds.length) {
+      setBulkActionNotice("Seleciona pelo menos um cliente.");
+      return;
+    }
+
+    const selectedTag = availableTags.find((item) => item.id === bulkTagId);
+    if (!selectedTag) {
+      setBulkActionNotice("Seleciona uma tag para aplicar.");
+      return;
+    }
+
+    setBulkSaving(true);
+    setBulkActionNotice(null);
+    try {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/crm/tags/assign"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contactIds: selectedContactIds,
+          tagIds: [selectedTag.id],
+          mode: bulkMode,
+        }),
+      });
+      const json = (await res.json().catch(() => null)) as {
+        ok: boolean;
+        updatedCount?: number;
+        error?: string;
+        message?: string;
+      } | null;
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.message ?? json?.error ?? "Falha ao aplicar tags.");
+      }
+      setBulkActionNotice(`Tags atualizadas em ${json.updatedCount ?? 0} clientes.`);
+      setSelectedContactIds([]);
+      await Promise.all([mutateTags(), mutateCustomers()]);
+    } catch (err) {
+      setBulkActionNotice(err instanceof Error ? err.message : "Falha ao aplicar tags.");
+    } finally {
+      setBulkSaving(false);
+    }
+  };
+
+  const handleUpdateTag = async () => {
+    if (!manageTagId) {
+      setBulkActionNotice("Seleciona uma tag para editar.");
+      return;
+    }
+    const name = manageTagName.trim();
+    if (name.length < 2) {
+      setBulkActionNotice("Nome da tag inválido (mínimo 2 caracteres).");
+      return;
+    }
+    setManageTagSaving(true);
+    setBulkActionNotice(null);
+    try {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/crm/tags/${manageTagId}`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          color: manageTagColor,
+        }),
+      });
+      const json = (await res.json().catch(() => null)) as {
+        ok: boolean;
+        tag?: CrmTagOption;
+        updatedContacts?: number;
+        error?: string;
+        message?: string;
+      } | null;
+      if (!res.ok || !json?.ok || !json.tag) {
+        throw new Error(json?.message ?? json?.error ?? "Falha ao atualizar tag.");
+      }
+      setBulkActionNotice(`Tag atualizada. Contactos ajustados: ${json.updatedContacts ?? 0}.`);
+      await Promise.all([mutateTags(), mutateCustomers()]);
+    } catch (err) {
+      setBulkActionNotice(err instanceof Error ? err.message : "Falha ao atualizar tag.");
+    } finally {
+      setManageTagSaving(false);
+    }
+  };
+
+  const handleArchiveTag = async () => {
+    if (!manageTagId) {
+      setBulkActionNotice("Seleciona uma tag para arquivar.");
+      return;
+    }
+    const selected = availableTags.find((tag) => tag.id === manageTagId);
+    if (!selected) {
+      setBulkActionNotice("Tag selecionada inválida.");
+      return;
+    }
+    if (selected.isSystem) {
+      setBulkActionNotice("Tags de sistema não podem ser arquivadas.");
+      return;
+    }
+
+    setArchiveTagSaving(true);
+    setBulkActionNotice(null);
+    try {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/crm/tags/${manageTagId}`), {
+        method: "DELETE",
+      });
+      const json = (await res.json().catch(() => null)) as {
+        ok: boolean;
+        updatedContacts?: number;
+        error?: string;
+        message?: string;
+      } | null;
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.message ?? json?.error ?? "Falha ao arquivar tag.");
+      }
+      setBulkActionNotice(`Tag arquivada. Contactos ajustados: ${json.updatedContacts ?? 0}.`);
+      setManageTagId("");
+      if (bulkTagId === selected.id) {
+        setBulkTagId("");
+      }
+      await Promise.all([mutateTags(), mutateCustomers()]);
+    } catch (err) {
+      setBulkActionNotice(err instanceof Error ? err.message : "Falha ao arquivar tag.");
+    } finally {
+      setArchiveTagSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <header className="space-y-2">
@@ -463,15 +729,41 @@ export default function CrmClientesPage() {
                 onChange={(event) => handleDraftChange("query")(event.target.value)}
               />
             </label>
-            <label className="text-[12px] text-white/70">
-              Tags
+            <div className="text-[12px] text-white/70">
+              Tags (filtro)
               <input
                 className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-                placeholder="VIP, premium"
+                placeholder="Pesquisar tags"
                 value={draftFilters.tags}
                 onChange={(event) => handleDraftChange("tags")(event.target.value)}
               />
-            </label>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {availableTags.map((tag) => {
+                  const active = draftSelectedTags.includes(tag.name);
+                  return (
+                    <button
+                      key={tag.id}
+                      type="button"
+                      onClick={() => toggleDraftTag(tag.name)}
+                      className={cn(
+                        "inline-flex items-center gap-2 rounded-full border px-2 py-1 text-[10px] tracking-[0.16em]",
+                        active ? "border-white/35 bg-white/15 text-white" : "border-white/15 bg-white/5 text-white/70",
+                      )}
+                    >
+                      <span
+                        className="h-2 w-2 rounded-full"
+                        style={{ backgroundColor: tag.color }}
+                        aria-hidden
+                      />
+                      {tag.name}
+                    </button>
+                  );
+                })}
+                {!availableTags.length && !isLoadingTags ? (
+                  <span className="text-[11px] text-white/50">Sem tags criadas.</span>
+                ) : null}
+              </div>
+            </div>
             <label className="text-[12px] text-white/70">
               Última atividade (dias)
               <input
@@ -533,6 +825,128 @@ export default function CrmClientesPage() {
             </span>
           </div>
         </form>
+
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+          <p className="text-[11px] uppercase tracking-[0.16em] text-white/45">Tags por clube</p>
+          <div className="mt-2 grid gap-2 md:grid-cols-[1.1fr_auto_auto]">
+            <input
+              className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+              placeholder="Nova tag (ex.: Reativar Março)"
+              value={newTagName}
+              onChange={(event) => setNewTagName(event.target.value)}
+            />
+            <input
+              type="color"
+              className="h-[42px] w-full rounded-xl border border-white/15 bg-white/5 px-2"
+              value={newTagColor}
+              onChange={(event) => setNewTagColor(event.target.value)}
+              aria-label="Cor da tag"
+            />
+            <button type="button" className={CTA_NEUTRAL} onClick={handleCreateTag} disabled={newTagSaving}>
+              {newTagSaving ? "A criar..." : "Criar tag"}
+            </button>
+          </div>
+
+          <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_auto]">
+            <select
+              className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+              value={manageTagId}
+              onChange={(event) => setManageTagId(event.target.value)}
+            >
+              <option value="">Gerir tag existente</option>
+              {availableTags.map((tag) => (
+                <option key={`manage-${tag.id}`} value={tag.id}>
+                  {tag.name} {tag.isSystem ? "(sistema)" : ""}
+                </option>
+              ))}
+            </select>
+            <input
+              className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+              placeholder="Novo nome da tag"
+              value={manageTagName}
+              onChange={(event) => setManageTagName(event.target.value)}
+              disabled={!manageTagId}
+            />
+            <input
+              type="color"
+              className="h-[42px] w-full rounded-xl border border-white/15 bg-white/5 px-2 disabled:cursor-not-allowed disabled:opacity-50"
+              value={manageTagColor}
+              onChange={(event) => setManageTagColor(event.target.value)}
+              disabled={!manageTagId}
+              aria-label="Cor da tag em edição"
+            />
+          </div>
+
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className={CTA_NEUTRAL}
+              onClick={handleUpdateTag}
+              disabled={!manageTagId || manageTagSaving}
+            >
+              {manageTagSaving ? "A atualizar..." : "Atualizar tag"}
+            </button>
+            <button
+              type="button"
+              className={CTA_NEUTRAL}
+              onClick={handleArchiveTag}
+              disabled={!manageTagId || archiveTagSaving}
+            >
+              {archiveTagSaving ? "A arquivar..." : "Arquivar tag"}
+            </button>
+          </div>
+
+          <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_auto]">
+            <select
+              className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+              value={bulkTagId}
+              onChange={(event) => setBulkTagId(event.target.value)}
+            >
+              <option value="">Selecionar tag para atribuição em massa</option>
+              {availableTags.map((tag) => (
+                <option key={tag.id} value={tag.id}>
+                  {tag.name} ({tag.usageCount})
+                </option>
+              ))}
+            </select>
+            <select
+              className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+              value={bulkMode}
+              onChange={(event) => setBulkMode(event.target.value as "ADD" | "REMOVE" | "REPLACE")}
+            >
+              <option value="ADD">Adicionar</option>
+              <option value="REMOVE">Remover</option>
+              <option value="REPLACE">Substituir</option>
+            </select>
+            <button
+              type="button"
+              className={CTA_PRIMARY}
+              disabled={bulkSaving || selectedContactIds.length === 0}
+              onClick={handleBulkApplyTags}
+            >
+              {bulkSaving ? "A aplicar..." : `Aplicar a ${selectedContactIds.length}`}
+            </button>
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            {availableTags.map((tag) => (
+              <button
+                key={`catalog-${tag.id}`}
+                type="button"
+                className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-white/75"
+                onClick={() => {
+                  setBulkTagId(tag.id);
+                  setManageTagId(tag.id);
+                }}
+              >
+                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: tag.color }} aria-hidden />
+                {tag.name}
+                <span className="text-white/45">{tag.usageCount}</span>
+              </button>
+            ))}
+          </div>
+          {bulkActionNotice ? <p className="mt-2 text-[11px] text-white/65">{bulkActionNotice}</p> : null}
+        </div>
       </section>
 
       {isApiError ? (
@@ -543,7 +957,19 @@ export default function CrmClientesPage() {
 
       <section className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-[12px] text-white/60">{isLoading ? "A carregar..." : `${total} clientes`}</p>
+          <div className="flex items-center gap-3 text-[12px] text-white/60">
+            <p>{isLoading ? "A carregar..." : `${total} clientes`}</p>
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                className="h-3 w-3 accent-[#22D3EE]"
+                checked={isAllVisibleSelected}
+                onChange={toggleSelectAllVisible}
+              />
+              Selecionar página
+            </label>
+            <span>{selectedContactIds.length} selecionados</span>
+          </div>
           <div className="flex items-center gap-2 text-[12px] text-white/60">
             <span>{isValidating ? "A atualizar..." : "Atualizado"}</span>
             <button
@@ -570,47 +996,64 @@ export default function CrmClientesPage() {
 
         <div className="grid gap-3">
           {items.map((item) => (
-            <Link
-              key={item.id}
-              href={appendOrganizationIdToHref(`/org/crm/customers/${item.id}`, organizationId)}
-              className={cn(DASHBOARD_CARD, "p-4 transition hover:border-white/25")}
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-white">{item.displayName || "Cliente sem nome"}</p>
-                  <p className="text-[12px] text-white/60">{item.contactEmail || item.contactPhone || "Sem contacto disponível"}</p>
-                  {item.contactType ? (
-                    <p className="mt-1 text-[11px] uppercase tracking-[0.18em] text-white/45">
-                      {CONTACT_TYPE_LABELS[item.contactType] ?? item.contactType}
-                    </p>
-                  ) : null}
+            <div key={item.id} className="flex items-start gap-2">
+              <label className="mt-2 inline-flex h-5 w-5 items-center justify-center">
+                <input
+                  type="checkbox"
+                  className="h-3 w-3 accent-[#22D3EE]"
+                  checked={selectedContactIds.includes(item.id)}
+                  onChange={() => toggleContactSelection(item.id)}
+                />
+              </label>
+              <Link
+                href={appendOrganizationIdToHref(`/org/crm/customers/${item.id}`, organizationId)}
+                className={cn(DASHBOARD_CARD, "flex-1 p-4 transition hover:border-white/25")}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-white">{item.displayName || "Cliente sem nome"}</p>
+                    <p className="text-[12px] text-white/60">{item.contactEmail || item.contactPhone || "Sem contacto disponível"}</p>
+                    {item.contactType ? (
+                      <p className="mt-1 text-[11px] uppercase tracking-[0.18em] text-white/45">
+                        {CONTACT_TYPE_LABELS[item.contactType] ?? item.contactType}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="text-right text-[12px] text-white/60">
+                    <p>Última atividade</p>
+                    <p className="text-white/90">{formatRelativeDate(item.lastActivityAt)}</p>
+                  </div>
                 </div>
-                <div className="text-right text-[12px] text-white/60">
-                  <p>Última atividade</p>
-                  <p className="text-white/90">{formatRelativeDate(item.lastActivityAt)}</p>
+                <div className="mt-3 flex flex-wrap gap-3 text-[12px] text-white/70">
+                  <span>Gasto: {formatCurrency(item.totalSpentCents ?? 0, "EUR")}</span>
+                  <span>Pagamentos jogo: {item.totalOrders}</span>
+                  <span>Reservas: {item.totalBookings}</span>
+                  <span>Sessões: {item.totalAttendances}</span>
+                  <span>Notas: {item.notesCount}</span>
+                  <span>Opt-in: {item.marketingOptIn ? "Sim" : "Não"}</span>
                 </div>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-3 text-[12px] text-white/70">
-                <span>Gasto: {formatCurrency(item.totalSpentCents ?? 0, "EUR")}</span>
-                <span>Pedidos: {item.totalOrders}</span>
-                <span>Reservas: {item.totalBookings}</span>
-                <span>Check-ins: {item.totalAttendances}</span>
-                <span>Notas: {item.notesCount}</span>
-                <span>Opt-in: {item.marketingOptIn ? "Sim" : "Não"}</span>
-              </div>
-              {item.tags.length ? (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {item.tags.map((tag) => (
-                    <span
-                      key={`${item.id}-${tag}`}
-                      className="rounded-full border border-white/15 bg-white/5 px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-white/70"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
-            </Link>
+                {item.tags.length ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {item.tags.map((tag) => {
+                      const tagDef = tagByNormalizedName.get(tag.toLocaleLowerCase("pt-PT"));
+                      return (
+                        <span
+                          key={`${item.id}-${tag}`}
+                          className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-white/70"
+                        >
+                          <span
+                            className="h-2 w-2 rounded-full"
+                            style={{ backgroundColor: tagDef?.color ?? "#22D3EE" }}
+                            aria-hidden
+                          />
+                          {tag}
+                        </span>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </Link>
+            </div>
           ))}
 
           {!isLoading && items.length === 0 ? (

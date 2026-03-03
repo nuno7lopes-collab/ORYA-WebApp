@@ -1,5 +1,6 @@
 export const runtime = "nodejs";
 
+import crypto from "node:crypto";
 import { NextRequest } from "next/server";
 import { ChatContextError, requireChatContext } from "@/lib/chat/context";
 import { isUnauthenticatedError } from "@/lib/security";
@@ -212,11 +213,14 @@ async function _POST(req: NextRequest) {
     const adminSet = new Set<string>([user.id, ...adminIds]);
 
     const community = await prisma.$transaction(async (tx) => {
+      const conversationId = crypto.randomUUID();
       const conversation = await tx.chatConversation.create({
         data: {
+          id: conversationId,
           organizationId: organization.id,
           type: "CHANNEL",
           contextType: "ORG_COMMUNITY",
+          contextId: conversationId,
           title,
           description: description || null,
           createdByUserId: user.id,

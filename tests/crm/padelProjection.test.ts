@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  PADEL_MATCH_COUNT_INTERACTION_TYPES,
   derivePadelProjection,
   resolvePadelActivityStatus,
   resolvePadelCompetitiveTier,
@@ -79,5 +80,9 @@ describe("padel projection scoring", () => {
     expect(projection.activityStatus).toBe("DORMANT");
     expect(projection.churnRiskScore).toBeGreaterThanOrEqual(70);
     expect(projection.reactivationPropensityScore).toBeGreaterThanOrEqual(0);
+  });
+
+  it("conta jogos de 30d apenas com PADEL_MATCH_PLAYED", () => {
+    expect(PADEL_MATCH_COUNT_INTERACTION_TYPES).toEqual(["PADEL_MATCH_PLAYED"]);
   });
 });

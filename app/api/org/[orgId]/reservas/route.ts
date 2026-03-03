@@ -32,7 +32,7 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { loadScheduleDelays, resolveBookingDelay } from "@/lib/reservas/scheduleDelay";
-import { intersectIds, resolveReservasScopesForMember, resolveTrainerProfessionalIds } from "@/lib/reservas/memberScopes";
+import { intersectIds, resolveReservasScopesForMember, resolveCoachProfessionalIds } from "@/lib/reservas/memberScopes";
 import {
   getOrganizationBookingPolicy,
   validateDurationAgainstPolicy,
@@ -85,6 +85,10 @@ function fail(
 function parsePositiveInt(value: unknown) {
   const parsed = typeof value === "string" || typeof value === "number" ? Number(value) : NaN;
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function hasAcademyBridgeHeader(req: NextRequest) {
+  return req.headers.get("x-orya-academy-bridge") === "1";
 }
 
 function mapCalendarPaymentStatus(status: PaymentStatus): CalendarPaymentStatus {
@@ -215,14 +219,14 @@ async function _GET(req: NextRequest) {
         return respondOk(ctx, { items: [] });
       }
       if (isCoach) {
-        const trainerProfessionalIds = await resolveTrainerProfessionalIds({
+        const coachProfessionalIds = await resolveCoachProfessionalIds({
           organizationId: organization.id,
           userId: profile.id,
         });
-        if (trainerProfessionalIds.length === 0) {
+        if (coachProfessionalIds.length === 0) {
           return respondOk(ctx, { items: [] });
         }
-        const allowedProfessionals = intersectIds(trainerProfessionalIds, scopes.professionalIds);
+        const allowedProfessionals = intersectIds(coachProfessionalIds, scopes.professionalIds);
         scopeFilter = {
           ...(allowedProfessionals.length > 0 ? { professionalId: { in: allowedProfessionals } } : {}),
           ...(scopes.courtIds.length > 0 ? { courtId: { in: scopes.courtIds } } : {}),
@@ -551,7 +555,7 @@ async function _POST(req: NextRequest) {
     const isStaff = membership.role === OrganizationMemberRole.STAFF;
     const isCoach = isStaff && membership.rolePack === OrganizationRolePack.COACH;
     let memberScopes: Awaited<ReturnType<typeof resolveReservasScopesForMember>> | null = null;
-    let trainerProfessionalIds: number[] = [];
+    let coachProfessionalIds: number[] = [];
     if (isStaff) {
       memberScopes = await resolveReservasScopesForMember({
         organizationId: organization.id,
@@ -561,11 +565,11 @@ async function _POST(req: NextRequest) {
         return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
       }
       if (isCoach) {
-        trainerProfessionalIds = await resolveTrainerProfessionalIds({
+        coachProfessionalIds = await resolveCoachProfessionalIds({
           organizationId: organization.id,
           userId: profile.id,
         });
-        if (trainerProfessionalIds.length === 0) {
+        if (coachProfessionalIds.length === 0) {
           return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
         }
       }
@@ -642,6 +646,14 @@ async function _POST(req: NextRequest) {
 
     if (!service) {
       return fail(ctx, 404, "SERVICE_NOT_FOUND", "Serviço não encontrado.");
+    }
+    if (service.kind === "CLASS" && !hasAcademyBridgeHeader(req)) {
+      return fail(
+        ctx,
+        410,
+        "ACADEMY_LEGACY_GONE",
+        "Inscrições de aulas migraram para /api/org/[orgId]/academy/sessions/[sessionId]/enrollments.",
+      );
     }
     const serviceTitle = typeof service.title === "string" ? service.title.trim() : "";
     if (!serviceTitle) {
@@ -821,10 +833,10 @@ async function _POST(req: NextRequest) {
           return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
         }
         if (isCoach) {
-          const allowedTrainers = memberScopes?.professionalIds?.length
-            ? intersectIds(trainerProfessionalIds, memberScopes.professionalIds)
-            : trainerProfessionalIds;
-          if (!allowedTrainers.includes(professionalIdRaw)) {
+          const allowedCoaches = memberScopes?.professionalIds?.length
+            ? intersectIds(coachProfessionalIds, memberScopes.professionalIds)
+            : coachProfessionalIds;
+          if (!allowedCoaches.includes(professionalIdRaw)) {
             return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
           }
         }
@@ -845,7 +857,7 @@ async function _POST(req: NextRequest) {
         if (memberScopes?.professionalIds?.length) {
           scopeIds = memberScopes.professionalIds;
         } else if (isCoach) {
-          scopeIds = trainerProfessionalIds;
+          scopeIds = coachProfessionalIds;
         } else if (isStaff) {
           return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
         }
@@ -882,10 +894,10 @@ async function _POST(req: NextRequest) {
           return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
         }
         if (isCoach) {
-          const allowedTrainers = memberScopes?.professionalIds?.length
-            ? intersectIds(trainerProfessionalIds, memberScopes.professionalIds)
-            : trainerProfessionalIds;
-          if (!allowedTrainers.includes(professionalIdRaw)) {
+          const allowedCoaches = memberScopes?.professionalIds?.length
+            ? intersectIds(coachProfessionalIds, memberScopes.professionalIds)
+            : coachProfessionalIds;
+          if (!allowedCoaches.includes(professionalIdRaw)) {
             return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
           }
         }
@@ -905,7 +917,7 @@ async function _POST(req: NextRequest) {
         if (memberScopes?.professionalIds?.length) {
           scopedProfessionalIds = memberScopes.professionalIds;
         } else if (isCoach) {
-          scopedProfessionalIds = trainerProfessionalIds;
+          scopedProfessionalIds = coachProfessionalIds;
         } else if (isStaff) {
           return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
         }

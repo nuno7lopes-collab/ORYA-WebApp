@@ -24,6 +24,7 @@ type DayColumnProps = {
   date: Date;
   timezone: string;
   events: CalendarEvent[];
+  showAvailabilityOverlay?: boolean;
   minuteHeight: number;
   nowTop: number | null;
   totalHeight: number;
@@ -39,6 +40,7 @@ export function DayColumn({
   date,
   timezone,
   events,
+  showAvailabilityOverlay = false,
   minuteHeight,
   nowTop,
   totalHeight,
@@ -78,7 +80,10 @@ export function DayColumn({
     [aggregatePositions, column.id, date, minuteHeight],
   );
   const useAggregateBlocks = column.entityKind === "GENERAL";
-  const outsideIntervals = useMemo(() => invertIntervals(column.workingIntervals), [column.workingIntervals]);
+  const outsideIntervals = useMemo(
+    () => (showAvailabilityOverlay ? invertIntervals(column.workingIntervals) : []),
+    [column.workingIntervals, showAvailabilityOverlay],
+  );
   const emitHover = (element: HTMLDivElement, clientY: number) => {
     if (!onHoverChange) return;
     const rect = element.getBoundingClientRect();
@@ -103,7 +108,7 @@ export function DayColumn({
       {outsideIntervals.map((interval) => (
         <div
           key={`${column.id}-${interval.startMinute}-${interval.endMinute}`}
-          className="absolute left-0 right-0 border-y border-white/5 bg-[repeating-linear-gradient(135deg,rgba(4,8,16,0.7),rgba(4,8,16,0.7)_8px,rgba(255,255,255,0.06)_8px,rgba(255,255,255,0.06)_16px)]"
+          className="absolute left-0 right-0 border-y border-white/5 bg-[repeating-linear-gradient(135deg,rgba(4,8,16,0.42),rgba(4,8,16,0.42)_8px,rgba(255,255,255,0.035)_8px,rgba(255,255,255,0.035)_16px)]"
           style={{
             top: interval.startMinute * minuteHeight,
             height: (interval.endMinute - interval.startMinute) * minuteHeight,

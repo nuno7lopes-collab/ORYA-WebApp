@@ -21,28 +21,24 @@ import {
 const CRM_EVENT_TYPE_SET = new Set(["crm.interaction", "crm.padel_profile"]);
 
 const SPEND_TYPES = new Set<CrmInteractionType>([
-  "STORE_ORDER_PAID",
-  "EVENT_TICKET",
-  "BOOKING_CONFIRMED",
   "PADEL_MATCH_PAYMENT",
   "PADEL_BOOKING_CONFIRMED",
 ]);
 
 const PURCHASE_TYPES = new Set<CrmInteractionType>([
-  "STORE_ORDER_PAID",
-  "EVENT_TICKET",
-  "BOOKING_CONFIRMED",
   "PADEL_MATCH_PAYMENT",
   "PADEL_BOOKING_CONFIRMED",
 ]);
 
 const CUSTOMER_UPGRADE_TYPES = new Set<CrmInteractionType>([
-  "STORE_ORDER_PAID",
-  "EVENT_TICKET",
-  "BOOKING_CONFIRMED",
   "PADEL_MATCH_PAYMENT",
+  "PADEL_MATCH_PLAYED",
   "PADEL_TOURNAMENT_ENTRY",
   "PADEL_TOURNAMENT_REGISTERED",
+  "PADEL_TOURNAMENT_PLAYED",
+  "PADEL_TOURNAMENT_PODIUM",
+  "PADEL_BOOKING_CONFIRMED",
+  "PADEL_CLASS_ATTENDED",
 ]);
 
 const PADEL_ACTIVITY_SET = new Set<CrmInteractionType>(PADEL_ACTIVITY_INTERACTION_TYPES);
@@ -528,16 +524,21 @@ async function updateContactReadModel(params: {
   if (SPEND_TYPES.has(interaction.type) && typeof amountCents === "number") {
     updates.totalSpentCents = { increment: amountCents };
   }
-  if (interaction.type === "STORE_ORDER_PAID") updates.totalStoreOrders = { increment: 1 };
-  if (interaction.type === "EVENT_TICKET") updates.totalOrders = { increment: 1 };
-  if (interaction.type === "BOOKING_CONFIRMED" || interaction.type === "PADEL_BOOKING_CONFIRMED") {
+  if (interaction.type === "PADEL_MATCH_PAYMENT") updates.totalOrders = { increment: 1 };
+  if (interaction.type === "PADEL_BOOKING_CONFIRMED") {
     updates.totalBookings = { increment: 1 };
   }
-  if (interaction.type === "EVENT_CHECKIN") updates.totalAttendances = { increment: 1 };
-  if (interaction.type === "PADEL_CLASS_ATTENDED") updates.totalAttendances = { increment: 1 };
+  if (
+    interaction.type === "PADEL_CLASS_ATTENDED" ||
+    interaction.type === "PADEL_MATCH_PLAYED"
+  ) {
+    updates.totalAttendances = { increment: 1 };
+  }
   if (
     interaction.type === "PADEL_TOURNAMENT_ENTRY" ||
-    interaction.type === "PADEL_TOURNAMENT_REGISTERED"
+    interaction.type === "PADEL_TOURNAMENT_REGISTERED" ||
+    interaction.type === "PADEL_TOURNAMENT_PLAYED" ||
+    interaction.type === "PADEL_TOURNAMENT_PODIUM"
   ) {
     updates.totalTournaments = { increment: 1 };
   }
@@ -572,17 +573,22 @@ async function updateContactReadModel(params: {
     totals: {
       totalSpentCents:
         existing.totalSpentCents + (SPEND_TYPES.has(interaction.type) && amountCents ? amountCents : 0),
-      totalOrders: existing.totalOrders + (interaction.type === "EVENT_TICKET" ? 1 : 0),
+      totalOrders: existing.totalOrders + (interaction.type === "PADEL_MATCH_PAYMENT" ? 1 : 0),
       totalBookings:
         existing.totalBookings +
-        (interaction.type === "BOOKING_CONFIRMED" || interaction.type === "PADEL_BOOKING_CONFIRMED" ? 1 : 0),
+        (interaction.type === "PADEL_BOOKING_CONFIRMED" ? 1 : 0),
       totalAttendances:
         existing.totalAttendances +
-        (interaction.type === "EVENT_CHECKIN" || interaction.type === "PADEL_CLASS_ATTENDED" ? 1 : 0),
+        (interaction.type === "PADEL_CLASS_ATTENDED" || interaction.type === "PADEL_MATCH_PLAYED" ? 1 : 0),
       totalTournaments:
         existing.totalTournaments +
-        (interaction.type === "PADEL_TOURNAMENT_ENTRY" || interaction.type === "PADEL_TOURNAMENT_REGISTERED" ? 1 : 0),
-      totalStoreOrders: existing.totalStoreOrders + (interaction.type === "STORE_ORDER_PAID" ? 1 : 0),
+        (interaction.type === "PADEL_TOURNAMENT_ENTRY" ||
+        interaction.type === "PADEL_TOURNAMENT_REGISTERED" ||
+        interaction.type === "PADEL_TOURNAMENT_PLAYED" ||
+        interaction.type === "PADEL_TOURNAMENT_PODIUM"
+          ? 1
+          : 0),
+      totalStoreOrders: existing.totalStoreOrders,
     },
   };
 }
@@ -871,9 +877,9 @@ export async function consumeCrmEventLog(eventLogId: string) {
         ? false
         : null;
 
-  try {
-    await prisma.crmInteraction.create({
-      data: {
+  const inserted = await prisma.crmInteraction.createMany({
+    data: [
+      {
         organizationId: log.organizationId,
         contactId,
         userId: contact.userId ?? log.actorUserId ?? undefined,
@@ -887,12 +893,11 @@ export async function consumeCrmEventLog(eventLogId: string) {
         currency,
         metadata: (interaction.metadata ?? {}) as Prisma.JsonObject,
       },
-    });
-  } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-      return { ok: true, deduped: true } as const;
-    }
-    throw err;
+    ],
+    skipDuplicates: true,
+  });
+  if (inserted.count === 0) {
+    return { ok: true, deduped: true } as const;
   }
 
   const contactTotals = await updateContactReadModel({

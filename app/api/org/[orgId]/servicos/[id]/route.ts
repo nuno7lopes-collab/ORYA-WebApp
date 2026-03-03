@@ -47,6 +47,10 @@ function getRequestMeta(req: NextRequest) {
   return { ip, userAgent };
 }
 
+function hasAcademyBridgeHeader(req: NextRequest) {
+  return req.headers.get("x-orya-academy-bridge") === "1";
+}
+
 function parseServiceId(idParam: string) {
   const parsed = Number(idParam);
   return Number.isFinite(parsed) ? parsed : null;
@@ -257,6 +261,12 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
 
     if (!existing) {
       return fail(404, "Serviço não encontrado.");
+    }
+    if (existing.kind === ServiceKind.CLASS && !hasAcademyBridgeHeader(req)) {
+      return fail(
+        410,
+        "ACADEMY_LEGACY_GONE: usa /api/org/[orgId]/academy/classes/[classId].",
+      );
     }
 
     const payload = await req.json().catch(() => ({}));
@@ -509,7 +519,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
         if (!member) {
           return fail(400, "Instrutor inválido.");
         }
-        const trainerProfile = await prisma.trainerProfile.findUnique({
+        const coachProfile = await prisma.trainerProfile.findUnique({
           where: {
             organizationId_userId: {
               organizationId: organization.id,
@@ -518,8 +528,8 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
           },
           select: { id: true },
         });
-        if (!trainerProfile) {
-          return fail(400, "INSTRUCTOR_NOT_TRAINER");
+        if (!coachProfile) {
+          return fail(400, "INSTRUCTOR_NOT_COACH");
         }
         updates.instructorId = instructorId;
       }
@@ -824,11 +834,17 @@ async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: str
 
     const existing = await prisma.service.findFirst({
       where: { id: serviceId, organizationId: organization.id },
-      select: { id: true },
+      select: { id: true, kind: true },
     });
 
     if (!existing) {
       return fail(404, "Serviço não encontrado.");
+    }
+    if (existing.kind === ServiceKind.CLASS && !hasAcademyBridgeHeader(req)) {
+      return fail(
+        410,
+        "ACADEMY_LEGACY_GONE: usa /api/org/[orgId]/academy/classes/[classId].",
+      );
     }
 
     await prisma.service.update({

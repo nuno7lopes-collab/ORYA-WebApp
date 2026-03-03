@@ -18,12 +18,11 @@ import {
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 const TRIGGERS = [
-  "STORE_ORDER_PAID",
-  "BOOKING_COMPLETED",
-  "EVENT_CHECKIN",
-  "TOURNAMENT_PARTICIPATION",
-  "MEMBERSHIP_RENEWAL",
+  { value: "BOOKING_COMPLETED", label: "Reserva/Aula concluída" },
+  { value: "EVENT_CHECKIN", label: "Check-in padel" },
+  { value: "TOURNAMENT_PARTICIPATION", label: "Participação em torneio" },
 ] as const;
+const TRIGGER_LABEL_BY_VALUE = new Map<string, string>(TRIGGERS.map((trigger) => [trigger.value, trigger.label]));
 
 const REWARD_TYPES = [
   "DISCOUNT",
@@ -82,6 +81,10 @@ function parseNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function resolveTriggerLabel(value: string) {
+  return TRIGGER_LABEL_BY_VALUE.get(value) ?? value;
+}
+
 function buildRewardPayload(params: {
   rewardType: (typeof REWARD_TYPES)[number];
   rewardCode: string;
@@ -133,7 +136,7 @@ export default function CrmLoyaltyPage() {
   const [programSaving, setProgramSaving] = useState(false);
 
   const [ruleName, setRuleName] = useState("");
-  const [trigger, setTrigger] = useState<(typeof TRIGGERS)[number]>(TRIGGERS[0]);
+  const [trigger, setTrigger] = useState<(typeof TRIGGERS)[number]["value"]>(TRIGGERS[0].value);
   const [points, setPoints] = useState("");
   const [maxPerDay, setMaxPerDay] = useState("");
   const [maxPerUser, setMaxPerUser] = useState("");
@@ -455,11 +458,11 @@ export default function CrmLoyaltyPage() {
                 <select
                   className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
                   value={trigger}
-                  onChange={(event) => setTrigger(event.target.value as (typeof TRIGGERS)[number])}
+                  onChange={(event) => setTrigger(event.target.value as (typeof TRIGGERS)[number]["value"])}
                 >
                   {TRIGGERS.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
+                    <option key={item.value} value={item.value}>
+                      {item.label}
                     </option>
                   ))}
                 </select>
@@ -535,7 +538,7 @@ export default function CrmLoyaltyPage() {
                 />
               </label>
               <label className="text-[12px] text-white/70">
-                Total check-ins mínimo
+                Total sessões mínimo
                 <input
                   type="number"
                   min={0}
@@ -651,7 +654,7 @@ export default function CrmLoyaltyPage() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-[12px] font-semibold text-white">{rule.name}</p>
-                  <p className="text-[11px] text-white/50">{rule.trigger}</p>
+                  <p className="text-[11px] text-white/50">{resolveTriggerLabel(rule.trigger)}</p>
                 </div>
                 <div className="text-right text-[11px] text-white/60">
                   <p>{rule.points} pontos</p>

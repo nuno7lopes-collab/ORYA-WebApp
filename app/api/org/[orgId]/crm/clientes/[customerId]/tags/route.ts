@@ -1,115 +1,61 @@
 import { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { createSupabaseServer } from "@/lib/supabaseServer";
-import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
-import { getActiveOrganizationForUser } from "@/lib/organizationContext";
-import { resolveRequiredOrganizationIdFromRequest } from "@/lib/organizationId";
-import { ensureCrmModuleAccess } from "@/lib/crm/access";
-import { OrganizationMemberRole } from "@prisma/client";
-import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
-import { getRequestContext } from "@/lib/http/requestContext";
-import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondOk } from "@/lib/http/envelope";
+import { prisma } from "@/lib/prisma";
+import { crmFail, resolveCrmRequest } from "@/app/api/org/[orgId]/crm/_shared";
+import {
+  MAX_CRM_TAGS,
+  canonicalizeCrmTagsForOrganization,
+  resolveTagNamesFromIds,
+} from "@/lib/crm/tags";
 
-const ROLE_ALLOWLIST = Object.values(OrganizationMemberRole);
-
-const MAX_TAGS = 20;
+function parseStringArray(input: unknown) {
+  if (!Array.isArray(input)) return [] as string[];
+  return input.filter((value): value is string => typeof value === "string").map((value) => value.trim()).filter(Boolean);
+}
 
 async function _PUT(req: NextRequest, context: { params: Promise<{ customerId: string }> }) {
   const ctx = getRequestContext(req);
-  const fail = (
-    status: number,
-    message: string,
-    errorCode = errorCodeForStatus(status),
-    retryable = status >= 500,
-    details?: Record<string, unknown>,
-  ) => {
-    const resolvedMessage = typeof message === "string" ? message : String(message);
-    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
-    return respondError(
-      ctx,
-      { errorCode: resolvedCode, message: resolvedMessage, retryable, ...(details ? { details } : {}) },
-      { status },
-    );
-  };
-  try {
-    const supabase = await createSupabaseServer();
-    const user = await ensureAuthenticated(supabase);
+  const access = await resolveCrmRequest({
+    req,
+    required: "EDIT",
+    requireVerifiedEmailReason: "CRM_CUSTOMER_TAGS",
+  });
+  if (!access.ok) return access.response;
 
-    const orgResolution = resolveRequiredOrganizationIdFromRequest(req);
-    if (!orgResolution.ok) {
-      return fail(400, "ORG_ID_REQUIRED");
-    }
-    const organizationId = orgResolution.organizationId;
-    const { organization, membership } = await getActiveOrganizationForUser(user.id, {
-      organizationId,
-      roles: [...ROLE_ALLOWLIST],
-    });
+  const payload = (await req.json().catch(() => null)) as {
+    tags?: unknown;
+    tagIds?: unknown;
+  } | null;
+  const { customerId } = await context.params;
 
-    if (!organization || !membership) {
-      return fail(403, "Sem permissões.");
-    }
-    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "CRM_CUSTOMER_TAGS" });
-    if (!emailGate.ok) {
-      return respondError(
-        ctx,
-        {
-          errorCode: emailGate.errorCode ?? "FORBIDDEN",
-          message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.",
-          retryable: false,
-          details: emailGate,
-        },
-        { status: 403 },
-      );
-    }
-    const crmAccess = await ensureCrmModuleAccess(organization, prisma, {
-      member: { userId: membership.userId, role: membership.role },
-      required: "EDIT",
-    });
-    if (!crmAccess.ok) {
-      return fail(403, crmAccess.error);
-    }
+  const tagsFromIds = await resolveTagNamesFromIds(
+    prisma,
+    access.organization.id,
+    Array.from(new Set(parseStringArray(payload?.tagIds))),
+  );
+  const canonical = await canonicalizeCrmTagsForOrganization(
+    prisma,
+    access.organization.id,
+    payload?.tags,
+    MAX_CRM_TAGS,
+  );
+  const tags = Array.from(new Set([...tagsFromIds, ...canonical.tags])).slice(0, MAX_CRM_TAGS);
 
-    const payload = (await req.json().catch(() => null)) as { tags?: unknown } | null;
-    const tags = Array.isArray(payload?.tags)
-      ? payload?.tags
-          .filter((tag): tag is string => typeof tag === "string")
-          .map((tag) => tag.trim())
-          .filter(Boolean)
-      : [];
+  const updated = await prisma.crmContact.updateMany({
+    where: { id: customerId, organizationId: access.organization.id },
+    data: { tags },
+  });
 
-    const uniqueTags = Array.from(new Set(tags)).slice(0, MAX_TAGS);
-
-    const resolvedParams = await context.params;
-    const customerId = resolvedParams.customerId;
-    const updated = await prisma.crmContact.updateMany({
-      where: { id: customerId, organizationId: organization.id },
-      data: { tags: uniqueTags },
-    });
-
-    if (updated.count === 0) {
-      return fail(404, "Cliente não encontrado.");
-    }
-
-    return respondOk(ctx, { tags: uniqueTags });
-  } catch (err) {
-    if (isUnauthenticatedError(err)) {
-      return fail(401, "UNAUTHENTICATED");
-    }
-    console.error("PUT /api/org/[orgId]/crm/clientes/[customerId]/tags error:", err);
-    return fail(500, "Erro ao atualizar tags.");
+  if (updated.count === 0) {
+    return crmFail(req, 404, "Cliente não encontrado.");
   }
+
+  return respondOk(ctx, {
+    tags,
+    tagDefinitions: canonical.tagDefinitions,
+  });
 }
 
-function errorCodeForStatus(status: number) {
-  if (status === 401) return "UNAUTHENTICATED";
-  if (status === 403) return "FORBIDDEN";
-  if (status === 404) return "NOT_FOUND";
-  if (status === 409) return "CONFLICT";
-  if (status === 410) return "GONE";
-  if (status === 413) return "PAYLOAD_TOO_LARGE";
-  if (status === 422) return "VALIDATION_FAILED";
-  if (status === 400) return "BAD_REQUEST";
-  return "INTERNAL_ERROR";
-}
 export const PUT = withApiEnvelope(_PUT);

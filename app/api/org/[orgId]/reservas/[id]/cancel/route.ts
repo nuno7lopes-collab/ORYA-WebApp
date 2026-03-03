@@ -17,7 +17,7 @@ import {
   runOrganizationBookingCancellationPostActions,
   type OrgBookingCancellationTxResult,
 } from "@/lib/reservas/orgBookingCancellation";
-import { intersectIds, resolveReservasScopesForMember, resolveTrainerProfessionalIds } from "@/lib/reservas/memberScopes";
+import { intersectIds, resolveReservasScopesForMember, resolveCoachProfessionalIds } from "@/lib/reservas/memberScopes";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -127,13 +127,13 @@ async function _POST(
           return { error: fail(403, "FORBIDDEN", "Sem permissões.") };
         }
         if (isCoach) {
-          const trainerProfessionalIds = await resolveTrainerProfessionalIds({
+          const coachProfessionalIds = await resolveCoachProfessionalIds({
             organizationId: organization.id,
             userId: profile.id,
           });
           const allowedProfessionals = scopes.professionalIds.length
-            ? intersectIds(trainerProfessionalIds, scopes.professionalIds)
-            : trainerProfessionalIds;
+            ? intersectIds(coachProfessionalIds, scopes.professionalIds)
+            : coachProfessionalIds;
           if (
             !allowedProfessionals.length ||
             !bookingForAccess.professionalId ||

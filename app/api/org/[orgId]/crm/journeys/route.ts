@@ -5,6 +5,7 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondOk } from "@/lib/http/envelope";
 import { prisma } from "@/lib/prisma";
 import { crmFail, resolveCrmRequest } from "@/app/api/org/[orgId]/crm/_shared";
+import { isCrmPadelJourneyTriggerToken } from "@/lib/crm/padelInteractionTypes";
 
 type JourneyStepInput = {
   stepKey?: unknown;
@@ -42,6 +43,35 @@ function normalizeSteps(value: unknown): Array<{ stepKey: string; position: numb
     steps.push({ stepKey, position, stepType, config });
   });
   return steps.sort((a, b) => a.position - b.position).map((step, index) => ({ ...step, position: index }));
+}
+
+function collectInvalidTriggerEventTypes(params: {
+  definition: Record<string, unknown>;
+  steps: Array<{ stepType: CrmJourneyStepType; config: Record<string, unknown> }>;
+}) {
+  const invalidTokens = new Set<string>();
+  const definitionTrigger = params.definition.trigger;
+  if (definitionTrigger && typeof definitionTrigger === "object" && !Array.isArray(definitionTrigger)) {
+    const eventType = (definitionTrigger as { eventType?: unknown }).eventType;
+    if (typeof eventType === "string") {
+      const token = eventType.trim().toUpperCase();
+      if (token && !isCrmPadelJourneyTriggerToken(token)) {
+        invalidTokens.add(token);
+      }
+    }
+  }
+
+  for (const step of params.steps) {
+    if (step.stepType !== CrmJourneyStepType.TRIGGER) continue;
+    const eventType = step.config.eventType;
+    if (typeof eventType !== "string") continue;
+    const token = eventType.trim().toUpperCase();
+    if (token && !isCrmPadelJourneyTriggerToken(token)) {
+      invalidTokens.add(token);
+    }
+  }
+
+  return Array.from(invalidTokens);
 }
 
 async function _GET(req: NextRequest) {
@@ -96,6 +126,12 @@ async function _POST(req: NextRequest) {
     ? (body.definition as Record<string, unknown>)
     : {};
   const steps = normalizeSteps(body?.steps);
+  const invalidTriggerTokens = collectInvalidTriggerEventTypes({ definition, steps });
+  if (invalidTriggerTokens.length) {
+    return crmFail(req, 422, "Journey com trigger não padel.", "VALIDATION_FAILED", false, {
+      invalidTriggerEventTypes: invalidTriggerTokens,
+    });
+  }
 
   const journey = await prisma.$transaction(async (tx) => {
     const created = await tx.crmJourney.create({

@@ -253,12 +253,25 @@ export default function DayCalendarReadClient() {
     nextResources?: number[];
     nextCourts?: number[];
     nextTimezone?: string;
+    nextShowAvailabilityOverlay?: boolean;
   }) => {
     if (!Number.isFinite(organizationId) || organizationId <= 0) return;
     const nextParams = new URLSearchParams(searchParams.toString());
     setIdListParam(nextParams, "professionals", input.nextProfessionals ?? selectedProfessionalIds);
     setIdListParam(nextParams, "resources", input.nextResources ?? selectedResourceIds);
     setIdListParam(nextParams, "courts", input.nextCourts ?? selectedCourtIds);
+    const selectedScopesCountRaw =
+      (input.nextProfessionals ?? selectedProfessionalIds).length +
+      (input.nextResources ?? selectedResourceIds).length +
+      (input.nextCourts ?? selectedCourtIds).length;
+    const defaultOverlay = selectedScopesCountRaw === 1;
+    const rawOverlay = searchParams.get("showAvailabilityOverlay");
+    const currentOverlay = rawOverlay === "1" ? true : rawOverlay === "0" ? false : defaultOverlay;
+    const nextOverlay =
+      typeof input.nextShowAvailabilityOverlay === "boolean"
+        ? input.nextShowAvailabilityOverlay
+        : currentOverlay;
+    nextParams.set("showAvailabilityOverlay", nextOverlay ? "1" : "0");
     const nextTimezone = normalizeCalendarTimezone(input.nextTimezone ?? timezone);
     nextParams.set("tz", nextTimezone);
     const nextDate =
@@ -267,8 +280,9 @@ export default function DayCalendarReadClient() {
         ? buildZonedDate(getDateParts(selectedDate, timezone), nextTimezone, 12, 0)
         : selectedDate);
     nextParams.set("date", formatDateParam(nextDate, nextTimezone));
+    nextParams.set("view", "day");
     nextParams.delete("scopeMode");
-    const nextPath = buildOrgHref(organizationId, "/calendar/day");
+    const nextPath = buildOrgHref(organizationId, "/calendar");
     const search = nextParams.toString();
     router.replace(search ? `${nextPath}?${search}` : nextPath, { scroll: false });
   };
@@ -286,6 +300,18 @@ export default function DayCalendarReadClient() {
     const nextParams = new URLSearchParams(searchParams.toString());
     nextParams.set("date", formatDateParam(selectedDate, timezone));
     nextParams.set("tz", timezone);
+    nextParams.set("view", "week");
+    nextParams.delete("scopeMode");
+    const nextPath = buildOrgHref(organizationId, "/calendar");
+    const search = nextParams.toString();
+    return search ? `${nextPath}?${search}` : nextPath;
+  }, [organizationId, searchParams, selectedDate, timezone]);
+  const monthViewHref = useMemo(() => {
+    if (!Number.isFinite(organizationId) || organizationId <= 0) return "#";
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.set("date", formatDateParam(selectedDate, timezone));
+    nextParams.set("tz", timezone);
+    nextParams.set("view", "month");
     nextParams.delete("scopeMode");
     const nextPath = buildOrgHref(organizationId, "/calendar");
     const search = nextParams.toString();
@@ -625,6 +651,22 @@ export default function DayCalendarReadClient() {
     (selectedProfessionalIds.length > 0 || selectedResourceIds.length > 0 || selectedCourtIds.length > 0);
   const selectedScopesCount =
     scopeSelectionEnabled ? selectedProfessionalIds.length + selectedResourceIds.length + selectedCourtIds.length : 0;
+  const hasSingleScopeSelection = scopeSelectionEnabled && selectedScopesCount === 1;
+  const showAvailabilityOverlayParam = searchParams.get("showAvailabilityOverlay");
+  const showAvailabilityOverlay =
+    showAvailabilityOverlayParam === "1"
+      ? true
+      : showAvailabilityOverlayParam === "0"
+        ? false
+        : hasSingleScopeSelection;
+  const renderAvailabilityOverlay = showAvailabilityOverlay && hasSingleScopeSelection;
+  const availabilityOverlayHint = renderAvailabilityOverlay
+    ? "Sobreposição de disponibilidade ativa para o escopo selecionado."
+    : hasActiveSelection
+      ? showAvailabilityOverlay
+        ? "Sobreposição desativada para múltiplos escopos."
+        : "Sobreposição de disponibilidade desligada."
+      : "Seleciona um único escopo para ativar a sobreposição de disponibilidade.";
   const selectedScopesLabel = useMemo(() => {
     const parts: string[] = [];
     if (selectedProfessionalIds.length > 0) {
@@ -698,13 +740,18 @@ export default function DayCalendarReadClient() {
         router.push(weekViewHref, { scroll: false });
         return;
       }
+      if (key === "m" && monthViewHref !== "#") {
+        event.preventDefault();
+        router.push(monthViewHref, { scroll: false });
+        return;
+      }
       if (key === "escape") {
         setSelectedEventId(null);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [appliedFilters, router, setToday, shiftDay, weekViewHref]);
+  }, [appliedFilters, monthViewHref, router, setToday, shiftDay, weekViewHref]);
 
   if (!Number.isFinite(organizationId) || organizationId <= 0) {
     return <div className="p-6 text-sm text-white/70">Organização inválida.</div>;
@@ -712,7 +759,7 @@ export default function DayCalendarReadClient() {
 
   return (
     <div className="space-y-4 p-4 md:p-6">
-      <section className="rounded-2xl border border-white/10 bg-[linear-gradient(150deg,rgba(34,211,238,0.14),rgba(16,24,39,0.82))] p-4 shadow-[0_24px_90px_rgba(0,0,0,0.45)]">
+      <section className="rounded-2xl border border-white/10 bg-[rgba(10,14,26,0.9)] p-4 shadow-[0_24px_90px_rgba(0,0,0,0.45)]">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="max-w-3xl">
             <p className="text-xs uppercase tracking-[0.22em] text-cyan-100/70">{operationalGuidance.badge}</p>
@@ -848,26 +895,41 @@ export default function DayCalendarReadClient() {
         </div>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[11px] uppercase tracking-[0.14em] text-white/50">Tipo</span>
-        {availableKindOptions.map((option) => {
-          const isActive = visibleKinds.includes(option.value);
-          return (
-            <button
-              key={`kind-${option.value}`}
-              type="button"
-              onClick={() => toggleVisibleKind(option.value)}
-              className={`rounded-full border px-3 py-1 text-xs transition ${
-                isActive
-                  ? "border-cyan-300/45 bg-cyan-400/12 text-cyan-100"
-                  : "border-white/15 bg-white/5 text-white/70 hover:border-white/30 hover:text-white"
-              }`}
-            >
-              {option.label}
-            </button>
-          );
-        })}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] uppercase tracking-[0.14em] text-white/50">Tipo</span>
+          {availableKindOptions.map((option) => {
+            const isActive = visibleKinds.includes(option.value);
+            return (
+              <button
+                key={`kind-${option.value}`}
+                type="button"
+                onClick={() => toggleVisibleKind(option.value)}
+                className={`rounded-full border px-3 py-1 text-xs transition ${
+                  isActive
+                    ? "border-cyan-300/45 bg-cyan-400/12 text-cyan-100"
+                    : "border-white/15 bg-white/5 text-white/70 hover:border-white/30 hover:text-white"
+                }`}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+        <button
+          type="button"
+          onClick={() => replaceState({ nextShowAvailabilityOverlay: !showAvailabilityOverlay })}
+          className={cn(
+            "rounded-full border px-3 py-1 text-xs transition",
+            showAvailabilityOverlay
+              ? "border-cyan-300/45 bg-cyan-400/12 text-cyan-100 hover:border-cyan-300/75"
+              : "border-white/20 text-white/75 hover:border-white/35 hover:text-white",
+          )}
+        >
+          Disponibilidade {showAvailabilityOverlay ? "ON" : "OFF"}
+        </button>
       </div>
+      <p className="text-[11px] text-white/50">{availabilityOverlayHint}</p>
 
       {!agendaLoading && !agendaError ? (
         <div className="flex flex-wrap items-center gap-2 text-[11px]" aria-live="polite">
@@ -875,7 +937,7 @@ export default function DayCalendarReadClient() {
             {statusSummary.total} {statusSummary.total === 1 ? "ocupação visível" : "ocupações visíveis"}
           </span>
           {statusSummary.confirmed > 0 ? (
-            <span className="rounded-full border border-emerald-300/45 bg-emerald-400/12 px-2 py-1 text-emerald-100">
+            <span className="rounded-full border border-sky-300/45 bg-sky-400/12 px-2 py-1 text-sky-100">
               Confirmado {statusSummary.confirmed}
             </span>
           ) : null}
@@ -925,6 +987,8 @@ export default function DayCalendarReadClient() {
             timezone={timezone}
             columns={columns}
             events={filteredEvents}
+            showAvailabilityOverlay={renderAvailabilityOverlay}
+            availabilityOverlayHint={availabilityOverlayHint}
             hourHeight={hourHeight}
             selectedEventId={selectedEvent?.id ?? null}
             onHoverEventChange={handleHoverEventChange}

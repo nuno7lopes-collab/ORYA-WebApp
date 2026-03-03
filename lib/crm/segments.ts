@@ -1,4 +1,5 @@
 import { CrmInteractionType, Prisma } from "@prisma/client";
+import { CRM_PADEL_INTERACTION_TYPE_VALUES } from "@/lib/crm/padelInteractionTypes";
 
 export type SegmentLogic = "AND" | "OR";
 
@@ -51,18 +52,30 @@ const NUMBER_FIELDS = new Set([
   "totalStoreOrders",
 ]);
 const STRING_FIELDS = new Set(["displayName", "contactEmail", "contactPhone", "sourceType"]);
-const PADEL_STRING_FIELDS = new Set(["level", "preferredSide", "clubName", "activityStatus", "competitiveTier"]);
+const PADEL_STRING_FIELDS = new Set([
+  "level",
+  "preferredSide",
+  "preferredTimeBucket",
+  "clubName",
+  "activityStatus",
+  "competitiveTier",
+]);
 const PADEL_NUMBER_FIELDS = new Set([
   "tournamentsCount",
+  "tournamentCount90d",
   "noShowCount",
   "matches30d",
   "winRate90d",
   "noShowRate90d",
+  "offPeakRatio30d",
+  "reservationCount90d",
+  "lessonCount90d",
+  "avgSpendPerSessionCents90d",
   "rfmScore",
   "churnRiskScore",
   "reactivationPropensityScore",
 ]);
-const PADEL_DATE_FIELDS = new Set(["lastMatchAt"]);
+const PADEL_DATE_FIELDS = new Set(["lastMatchAt", "lastNoShowAt"]);
 
 function parseNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -228,10 +241,10 @@ export function flattenRuleNodes(node: SegmentNode): SegmentRuleNode[] {
 }
 
 function normalizeInteractionTypes(value: unknown): CrmInteractionType[] {
-  const values = Object.values(CrmInteractionType) as string[];
+  const values = new Set<string>(CRM_PADEL_INTERACTION_TYPE_VALUES);
   const list = toStringArray(value)
     .map((item) => item.toUpperCase())
-    .filter((item) => values.includes(item));
+    .filter((item) => values.has(item));
   return list as CrmInteractionType[];
 }
 

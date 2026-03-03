@@ -96,6 +96,7 @@ export function parseOrganizationIdFromPathname(pathname: string | null | undefi
 }
 
 const ORG_SHORTHAND_CANONICAL_SEGMENTS = new Set([
+  "academy",
   "analytics",
   "analyze",
   "bookings",

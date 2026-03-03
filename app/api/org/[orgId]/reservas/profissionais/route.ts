@@ -11,6 +11,7 @@ import { OrganizationMemberRole, OrganizationRolePack } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { runAcademyTrainerHardCutHygiene } from "@/lib/academy/trainerHardCutHygiene";
 
 const VIEW_ROLES: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -25,6 +26,13 @@ const EDIT_ROLES: OrganizationMemberRole[] = [
   OrganizationMemberRole.ADMIN,
 ];
 
+const TRAINER_ELIGIBLE_TEAM_ROLES: OrganizationMemberRole[] = [
+  OrganizationMemberRole.OWNER,
+  OrganizationMemberRole.CO_OWNER,
+  OrganizationMemberRole.ADMIN,
+  OrganizationMemberRole.STAFF,
+];
+
 function fail(
   ctx: { requestId: string; correlationId: string },
   status: number,
@@ -37,6 +45,10 @@ function fail(
     { errorCode, message, retryable: status >= 500, ...(details ? { details } : {}) },
     { status },
   );
+}
+
+function isTrainerEligibleRole(role: OrganizationMemberRole) {
+  return TRAINER_ELIGIBLE_TEAM_ROLES.includes(role);
 }
 
 async function _GET(req: NextRequest) {
@@ -63,33 +75,15 @@ async function _GET(req: NextRequest) {
     if (!reservasAccess.ok) {
       return fail(ctx, 403, "RESERVAS_UNAVAILABLE", reservasAccess.error ?? "Reservas indisponíveis.");
     }
+    if (EDIT_ROLES.includes(membership.role)) {
+      await runAcademyTrainerHardCutHygiene(organization.id);
+    }
 
     const isStaff = membership.role === OrganizationMemberRole.STAFF;
 
-    if (isStaff) {
-      const fallbackName = profile.fullName?.trim() || profile.username?.trim() || "Staff";
-      await prisma.reservationProfessional.upsert({
-        where: {
-          organizationId_userId: {
-            organizationId: organization.id,
-            userId: profile.id,
-          },
-        },
-        update: {},
-        create: {
-          organizationId: organization.id,
-          userId: profile.id,
-          name: fallbackName,
-          roleTitle: "Staff",
-          isActive: true,
-          priority: 0,
-        },
-      });
-    }
-
     const where = isStaff
       ? { organizationId: organization.id, userId: profile.id }
-      : { organizationId: organization.id };
+      : { organizationId: organization.id, userId: { not: null } };
 
     const items = await prisma.reservationProfessional.findMany({
       where,
@@ -107,7 +101,7 @@ async function _GET(req: NextRequest) {
     const linkedUserIds = items
       .map((item) => item.user?.id)
       .filter((userId): userId is string => typeof userId === "string" && userId.length > 0);
-    const [trainerProfiles, trainerMembers] = linkedUserIds.length
+    const [coachProfiles, coachMembers] = linkedUserIds.length
       ? await Promise.all([
           prisma.trainerProfile.findMany({
             where: { organizationId: organization.id, userId: { in: linkedUserIds } },
@@ -116,20 +110,36 @@ async function _GET(req: NextRequest) {
           listEffectiveOrganizationMembers({
             organizationId: organization.id,
             userIds: linkedUserIds,
-            roles: [OrganizationMemberRole.STAFF],
+            roles: [...TRAINER_ELIGIBLE_TEAM_ROLES],
           }),
         ])
       : [[], []];
-    const trainerUserIds = new Set<string>(trainerProfiles.map((entry) => entry.userId));
-    for (const member of trainerMembers) {
+
+    const memberByUserId = new Map(coachMembers.map((member) => [member.userId, member]));
+    const coachUserIds = new Set<string>(coachProfiles.map((entry) => entry.userId));
+    for (const member of coachMembers) {
       if (member.rolePack === OrganizationRolePack.COACH) {
-        trainerUserIds.add(member.userId);
+        coachUserIds.add(member.userId);
       }
     }
-    const enrichedItems = items.map((item) => ({
-      ...item,
-      isTrainer: item.user?.id ? trainerUserIds.has(item.user.id) : false,
-    }));
+    const enrichedItems = items
+      .filter((item) => (item.user?.id ? memberByUserId.has(item.user.id) : false))
+      .map((item) => {
+        const member = item.user?.id ? memberByUserId.get(item.user.id) : null;
+        const canonicalName =
+          item.user?.fullName?.trim() ||
+          item.user?.username?.trim() ||
+          item.name ||
+          "Equipa";
+        return {
+          ...item,
+          name: canonicalName,
+          roleTitle: null,
+          isCoach: item.user?.id ? coachUserIds.has(item.user.id) : false,
+          membershipRole: member?.role ?? null,
+          membershipRolePack: member?.rolePack ?? null,
+        };
+      });
 
     return respondOk(ctx, { items: enrichedItems });
   } catch (err) {
@@ -167,9 +177,20 @@ async function _POST(req: NextRequest) {
     if (!reservasAccess.ok) {
       return fail(ctx, 403, "RESERVAS_UNAVAILABLE", reservasAccess.error ?? "Reservas indisponíveis.");
     }
+    await runAcademyTrainerHardCutHygiene(organization.id);
 
     const payload = await req.json().catch(() => ({}));
-    const roleTitleRaw = typeof payload?.roleTitle === "string" ? payload.roleTitle.trim() : "";
+    if (
+      Object.prototype.hasOwnProperty.call(payload ?? {}, "name") ||
+      Object.prototype.hasOwnProperty.call(payload ?? {}, "roleTitle")
+    ) {
+      return fail(
+        ctx,
+        400,
+        "TRAINER_PROFILE_MANAGED_BY_TEAM",
+        "Nome e função interna do treinador são geridos a partir da Equipa.",
+      );
+    }
     const userIdRaw = typeof payload?.userId === "string" ? payload.userId.trim() : "";
     const isActive = typeof payload?.isActive === "boolean" ? payload.isActive : true;
     const priority = Number.isFinite(Number(payload?.priority)) ? Number(payload.priority) : 0;
@@ -185,6 +206,14 @@ async function _POST(req: NextRequest) {
     if (!member) {
       return fail(ctx, 400, "USER_NOT_IN_ORG", "Utilizador não pertence à organização.");
     }
+    if (!isTrainerEligibleRole(member.role)) {
+      return fail(
+        ctx,
+        400,
+        "TRAINER_ROLE_NOT_ELIGIBLE",
+        "Só membros da equipa com papel Owner/Co-owner/Admin/Staff podem ser treinadores.",
+      );
+    }
 
     const userProfile = await prisma.profile.findUnique({
       where: { id: userIdRaw },
@@ -197,7 +226,7 @@ async function _POST(req: NextRequest) {
         organizationId: organization.id,
         userId: userIdRaw,
         name: resolvedName,
-        roleTitle: roleTitleRaw || null,
+        roleTitle: null,
         isActive,
         priority,
       },
@@ -211,7 +240,24 @@ async function _POST(req: NextRequest) {
       },
     });
 
-    return respondOk(ctx, { professional }, { status: 201 });
+    return respondOk(
+      ctx,
+      {
+        professional: {
+          ...professional,
+          name:
+            professional.user?.fullName?.trim() ||
+            professional.user?.username?.trim() ||
+            professional.name ||
+            "Equipa",
+          roleTitle: null,
+          isCoach: member.rolePack === OrganizationRolePack.COACH,
+          membershipRole: member.role,
+          membershipRolePack: member.rolePack,
+        },
+      },
+      { status: 201 },
+    );
   } catch (err) {
     if (typeof err === "object" && err != null && "code" in err && (err as { code?: string }).code === "P2002") {
       return fail(ctx, 409, "PROFESSIONAL_EXISTS", "Profissional já existe para este utilizador.");

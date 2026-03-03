@@ -6,7 +6,7 @@ import {
 } from "@/lib/organizationRbac";
 import { OrganizationMemberRole, OrganizationModule, OrganizationRolePack } from "@prisma/client";
 
-describe("rbac access matrix v10", () => {
+describe("rbac access matrix v11", () => {
   it("owner/co-owner/admin can edit core modules", () => {
     const roles = [
       OrganizationMemberRole.OWNER,
@@ -31,6 +31,8 @@ describe("rbac access matrix v10", () => {
     });
     expect(hasModuleAccess(access, OrganizationModule.EVENTOS, "VIEW")).toBe(true);
     expect(hasModuleAccess(access, OrganizationModule.EVENTOS, "EDIT")).toBe(false);
+    expect(hasModuleAccess(access, OrganizationModule.TORNEIOS, "VIEW")).toBe(true);
+    expect(hasModuleAccess(access, OrganizationModule.TORNEIOS, "EDIT")).toBe(false);
     expect(hasModuleAccess(access, OrganizationModule.FINANCEIRO, "VIEW")).toBe(false);
     expect(hasModuleAccess(access, OrganizationModule.DEFINICOES, "VIEW")).toBe(false);
   });
@@ -46,6 +48,7 @@ describe("rbac access matrix v10", () => {
       rolePack: OrganizationRolePack.FRONT_DESK,
     });
     expect(hasModuleAccess(access, OrganizationModule.RESERVAS, "EDIT")).toBe(true);
+    expect(hasModuleAccess(access, OrganizationModule.TORNEIOS, "VIEW")).toBe(true);
     expect(hasModuleAccess(access, OrganizationModule.EVENTOS, "VIEW")).toBe(true);
     expect(checkin).toBe("EDIT");
   });

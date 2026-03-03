@@ -81,6 +81,10 @@ function normalizeCapacity(raw: unknown) {
   return capacity;
 }
 
+function hasAcademyBridgeHeader(req: NextRequest) {
+  return req.headers.get("x-orya-academy-bridge") === "1";
+}
+
 function errorCodeForStatus(status: number) {
   if (status === 401) return "UNAUTHENTICATED";
   if (status === 403) return "FORBIDDEN";
@@ -133,6 +137,12 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     });
     if (!series) return fail(404, "Série não encontrada.");
     if (series.service.kind !== "CLASS") return fail(409, "Serviço não suporta aulas recorrentes.");
+    if (!hasAcademyBridgeHeader(req)) {
+      return fail(
+        410,
+        "ACADEMY_LEGACY_GONE: usa /api/org/[orgId]/academy/classes/[classId]/series/[seriesId].",
+      );
+    }
 
     const payload = await req.json().catch(() => ({}));
     const dayOfWeek = normalizeDayOfWeek(payload?.dayOfWeek) ?? series.dayOfWeek;
@@ -353,6 +363,12 @@ async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: str
       select: { id: true, serviceId: true },
     });
     if (!series) return fail(404, "Série não encontrada.");
+    if (!hasAcademyBridgeHeader(req)) {
+      return fail(
+        410,
+        "ACADEMY_LEGACY_GONE: usa /api/org/[orgId]/academy/classes/[classId]/series/[seriesId].",
+      );
+    }
 
     const now = new Date();
     await prisma.$transaction(async (tx) => {

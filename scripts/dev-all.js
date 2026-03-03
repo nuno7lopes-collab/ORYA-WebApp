@@ -242,6 +242,12 @@ function commandExists(command) {
   return Boolean(runCmd(checkCmd));
 }
 
+function isDockerDaemonAvailable() {
+  if (!commandExists(dockerCmd)) return false;
+  const probe = runCmd(`${dockerCmd} info --format '{{.ServerVersion}}'`);
+  return Boolean(probe);
+}
+
 function isPidAlive(pid) {
   if (!Number.isFinite(pid)) return false;
   try {
@@ -582,14 +588,30 @@ async function startDeferredServices() {
   const startRedis = parseBool(process.env.START_REDIS, true);
   const startStripe = parseBool(process.env.START_STRIPE, true);
   const startCron = parseBool(process.env.START_CRON, true);
+  const forceLocalRedis = parseBool(process.env.DEV_ALL_FORCE_LOCAL_REDIS, true);
   const redisPort = process.env.REDIS_PORT || "6379";
   const localRedisUrl = `redis://127.0.0.1:${redisPort}`;
   const hasRedisBinary = commandExists(redisCmd);
-  const hasDocker = commandExists(dockerCmd);
+  const hasDockerBinary = commandExists(dockerCmd);
+  const hasDockerDaemon = hasDockerBinary && isDockerDaemonAvailable();
+  const hasDocker = hasDockerBinary && hasDockerDaemon;
   const dockerRedisName = process.env.DEV_ALL_REDIS_DOCKER_NAME || "orya-dev-redis";
+  if (startRedis && forceLocalRedis && process.env.REDIS_URL) {
+    const redisTarget = parseRedisTarget(process.env.REDIS_URL, redisPort);
+    if (redisTarget && !isLocalHost(redisTarget.host)) {
+      console.log(
+        "[dev-all] DEV_ALL_FORCE_LOCAL_REDIS=1: ignoring remote REDIS_URL and using local Redis.",
+      );
+      delete process.env.REDIS_URL;
+    }
+  }
   const hasExplicitRedisUrl = Boolean(process.env.REDIS_URL);
   let canLaunchLocalRedis = false;
   let canLaunchDockerRedis = false;
+
+  if (startRedis && !hasRedisBinary && hasDockerBinary && !hasDockerDaemon) {
+    console.log("[dev-all] Docker CLI found, but daemon is not running. Redis Docker disabled.");
+  }
 
   if (startRedis && !hasExplicitRedisUrl) {
     if (hasRedisBinary) {

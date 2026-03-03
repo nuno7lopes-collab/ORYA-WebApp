@@ -72,7 +72,7 @@ export async function resolveReservasScopesForMember(params: {
   };
 }
 
-export async function resolveTrainerProfessionalIds(params: {
+export async function resolveCoachProfessionalIds(params: {
   organizationId: number;
   userId: string;
 }) {

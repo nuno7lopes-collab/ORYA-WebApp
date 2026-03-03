@@ -102,11 +102,26 @@ type CustomerPadelResponse = {
     matches30d: number;
     winRate90d: number;
     noShowRate90d: number;
+    preferredTimeBucket: string | null;
+    offPeakRatio30d: number;
+    reservationCount90d: number;
+    lessonCount90d: number;
+    tournamentCount90d: number;
+    avgSpendPerSessionCents90d: number;
+    lastNoShowAt: string | null;
     activityStatus: string | null;
     competitiveTier: string | null;
     rfmScore: number;
     churnRiskScore: number;
     reactivationPropensityScore: number;
+    playerProfile: {
+      id: number;
+      fullName: string | null;
+      level: string | null;
+      preferredSide: string | null;
+      clubName: string | null;
+    } | null;
+    createdAt: string;
     updatedAt: string;
   } | null;
 };
@@ -118,11 +133,34 @@ type CustomerTimelineResponse = {
   items: InteractionRow[];
 };
 
+type CrmTagOption = {
+  id: string;
+  name: string;
+  slug: string;
+  color: string;
+  isSystem: boolean;
+  isActive: boolean;
+  sortOrder: number;
+  usageCount: number;
+};
+
+type CrmTagListResponse = {
+  ok: boolean;
+  tags?: CrmTagOption[];
+  tag?: CrmTagOption;
+  error?: string;
+  message?: string;
+};
+
 function formatDate(value: string | null) {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
   return formatDateTime(date);
+}
+
+function isPadelInteractionType(value: string) {
+  return value.trim().toUpperCase().startsWith("PADEL_");
 }
 
 export default function CrmCustomerDetailPage() {
@@ -132,10 +170,9 @@ export default function CrmCustomerDetailPage() {
     customerId ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/crm/clientes/${customerId}`) : null,
     fetcher,
   );
-  const [timelineDomain, setTimelineDomain] = useState<"all" | "padel">("all");
   const { data: timelineData } = useSWR<CustomerTimelineResponse>(
     customerId
-      ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/crm/clientes/${customerId}/timeline?domain=${timelineDomain}`)
+      ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/crm/clientes/${customerId}/timeline?domain=padel`)
       : null,
     fetcher,
   );
@@ -143,10 +180,19 @@ export default function CrmCustomerDetailPage() {
     customerId ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/crm/clientes/${customerId}/padel`) : null,
     fetcher,
   );
+  const { data: tagsData, mutate: mutateTags } = useSWR<CrmTagListResponse>(
+    customerId ? resolveCanonicalOrgApiPath("/api/org/[orgId]/crm/tags") : null,
+    fetcher,
+  );
 
   const customer = data?.customer ?? null;
-  const [tagInput, setTagInput] = useState("");
+  const availableTags = useMemo(() => (tagsData?.ok ? tagsData.tags ?? [] : []), [tagsData]);
+
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [tagSaving, setTagSaving] = useState(false);
+  const [newTagName, setNewTagName] = useState("");
+  const [newTagColor, setNewTagColor] = useState("#22D3EE");
+  const [newTagSaving, setNewTagSaving] = useState(false);
   const [noteBody, setNoteBody] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
   const [consentSaving, setConsentSaving] = useState<Record<string, boolean>>({});
@@ -154,12 +200,14 @@ export default function CrmCustomerDetailPage() {
 
   useEffect(() => {
     if (customer) {
-      setTagInput(customer.tags.join(", "));
+      setSelectedTags(customer.tags);
     }
   }, [customer?.id, customer?.tags]);
 
   const interactions = useMemo(
-    () => timelineData?.items ?? data?.interactions ?? [],
+    () =>
+      timelineData?.items ??
+      (data?.interactions ?? []).filter((interaction) => isPadelInteractionType(interaction.type)),
     [data?.interactions, timelineData?.items],
   );
   const notes = useMemo(() => data?.notes ?? [], [data]);
@@ -170,14 +218,10 @@ export default function CrmCustomerDetailPage() {
     setTagSaving(true);
     setError(null);
     try {
-      const tags = tagInput
-        .split(",")
-        .map((tag) => tag.trim())
-        .filter(Boolean);
       const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/crm/clientes/${customer.id}/tags`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tags }),
+        body: JSON.stringify({ tags: selectedTags }),
       });
       if (!res.ok) throw new Error("Falha ao guardar tags");
       await mutate();
@@ -185,6 +229,39 @@ export default function CrmCustomerDetailPage() {
       setError(err instanceof Error ? err.message : "Erro ao guardar tags");
     } finally {
       setTagSaving(false);
+    }
+  };
+
+  const toggleTagSelection = (name: string) => {
+    setSelectedTags((prev) => (prev.includes(name) ? prev.filter((tag) => tag !== name) : [...prev, name]));
+  };
+
+  const handleCreateTag = async () => {
+    const name = newTagName.trim();
+    if (name.length < 2) {
+      setError("Nome da tag inválido (mínimo 2 caracteres).");
+      return;
+    }
+    setNewTagSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/crm/tags"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, color: newTagColor }),
+      });
+      const json = (await res.json().catch(() => null)) as CrmTagListResponse | null;
+      if (!res.ok || !json?.ok || !json.tag) {
+        throw new Error(json?.message ?? json?.error ?? "Falha ao criar tag");
+      }
+      const createdTag = json.tag;
+      await mutateTags();
+      setSelectedTags((prev) => (prev.includes(createdTag.name) ? prev : [...prev, createdTag.name]));
+      setNewTagName("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao criar tag");
+    } finally {
+      setNewTagSaving(false);
     }
   };
 
@@ -267,23 +344,64 @@ export default function CrmCustomerDetailPage() {
                 <span>Última compra: {formatDate(customer.lastPurchaseAt)}</span>
                 <span>Opt-in marketing: {customer.marketingOptIn ? "Sim" : "Não"}</span>
                 <span>Gasto total: {formatCurrency(customer.totalSpentCents ?? 0, "EUR")}</span>
-                <span>Pedidos: {customer.totalOrders}</span>
+                <span>Pagamentos jogo: {customer.totalOrders}</span>
                 <span>Reservas: {customer.totalBookings}</span>
-                <span>Check-ins: {customer.totalAttendances}</span>
+                <span>Sessões: {customer.totalAttendances}</span>
                 <span>Torneios: {customer.totalTournaments}</span>
-                <span>Store: {customer.totalStoreOrders}</span>
               </div>
             </div>
             <div className="space-y-3">
+              <div className="text-[12px] text-white/70">
+                Tags do cliente
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {availableTags.map((tag) => {
+                    const isActive = selectedTags.includes(tag.name);
+                    return (
+                      <button
+                        key={tag.id}
+                        type="button"
+                        onClick={() => toggleTagSelection(tag.name)}
+                        className={cn(
+                          "inline-flex items-center gap-2 rounded-full border px-2 py-1 text-[10px] tracking-[0.16em]",
+                          isActive
+                            ? "border-white/35 bg-white/15 text-white"
+                            : "border-white/15 bg-white/5 text-white/70",
+                        )}
+                      >
+                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: tag.color }} aria-hidden />
+                        {tag.name}
+                      </button>
+                    );
+                  })}
+                  {!availableTags.length ? (
+                    <span className="text-[11px] text-white/50">Sem tags no clube.</span>
+                  ) : null}
+                </div>
+              </div>
               <label className="text-[12px] text-white/70">
-                Tags
+                Criar nova tag
                 <input
                   className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-                  placeholder="ex.: VIP, mensal"
-                  value={tagInput}
-                  onChange={(event) => setTagInput(event.target.value)}
+                  placeholder="ex.: Jogador manhã"
+                  value={newTagName}
+                  onChange={(event) => setNewTagName(event.target.value)}
                 />
               </label>
+              <input
+                type="color"
+                className="h-[40px] w-full rounded-xl border border-white/15 bg-white/5 px-2"
+                value={newTagColor}
+                onChange={(event) => setNewTagColor(event.target.value)}
+                aria-label="Cor da tag"
+              />
+              <button
+                type="button"
+                className={cn(CTA_NEUTRAL, "w-full justify-center")}
+                onClick={handleCreateTag}
+                disabled={newTagSaving}
+              >
+                {newTagSaving ? "A criar..." : "Criar tag"}
+              </button>
               <button
                 type="button"
                 className={cn(CTA_NEUTRAL, "w-full justify-center")}
@@ -346,20 +464,30 @@ export default function CrmCustomerDetailPage() {
           </div>
           {padel ? (
             <div className="grid gap-2 text-[12px] text-white/75 md:grid-cols-3">
+              <span>Ligação a perfil jogador: {padel.playerProfile ? "Ligado" : "Não ligado"}</span>
+              <span>Jogador: {padel.playerProfile?.fullName ?? "—"}</span>
               <span>Estado: {padel.activityStatus ?? "—"}</span>
               <span>Tier: {padel.competitiveTier ?? "—"}</span>
               <span>RFM: {padel.rfmScore}</span>
               <span>Risco churn: {padel.churnRiskScore}</span>
               <span>Propensão reativação: {padel.reactivationPropensityScore}</span>
               <span>Último jogo: {formatDate(padel.lastMatchAt)}</span>
+              <span>Último no-show: {formatDate(padel.lastNoShowAt)}</span>
               <span>Jogos 30d: {padel.matches30d}</span>
               <span>Win rate 90d: {(padel.winRate90d * 100).toFixed(1)}%</span>
               <span>No-show rate 90d: {(padel.noShowRate90d * 100).toFixed(1)}%</span>
               <span>Nível: {padel.level ?? "—"}</span>
               <span>Lado: {padel.preferredSide ?? "—"}</span>
+              <span>Janela horária preferida: {padel.preferredTimeBucket ?? "—"}</span>
               <span>Clube: {padel.clubName ?? "—"}</span>
+              <span>Rácio off-peak 30d: {(padel.offPeakRatio30d * 100).toFixed(1)}%</span>
+              <span>Reservas 90d: {padel.reservationCount90d}</span>
+              <span>Aulas 90d: {padel.lessonCount90d}</span>
+              <span>Torneios 90d: {padel.tournamentCount90d}</span>
+              <span>Gasto médio/sessão 90d: {formatCurrency(padel.avgSpendPerSessionCents90d, "EUR")}</span>
               <span>Torneios: {padel.tournamentsCount}</span>
               <span>No-shows: {padel.noShowCount}</span>
+              <span>Projeção criada: {formatDate(padel.createdAt)}</span>
               <span>Atualizado: {formatDate(padel.updatedAt)}</span>
             </div>
           ) : (
@@ -376,20 +504,9 @@ export default function CrmCustomerDetailPage() {
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-white">Timeline</h2>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                className={cn(CTA_NEUTRAL, timelineDomain === "all" ? "border-white/30" : "")}
-                onClick={() => setTimelineDomain("all")}
-              >
-                Geral
-              </button>
-              <button
-                type="button"
-                className={cn(CTA_NEUTRAL, timelineDomain === "padel" ? "border-white/30" : "")}
-                onClick={() => setTimelineDomain("padel")}
-              >
+              <span className={cn(CTA_NEUTRAL, "border-white/30")}>
                 Padel
-              </button>
+              </span>
               <span className="text-[11px] text-white/50">{interactions.length} interações</span>
             </div>
           </div>

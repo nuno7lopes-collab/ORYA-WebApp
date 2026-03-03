@@ -1,5 +1,5 @@
 import { OrganizationMemberRole } from "@prisma/client";
-import { intersectIds, resolveReservasScopesForMember, resolveTrainerProfessionalIds } from "@/lib/reservas/memberScopes";
+import { intersectIds, resolveReservasScopesForMember, resolveCoachProfessionalIds } from "@/lib/reservas/memberScopes";
 
 type BookingScopeFields = {
   professionalId: number | null;
@@ -34,13 +34,13 @@ export async function ensureStaffCanAccessBooking(params: {
   }
 
   if (params.isCoach) {
-    const trainerProfessionalIds = await resolveTrainerProfessionalIds({
+    const coachProfessionalIds = await resolveCoachProfessionalIds({
       organizationId: params.organizationId,
       userId: params.userId,
     });
     const allowedProfessionals = scopes.professionalIds.length
-      ? intersectIds(trainerProfessionalIds, scopes.professionalIds)
-      : trainerProfessionalIds;
+      ? intersectIds(coachProfessionalIds, scopes.professionalIds)
+      : coachProfessionalIds;
     if (!allowedProfessionals.length || !params.booking.professionalId || !allowedProfessionals.includes(params.booking.professionalId)) {
       return { ok: false, status: 403, errorCode: "FORBIDDEN", message: "Sem permissões." };
     }

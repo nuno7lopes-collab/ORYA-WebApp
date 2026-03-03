@@ -13,6 +13,8 @@ type DayGridProps = {
   timezone: string;
   columns: CalendarColumn[];
   events: CalendarEvent[];
+  showAvailabilityOverlay?: boolean;
+  availabilityOverlayHint?: string;
   hourHeight: number;
   selectedEventId?: string | null;
   onHoverEventChange?: (event: CalendarEvent | null) => void;
@@ -29,6 +31,8 @@ export function DayGrid({
   timezone,
   columns,
   events,
+  showAvailabilityOverlay = false,
+  availabilityOverlayHint,
   hourHeight,
   selectedEventId = null,
   onHoverEventChange,
@@ -184,9 +188,15 @@ export function DayGrid({
       <div className="mb-2 px-1">
         <h2 className="text-sm font-semibold text-white">Agenda diária</h2>
         <p className="text-xs text-white/55">Slots de 15 minutos, altura proporcional por duração real e colunas por entidade.</p>
+        <p className="mt-1 text-[11px] text-white/50">
+          {availabilityOverlayHint ??
+            (showAvailabilityOverlay
+              ? "Sobreposição de disponibilidade ativa."
+              : "Sobreposição de disponibilidade desligada.")}
+        </p>
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2 text-[10px] text-white/65">
-          <span className="rounded-full border border-emerald-300/45 bg-emerald-400/12 px-2 py-0.5 text-emerald-100">Confirmado</span>
+          <span className="rounded-full border border-sky-300/45 bg-sky-400/12 px-2 py-0.5 text-sky-100">Confirmado</span>
           <span className="rounded-full border border-amber-300/45 bg-amber-400/12 px-2 py-0.5 text-amber-100">Pendente</span>
           <span className="rounded-full border border-rose-300/45 bg-rose-400/12 px-2 py-0.5 text-rose-100">Cancelado/No-show</span>
           <span className="rounded-full border border-fuchsia-300/45 bg-fuchsia-400/12 px-2 py-0.5 text-fuchsia-100">Disputa</span>
@@ -273,7 +283,7 @@ export function DayGrid({
                 height: totalHeight,
                 transform: `translateX(${scrollLeft}px)`,
                 backgroundImage:
-                  "linear-gradient(to bottom, rgba(255,255,255,0.035) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.08) 1px, transparent 1px)",
+                  "linear-gradient(to bottom, rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.06) 1px, transparent 1px)",
                 backgroundSize: `100% ${rowSize}px, 100% ${hourHeight}px`,
               }}
             >
@@ -318,6 +328,7 @@ export function DayGrid({
                       date={date}
                       timezone={timezone}
                       events={columnEvents}
+                      showAvailabilityOverlay={showAvailabilityOverlay}
                       minuteHeight={minuteHeight}
                       nowTop={nowTop}
                       totalHeight={totalHeight}

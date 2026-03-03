@@ -1,14 +1,23 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
-import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
-import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
+import { resolveOrganizationIdStrict } from "@/lib/organizationId";
+import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
+import { isOrgAdminOrAbove } from "@/lib/organizationPermissions";
 import { OrganizationModule } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
+
+function resolveListLimit(raw: string | null, fallback = 200, max = 500) {
+  if (typeof raw !== "string") return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(parsed, max);
+}
+
 async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
@@ -21,32 +30,40 @@ async function _GET(req: NextRequest) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
 
-    const organizationId = resolveOrganizationIdFromRequest(req);
-    const { organization, membership } = await getActiveOrganizationForUser(user.id, {
-      organizationId: organizationId ?? undefined,
-    });
+    const orgResolution = resolveOrganizationIdStrict({ req, allowFallback: false });
+    if (!orgResolution.ok) {
+      if (orgResolution.reason === "CONFLICT") {
+        return jsonWrap({ ok: false, error: "ORGANIZATION_ID_CONFLICT" }, { status: 400 });
+      }
+      return jsonWrap({ ok: false, error: "INVALID_ORGANIZATION_ID" }, { status: 400 });
+    }
+    const organizationId = orgResolution.organizationId;
 
-    if (!organization || !membership) {
+    const membership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
+    if (!membership) {
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+    if (!isOrgAdminOrAbove(membership.role)) {
       return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const access = await ensureMemberModuleAccess({
-      organizationId: organization.id,
+      organizationId,
       userId: user.id,
       role: membership.role,
       rolePack: membership.rolePack,
-      moduleKey: OrganizationModule.DEFINICOES,
-      required: "VIEW",
+      moduleKey: OrganizationModule.STAFF,
+      required: "EDIT",
     });
     if (!access.ok) {
       return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const url = new URL(req.url);
-    const limit = Math.min(Number(url.searchParams.get("limit") ?? 200), 500);
+    const limit = resolveListLimit(url.searchParams.get("limit"));
 
     const items = await prisma.organizationAuditLog.findMany({
-      where: { organizationId: organization.id },
+      where: { organizationId },
       orderBy: { createdAt: "desc" },
       take: limit,
     });
@@ -82,7 +99,7 @@ async function _GET(req: NextRequest) {
         : null,
     }));
 
-    return jsonWrap({ ok: true, organizationId: organization.id, items: normalizedItems }, { status: 200 });
+    return jsonWrap({ ok: true, organizationId, items: normalizedItems }, { status: 200 });
   } catch (err) {
     console.error("[organização/audit][GET]", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });

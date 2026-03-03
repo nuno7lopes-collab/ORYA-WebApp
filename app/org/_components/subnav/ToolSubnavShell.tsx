@@ -23,10 +23,14 @@ type ToolSubnavShellProps = {
 };
 
 function matchHref(href: string, normalizedPathname: string | null, searchParams: URLSearchParams) {
-  return getHrefMatchScore(href, normalizedPathname, searchParams) >= 0;
+  return getSubnavHrefMatchScore(href, normalizedPathname, searchParams) >= 0;
 }
 
-function getHrefMatchScore(href: string, normalizedPathname: string | null, searchParams: URLSearchParams) {
+export function getSubnavHrefMatchScore(
+  href: string,
+  normalizedPathname: string | null,
+  searchParams: URLSearchParams,
+) {
   if (!normalizedPathname) return -1;
   const parsed = new URL(href, "https://orya.local");
   const exactPath = normalizedPathname === parsed.pathname;
@@ -38,28 +42,44 @@ function getHrefMatchScore(href: string, normalizedPathname: string | null, sear
   return (exactPath ? 1000 : 500) + parsed.pathname.length * 10 + parsed.searchParams.size;
 }
 
+export function resolveSubnavActiveIndex(input: {
+  items: ToolSubnavItem[];
+  pathname: string | null;
+  normalizedPathname: string | null;
+  searchParams: URLSearchParams;
+}) {
+  const { items, pathname, normalizedPathname, searchParams } = input;
+  const visibleItems = items.filter((item) => !item.hidden);
+  const scoredItems = visibleItems.map((item, index) => {
+    const hrefScore = getSubnavHrefMatchScore(item.href, normalizedPathname, searchParams);
+    const customActive = item.isActive
+      ? item.isActive({ pathname, normalizedPathname, searchParams })
+      : matchHref(item.href, normalizedPathname, searchParams);
+    return { index, customActive, hrefScore };
+  });
+  const activeCandidates = scoredItems.filter((entry) => entry.customActive);
+  if (activeCandidates.length === 0) {
+    return { activeIndex: -1, visibleItems };
+  }
+  const activeIndex = activeCandidates.reduce((best, current) => {
+    if (current.hrefScore > best.hrefScore) return current;
+    if (current.hrefScore === best.hrefScore && current.index > best.index) return current;
+    return best;
+  }).index;
+  return { activeIndex, visibleItems };
+}
+
 export default function ToolSubnavShell({ items, className }: ToolSubnavShellProps) {
   const pathname = usePathname();
   const normalizedPathname = normalizeOrganizationPathname(pathname);
   const searchParams = useSearchParams();
   const stableSearchParams = new URLSearchParams(searchParams?.toString() ?? "");
-  const visibleItems = items.filter((item) => !item.hidden);
-  const scoredItems = visibleItems.map((item, index) => {
-    const hrefScore = getHrefMatchScore(item.href, normalizedPathname, stableSearchParams);
-    const customActive = item.isActive
-      ? item.isActive({ pathname, normalizedPathname, searchParams: stableSearchParams })
-      : matchHref(item.href, normalizedPathname, stableSearchParams);
-    return { item, index, customActive, hrefScore };
+  const { visibleItems, activeIndex } = resolveSubnavActiveIndex({
+    items,
+    pathname,
+    normalizedPathname,
+    searchParams: stableSearchParams,
   });
-  const activeCandidates = scoredItems.filter((entry) => entry.customActive);
-  const activeIndex =
-    activeCandidates.length > 0
-      ? activeCandidates.reduce((best, current) => {
-          if (current.hrefScore > best.hrefScore) return current;
-          if (current.hrefScore === best.hrefScore && current.index > best.index) return current;
-          return best;
-        }).index
-      : -1;
 
   return (
     <div

@@ -34,8 +34,8 @@ const PRIMARY_META: Record<
     createHref: "/org/padel/tournaments/create",
   },
   RESERVAS: {
-    createLabel: "Criar aula ou serviço",
-    createHref: "/org/bookings/new",
+    createLabel: "Criar aula",
+    createHref: "/org/academy/classes/new",
   },
 };
 const PADEL_CLUB_SECTION = "padel-club";
@@ -70,7 +70,7 @@ export function getObjectiveSections(
       return section === "eventos" ? manageBase : `${manageBase}?section=${section}`;
     }
     if (section === "eventos") return "/org/padel/tournaments";
-    if (section === "reservas") return "/org/bookings";
+    if (section === "reservas") return "/org/academy/classes";
     if (section === "inscricoes") return "/org/forms";
     if (section === PADEL_CLUB_SECTION) return "/org/padel/clubs";
     if (section === PADEL_TOURNAMENTS_SECTION) return "/org/padel/tournaments";
@@ -133,7 +133,7 @@ export function getObjectiveSections(
     }
 
     if (operationOverride === "RESERVAS") {
-      const baseHref = "/org/bookings";
+      const baseHref = "/org/academy";
       sections.push(
         {
           id: "campos",
@@ -143,11 +143,6 @@ export function getObjectiveSections(
         {
           id: "aulas",
           label: "Aulas",
-          href: `${baseHref}/classes`,
-        },
-        {
-          id: "servicos",
-          label: "Aulas & serviços",
           href: `${baseHref}`,
         },
       );
@@ -164,13 +159,13 @@ export function getObjectiveSections(
         },
         {
           id: "clientes",
-          label: "Jogadores & alunos",
-          href: `${baseHref}/customers`,
+          label: "Alunos",
+          href: `${baseHref}/students`,
         },
         {
           id: "profissionais",
           label: "Treinadores",
-          href: `${baseHref}/professionals`,
+          href: `${baseHref}/trainers`,
         },
         {
           id: "recursos",
@@ -213,7 +208,7 @@ export function getObjectiveSections(
             { id: "clubs", label: "Clubes", href: padelClubHref("clubs") },
             { id: "partnerships", label: "Parcerias", href: padelClubHref("partnerships") },
             { id: "players", label: "Jogadores", href: padelClubHref("players") },
-            { id: "trainers", label: "Treinadores", href: padelClubHref("trainers") },
+            { id: "coaches", label: "Treinadores", href: padelClubHref("coaches") },
             { id: "lessons", label: "Aulas", href: padelClubHref("lessons") },
           ],
         },
@@ -263,7 +258,7 @@ export function getObjectiveSections(
           { id: "operacao-agenda", label: "Calendário", href: "/org/calendar" },
           { id: "operacao-campos", label: "Campos", href: "/org/bookings/resources" },
           { id: "operacao-checkin", label: "Check-in", href: "/org/check-in" },
-          { id: "operacao-aulas", label: "Aulas & serviços", href: "/org/bookings" },
+          { id: "operacao-aulas", label: "Aulas", href: "/org/academy/classes" },
         ],
       },
       {
@@ -279,11 +274,11 @@ export function getObjectiveSections(
       {
         id: "academia",
         label: "Academia",
-        href: "/org/bookings/customers",
+        href: "/org/academy/classes",
         items: [
-          { id: "academia-jogadores", label: "Jogadores & alunos", href: "/org/bookings/customers" },
-          { id: "academia-treinadores", label: "Treinadores", href: "/org/bookings/professionals" },
-          { id: "academia-aulas", label: "Aulas", href: "/org/bookings/classes" },
+          { id: "academia-aulas", label: "Aulas", href: "/org/academy/classes" },
+          { id: "academia-treinadores", label: "Treinadores", href: "/org/academy/trainers" },
+          { id: "academia-alunos", label: "Alunos", href: "/org/academy/students" },
         ],
       },
       {

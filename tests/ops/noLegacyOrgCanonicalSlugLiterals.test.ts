@@ -16,7 +16,7 @@ describe("canonical org web slugs guardrail", () => {
     const output = runRg([
       "--pcre2",
       "-n",
-      "(?<!/api)/org/(\\$\\{[^}]+\\}|\\[orgId\\]|\\d+)/(financas|loja|checkin|manage|promote|tournaments|trainers|treinadores|eventos|reservas|inscricoes|staff|crm/(clientes|segmentos|campanhas|relatorios)|padel/(clube|torneios))(\\?|/|\\\"|'|`|$)",
+      "(?<!/api)/org/(\\$\\{[^}]+\\}|\\[orgId\\]|\\d+)/(financas|loja|checkin|manage|promote|tournaments|treinadores|eventos|reservas|inscricoes|staff|crm/(clientes|segmentos|campanhas|relatorios)|padel/(clube|torneios))(\\?|/|\\\"|'|`|$)",
       "app/org",
       "app/components",
       "lib",

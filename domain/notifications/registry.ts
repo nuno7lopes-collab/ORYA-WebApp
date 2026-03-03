@@ -93,7 +93,6 @@ const ROLE_LABELS: Record<string, string> = {
   CO_OWNER: "co-owner",
   ADMIN: "admin",
   STAFF: "colaborador",
-  TRAINER: "colaborador",
   VIEWER: "membro",
 };
 

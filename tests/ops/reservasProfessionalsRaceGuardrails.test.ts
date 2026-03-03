@@ -7,11 +7,13 @@ function readLocal(pathname: string) {
 }
 
 describe("reservas professionals race guardrails", () => {
-  it("usa upsert no auto-provisionamento STAFF e trata colisão de unicidade no POST", () => {
+  it("não auto-provisiona staff via GET e mantém hard-cut de equipa no POST", () => {
     const route = readLocal("app/api/org/[orgId]/reservas/profissionais/route.ts");
 
-    expect(route).toContain("reservationProfessional.upsert");
-    expect(route).toContain("organizationId_userId");
+    expect(route).not.toContain("reservationProfessional.upsert");
+    expect(route).toContain("TRAINER_PROFILE_MANAGED_BY_TEAM");
+    expect(route).toContain("TRAINER_ROLE_NOT_ELIGIBLE");
+    expect(route).toContain("runAcademyTrainerHardCutHygiene");
     expect(route).toContain("code === \"P2002\"");
     expect(route).toContain("PROFESSIONAL_EXISTS");
   });

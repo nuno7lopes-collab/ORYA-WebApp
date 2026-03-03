@@ -103,6 +103,10 @@ type ResourceItem = {
   label: string;
   capacity: number;
   isActive: boolean;
+  sourceType?: "RESOURCE" | "COURT";
+  resourceId?: number | null;
+  courtId?: number | null;
+  clubName?: string | null;
 };
 
 type CourtItem = {
@@ -147,6 +151,16 @@ function formatMoney(cents: number, currency: string) {
   }).format(cents / 100);
 }
 
+function resolveResourceLinkId(resource: ResourceItem): number | null {
+  if (typeof resource.resourceId === "number" && Number.isFinite(resource.resourceId) && resource.resourceId > 0) {
+    return resource.resourceId;
+  }
+  if ((resource.sourceType ?? "RESOURCE") === "RESOURCE") {
+    return resource.id;
+  }
+  return null;
+}
+
 
 export default function ServicoDetalhePage() {
   const params = useParams();
@@ -163,13 +177,19 @@ export default function ServicoDetalhePage() {
     return Number.isFinite(parsed) ? parsed : null;
   }, [idRaw]);
 
-  const serviceKey = serviceId ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}`) : null;
+  const serviceKey = serviceId
+    ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/academy/classes/${serviceId}`)
+    : null;
   const packsEnabled = false;
   const packsKey = packsEnabled && serviceId ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}/packs`) : null;
   const addonsKey = serviceId ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}/addons`) : null;
   const packagesKey = serviceId ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}/packages`) : null;
-  const classSeriesKey = serviceId ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}/class-series`) : null;
-  const classSessionsKey = serviceId ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}/class-sessions`) : null;
+  const classSeriesKey = serviceId
+    ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/academy/classes/${serviceId}/series`)
+    : null;
+  const classSessionsKey = serviceId
+    ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/academy/classes/${serviceId}/sessions`)
+    : null;
   const clubsKey = "/api/padel/clubs?includeInactive=1";
 
   const { data: serviceData, mutate: mutateService } = useSWR<{ ok: boolean; service: Service }>(
@@ -224,11 +244,38 @@ export default function ServicoDetalhePage() {
   const professionals = professionalsData?.items ?? [];
   const resources = resourcesData?.items ?? [];
   const activeProfessionals = professionals.filter((professional) => professional.isActive);
-  const activeResources = resources.filter((resource) => resource.isActive);
+  const resourceOptions = useMemo(
+    () =>
+      resources.map((resource) => {
+        const linkId = resolveResourceLinkId(resource);
+        const isCourt = (resource.sourceType ?? "RESOURCE") === "COURT";
+        const scopeLabel = resource.clubName ? `${resource.label} · ${resource.clubName}` : resource.label;
+        return {
+          ...resource,
+          linkId,
+          scopeLabel,
+          isCourt,
+        };
+      }),
+    [resources],
+  );
+  const activeResourceOptions = resourceOptions.filter(
+    (resource): resource is (typeof resourceOptions)[number] & { linkId: number } =>
+      resource.isActive && resource.linkId != null,
+  );
+  const hasUnlinkedCourtOptions = resourceOptions.some((resource) => resource.isCourt && resource.linkId == null);
   const [selectedClubId, setSelectedClubId] = useState<number | null>(null);
   const courtsKey = selectedClubId ? `/api/padel/clubs/${selectedClubId}/courts` : null;
   const { data: courtsData } = useSWR<{ ok: boolean; items: CourtItem[] }>(courtsKey, fetcher);
   const courts = courtsData?.items ?? [];
+  const isClassService = true;
+  const isCourtService = false;
+  const entityLabel = "aula";
+  const entityLabelTitle = "Aula";
+  const teamHeading = "Treinadores e campos";
+  const professionalLabelPlural = "Treinadores";
+  const professionalLabelSingular = "Treinador";
+  const resourceLabelPlural = "Campos";
 
   useEffect(() => {
     if (selectedClubId || clubs.length === 0) return;
@@ -381,14 +428,14 @@ export default function ServicoDetalhePage() {
     setServiceError(null);
     setServiceErrorCtaHref(null);
     setServiceErrorCtaLabel(null);
-    const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}`), {
+    const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/academy/classes/${serviceId}`), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ isActive: !service.isActive }),
     });
     const json = await res.json().catch(() => null);
     if (!res.ok || !json?.ok) {
-      const parsedError = parseApiError(json, "Não foi possível atualizar o serviço.");
+      const parsedError = parseApiError(json, `Não foi possível atualizar ${entityLabel}.`);
       const uiError = mapPaymentGateUiState({
         organizationId,
         errorCode: parsedError.errorCode,
@@ -409,7 +456,8 @@ export default function ServicoDetalhePage() {
     );
   };
 
-  const toggleResourceLink = (id: number) => {
+  const toggleResourceLink = (id: number | null) => {
+    if (!id) return;
     setLinkedResourceIds((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
     );
@@ -486,7 +534,7 @@ export default function ServicoDetalhePage() {
     setServiceSaving(true);
 
     try {
-      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}`), {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/academy/classes/${serviceId}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -506,7 +554,7 @@ export default function ServicoDetalhePage() {
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        const parsedError = parseApiError(json, "Erro ao guardar serviço.");
+        const parsedError = parseApiError(json, `Erro ao guardar ${entityLabel}.`);
         const uiError = mapPaymentGateUiState({
           organizationId,
           errorCode: parsedError.errorCode,
@@ -520,7 +568,7 @@ export default function ServicoDetalhePage() {
       }
       mutateService();
     } catch (err) {
-      setServiceError(err instanceof Error ? err.message : "Erro ao guardar serviço.");
+      setServiceError(err instanceof Error ? err.message : `Erro ao guardar ${entityLabel}.`);
       setServiceErrorCtaHref(null);
       setServiceErrorCtaLabel(null);
     } finally {
@@ -813,8 +861,8 @@ export default function ServicoDetalhePage() {
     setSeriesError(null);
     try {
       const url = seriesEditingId
-        ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}/class-series/${seriesEditingId}`)
-        : resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}/class-series`);
+        ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/academy/classes/${serviceId}/series/${seriesEditingId}`)
+        : resolveCanonicalOrgApiPath(`/api/org/[orgId]/academy/classes/${serviceId}/series`);
       const res = await fetch(url, {
         method: seriesEditingId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
@@ -837,11 +885,14 @@ export default function ServicoDetalhePage() {
   const handleSeriesToggle = async (series: ClassSeriesItem, next: boolean) => {
     if (!serviceId) return;
     try {
-      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}/class-series/${series.id}`), {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isActive: next }),
-      });
+      const res = await fetch(
+        resolveCanonicalOrgApiPath(`/api/org/[orgId]/academy/classes/${serviceId}/series/${series.id}`),
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isActive: next }),
+        },
+      );
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
         throw new Error(json?.message || json?.error || "Erro ao atualizar série.");
@@ -854,15 +905,15 @@ export default function ServicoDetalhePage() {
   };
 
   if (!serviceId) {
-    return <div className="text-white/70">Serviço inválido.</div>;
+    return <div className="text-white/70">Registo inválido.</div>;
   }
 
   return (
     <>
     <div className="space-y-6">
       <div>
-        <p className={DASHBOARD_LABEL}>Serviço</p>
-        <h1 className="text-2xl font-semibold text-white">{service?.title || "Serviço"}</h1>
+        <p className={DASHBOARD_LABEL}>{entityLabelTitle}</p>
+        <h1 className="text-2xl font-semibold text-white">{service?.title || entityLabelTitle}</h1>
         <p className={DASHBOARD_MUTED}>
           {service
             ? `${service.durationMinutes} min · Preço: ${formatMoney(service.unitPriceCents, service.currency)}`
@@ -874,7 +925,7 @@ export default function ServicoDetalhePage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold text-white">Detalhes</h2>
-            <p className={DASHBOARD_MUTED}>Define o serviço e o preço unitário.</p>
+            <p className={DASHBOARD_MUTED}>Define a {entityLabel} e o preço unitário.</p>
           </div>
           {service && (
             <button type="button" className={CTA_SECONDARY} onClick={toggleService}>
@@ -903,12 +954,14 @@ export default function ServicoDetalhePage() {
         </div>
 
         <div>
-          <label className="text-sm text-white/80">Capa do serviço</label>
+          <label className="text-sm text-white/80">
+            {isClassService ? "Fotografia da aula" : isCourtService ? "Fotografia do campo" : "Capa do serviço"}
+          </label>
           <div className="mt-2 flex flex-wrap gap-4">
             <div className="relative h-32 w-32 overflow-hidden rounded-2xl border border-white/15 bg-white/5">
               {coverPreviewUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={coverPreviewUrl} alt="Capa do serviço" className="h-full w-full object-cover" />
+                <img src={coverPreviewUrl} alt={`Capa da ${entityLabel}`} className="h-full w-full object-cover" />
               ) : (
                 <div className="flex h-full w-full items-center justify-center text-[11px] text-white/50">
                   Sem capa
@@ -1079,7 +1132,7 @@ export default function ServicoDetalhePage() {
           <button
             type="button"
             className={CTA_SECONDARY}
-            onClick={() => router.push(appendOrganizationIdToHref("/org/bookings", organizationId))}
+            onClick={() => router.push(appendOrganizationIdToHref("/org/academy/classes", organizationId))}
           >
             Voltar
           </button>
@@ -1088,15 +1141,15 @@ export default function ServicoDetalhePage() {
 
       <section className={cn(DASHBOARD_CARD, "p-5 space-y-4")}>
         <div>
-          <h2 className="text-base font-semibold text-white">Equipa e recursos</h2>
+          <h2 className="text-base font-semibold text-white">{teamHeading}</h2>
           <p className={DASHBOARD_MUTED}>
-            Define quem pode executar este serviço. Se não selecionares ninguém, usa todos os ativos.
+            Define quem pode executar esta {entityLabel}. Se não selecionares ninguém, usa todos os ativos.
           </p>
         </div>
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <p className="text-sm text-white/80">Profissionais</p>
+              <p className="text-sm text-white/80">{professionalLabelPlural}</p>
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -1115,7 +1168,7 @@ export default function ServicoDetalhePage() {
               </div>
             </div>
             {activeProfessionals.length === 0 ? (
-              <p className="text-[12px] text-white/50">Sem profissionais ativos.</p>
+              <p className="text-[12px] text-white/50">Sem {professionalLabelPlural.toLowerCase()} ativos.</p>
             ) : (
               <div className="space-y-2">
                 {activeProfessionals.map((professional) => (
@@ -1136,12 +1189,12 @@ export default function ServicoDetalhePage() {
           </div>
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <p className="text-sm text-white/80">Recursos</p>
+              <p className="text-sm text-white/80">{resourceLabelPlural}</p>
               <div className="flex gap-2">
                 <button
                   type="button"
                   className="rounded-full border border-white/15 px-3 py-1 text-[11px] text-white/70"
-                  onClick={() => setLinkedResourceIds(activeResources.map((item) => item.id))}
+                  onClick={() => setLinkedResourceIds(activeResourceOptions.map((item) => item.linkId))}
                 >
                   Todos
                 </button>
@@ -1154,27 +1207,32 @@ export default function ServicoDetalhePage() {
                 </button>
               </div>
             </div>
-            {activeResources.length === 0 ? (
-              <p className="text-[12px] text-white/50">Sem recursos ativos.</p>
+            {activeResourceOptions.length === 0 ? (
+              <p className="text-[12px] text-white/50">Sem {resourceLabelPlural.toLowerCase()} ativos.</p>
             ) : (
               <div className="space-y-2">
-                {activeResources.map((resource) => (
+                {activeResourceOptions.map((resource) => (
                   <label
-                    key={resource.id}
+                    key={`${resource.sourceType ?? "RESOURCE"}-${resource.id}`}
                     className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80"
                   >
                     <span>
-                      {resource.label} · {resource.capacity}
+                      {resource.scopeLabel} · {resource.capacity}
                     </span>
                     <input
                       type="checkbox"
-                      checked={linkedResourceIds.includes(resource.id)}
-                      onChange={() => toggleResourceLink(resource.id)}
+                      checked={linkedResourceIds.includes(resource.linkId)}
+                      onChange={() => toggleResourceLink(resource.linkId)}
                     />
                   </label>
                 ))}
               </div>
             )}
+            {hasUnlinkedCourtOptions ? (
+              <p className="text-[11px] text-white/45">
+                Alguns campos ainda não têm recurso associado em Reservas e não podem ser ligados aqui.
+              </p>
+            ) : null}
           </div>
         </div>
       </section>
@@ -1733,13 +1791,13 @@ export default function ServicoDetalhePage() {
               />
             </label>
             <label className="text-[12px] text-white/70">
-              Profissional
+              {professionalLabelSingular}
               <select
                 className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
                 value={seriesProfessionalId}
                 onChange={(e) => setSeriesProfessionalId(e.target.value)}
               >
-                <option value="">Sem profissional</option>
+                <option value="">{`Sem ${professionalLabelSingular.toLowerCase()}`}</option>
                 {activeProfessionals.map((professional) => (
                   <option key={professional.id} value={professional.id}>
                     {professional.name}
@@ -1877,7 +1935,7 @@ export default function ServicoDetalhePage() {
         <section className={cn(DASHBOARD_CARD, "p-5 space-y-4")}>
           <div>
             <h2 className="text-base font-semibold text-white">Packs de sessões</h2>
-            <p className={DASHBOARD_MUTED}>Opcional, sempre do mesmo serviço (sem carteira monetária).</p>
+            <p className={DASHBOARD_MUTED}>Opcional, sempre da mesma {entityLabel} (sem carteira monetária).</p>
           </div>
 
           <div className="grid gap-3 md:grid-cols-4">

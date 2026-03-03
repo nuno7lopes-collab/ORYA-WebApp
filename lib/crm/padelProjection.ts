@@ -8,6 +8,10 @@ export const PADEL_MATCH_INTERACTION_TYPES = [
   CrmInteractionType.PADEL_MATCH_LOSS,
 ] as const;
 
+export const PADEL_MATCH_COUNT_INTERACTION_TYPES = [
+  CrmInteractionType.PADEL_MATCH_PLAYED,
+] as const;
+
 export const PADEL_NO_SHOW_INTERACTION_TYPES = [
   CrmInteractionType.PADEL_BOOKING_NO_SHOW,
   CrmInteractionType.PADEL_CLASS_MISSED,
@@ -29,8 +33,9 @@ export const PADEL_ACTIVITY_INTERACTION_TYPES = [
   ...PADEL_TOURNAMENT_INTERACTION_TYPES,
 ] as const;
 
-const PADEL_MATCH_TYPE_SET = new Set<CrmInteractionType>(PADEL_MATCH_INTERACTION_TYPES);
+const PADEL_MATCH_TYPE_SET = new Set<CrmInteractionType>(PADEL_MATCH_COUNT_INTERACTION_TYPES);
 const PADEL_NO_SHOW_TYPE_SET = new Set<CrmInteractionType>(PADEL_NO_SHOW_INTERACTION_TYPES);
+const PADEL_TOURNAMENT_TYPE_SET = new Set<CrmInteractionType>(PADEL_TOURNAMENT_INTERACTION_TYPES);
 
 export type PadelActivityStatus = "ACTIVE" | "WARM" | "COLD" | "DORMANT";
 export type PadelCompetitiveTier = "RECREATIONAL" | "INTERMEDIATE" | "ADVANCED" | "COMPETITIVE";
@@ -48,9 +53,16 @@ type PadelScoreInput = {
 
 type PadelProjection = {
   lastMatchAt: Date | null;
+  lastNoShowAt: Date | null;
   matches30d: number;
   winRate90d: number;
   noShowRate90d: number;
+  preferredTimeBucket: string | null;
+  offPeakRatio30d: number;
+  reservationCount90d: number;
+  lessonCount90d: number;
+  tournamentCount90d: number;
+  avgSpendPerSessionCents90d: number;
   activityStatus: PadelActivityStatus;
   competitiveTier: PadelCompetitiveTier;
   rfmScore: number;
@@ -98,6 +110,13 @@ function daysSince(now: Date, date: Date | null) {
   const diff = now.getTime() - date.getTime();
   if (!Number.isFinite(diff) || diff < 0) return 0;
   return Math.floor(diff / (24 * 60 * 60 * 1000));
+}
+
+function resolveTimeBucket(hour: number) {
+  if (hour >= 6 && hour <= 11) return "MORNING";
+  if (hour >= 12 && hour <= 16) return "AFTERNOON";
+  if (hour >= 17 && hour <= 21) return "EVENING";
+  return "NIGHT";
 }
 
 export function resolvePadelActivityStatus(daysSinceLastMatch: number | null): PadelActivityStatus {
@@ -258,9 +277,16 @@ export function derivePadelProjection(input: PadelScoreInput): PadelProjection {
 
   return {
     lastMatchAt: input.lastMatchAt,
+    lastNoShowAt: null,
     matches30d: input.matches30d,
     winRate90d: roundRate(winRate90d),
     noShowRate90d: roundRate(noShowRate90d),
+    preferredTimeBucket: null,
+    offPeakRatio30d: 0,
+    reservationCount90d: 0,
+    lessonCount90d: 0,
+    tournamentCount90d: 0,
+    avgSpendPerSessionCents90d: 0,
     activityStatus,
     competitiveTier,
     rfmScore,
@@ -277,7 +303,7 @@ export async function recomputePadelProjectionForContact(params: RecomputeParams
   const since30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const since90 = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
 
-  const [interactions90, lastMatchInteraction, noShowCountAll, tournamentCountAll] = await Promise.all([
+  const [interactions90, lastMatchInteraction, noShowCountAll, lastNoShowInteraction, tournamentCountAll] = await Promise.all([
     client.crmInteraction.findMany({
       where: {
         organizationId: params.organizationId,
@@ -285,13 +311,13 @@ export async function recomputePadelProjectionForContact(params: RecomputeParams
         type: { in: [...PADEL_ACTIVITY_INTERACTION_TYPES] },
         occurredAt: { gte: since90 },
       },
-      select: { type: true, occurredAt: true },
+      select: { type: true, occurredAt: true, amountCents: true },
     }),
     client.crmInteraction.findFirst({
       where: {
         organizationId: params.organizationId,
         contactId: params.contactId,
-        type: { in: [...PADEL_MATCH_INTERACTION_TYPES] },
+        type: { in: [...PADEL_MATCH_COUNT_INTERACTION_TYPES] },
       },
       orderBy: { occurredAt: "desc" },
       select: { occurredAt: true },
@@ -302,6 +328,15 @@ export async function recomputePadelProjectionForContact(params: RecomputeParams
         contactId: params.contactId,
         type: { in: [...PADEL_NO_SHOW_INTERACTION_TYPES] },
       },
+    }),
+    client.crmInteraction.findFirst({
+      where: {
+        organizationId: params.organizationId,
+        contactId: params.contactId,
+        type: { in: [...PADEL_NO_SHOW_INTERACTION_TYPES] },
+      },
+      orderBy: { occurredAt: "desc" },
+      select: { occurredAt: true },
     }),
     client.crmInteraction.count({
       where: {
@@ -316,10 +351,40 @@ export async function recomputePadelProjectionForContact(params: RecomputeParams
   let wins90d = 0;
   let losses90d = 0;
   let noShows90d = 0;
+  let reservationCount90d = 0;
+  let lessonCount90d = 0;
+  let tournamentCount90d = 0;
+  let sessionCount90d = 0;
+  let spend90d = 0;
+  let sessionCount30d = 0;
+  let offPeakSessions30d = 0;
+  const timeBucketCounter: Record<string, number> = {
+    MORNING: 0,
+    AFTERNOON: 0,
+    EVENING: 0,
+    NIGHT: 0,
+  };
 
   for (const interaction of interactions90) {
     if (PADEL_MATCH_TYPE_SET.has(interaction.type) && interaction.occurredAt >= since30) {
       matches30d += 1;
+    }
+    if (interaction.type === CrmInteractionType.PADEL_MATCH_PLAYED) {
+      sessionCount90d += 1;
+    } else if (interaction.type === CrmInteractionType.PADEL_BOOKING_CONFIRMED) {
+      reservationCount90d += 1;
+      sessionCount90d += 1;
+    } else if (interaction.type === CrmInteractionType.PADEL_CLASS_ATTENDED) {
+      lessonCount90d += 1;
+      sessionCount90d += 1;
+    } else if (PADEL_TOURNAMENT_TYPE_SET.has(interaction.type)) {
+      tournamentCount90d += 1;
+    }
+    if (
+      interaction.type === CrmInteractionType.PADEL_MATCH_PAYMENT ||
+      interaction.type === CrmInteractionType.PADEL_BOOKING_CONFIRMED
+    ) {
+      spend90d += interaction.amountCents ?? 0;
     }
     if (interaction.type === CrmInteractionType.PADEL_MATCH_WIN) {
       wins90d += 1;
@@ -328,10 +393,33 @@ export async function recomputePadelProjectionForContact(params: RecomputeParams
     } else if (PADEL_NO_SHOW_TYPE_SET.has(interaction.type)) {
       noShows90d += 1;
     }
+
+    const countsForTime =
+      interaction.type === CrmInteractionType.PADEL_BOOKING_CONFIRMED ||
+      interaction.type === CrmInteractionType.PADEL_CLASS_ATTENDED ||
+      interaction.type === CrmInteractionType.PADEL_MATCH_PLAYED;
+    if (countsForTime && interaction.occurredAt >= since30) {
+      sessionCount30d += 1;
+      const hour = interaction.occurredAt.getHours();
+      const bucket = resolveTimeBucket(hour);
+      timeBucketCounter[bucket] += 1;
+      if (hour < 17 || hour >= 22) {
+        offPeakSessions30d += 1;
+      }
+    }
   }
 
   const tournamentsCount = Math.max(params.seed?.tournamentsCount ?? 0, tournamentCountAll);
   const noShowCount = Math.max(params.seed?.noShowCount ?? 0, noShowCountAll);
+  const preferredTimeBucket = (() => {
+    const ranking = Object.entries(timeBucketCounter).sort((a, b) => b[1] - a[1]);
+    if (!ranking.length || ranking[0][1] <= 0) return null;
+    return ranking[0][0];
+  })();
+  const offPeakRatio30d = sessionCount30d > 0 ? offPeakSessions30d / sessionCount30d : 0;
+  const avgSpendPerSessionCents90d =
+    sessionCount90d > 0 ? Math.round(spend90d / sessionCount90d) : 0;
+  const lastNoShowAt = lastNoShowInteraction?.occurredAt ?? null;
   const projection = derivePadelProjection({
     now,
     lastMatchAt: lastMatchInteraction?.occurredAt ?? null,
@@ -352,11 +440,18 @@ export async function recomputePadelProjectionForContact(params: RecomputeParams
       ...(params.seed?.preferredSide !== undefined ? { preferredSide: params.seed.preferredSide } : {}),
       ...(params.seed?.clubName !== undefined ? { clubName: params.seed.clubName } : {}),
       tournamentsCount: projection.tournamentsCount,
+      tournamentCount90d,
       noShowCount,
+      lastNoShowAt,
       lastMatchAt: projection.lastMatchAt,
       matches30d: projection.matches30d,
       winRate90d: projection.winRate90d,
       noShowRate90d: projection.noShowRate90d,
+      preferredTimeBucket,
+      offPeakRatio30d: roundRate(offPeakRatio30d),
+      reservationCount90d,
+      lessonCount90d,
+      avgSpendPerSessionCents90d,
       activityStatus: projection.activityStatus,
       competitiveTier: projection.competitiveTier,
       rfmScore: projection.rfmScore,
@@ -371,11 +466,18 @@ export async function recomputePadelProjectionForContact(params: RecomputeParams
       preferredSide: params.seed?.preferredSide ?? null,
       clubName: params.seed?.clubName ?? null,
       tournamentsCount: projection.tournamentsCount,
+      tournamentCount90d,
       noShowCount,
+      lastNoShowAt,
       lastMatchAt: projection.lastMatchAt,
       matches30d: projection.matches30d,
       winRate90d: projection.winRate90d,
       noShowRate90d: projection.noShowRate90d,
+      preferredTimeBucket,
+      offPeakRatio30d: roundRate(offPeakRatio30d),
+      reservationCount90d,
+      lessonCount90d,
+      avgSpendPerSessionCents90d,
       activityStatus: projection.activityStatus,
       competitiveTier: projection.competitiveTier,
       rfmScore: projection.rfmScore,
@@ -386,6 +488,13 @@ export async function recomputePadelProjectionForContact(params: RecomputeParams
 
   return {
     ...projection,
+    lastNoShowAt,
+    preferredTimeBucket,
+    offPeakRatio30d: roundRate(offPeakRatio30d),
+    reservationCount90d,
+    lessonCount90d,
+    tournamentCount90d,
+    avgSpendPerSessionCents90d,
     noShowCount,
   };
 }

@@ -8,6 +8,11 @@ import {
 import { refundBookingPayment } from "@/lib/refunds/unifiedRefund";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
+import {
+  buildPadelExternalId,
+  validatePadelInteractionMetadata,
+} from "@/lib/crm/padelEventContract";
+import { isPadelContext } from "@/lib/crm/isPadelContext";
 import { createNotification, shouldNotify } from "@/lib/notifications";
 import { cancelBooking } from "@/domain/bookings/commands";
 import {
@@ -30,9 +35,12 @@ type CancelCrmPayload = {
   bookingId: number;
   guestEmail?: string | null;
   serviceId?: number | null;
+  serviceKind?: string | null;
+  organizationKind?: string | null;
   courtId?: number | null;
   resourceId?: number | null;
   professionalId?: number | null;
+  timeslot?: string | null;
 };
 
 export type OrgBookingCancellationTxResult = {
@@ -113,6 +121,7 @@ export async function cancelBookingByOrganizationInTx(params: {
       },
       service: {
         select: {
+          kind: true,
           policyId: true,
           unitPriceCents: true,
           currency: true,
@@ -122,6 +131,7 @@ export async function cancelBookingByOrganizationInTx(params: {
               platformFeeBps: true,
               platformFeeFixedCents: true,
               orgType: true,
+              organizationKind: true,
             },
           },
         },
@@ -293,9 +303,12 @@ export async function cancelBookingByOrganizationInTx(params: {
           bookingId: booking.id,
           guestEmail: booking.guestEmail ?? null,
           serviceId: booking.serviceId ?? null,
+          serviceKind: booking.service?.kind ?? null,
+          organizationKind: booking.service?.organization?.organizationKind ?? null,
           courtId: booking.courtId ?? null,
           resourceId: booking.resourceId ?? null,
           professionalId: booking.professionalId ?? null,
+          timeslot: booking.startsAt?.toISOString?.() ?? null,
         }
       : null,
   };
@@ -361,22 +374,49 @@ export async function runOrganizationBookingCancellationPostActions(params: {
   const crmPayload = result.crmPayload ?? null;
   if (!result.already && crmPayload) {
     try {
+      const isPadelBooking = isPadelContext({
+        organizationKind: crmPayload.organizationKind ?? null,
+        serviceKind: crmPayload.serviceKind ?? null,
+      });
+      const padelInteractionType = CrmInteractionType.PADEL_BOOKING_CANCELLED;
+      const interactionType = isPadelBooking
+        ? padelInteractionType
+        : CrmInteractionType.BOOKING_CANCELLED;
+      const metadata = {
+        bookingId: crmPayload.bookingId,
+        serviceId: crmPayload.serviceId ?? null,
+        courtId: crmPayload.courtId ?? null,
+        resourceId: crmPayload.resourceId ?? null,
+        professionalId: crmPayload.professionalId ?? null,
+        clubId: crmPayload.organizationId,
+        timeslot: crmPayload.timeslot ?? null,
+        canceledBy: "ORG",
+      };
+      if (isPadelBooking) {
+        const validation = validatePadelInteractionMetadata(padelInteractionType, metadata);
+        if (!validation.ok) {
+          console.warn("[org-booking-cancel] metadata padel inválida", validation.missing);
+        }
+      }
       await ingestCrmInteraction({
         organizationId: crmPayload.organizationId,
         userId: crmPayload.userId ?? undefined,
-        type: CrmInteractionType.BOOKING_CANCELLED,
+        type: interactionType,
         sourceType: CrmInteractionSource.BOOKING,
         sourceId: String(crmPayload.bookingId),
+        ...(isPadelBooking
+          ? {
+              externalId: buildPadelExternalId(
+                padelInteractionType,
+                CrmInteractionSource.BOOKING,
+                crmPayload.bookingId,
+                crmPayload.userId ?? crmPayload.guestEmail ?? null,
+              ),
+            }
+          : {}),
         occurredAt: new Date(),
         contactEmail: crmPayload.guestEmail ?? undefined,
-        metadata: {
-          bookingId: crmPayload.bookingId,
-          serviceId: crmPayload.serviceId ?? null,
-          courtId: crmPayload.courtId ?? null,
-          resourceId: crmPayload.resourceId ?? null,
-          professionalId: crmPayload.professionalId ?? null,
-          canceledBy: "ORG",
-        },
+        metadata,
       });
     } catch (err) {
       console.warn("[org-booking-cancel] Falha ao criar interação CRM", err);

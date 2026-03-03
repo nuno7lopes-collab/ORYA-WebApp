@@ -39,6 +39,14 @@ describe("dashboard tools catalog layout", () => {
     expect(content).not.toContain("Estado do clube");
     expect(content).not.toContain("Oferta ativa");
     expect(content).not.toContain("Agenda 7 dias");
-    expect(content).toContain("grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6");
+    expect(content).toContain("Usa a barra lateral para abrir as ferramentas.");
+    expect(content).not.toContain("renderToolCard(tool)");
+  });
+
+  it("keeps Eventos separado de Torneios no gating de permissões", () => {
+    const content = readLocal("app/org/_internal/core/DashboardClient.tsx");
+    expect(content).toContain('const canAccessEventos = canAccessModule("EVENTOS");');
+    expect(content).toContain("eventos: canAccessEventos");
+    expect(content).toContain('moduleKey: "EVENTOS"');
   });
 });

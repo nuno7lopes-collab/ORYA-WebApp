@@ -16,7 +16,6 @@ const HARD_REMOVED_ROUTE_FILES = [
   "app/api/org/[orgId]/payouts/status/route.ts",
   "app/api/org/[orgId]/payouts/summary/route.ts",
   "app/api/org/[orgId]/servicos/[id]/duration-prices/route.ts",
-  "app/api/org/[orgId]/trainers/route.ts",
   "app/api/org/[orgId]/padel/broadcast/route.ts",
   "app/api/org/[orgId]/padel/courts/route.ts",
   "app/api/org/[orgId]/padel/pairings/swap/route.ts",

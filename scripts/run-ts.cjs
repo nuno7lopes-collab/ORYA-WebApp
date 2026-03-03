@@ -7,6 +7,9 @@ const originalResolveFilename = Module._resolveFilename;
 
 Module._resolveFilename = function resolveWithAliases(request, parent, isMain, options) {
   if (typeof request === "string") {
+    if (request === "server-only") {
+      request = path.join(projectRoot, "scripts", "shims", "server-only.js");
+    } else
     if (request === "@orya/shared") {
       request = path.join(projectRoot, "packages", "shared", "src", "index.ts");
     } else if (request.startsWith("@orya/shared/")) {

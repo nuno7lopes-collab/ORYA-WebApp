@@ -16,6 +16,11 @@ import {
   type Prisma,
 } from "@prisma/client";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
+import {
+  buildPadelExternalId,
+  validatePadelInteractionMetadata,
+} from "@/lib/crm/padelEventContract";
+import { isPadelContext } from "@/lib/crm/isPadelContext";
 import { logError, logInfo } from "@/lib/observability/logger";
 import {
   BOOKING_CONFIRMATION_SNAPSHOT_VERSION,
@@ -1008,6 +1013,10 @@ export async function fulfillServiceBookingIntent(
         amountCents: number;
         currency: string;
         serviceId?: number | null;
+        serviceKind?: string | null;
+        organizationKind?: string | null;
+        courtId?: number | null;
+        timeslot?: string | null;
         guestEmail?: string | null;
       }
     | null = null;
@@ -1023,6 +1032,10 @@ export async function fulfillServiceBookingIntent(
             amountCents: number;
             currency: string;
             serviceId?: number | null;
+            serviceKind?: string | null;
+            organizationKind?: string | null;
+            courtId?: number | null;
+            timeslot?: string | null;
             guestEmail?: string | null;
           }
         | null = null;
@@ -1104,17 +1117,24 @@ export async function fulfillServiceBookingIntent(
           select: {
             id: true,
             serviceId: true,
+            courtId: true,
             organizationId: true,
             userId: true,
             guestEmail: true,
             paymentIntentId: true,
             startsAt: true,
             snapshotTimezone: true,
+            organization: {
+              select: {
+                organizationKind: true,
+              },
+            },
             addressRef: { select: { formattedAddress: true } },
             service: {
               select: {
                 title: true,
                 coverImageUrl: true,
+                kind: true,
                 addressRef: { select: { formattedAddress: true } },
               },
             },
@@ -1173,6 +1193,10 @@ export async function fulfillServiceBookingIntent(
           amountCents,
           currency: (intent.currency ?? "eur").toUpperCase(),
           serviceId: booking.serviceId ?? null,
+          serviceKind: booking.service?.kind ?? null,
+          organizationKind: booking.organization?.organizationKind ?? null,
+          courtId: booking.courtId ?? null,
+          timeslot: booking.startsAt?.toISOString?.() ?? null,
           guestEmail: booking.guestEmail ?? null,
         };
         return { crmPayload };
@@ -1232,20 +1256,56 @@ export async function fulfillServiceBookingIntent(
 
   if (crmPayload) {
     try {
+      const isPadelBooking = isPadelContext({
+        organizationKind: crmPayload.organizationKind ?? null,
+        serviceKind: crmPayload.serviceKind ?? null,
+      });
+      const padelInteractionType = CrmInteractionType.PADEL_BOOKING_CONFIRMED;
+      const interactionType = isPadelBooking
+        ? padelInteractionType
+        : CrmInteractionType.BOOKING_CONFIRMED;
+      const metadata = {
+        bookingId: crmPayload.bookingId,
+        serviceId: crmPayload.serviceId ?? null,
+        courtId: crmPayload.courtId ?? null,
+        clubId: crmPayload.organizationId,
+        timeslot: crmPayload.timeslot ?? null,
+      };
+      if (isPadelBooking) {
+        const validation = validatePadelInteractionMetadata(padelInteractionType, metadata);
+        if (!validation.ok) {
+          logError(
+            "fulfill_service_booking.crm_padel_metadata_invalid",
+            new Error("CRM_PADEL_BOOKING_CONFIRMED_METADATA_INVALID"),
+            {
+              bookingId: crmPayload.bookingId,
+              organizationId: crmPayload.organizationId,
+              missing: validation.missing,
+            },
+          );
+        }
+      }
       await ingestCrmInteraction({
         organizationId: crmPayload.organizationId,
         userId: crmPayload.userId ?? undefined,
-        type: CrmInteractionType.BOOKING_CONFIRMED,
+        type: interactionType,
         sourceType: CrmInteractionSource.BOOKING,
         sourceId: String(crmPayload.bookingId),
+        ...(isPadelBooking
+          ? {
+              externalId: buildPadelExternalId(
+                padelInteractionType,
+                CrmInteractionSource.BOOKING,
+                crmPayload.bookingId,
+                crmPayload.userId ?? crmPayload.guestEmail ?? null,
+              ),
+            }
+          : {}),
         occurredAt: new Date(),
         amountCents: crmPayload.amountCents,
         currency: crmPayload.currency,
         contactEmail: crmPayload.guestEmail ?? undefined,
-        metadata: {
-          bookingId: crmPayload.bookingId,
-          serviceId: crmPayload.serviceId ?? null,
-        },
+        metadata,
       });
     } catch (err) {
       logError("fulfill_service_booking.crm_interaction_failed", err, { bookingId: crmPayload.bookingId });

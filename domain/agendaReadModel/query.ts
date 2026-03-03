@@ -42,8 +42,17 @@ export async function getAgendaItemsForOrganization(params: {
     scopeFilter = null,
     scopeMode = "OR",
   } = params;
+
   const now = new Date();
   const rangeFilter = buildAgendaOverlapFilter({ from, to });
+  const fromBuffer = new Date(from.getTime() - 24 * 60 * 60 * 1000);
+
+  const wantsBookings = sourceTypes.includes(SourceType.BOOKING);
+  const wantsClassSessions = sourceTypes.includes(SourceType.CLASS_SESSION);
+  const agendaSourceTypes = sourceTypes.filter(
+    (sourceType) => sourceType === SourceType.EVENT || sourceType === SourceType.TOURNAMENT,
+  );
+
   const scopeOr: Array<Record<string, unknown>> = [];
   const courtIds = scopeFilter?.courtIds ?? [];
   const resourceIds = scopeFilter?.resourceIds ?? [];
@@ -57,45 +66,117 @@ export async function getAgendaItemsForOrganization(params: {
     ...(professionalIds.length > 0 ? { professionalId: { in: professionalIds } } : {}),
   };
 
-  const items = await prisma.agendaItem.findMany({
-    where: {
-      organizationId,
-      ...rangeFilter,
-      ...(padelClubId ? { padelClubId } : {}),
-      ...(courtId ? { courtId } : {}),
-      ...(scopeMode === "AND"
-        ? Object.keys(scopeAnd).length > 0
-          ? scopeAnd
-          : {}
-        : scopeOr.length > 0
-          ? { OR: scopeOr }
-          : {}),
-      sourceType: {
-        in: sourceTypes,
-      },
-      status: { not: "DELETED" },
-      NOT: {
-        sourceType: SourceType.BOOKING,
-        status: { in: ["PENDING_CONFIRMATION", "PENDING"] },
-        startsAt: { lt: now },
-      },
-    },
-    select: {
-      title: true,
-      startsAt: true,
-      endsAt: true,
-      sourceType: true,
-      sourceId: true,
-      status: true,
-      padelClubId: true,
-      courtId: true,
-      resourceId: true,
-      professionalId: true,
-    },
-    orderBy: { startsAt: "asc" },
-  });
+  const bookingScopeWhere =
+    scopeMode === "AND"
+      ? {
+          ...(courtIds.length > 0 ? { courtId: { in: courtIds } } : {}),
+          ...(resourceIds.length > 0 ? { resourceId: { in: resourceIds } } : {}),
+          ...(professionalIds.length > 0 ? { professionalId: { in: professionalIds } } : {}),
+        }
+      : {
+          ...(scopeOr.length > 0 ? { OR: scopeOr } : {}),
+        };
+  const classScopeOr = scopeOr.filter((entry) => "courtId" in entry || "professionalId" in entry);
+  const classScopeWhere =
+    scopeMode === "AND"
+      ? {
+          ...(courtIds.length > 0 ? { courtId: { in: courtIds } } : {}),
+          ...(professionalIds.length > 0 ? { professionalId: { in: professionalIds } } : {}),
+        }
+      : {
+          ...(classScopeOr.length > 0 ? { OR: classScopeOr } : {}),
+        };
 
-  return items.map((item) => {
+  const [agendaItems, bookings, classSessions] = await Promise.all([
+    agendaSourceTypes.length > 0
+      ? prisma.agendaItem.findMany({
+          where: {
+            organizationId,
+            ...rangeFilter,
+            ...(padelClubId ? { padelClubId } : {}),
+            ...(courtId ? { courtId } : {}),
+            sourceType: {
+              in: agendaSourceTypes,
+            },
+            status: { not: "DELETED" },
+            ...(scopeMode === "AND"
+              ? Object.keys(scopeAnd).length > 0
+                ? scopeAnd
+                : {}
+              : scopeOr.length > 0
+                ? { OR: scopeOr }
+                : {}),
+          },
+          select: {
+            title: true,
+            startsAt: true,
+            endsAt: true,
+            sourceType: true,
+            sourceId: true,
+            status: true,
+            padelClubId: true,
+            courtId: true,
+            resourceId: true,
+            professionalId: true,
+          },
+        })
+      : Promise.resolve([]),
+    wantsBookings
+      ? prisma.booking.findMany({
+          where: {
+            organizationId,
+            startsAt: { gte: fromBuffer, lte: to },
+            ...(courtId ? { courtId } : {}),
+            ...(padelClubId ? { court: { padelClubId } } : {}),
+            ...bookingScopeWhere,
+          },
+          select: {
+            id: true,
+            startsAt: true,
+            durationMinutes: true,
+            status: true,
+            courtId: true,
+            resourceId: true,
+            professionalId: true,
+            court: {
+              select: { padelClubId: true },
+            },
+            service: {
+              select: { title: true },
+            },
+          },
+        })
+      : Promise.resolve([]),
+    wantsClassSessions
+      ? prisma.classSession.findMany({
+          where: {
+            organizationId,
+            ...rangeFilter,
+            ...(courtId ? { courtId } : {}),
+            ...(padelClubId ? { court: { padelClubId } } : {}),
+            ...classScopeWhere,
+          },
+          select: {
+            id: true,
+            startsAt: true,
+            endsAt: true,
+            status: true,
+            courtId: true,
+            professionalId: true,
+            court: {
+              select: { padelClubId: true },
+            },
+            service: {
+              select: { title: true },
+            },
+          },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const byKey = new Map<string, AgendaItem>();
+
+  agendaItems.forEach((item) => {
     const base = {
       title: item.title,
       startsAt: item.startsAt,
@@ -107,30 +188,85 @@ export async function getAgendaItemsForOrganization(params: {
       professionalId: item.professionalId ?? null,
     };
     if (item.sourceType === SourceType.TOURNAMENT) {
-      return {
-        ...base,
-        kind: "TOURNAMENT",
-        tournamentId: Number(item.sourceId),
-      } satisfies AgendaItem;
+      const tournamentId = Number(item.sourceId);
+      if (!Number.isFinite(tournamentId)) return;
+      byKey.set(
+        `TOURNAMENT:${tournamentId}`,
+        {
+          ...base,
+          kind: "TOURNAMENT",
+          tournamentId,
+        } satisfies AgendaItem,
+      );
+      return;
     }
-    if (item.sourceType === SourceType.BOOKING) {
-      return {
-        ...base,
+    if (item.sourceType === SourceType.EVENT) {
+      const eventId = Number(item.sourceId);
+      if (!Number.isFinite(eventId)) return;
+      byKey.set(
+        `EVENT:${eventId}`,
+        {
+          ...base,
+          kind: "EVENT",
+          eventId,
+        } satisfies AgendaItem,
+      );
+    }
+  });
+
+  bookings.forEach((booking) => {
+    const startsAt = booking.startsAt;
+    const durationMinutes = Number(booking.durationMinutes ?? 0);
+    if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return;
+    const endsAt = new Date(startsAt.getTime() + durationMinutes * 60_000);
+    const overlaps = startsAt.getTime() <= to.getTime() && endsAt.getTime() >= from.getTime();
+    if (!overlaps) return;
+    const isPastPending =
+      (booking.status === "PENDING_CONFIRMATION" || booking.status === "PENDING") &&
+      startsAt.getTime() < now.getTime();
+    if (isPastPending) return;
+    byKey.set(
+      `BOOKING:${booking.id}`,
+      {
         kind: "RESERVATION",
-        reservationId: Number(item.sourceId),
-      } satisfies AgendaItem;
-    }
-    if (item.sourceType === SourceType.CLASS_SESSION) {
-      return {
-        ...base,
+        reservationId: booking.id,
+        title: booking.service?.title ?? "Reserva",
+        startsAt,
+        endsAt,
+        status: booking.status,
+        padelClubId: booking.court?.padelClubId ?? null,
+        courtId: booking.courtId ?? null,
+        resourceId: booking.resourceId ?? null,
+        professionalId: booking.professionalId ?? null,
+      } satisfies AgendaItem,
+    );
+  });
+
+  classSessions.forEach((session) => {
+    const startsAt = session.startsAt;
+    const endsAt = session.endsAt;
+    const overlaps = startsAt.getTime() <= to.getTime() && endsAt.getTime() >= from.getTime();
+    if (!overlaps) return;
+    byKey.set(
+      `CLASS:${session.id}`,
+      {
         kind: "CLASS",
-        classSessionId: Number(item.sourceId),
-      } satisfies AgendaItem;
-    }
-    return {
-      ...base,
-      kind: "EVENT",
-      eventId: Number(item.sourceId),
-    } satisfies AgendaItem;
+        classSessionId: session.id,
+        title: session.service?.title ?? "Aula",
+        startsAt,
+        endsAt,
+        status: session.status,
+        padelClubId: session.court?.padelClubId ?? null,
+        courtId: session.courtId ?? null,
+        resourceId: null,
+        professionalId: session.professionalId ?? null,
+      } satisfies AgendaItem,
+    );
+  });
+
+  return [...byKey.values()].sort((a, b) => {
+    const diff = a.startsAt.getTime() - b.startsAt.getTime();
+    if (diff !== 0) return diff;
+    return a.endsAt.getTime() - b.endsAt.getTime();
   });
 }

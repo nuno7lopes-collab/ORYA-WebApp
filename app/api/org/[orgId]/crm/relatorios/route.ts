@@ -28,20 +28,6 @@ const READ_ROLES = Object.values(OrganizationMemberRole);
 
 const CATEGORY_CONFIG = [
   {
-    id: "eventos",
-    label: "Eventos",
-    types: [CrmInteractionType.EVENT_TICKET, CrmInteractionType.EVENT_CHECKIN],
-  },
-  {
-    id: "reservas",
-    label: "Reservas",
-    types: [
-      CrmInteractionType.BOOKING_CONFIRMED,
-      CrmInteractionType.BOOKING_COMPLETED,
-      CrmInteractionType.BOOKING_CANCELLED,
-    ],
-  },
-  {
     id: "padel",
     label: "Padel",
     types: [
@@ -59,25 +45,6 @@ const CATEGORY_CONFIG = [
       CrmInteractionType.PADEL_TOURNAMENT_PLAYED,
       CrmInteractionType.PADEL_TOURNAMENT_PODIUM,
     ],
-  },
-  {
-    id: "loja",
-    label: "Loja",
-    types: [CrmInteractionType.STORE_ORDER_PAID, CrmInteractionType.STORE_ORDER_REFUNDED],
-  },
-  {
-    id: "membership",
-    label: "Subscrições",
-    types: [
-      CrmInteractionType.MEMBERSHIP_STARTED,
-      CrmInteractionType.MEMBERSHIP_RENEWED,
-      CrmInteractionType.MEMBERSHIP_CANCELLED,
-    ],
-  },
-  {
-    id: "manual",
-    label: "Manuais",
-    types: [CrmInteractionType.MANUAL_ADJUSTMENT],
   },
 ] as const;
 

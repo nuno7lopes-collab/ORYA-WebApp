@@ -10,8 +10,9 @@ export default function CalendarSubnav({ orgId, className }: { orgId: number | n
     <ToolSubnavShell
       className={className}
       items={[
-        { id: "week", label: "Semana", href: buildOrgHref(orgId, "/calendar") },
-        { id: "day", label: "Dia", href: buildOrgHref(orgId, "/calendar/day") },
+        { id: "week", label: "Semana", href: buildOrgHref(orgId, "/calendar", { view: "week" }) },
+        { id: "day", label: "Dia", href: buildOrgHref(orgId, "/calendar", { view: "day" }) },
+        { id: "month", label: "Mês", href: buildOrgHref(orgId, "/calendar", { view: "month" }) },
         { id: "availability", label: "Disponibilidade", href: buildOrgHref(orgId, "/calendar/availability") },
         { id: "conflicts", label: "Conflitos", href: buildOrgHref(orgId, "/calendar/conflicts") },
       ]}

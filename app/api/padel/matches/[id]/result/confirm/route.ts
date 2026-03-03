@@ -23,6 +23,7 @@ import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { queueMatchResult } from "@/domain/notifications/tournament";
 import { resolveIncidentAuthority } from "@/domain/padel/incidentGovernance";
 import { resolveLiveResultScore } from "@/domain/padel/liveResultScore";
+import { ingestPadelMatchInteractions } from "@/lib/crm/padelMatchInteractions";
 
 function resolveWinnerParticipantId(params: {
   winnerSide: "A" | "B" | null;
@@ -237,6 +238,28 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       confirmationSource: authority.confirmationSource,
       outboxEventId,
     },
+  });
+
+  const crmResultType =
+    transition.status === padel_match_status.WALKOVER
+      ? "WALKOVER"
+      : transition.status === padel_match_status.RETIRED
+        ? "RETIREMENT"
+        : "NORMAL";
+  await ingestPadelMatchInteractions({
+    organizationId: context.match.organizationId,
+    eventId: context.match.eventId,
+    categoryId: context.match.categoryId ?? null,
+    matchId: context.match.id,
+    winnerSide: scoreEvaluation.isDrawResult || scoreEvaluation.isByeNeutral ? null : winnerSide,
+    resultType: crmResultType,
+    statusVersion: clientRequestId,
+    participants: context.match.participants.map((row) => ({
+      participantId: row.participantId,
+      side: row.side,
+      userId: row.userId ?? null,
+    })),
+    occurredAt: new Date(),
   });
 
   return jsonWrap({ ok: true, match: updated, outboxEventId }, { status: 200 });

@@ -2,6 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import type { CalendarEvent, PositionedEvent } from "./types";
+import { resolveEventToneClass } from "../eventTones";
 
 type EventBlockProps = {
   positioned: PositionedEvent;
@@ -31,23 +32,6 @@ function statusLabel(status: string) {
   return status;
 }
 
-function toneClass(status: string) {
-  const normalized = status.trim().toUpperCase();
-  if (normalized === "CONFIRMED" || normalized === "COMPLETED") {
-    return "border-emerald-300/55 bg-[linear-gradient(135deg,rgba(16,185,129,0.3),rgba(16,185,129,0.12))]";
-  }
-  if (normalized === "PENDING" || normalized === "PENDING_CONFIRMATION") {
-    return "border-amber-200/60 bg-[linear-gradient(135deg,rgba(251,191,36,0.26),rgba(251,191,36,0.1))]";
-  }
-  if (normalized.startsWith("CANCELLED") || normalized === "NO_SHOW") {
-    return "border-rose-300/60 bg-[linear-gradient(135deg,rgba(244,63,94,0.26),rgba(244,63,94,0.09))]";
-  }
-  if (normalized === "DISPUTED") {
-    return "border-fuchsia-200/60 bg-[linear-gradient(135deg,rgba(217,70,239,0.24),rgba(126,34,206,0.1))]";
-  }
-  return "border-white/25 bg-[linear-gradient(135deg,rgba(255,255,255,0.16),rgba(255,255,255,0.06))]";
-}
-
 export function EventBlock({ positioned, timezone, selected = false, onHoverEventChange, onSelectEvent }: EventBlockProps) {
   const width = 100 / positioned.laneCount;
   const left = positioned.lane * width;
@@ -60,7 +44,7 @@ export function EventBlock({ positioned, timezone, selected = false, onHoverEven
       className={cn(
         "absolute z-20 cursor-pointer rounded-xl border px-2 py-1.5 text-left text-[11px] text-white shadow-[0_20px_40px_rgba(0,0,0,0.5)]",
         "backdrop-blur-[1px]",
-        toneClass(positioned.event.status),
+        resolveEventToneClass({ status: positioned.event.status, kind: positioned.event.kind }),
         selected && "ring-1 ring-cyan-200/80",
       )}
       style={{

@@ -1,5 +1,5 @@
 import CalendarReadClient from "./_components/CalendarReadClient";
 
 export default function OrgCalendarPage() {
-  return <CalendarReadClient view="week" />;
+  return <CalendarReadClient />;
 }

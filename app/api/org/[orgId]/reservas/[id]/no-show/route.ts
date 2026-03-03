@@ -14,6 +14,12 @@ import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { refundBookingPayment } from "@/lib/refunds/unifiedRefund";
 import { computeNoShowRefundFromSnapshot } from "@/lib/reservas/confirmationSnapshot";
+import { ingestCrmInteraction } from "@/lib/crm/ingest";
+import {
+  buildPadelExternalId,
+  validatePadelInteractionMetadata,
+} from "@/lib/crm/padelEventContract";
+import { isPadelContext } from "@/lib/crm/isPadelContext";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -42,6 +48,12 @@ async function _POST(
       | {
         booking: { id: number; status: string };
         userId: string | null;
+        guestEmail: string | null;
+        organizationKind: string | null;
+        serviceKind: string | null;
+        serviceId: number | null;
+        courtId: number | null;
+        startsAt: Date;
         snapshotTimezone: string;
         paymentIntentId: string | null;
         refundAmountCents: number | null;
@@ -110,13 +122,17 @@ async function _POST(
         select: {
           id: true,
           userId: true,
+          guestEmail: true,
           status: true,
           startsAt: true,
           organizationId: true,
           serviceId: true,
+          courtId: true,
           snapshotTimezone: true,
           paymentIntentId: true,
           confirmationSnapshot: true,
+          service: { select: { kind: true } },
+          organization: { select: { organizationKind: true } },
           professional: { select: { userId: true } },
         },
       });
@@ -177,6 +193,12 @@ async function _POST(
       return {
         booking: { id: updated.id, status: updated.status },
         userId: booking.userId,
+        guestEmail: booking.guestEmail ?? null,
+        organizationKind: booking.organization?.organizationKind ?? null,
+        serviceKind: booking.service?.kind ?? null,
+        serviceId: booking.serviceId ?? null,
+        courtId: booking.courtId ?? null,
+        startsAt: booking.startsAt,
         snapshotTimezone: booking.snapshotTimezone,
         paymentIntentId: booking.paymentIntentId,
         refundAmountCents,
@@ -201,6 +223,48 @@ async function _POST(
           "Reserva marcada como no-show, mas o reembolso falhou.",
           true,
         );
+      }
+    }
+
+    const isPadelBooking = isPadelContext({
+      organizationKind: result.organizationKind,
+      serviceKind: result.serviceKind,
+    });
+    if (isPadelBooking && (result.userId || result.guestEmail)) {
+      const metadata = {
+        bookingId: result.booking.id,
+        serviceId: result.serviceId,
+        courtId: result.courtId ?? null,
+        clubId: organization.id,
+        timeslot: result.startsAt.toISOString(),
+      };
+      const validation = validatePadelInteractionMetadata(
+        "PADEL_BOOKING_NO_SHOW",
+        metadata,
+      );
+      if (!validation.ok) {
+        console.warn("[organizacao/no-show] metadata padel inválida", validation.missing);
+      } else {
+        try {
+          await ingestCrmInteraction({
+            organizationId: organization.id,
+            userId: result.userId ?? undefined,
+            type: "PADEL_BOOKING_NO_SHOW",
+            sourceType: "BOOKING",
+            sourceId: String(result.booking.id),
+            externalId: buildPadelExternalId(
+              "PADEL_BOOKING_NO_SHOW",
+              "BOOKING",
+              result.booking.id,
+              result.userId ?? result.guestEmail ?? null,
+            ),
+            occurredAt: new Date(),
+            contactEmail: result.guestEmail ?? undefined,
+            metadata,
+          });
+        } catch (crmErr) {
+          console.warn("[organizacao/no-show] falha ao criar interação CRM", crmErr);
+        }
       }
     }
 

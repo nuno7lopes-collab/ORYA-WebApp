@@ -1091,7 +1091,7 @@ export default function ReservasDashboardPage() {
         badge: "Modo híbrido",
         title: "Operações focadas em reservas",
         body:
-          "Esta área controla apenas serviços por slots. Eventos e torneios pontuais continuam no fluxo próprio.",
+          "Esta área controla aulas por slots. Eventos e torneios pontuais continuam no fluxo próprio.",
       };
     }
     return {
@@ -1525,7 +1525,7 @@ export default function ReservasDashboardPage() {
 
   const openCreateDrawer = (startsAt: Date) => {
     if (!servicesLoading && activeServices.length === 0) {
-      router.push(appendOrganizationIdToHref("/org/bookings/new", organizationId));
+      router.push(appendOrganizationIdToHref("/org/academy/classes/new", organizationId));
       return;
     }
     const initialServiceId = activeServices[0]?.id ?? null;
@@ -1588,7 +1588,7 @@ export default function ReservasDashboardPage() {
       return;
     }
     if (!selectedCreateService) {
-      setCreateError("Seleciona um serviço.");
+      setCreateError("Seleciona uma aula.");
       return;
     }
     if (!createClient) {
@@ -1691,7 +1691,7 @@ export default function ReservasDashboardPage() {
             <p className={DASHBOARD_LABEL}>Reservas</p>
             <h1 className="text-xl font-semibold text-white">Operações de reservas</h1>
             <p className={DASHBOARD_MUTED}>
-              Fluxo transacional de reservas por slots. Configuração funcional em Serviços e Disponibilidade.
+              Fluxo transacional de reservas por slots. Configuração funcional em Aulas e Disponibilidade.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -1702,7 +1702,7 @@ export default function ReservasDashboardPage() {
               Abrir calendário operacional
             </Link>
             <Link href={bookingsServicesHref} className={CTA_SECONDARY}>
-              Abrir serviços
+              Abrir aulas
             </Link>
           </div>
         </div>
@@ -2008,10 +2008,10 @@ export default function ReservasDashboardPage() {
                   </button>
                 ) : (
                   <Link
-                    href={appendOrganizationIdToHref("/org/bookings/new", organizationId)}
+                    href={appendOrganizationIdToHref("/org/academy/classes/new", organizationId)}
                     className="rounded-full border border-cyan-300/45 bg-cyan-400/12 px-3 py-1 text-[11px] text-cyan-100 transition hover:border-cyan-300/75"
                   >
-                    Criar primeiro serviço
+                    Criar primeira aula
                   </Link>
                 )}
                 {(hasQueueStatusFilter || hasQueueScopeFilter) && (
@@ -2086,7 +2086,7 @@ export default function ReservasDashboardPage() {
                   )}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <p className="text-[12px] font-semibold text-white">{booking.service?.title || "Serviço"}</p>
+                    <p className="text-[12px] font-semibold text-white">{booking.service?.title || "Aula"}</p>
                     <span
                       className={cn(
                         "rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.12em]",
@@ -2235,7 +2235,7 @@ export default function ReservasDashboardPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Reserva</p>
-                <h2 className="text-xl font-semibold text-white">{drawerBooking.service?.title || "Serviço"}</h2>
+                <h2 className="text-xl font-semibold text-white">{drawerBooking.service?.title || "Aula"}</h2>
               </div>
               <button
                 type="button"
@@ -2777,8 +2777,8 @@ export default function ReservasDashboardPage() {
 
             <div className="mt-6 space-y-2">
               {drawerBooking.service?.id && (
-                <Link href={appendOrganizationIdToHref(`/org/bookings/${drawerBooking.service.id}`, organizationId)} className={CTA_SECONDARY}>
-                  Ver serviço
+                <Link href={appendOrganizationIdToHref(`/org/academy/classes/${drawerBooking.service.id}`, organizationId)} className={CTA_SECONDARY}>
+                  Ver aula
                 </Link>
               )}
               {!"CANCELLED CANCELLED_BY_CLIENT CANCELLED_BY_ORG COMPLETED DISPUTED NO_SHOW".split(" ").includes(drawerBooking.status) && (
@@ -2836,15 +2836,15 @@ export default function ReservasDashboardPage() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-white/50">Serviço</label>
+                <label className="text-white/50">Aula</label>
                 {activeServices.length === 0 ? (
                   <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/70">
-                    <p>Sem serviços ativos.</p>
+                    <p>Sem aulas ativas.</p>
                     <Link
-                      href={appendOrganizationIdToHref("/org/bookings/new", organizationId)}
+                      href={appendOrganizationIdToHref("/org/academy/classes/new", organizationId)}
                       className="mt-2 inline-flex rounded-full border border-white/15 px-3 py-1 text-[11px] text-white/70"
                     >
-                      Criar serviço
+                      Criar aula
                     </Link>
                   </div>
                 ) : (
@@ -2854,7 +2854,7 @@ export default function ReservasDashboardPage() {
                       value={createServiceId ?? ""}
                       onChange={(event) => setCreateServiceId(Number(event.target.value) || null)}
                     >
-                      <option value="">Seleciona um serviço</option>
+                      <option value="">Seleciona uma aula</option>
                       {activeServices.map((service) => (
                         <option key={service.id} value={service.id}>
                           {service.title} · {service.durationMinutes} min · Preço:{" "}
@@ -2947,7 +2947,7 @@ export default function ReservasDashboardPage() {
                     ))}
                   </select>
                   {hasServiceProfessionalLinks && availableProfessionalsForService.length === 0 && (
-                    <p className="text-[12px] text-white/50">Sem profissionais ligados a este serviço.</p>
+                    <p className="text-[12px] text-white/50">Sem treinadores ligados a esta aula.</p>
                   )}
                 </div>
               )}
@@ -2978,7 +2978,7 @@ export default function ReservasDashboardPage() {
                     ))}
                   </select>
                   {hasServiceResourceLinks && availableResourcesForService.length === 0 && (
-                    <p className="text-[12px] text-white/50">Sem recursos ligados a este serviço.</p>
+                    <p className="text-[12px] text-white/50">Sem campos ligados a esta aula.</p>
                   )}
                 </div>
               )}

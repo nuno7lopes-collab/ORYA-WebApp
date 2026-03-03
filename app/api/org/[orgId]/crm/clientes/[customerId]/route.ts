@@ -8,6 +8,7 @@ import { resolveRequiredOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { ConsentStatus, ConsentType, OrganizationMemberRole } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { CRM_PADEL_INTERACTION_TYPE_VALUES } from "@/lib/crm/padelInteractionTypes";
 
 const ROLE_ALLOWLIST = Object.values(OrganizationMemberRole);
 
@@ -82,6 +83,13 @@ async function _GET(req: NextRequest, context: { params: Promise<{ customerId: s
             matches30d: true,
             winRate90d: true,
             noShowRate90d: true,
+            preferredTimeBucket: true,
+            offPeakRatio30d: true,
+            reservationCount90d: true,
+            lessonCount90d: true,
+            tournamentCount90d: true,
+            avgSpendPerSessionCents90d: true,
+            lastNoShowAt: true,
             activityStatus: true,
             competitiveTier: true,
             rfmScore: true,
@@ -122,6 +130,7 @@ async function _GET(req: NextRequest, context: { params: Promise<{ customerId: s
       where: {
         organizationId: organization.id,
         contactId: customer.id,
+        type: { in: [...CRM_PADEL_INTERACTION_TYPE_VALUES] },
       },
       orderBy: { occurredAt: "desc" },
       take: MAX_INTERACTIONS,
@@ -185,6 +194,13 @@ async function _GET(req: NextRequest, context: { params: Promise<{ customerId: s
               matches30d: customer.padelProfile.matches30d,
               winRate90d: customer.padelProfile.winRate90d,
               noShowRate90d: customer.padelProfile.noShowRate90d,
+              preferredTimeBucket: customer.padelProfile.preferredTimeBucket,
+              offPeakRatio30d: customer.padelProfile.offPeakRatio30d,
+              reservationCount90d: customer.padelProfile.reservationCount90d,
+              lessonCount90d: customer.padelProfile.lessonCount90d,
+              tournamentCount90d: customer.padelProfile.tournamentCount90d,
+              avgSpendPerSessionCents90d: customer.padelProfile.avgSpendPerSessionCents90d,
+              lastNoShowAt: customer.padelProfile.lastNoShowAt,
               activityStatus: customer.padelProfile.activityStatus,
               competitiveTier: customer.padelProfile.competitiveTier,
               rfmScore: customer.padelProfile.rfmScore,

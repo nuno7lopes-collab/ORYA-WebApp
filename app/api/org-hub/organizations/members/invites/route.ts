@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { OrganizationMemberRole, Prisma } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationRolePack, Prisma } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { createNotification } from "@/lib/notifications";
@@ -20,7 +20,10 @@ import { appendEventLog } from "@/domain/eventLog/append";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { resolveUserIdentifier } from "@/lib/userResolver";
-import { resolveRolePackForRole } from "@/lib/organizationRolePackPolicy";
+import {
+  getRolePackLabel,
+  resolveRolePackForRole,
+} from "@/lib/organizationRolePackPolicy";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
@@ -33,6 +36,13 @@ const resolveIp = (req: NextRequest) => {
 const INVITE_EXPIRY_DAYS = 14;
 
 type InviteStatus = "PENDING" | "EXPIRED" | "ACCEPTED" | "DECLINED" | "CANCELLED";
+
+function resolveListLimit(raw: string | null, fallback = 200, max = 500) {
+  if (typeof raw !== "string") return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(parsed, max);
+}
 
 const serializeInvite = (
   invite: {
@@ -110,6 +120,7 @@ async function sendInviteEmail(invite: {
   organizationId: number;
   targetIdentifier: string;
   role: string;
+  rolePack: string | null;
   token: string;
   organization?: { publicName: string | null } | null;
 }) {
@@ -118,8 +129,22 @@ async function sendInviteEmail(invite: {
 
   const origin = "https://orya.pt";
   const acceptUrl = `${origin}/convites/organizacoes?invite=${invite.id}&token=${invite.token}`;
+  const rolePackLabel =
+    typeof invite.rolePack === "string" && Object.values(OrganizationRolePack).includes(invite.rolePack as OrganizationRolePack)
+      ? getRolePackLabel(invite.rolePack as OrganizationRolePack)
+      : null;
   const roleLabel =
-    invite.role === "OWNER" ? "Owner" : invite.role === "CO_OWNER" ? "Co-owner" : invite.role.toUpperCase();
+    invite.role === "OWNER"
+      ? "Dono"
+      : invite.role === "CO_OWNER"
+        ? "Co-dono"
+        : invite.role === "ADMIN"
+          ? "Administrador"
+          : invite.role === "STAFF" && rolePackLabel
+            ? rolePackLabel
+            : invite.role === "STAFF"
+              ? "Equipa"
+              : invite.role.toUpperCase();
   const orgName = invite.organization?.publicName ?? "ORYA";
 
   try {
@@ -140,6 +165,21 @@ async function sendInviteEmail(invite: {
   } catch (err) {
     console.warn("[invite][email] falhou", err);
   }
+}
+
+function normalizeInviteRolePackForAccept(invite: {
+  role: OrganizationMemberRole;
+  rolePack: OrganizationRolePack | null;
+}) {
+  const strictPolicy = resolveRolePackForRole({
+    role: invite.role,
+    rolePackRaw: invite.rolePack,
+    rolePackProvided: invite.rolePack !== null,
+  });
+  if (strictPolicy.ok) {
+    return strictPolicy.rolePack;
+  }
+  throw new Error(strictPolicy.errorCode);
 }
 
 function errorCodeForStatus(status: number) {
@@ -182,21 +222,10 @@ async function _GET(req: NextRequest) {
     });
 
     const url = new URL(req.url);
-    const eventIdRaw = url.searchParams.get("eventId");
     const orgResolution = resolveOrganizationIdStrict({ req, allowFallback: false });
     const orgResolutionReason = orgResolution.ok ? null : orgResolution.reason;
-    let organizationId = orgResolution.ok ? orgResolution.organizationId : null;
-    const limit = Math.min(Number(url.searchParams.get("limit") ?? 200), 500);
-    if (!organizationId && orgResolutionReason === "MISSING" && eventIdRaw) {
-      const eventId = Number(eventIdRaw);
-      if (eventId && !Number.isNaN(eventId)) {
-        const ev = await prisma.event.findUnique({
-          where: { id: eventId },
-          select: { organizationId: true },
-        });
-        organizationId = ev?.organizationId ?? null;
-      }
-    }
+    const organizationId = orgResolution.ok ? orgResolution.organizationId : null;
+    const limit = resolveListLimit(url.searchParams.get("limit"));
     if (!organizationId) {
       if (orgResolutionReason === "CONFLICT") {
         return fail(400, "ORGANIZATION_ID_CONFLICT");
@@ -346,9 +375,6 @@ async function _POST(req: NextRequest) {
     }
 
     if (!Object.values(OrganizationMemberRole).includes(roleRaw as OrganizationMemberRole)) {
-      return fail(400, "INVALID_ROLE");
-    }
-    if (roleRaw === "TRAINER") {
       return fail(400, "INVALID_ROLE");
     }
     const rolePackPolicy = resolveRolePackForRole({
@@ -547,6 +573,7 @@ async function _POST(req: NextRequest) {
         organizationId: invite.organizationId,
         targetIdentifier: invite.targetIdentifier,
         role: invite.role,
+        rolePack: invite.rolePack ?? null,
         token: invite.token,
         organization: invite.organization,
       },
@@ -731,16 +758,10 @@ async function _PATCH(req: NextRequest) {
         }
 
         const role = invite.role as OrganizationMemberRole;
-        const rolePackPolicy = resolveRolePackForRole({
+        const normalizedRolePack = normalizeInviteRolePackForAccept({
           role,
-          rolePackRaw: invite.rolePack ?? null,
-          rolePackProvided: invite.rolePack !== null,
-          allowDefaultForLegacy: true,
+          rolePack: invite.rolePack as OrganizationRolePack | null,
         });
-        if (!rolePackPolicy.ok) {
-          throw new Error(rolePackPolicy.errorCode);
-        }
-        const normalizedRolePack = rolePackPolicy.rolePack;
         const currentMember = await getEffectiveOrganizationMember({
           organizationId,
           userId: user.id,

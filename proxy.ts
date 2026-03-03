@@ -230,7 +230,6 @@ const REMOVED_CANONICAL_ORG_WEB_PREFIXES = [
   "/loja",
   "/perfil",
   "/profile",
-  "/trainers",
   "/torneios",
   "/tournaments",
   "/crm/clientes",
@@ -289,12 +288,6 @@ function hasInvalidOrgContextSources(req: NextRequest) {
     Boolean(req.headers.get("x-organization-id")) ||
     Boolean(req.headers.get("x-org-id"))
   );
-}
-
-function resolveLegacyTrainerApiPath(pathname: string) {
-  const match = pathname.match(/^\/api\/org\/(\d+)\/trainers\/?$/i);
-  if (!match) return null;
-  return `/api/org/${match[1]}/padel/trainers`;
 }
 
 function buildHardRemovedResponse() {
@@ -459,18 +452,6 @@ export async function proxy(req: NextRequest) {
   }
 
   const url = req.nextUrl.clone();
-  const legacyTrainerApiPath = resolveLegacyTrainerApiPath(url.pathname);
-  const shouldRewriteLegacyTrainerApi = Boolean(legacyTrainerApiPath);
-  if (legacyTrainerApiPath) {
-    url.pathname = legacyTrainerApiPath;
-    console.warn(
-      `[proxy][legacy_rewrite] ${JSON.stringify({
-        from: req.nextUrl.pathname,
-        to: legacyTrainerApiPath,
-        requestId: requestContext.requestId,
-      })}`,
-    );
-  }
   const shouldRewriteRoot = adminHost && url.pathname === "/";
   if (shouldRewriteRoot) {
     url.pathname = "/admin";
@@ -496,7 +477,7 @@ export async function proxy(req: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  const res = shouldRewriteRoot || shouldRewriteLegacyTrainerApi
+  const res = shouldRewriteRoot
     ? NextResponse.rewrite(url, { request: { headers: requestHeaders } })
     : NextResponse.next({ request: { headers: requestHeaders } });
   applyRequestContextHeaders(res.headers, requestContext);

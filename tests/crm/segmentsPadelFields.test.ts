@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildContactWhereFromRule } from "@/lib/crm/segments";
+import { buildContactWhereFromRule, extractInteractionRule } from "@/lib/crm/segments";
 
 describe("segment rules padel fields", () => {
   it("suporta filtros numéricos avançados de padel", () => {
@@ -39,5 +39,29 @@ describe("segment rules padel fields", () => {
     expect(where).toEqual({
       padelProfile: { is: { lastMatchAt: { gte: expect.any(Date) } } },
     });
+  });
+
+  it("suporta filtros numéricos de ADN padel (off-peak e sessões)", () => {
+    const where = buildContactWhereFromRule({
+      kind: "rule",
+      id: "r4",
+      field: "padel.offPeakRatio30d",
+      op: "lte",
+      value: 0.4,
+    });
+    expect(where).toEqual({
+      padelProfile: { is: { offPeakRatio30d: { lte: 0.4 } } },
+    });
+  });
+
+  it("ignora tipos de interação legacy em regras interactionType", () => {
+    const interactionRule = extractInteractionRule({
+      kind: "rule",
+      id: "r5",
+      field: "interactionType",
+      op: "in",
+      value: ["PADEL_MATCH_PLAYED", "BOOKING_CONFIRMED", "EVENT_CHECKIN"],
+    });
+    expect(interactionRule?.types).toEqual(["PADEL_MATCH_PLAYED"]);
   });
 });

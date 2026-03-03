@@ -2,8 +2,9 @@
 
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
+import { getRolePackLabel, parseOrganizationRolePack } from "@/lib/organizationRolePackPolicy";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import useSWR from "swr";
@@ -21,10 +22,11 @@ const fetcher = (url: string) => fetch(url).then((res) => res.json());
 type ProfessionalItem = {
   id: number;
   name: string;
-  roleTitle: string | null;
   isActive: boolean;
   priority: number;
-  isTrainer?: boolean;
+  isCoach?: boolean;
+  membershipRole?: "OWNER" | "CO_OWNER" | "ADMIN" | "STAFF" | null;
+  membershipRolePack?: string | null;
   user?: { id: string; fullName: string | null; username: string | null; avatarUrl: string | null } | null;
 };
 
@@ -37,6 +39,23 @@ type MemberItem = {
   rolePack?: string | null;
 };
 
+const ELIGIBLE_TEAM_ROLES = new Set(["OWNER", "CO_OWNER", "ADMIN", "STAFF"]);
+
+function formatRolePackLabel(rolePack?: string | null) {
+  const parsedRolePack = parseOrganizationRolePack(rolePack);
+  if (!parsedRolePack) return rolePack?.trim() || null;
+  return getRolePackLabel(parsedRolePack);
+}
+
+function formatMemberRole(role?: string | null) {
+  const normalized = String(role ?? "").trim().toUpperCase();
+  if (normalized === "OWNER") return "Owner";
+  if (normalized === "CO_OWNER") return "Co-owner";
+  if (normalized === "ADMIN") return "Admin";
+  if (normalized === "STAFF") return "Staff";
+  return normalized || "Sem papel";
+}
+
 export default function ProfissionaisPage() {
   const params = useParams();
   const orgIdRaw = Array.isArray(params?.orgId) ? params?.orgId[0] : params?.orgId;
@@ -44,7 +63,7 @@ export default function ProfissionaisPage() {
   const canonicalOrganizationId = Number.isFinite(organizationId) && organizationId > 0 ? organizationId : null;
 
   const { data, mutate } = useSWR<{ ok: boolean; items: ProfessionalItem[] }>(
-    resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/profissionais"),
+    resolveCanonicalOrgApiPath("/api/org/[orgId]/academy/trainers"),
     fetcher,
   );
   const { data: membersData } = useSWR<{ ok: boolean; items: MemberItem[] }>(
@@ -53,35 +72,43 @@ export default function ProfissionaisPage() {
       : null,
     fetcher,
   );
+
   const [memberUserId, setMemberUserId] = useState("");
-  const [memberRoleTitle, setMemberRoleTitle] = useState("");
-  const [editing, setEditing] = useState<{ id: number; name: string; roleTitle: string } | null>(null);
-  const [editSavingId, setEditSavingId] = useState<number | null>(null);
   const [deleteSavingId, setDeleteSavingId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+  const [hygieneRunning, setHygieneRunning] = useState(false);
+  const [hygieneSummary, setHygieneSummary] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const items = data?.items ?? [];
   const members = membersData?.items ?? [];
   const membersReady = Array.isArray(membersData?.items);
-  const availableMembers = members.filter(
-    (member) => !items.some((item) => item.user?.id === member.userId),
+
+  const eligibleMembers = useMemo(
+    () => members.filter((member) => ELIGIBLE_TEAM_ROLES.has(member.role)),
+    [members],
+  );
+
+  const availableMembers = useMemo(
+    () =>
+      eligibleMembers.filter((member) => !items.some((item) => item.user?.id === member.userId)),
+    [eligibleMembers, items],
   );
 
   const handleToggle = async (item: ProfessionalItem) => {
     try {
-      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas/profissionais/${item.id}`), {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/academy/trainers/${item.id}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isActive: !item.isActive }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "Erro ao atualizar profissional.");
+        throw new Error(json?.error || "Erro ao atualizar treinador.");
       }
       mutate();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao atualizar profissional.");
+      setError(err instanceof Error ? err.message : "Erro ao atualizar treinador.");
     }
   };
 
@@ -89,87 +116,92 @@ export default function ProfissionaisPage() {
     if (!memberUserId || saving) return;
     const member = availableMembers.find((item) => item.userId === memberUserId);
     if (!member) return;
+
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/profissionais"), {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/academy/trainers"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userId: member.userId,
-          name: member.fullName || member.username || "Equipa",
-          roleTitle: memberRoleTitle.trim(),
+          isActive: true,
           priority: 0,
         }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "Erro ao adicionar profissional.");
+        throw new Error(json?.error || "Erro ao adicionar treinador.");
       }
       setMemberUserId("");
-      setMemberRoleTitle("");
       mutate();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao adicionar profissional.");
+      setError(err instanceof Error ? err.message : "Erro ao adicionar treinador.");
     } finally {
       setSaving(false);
     }
   };
 
-  const handleEdit = (item: ProfessionalItem) => {
-    setError(null);
-    setEditing({ id: item.id, name: item.name, roleTitle: item.roleTitle ?? "" });
-  };
-
-  const handleSaveEdit = async () => {
-    if (!editing || editSavingId) return;
-    const trimmedName = editing.name.trim();
-    if (!trimmedName) {
-      setError("Indica o nome do profissional.");
-      return;
-    }
-    setEditSavingId(editing.id);
-    setError(null);
-    try {
-      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas/profissionais/${editing.id}`), {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: trimmedName, roleTitle: editing.roleTitle.trim() }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "Erro ao atualizar profissional.");
-      }
-      setEditing(null);
-      mutate();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao atualizar profissional.");
-    } finally {
-      setEditSavingId(null);
-    }
-  };
-
   const handleDelete = async (item: ProfessionalItem) => {
     const confirmed = window.confirm(
-      `Remover ${item.name} da lista de profissionais? Esta ação pode afetar disponibilidade e reservas futuras.`,
+      `Remover ${item.name} da Academia? Esta ação desliga o treinador de futuras aulas.`,
     );
     if (!confirmed || deleteSavingId === item.id) return;
     setDeleteSavingId(item.id);
     setError(null);
     try {
-      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas/profissionais/${item.id}`), {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/academy/trainers/${item.id}`), {
         method: "DELETE",
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "Erro ao remover profissional.");
+        throw new Error(json?.error || "Erro ao remover treinador.");
       }
-      if (editing?.id === item.id) setEditing(null);
       mutate();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao remover profissional.");
+      setError(err instanceof Error ? err.message : "Erro ao remover treinador.");
     } finally {
       setDeleteSavingId(null);
+    }
+  };
+
+  const handleHygiene = async () => {
+    if (hygieneRunning) return;
+    setHygieneRunning(true);
+    setError(null);
+    setHygieneSummary(null);
+    try {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/academy/hygiene"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dryRun: false }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok || !json?.summary) {
+        throw new Error(json?.error || "Erro ao executar higienização.");
+      }
+      const summary = json.summary as {
+        invalidProfessionals?: number;
+        deactivatedProfessionals?: number;
+        purgedProfessionals?: number;
+        classServiceLinksRemoved?: number;
+        classSeriesUnlinked?: number;
+        futureClassSessionsUnlinked?: number;
+      };
+      setHygieneSummary(
+        `Higienização concluída: ${summary.invalidProfessionals ?? 0} inválidos, ${
+          summary.deactivatedProfessionals ?? 0
+        } desativados, ${summary.purgedProfessionals ?? 0} purgados, ${
+          summary.classServiceLinksRemoved ?? 0
+        } links removidos, ${
+          summary.classSeriesUnlinked ?? 0
+        } séries limpas, ${summary.futureClassSessionsUnlinked ?? 0} sessões futuras limpas.`,
+      );
+      mutate();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao executar higienização.");
+    } finally {
+      setHygieneRunning(false);
     }
   };
 
@@ -177,24 +209,36 @@ export default function ProfissionaisPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className={DASHBOARD_LABEL}>Reservas</p>
-          <h1 className="text-xl font-semibold text-white">Profissionais</h1>
-          <p className={DASHBOARD_MUTED}>Gere equipa associada aos serviços e disponibilidade.</p>
+          <p className={DASHBOARD_LABEL}>Academia</p>
+          <h1 className="text-xl font-semibold text-white">Treinadores</h1>
+          <p className={DASHBOARD_MUTED}>
+            Treinadores são sempre membros reais da Equipa (Owner, Co-owner, Admin ou Staff).
+          </p>
         </div>
-        <Link href={appendOrganizationIdToHref("/org/bookings/operations", canonicalOrganizationId)} className={CTA_SECONDARY}>
-          Operações
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" className={CTA_SECONDARY} onClick={handleHygiene} disabled={hygieneRunning}>
+            {hygieneRunning ? "A higienizar..." : "Higienizar legacy"}
+          </button>
+          <Link href={appendOrganizationIdToHref("/org/academy/classes", canonicalOrganizationId)} className={CTA_SECONDARY}>
+            Aulas
+          </Link>
+          <Link href={appendOrganizationIdToHref("/org/academy/students", canonicalOrganizationId)} className={CTA_SECONDARY}>
+            Alunos
+          </Link>
+        </div>
       </div>
 
       <section className={cn(DASHBOARD_CARD, "p-5 space-y-4")}>
         <div>
-          <h2 className="text-base font-semibold text-white">Novo profissional</h2>
-          <p className={DASHBOARD_MUTED}>Adicionar a partir dos membros atuais da equipa.</p>
+          <h2 className="text-base font-semibold text-white">Adicionar treinador da Equipa</h2>
+          <p className={DASHBOARD_MUTED}>
+            Sem criação manual: a Academia herda membros da Equipa. Owner, Co-owner, Admin e Staff podem ser treinadores.
+          </p>
         </div>
 
         <div className="flex flex-wrap items-end gap-3">
-          <label className="flex min-w-[220px] flex-1 flex-col gap-1 text-xs text-white/70">
-            Membro da equipa
+          <label className="flex min-w-[260px] flex-1 flex-col gap-1 text-xs text-white/70">
+            Membro elegível
             <select
               className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
               value={memberUserId}
@@ -203,36 +247,18 @@ export default function ProfissionaisPage() {
               <option value="">Seleciona um membro</option>
               {availableMembers.map((member) => (
                 <option key={member.userId} value={member.userId}>
-                  {member.fullName || member.username || "Sem nome"} · {member.role}
-                  {member.rolePack ? ` (${member.rolePack})` : ""}
+                  {member.fullName || member.username || "Sem nome"} · {formatMemberRole(member.role)}
+                  {member.rolePack ? ` (${formatRolePackLabel(member.rolePack)})` : ""}
                 </option>
               ))}
             </select>
           </label>
-          <label className="flex min-w-[220px] flex-1 flex-col gap-1 text-xs text-white/70">
-            Função interna (opcional)
-            <input
-              className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-              placeholder="Ex: Treinador principal"
-              value={memberRoleTitle}
-              onChange={(e) => setMemberRoleTitle(e.target.value)}
-            />
-          </label>
-          <button
-            type="button"
-            className={CTA_PRIMARY}
-            onClick={handleAddMember}
-            disabled={!memberUserId || saving}
-          >
-            Adicionar
+          <button type="button" className={CTA_PRIMARY} onClick={handleAddMember} disabled={!memberUserId || saving}>
+            {saving ? "A adicionar..." : "Adicionar treinador"}
           </button>
           {membersReady && availableMembers.length === 0 && (
-            <span className="text-[12px] text-white/50">Todos os membros já estão na equipa.</span>
+            <span className="text-[12px] text-white/50">Todos os membros elegíveis já estão na Academia.</span>
           )}
-        </div>
-
-        <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[12px] text-white/60">
-          Profissionais externos não são criados aqui. Convites e gestão de pessoas são feitos em Equipa.
         </div>
 
         {error && (
@@ -240,101 +266,71 @@ export default function ProfissionaisPage() {
             {error}
           </div>
         )}
+        {hygieneSummary && (
+          <div className="rounded-xl border border-emerald-400/35 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-100">
+            {hygieneSummary}
+          </div>
+        )}
       </section>
 
       <section className={cn(DASHBOARD_CARD, "p-5 space-y-3")}>
         <div>
-          <h2 className="text-base font-semibold text-white">Equipa</h2>
-          <p className={DASHBOARD_MUTED}>Seleciona para editar ou definir disponibilidade.</p>
+          <h2 className="text-base font-semibold text-white">Treinadores ativos na Academia</h2>
+          <p className={DASHBOARD_MUTED}>Ligação direta à Equipa, sem perfis paralelos.</p>
         </div>
         {items.length === 0 ? (
-          <p className="text-sm text-white/60">Sem profissionais.</p>
+          <p className="text-sm text-white/60">Sem treinadores.</p>
         ) : (
           <div className="space-y-2">
-            {items.map((item) => {
-              const editingEntry = editing?.id === item.id ? editing : null;
-              return (
-                <div key={item.id} className="rounded-xl border border-white/10 bg-white/5 p-3">
-                  {editingEntry ? (
-                    <div className="grid gap-3 md:grid-cols-3">
-                      <input
-                        className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-                        value={editingEntry.name}
-                        onChange={(e) =>
-                          setEditing((prev) => (prev ? { ...prev, name: e.target.value } : prev))
-                        }
-                      />
-                      <input
-                        className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-                        value={editingEntry.roleTitle}
-                        onChange={(e) =>
-                          setEditing((prev) => (prev ? { ...prev, roleTitle: e.target.value } : prev))
-                        }
-                        placeholder="Função (opcional)"
-                      />
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          className={CTA_PRIMARY}
-                          onClick={handleSaveEdit}
-                          disabled={editSavingId === item.id}
-                        >
-                          {editSavingId === item.id ? "A guardar..." : "Guardar"}
-                        </button>
-                        <button
-                          type="button"
-                          className={CTA_SECONDARY}
-                          onClick={() => setEditing(null)}
-                          disabled={editSavingId === item.id}
-                        >
-                          Cancelar
-                        </button>
-                      </div>
+            {items.map((item) => (
+              <div key={item.id} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-white">{item.name}</p>
+                    <p className="text-[12px] text-white/60">
+                      {item.user?.fullName ? item.user.fullName : item.user?.username ? `@${item.user.username}` : "Sem perfil"}
+                    </p>
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                      <span className="inline-flex rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-white/75">
+                        {formatMemberRole(item.membershipRole)}
+                      </span>
+                      {item.membershipRolePack ? (
+                        <span className="inline-flex rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-white/75">
+                          {formatRolePackLabel(item.membershipRolePack)}
+                        </span>
+                      ) : null}
+                      {item.isCoach ? (
+                        <span className="inline-flex rounded-full border border-sky-300/40 bg-sky-400/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-sky-100">
+                          Coach
+                        </span>
+                      ) : null}
                     </div>
-                  ) : (
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-semibold text-white">{item.name}</p>
-                        <p className="text-[12px] text-white/60">
-                          {item.roleTitle || "Sem titulo"}
-                          {item.user?.fullName ? ` · ${item.user.fullName}` : ""}
-                        </p>
-                        {item.isTrainer && (
-                          <span className="mt-1 inline-flex rounded-full border border-sky-300/40 bg-sky-400/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-sky-100">
-                            Treinador
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <button type="button" className={CTA_SECONDARY} onClick={() => handleEdit(item)}>
-                          Editar
-                        </button>
-                        <button type="button" className={CTA_SECONDARY} onClick={() => handleToggle(item)}>
-                          {item.isActive ? "Desativar" : "Ativar"}
-                        </button>
-                        <button
-                          type="button"
-                          className={CTA_SECONDARY}
-                          onClick={() => handleDelete(item)}
-                          disabled={deleteSavingId === item.id}
-                        >
-                          {deleteSavingId === item.id ? "A remover..." : "Remover"}
-                        </button>
-                        <Link
-                          href={appendOrganizationIdToHref(
-                            `/org/calendar/availability?scopeType=PROFESSIONAL&scopeId=${item.id}`,
-                            canonicalOrganizationId,
-                          )}
-                          className={CTA_PRIMARY}
-                        >
-                          Disponibilidade
-                        </Link>
-                      </div>
-                    </div>
-                  )}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" className={CTA_SECONDARY} onClick={() => handleToggle(item)}>
+                      {item.isActive ? "Desativar" : "Ativar"}
+                    </button>
+                    <button
+                      type="button"
+                      className={CTA_SECONDARY}
+                      onClick={() => handleDelete(item)}
+                      disabled={deleteSavingId === item.id}
+                    >
+                      {deleteSavingId === item.id ? "A remover..." : "Remover"}
+                    </button>
+                    <Link
+                      href={appendOrganizationIdToHref(
+                        `/org/calendar/availability?scopeType=PROFESSIONAL&scopeId=${item.id}`,
+                        canonicalOrganizationId,
+                      )}
+                      className={CTA_PRIMARY}
+                    >
+                      Disponibilidade
+                    </Link>
+                  </div>
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         )}
       </section>

@@ -45,6 +45,10 @@ function getRequestMeta(req: NextRequest) {
   const userAgent = req.headers.get("user-agent") ?? null;
   return { ip, userAgent };
 }
+
+function hasAcademyBridgeHeader(req: NextRequest) {
+  return req.headers.get("x-orya-academy-bridge") === "1";
+}
 async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   const fail = (
@@ -203,6 +207,12 @@ async function _POST(req: NextRequest) {
     const addressIdInput = typeof payload?.addressId === "string" ? payload.addressId.trim() : "";
     const coverImageUrl = typeof payload?.coverImageUrl === "string" ? payload.coverImageUrl.trim() : "";
     const assignmentModeRaw = typeof payload?.assignmentMode === "string" ? payload.assignmentMode.trim().toUpperCase() : "";
+    if (kindRaw === "CLASS" && !hasAcademyBridgeHeader(req)) {
+      return fail(
+        410,
+        "ACADEMY_LEGACY_GONE: usa /api/org/[orgId]/academy/classes para criar aulas.",
+      );
+    }
     if (
       assignmentModeRaw &&
       !["PROFESSIONAL_ONLY", "RESOURCE_ONLY", "PROFESSIONAL_AND_RESOURCE"].includes(assignmentModeRaw)
@@ -368,7 +378,7 @@ async function _POST(req: NextRequest) {
       if (!member) {
         return fail(400, "Instrutor inválido.");
       }
-      const trainerProfile = await prisma.trainerProfile.findUnique({
+      const coachProfile = await prisma.trainerProfile.findUnique({
         where: {
           organizationId_userId: {
             organizationId: organization.id,
@@ -377,8 +387,8 @@ async function _POST(req: NextRequest) {
         },
         select: { id: true },
       });
-      if (!trainerProfile) {
-        return fail(400, "INSTRUCTOR_NOT_TRAINER");
+      if (!coachProfile) {
+        return fail(400, "INSTRUCTOR_NOT_COACH");
       }
       instructorId = instructorIdRaw;
       const instructorProfessional = await prisma.reservationProfessional.findFirst({

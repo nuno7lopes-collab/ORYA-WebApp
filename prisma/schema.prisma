@@ -317,6 +317,7 @@ model Organization {
   crmJourneyStepLogs                                                       CrmJourneyStepLog[]
   crmCampaignDeliveries                                                    CrmCampaignDelivery[]
   crmSavedViews                                                            CrmSavedView[]
+  crmTagDefinitions                                                        CrmTagDefinition[]
   userConsents                                                             UserConsent[]
   invoices                                                                 Invoice[]
   payouts                                                                  Payout[]
@@ -5238,6 +5239,208 @@ model ClassSession {
   @@schema("app_v3")
 }
 
+model AcademyClass {
+  env            String   @default("prod")
+  id             Int      @id @default(autoincrement())
+  organizationId Int      @map("organization_id")
+  serviceId      Int      @map("service_id")
+  isActive       Boolean  @default(true) @map("is_active")
+  titleSnapshot  String?  @map("title_snapshot")
+  coverImageUrl  String?  @map("cover_image_url")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([organizationId, serviceId], map: "academy_classes_org_service_uq")
+  @@index([organizationId, isActive], map: "academy_classes_org_active_idx")
+  @@map("academy_classes")
+  @@schema("app_v3")
+}
+
+model AcademyClassSeries {
+  env            String   @default("prod")
+  id             Int      @id @default(autoincrement())
+  organizationId Int      @map("organization_id")
+  academyClassId Int      @map("academy_class_id")
+  classSeriesId  Int      @map("class_series_id")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([classSeriesId], map: "academy_class_series_series_uq")
+  @@index([organizationId, academyClassId], map: "academy_class_series_org_class_idx")
+  @@map("academy_class_series")
+  @@schema("app_v3")
+}
+
+model AcademyClassSession {
+  env                  String   @default("prod")
+  id                   Int      @id @default(autoincrement())
+  organizationId       Int      @map("organization_id")
+  academyClassId       Int      @map("academy_class_id")
+  academyClassSeriesId Int?     @map("academy_class_series_id")
+  classSessionId       Int      @map("class_session_id")
+  startsAt             DateTime @map("starts_at") @db.Timestamptz(6)
+  endsAt               DateTime @map("ends_at") @db.Timestamptz(6)
+  capacity             Int      @default(1)
+  status               String   @default("SCHEDULED")
+  isDropIn             Boolean  @default(false) @map("is_drop_in")
+  checkoutMode         String   @default("CARD_ONLY") @map("checkout_mode")
+  trainerProfessionalId Int?    @map("trainer_professional_id")
+  courtId              Int?     @map("court_id")
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([classSessionId], map: "academy_class_sessions_class_session_uq")
+  @@index([organizationId, academyClassId, startsAt], map: "academy_class_sessions_org_class_start_idx")
+  @@index([organizationId, startsAt], map: "academy_class_sessions_org_start_idx")
+  @@map("academy_class_sessions")
+  @@schema("app_v3")
+}
+
+model AcademyEnrollment {
+  env            String   @default("prod")
+  id             Int      @id @default(autoincrement())
+  organizationId Int      @map("organization_id")
+  academyClassId Int?     @map("academy_class_id")
+  classSessionId Int      @map("class_session_id")
+  bookingId      Int?     @unique(map: "academy_enrollments_booking_uq") @map("booking_id")
+  userId         String?  @map("user_id") @db.Uuid
+  status         String   @default("CONFIRMED")
+  source         String   @default("BACKOFFICE")
+  holdToken      String?  @map("hold_token")
+  holdExpiresAt  DateTime? @map("hold_expires_at") @db.Timestamptz(6)
+  priceCents     Int?     @map("price_cents")
+  currency       String   @default("EUR")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([organizationId, classSessionId], map: "academy_enrollments_org_session_idx")
+  @@index([organizationId, userId], map: "academy_enrollments_org_user_idx")
+  @@index([organizationId, status], map: "academy_enrollments_org_status_idx")
+  @@map("academy_enrollments")
+  @@schema("app_v3")
+}
+
+model AcademyWaitlistEntry {
+  env                   String   @default("prod")
+  id                    Int      @id @default(autoincrement())
+  organizationId        Int      @map("organization_id")
+  academyClassId        Int?     @map("academy_class_id")
+  classSessionId        Int      @map("class_session_id")
+  userId                String   @map("user_id") @db.Uuid
+  status                String   @default("WAITING")
+  position              Int?
+  acceptanceWindowEndsAt DateTime? @map("acceptance_window_ends_at") @db.Timestamptz(6)
+  promotedAt            DateTime? @map("promoted_at") @db.Timestamptz(6)
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([classSessionId, userId], map: "academy_waitlist_session_user_uq")
+  @@index([organizationId, classSessionId, status], map: "academy_waitlist_org_session_status_idx")
+  @@index([organizationId, userId], map: "academy_waitlist_org_user_idx")
+  @@map("academy_waitlist_entries")
+  @@schema("app_v3")
+}
+
+model AcademyAttendance {
+  env            String   @default("prod")
+  id             Int      @id @default(autoincrement())
+  organizationId Int      @map("organization_id")
+  classSessionId Int      @map("class_session_id")
+  enrollmentId   Int?     @map("enrollment_id")
+  userId         String   @map("user_id") @db.Uuid
+  status         String   @default("PRESENT")
+  note           String?
+  markedAt       DateTime @default(now()) @map("marked_at") @db.Timestamptz(6)
+  markedByUserId String   @map("marked_by_user_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([classSessionId, userId], map: "academy_attendance_session_user_uq")
+  @@index([organizationId, classSessionId], map: "academy_attendance_org_session_idx")
+  @@index([organizationId, markedByUserId], map: "academy_attendance_org_marker_idx")
+  @@map("academy_attendance")
+  @@schema("app_v3")
+}
+
+model AcademyStudentProfile {
+  env                String   @default("prod")
+  id                 Int      @id @default(autoincrement())
+  organizationId     Int      @map("organization_id")
+  userId             String   @map("user_id") @db.Uuid
+  displayName        String?  @map("display_name")
+  level              String?
+  riskStatus         String   @default("ACTIVE") @map("risk_status")
+  notesVisibility    String   @default("COACH_LAYERED") @map("notes_visibility")
+  lastSessionAt      DateTime? @map("last_session_at") @db.Timestamptz(6)
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([organizationId, userId], map: "academy_student_profiles_org_user_uq")
+  @@index([organizationId, riskStatus], map: "academy_student_profiles_org_risk_idx")
+  @@map("academy_student_profiles")
+  @@schema("app_v3")
+}
+
+model AcademyStudentGoal {
+  env              String    @default("prod")
+  id               Int       @id @default(autoincrement())
+  organizationId   Int       @map("organization_id")
+  studentProfileId Int       @map("student_profile_id")
+  title            String
+  description      String?
+  status           String    @default("ACTIVE")
+  targetDate       DateTime? @map("target_date") @db.Date
+  achievedAt       DateTime? @map("achieved_at") @db.Timestamptz(6)
+  createdByUserId  String?   @map("created_by_user_id") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([organizationId, studentProfileId], map: "academy_student_goals_org_profile_idx")
+  @@index([organizationId, status], map: "academy_student_goals_org_status_idx")
+  @@map("academy_student_goals")
+  @@schema("app_v3")
+}
+
+model AcademyCoachNote {
+  env              String    @default("prod")
+  id               Int       @id @default(autoincrement())
+  organizationId   Int       @map("organization_id")
+  trainerUserId    String    @map("trainer_user_id") @db.Uuid
+  studentProfileId Int       @map("student_profile_id")
+  classSessionId   Int?      @map("class_session_id")
+  attendanceId     Int?      @map("attendance_id")
+  visibility       String    @default("COACH_ONLY")
+  note             String
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([organizationId, trainerUserId], map: "academy_coach_notes_org_trainer_idx")
+  @@index([organizationId, studentProfileId, createdAt], map: "academy_coach_notes_org_student_created_idx")
+  @@map("academy_coach_notes")
+  @@schema("app_v3")
+}
+
+model AcademyChatLink {
+  env             String   @default("prod")
+  id              Int      @id @default(autoincrement())
+  organizationId  Int      @map("organization_id")
+  academyClassId  Int?     @map("academy_class_id")
+  classSessionId  Int?     @map("class_session_id")
+  conversationId  String   @map("conversation_id") @db.Uuid
+  scope           String   @default("SESSION")
+  isPinned        Boolean  @default(false) @map("is_pinned")
+  createdByUserId String?  @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([organizationId, conversationId], map: "academy_chat_links_org_conversation_uq")
+  @@index([organizationId, academyClassId], map: "academy_chat_links_org_class_idx")
+  @@index([organizationId, classSessionId], map: "academy_chat_links_org_session_idx")
+  @@map("academy_chat_links")
+  @@schema("app_v3")
+}
+
 model BookingPackage {
   env             String          @default("prod")
   id              Int             @id @default(autoincrement())
@@ -5708,6 +5911,27 @@ model CrmSavedView {
   @@schema("app_v3")
 }
 
+model CrmTagDefinition {
+  env            String       @default("prod")
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId Int          @map("organization_id")
+  name           String
+  slug           String
+  color          String       @default("#22D3EE")
+  isSystem       Boolean      @default(false) @map("is_system")
+  isActive       Boolean      @default(true) @map("is_active")
+  sortOrder      Int          @default(0) @map("sort_order")
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, slug], map: "crm_tag_definitions_org_slug_unique")
+  @@index([organizationId, isActive, sortOrder], map: "crm_tag_definitions_org_active_sort_idx")
+  @@map("crm_tag_definitions")
+  @@schema("app_v3")
+}
+
 model CrmContact {
   env                 String                @default("prod")
   id                  String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -5810,13 +6034,20 @@ model CrmContactPadel {
   playerProfileId  Int?                @map("player_profile_id")
   level            String?
   preferredSide    PadelPreferredSide? @map("preferred_side")
+  preferredTimeBucket String?          @map("preferred_time_bucket")
   clubName         String?             @map("club_name")
   tournamentsCount Int                 @default(0) @map("tournaments_count")
+  tournamentCount90d Int               @default(0) @map("tournament_count_90d")
   noShowCount      Int                 @default(0) @map("no_show_count")
+  lastNoShowAt     DateTime?           @map("last_no_show_at") @db.Timestamptz(6)
   lastMatchAt      DateTime?           @map("last_match_at") @db.Timestamptz(6)
   matches30d       Int                 @default(0) @map("matches_30d")
   winRate90d       Float               @default(0) @map("win_rate_90d")
   noShowRate90d    Float               @default(0) @map("no_show_rate_90d")
+  offPeakRatio30d  Float               @default(0) @map("off_peak_ratio_30d")
+  reservationCount90d Int              @default(0) @map("reservation_count_90d")
+  lessonCount90d   Int                 @default(0) @map("lesson_count_90d")
+  avgSpendPerSessionCents90d Int       @default(0) @map("avg_spend_per_session_cents_90d")
   activityStatus   String?             @map("activity_status")
   competitiveTier  String?             @map("competitive_tier")
   rfmScore         Int                 @default(0) @map("rfm_score")

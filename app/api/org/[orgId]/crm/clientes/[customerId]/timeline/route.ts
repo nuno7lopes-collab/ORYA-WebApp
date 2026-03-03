@@ -4,7 +4,7 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondOk } from "@/lib/http/envelope";
 import { prisma } from "@/lib/prisma";
 import { crmFail, resolveCrmRequest } from "@/app/api/org/[orgId]/crm/_shared";
-import { PADEL_ACTIVITY_INTERACTION_TYPES } from "@/lib/crm/padelProjection";
+import { CRM_PADEL_INTERACTION_TYPE_VALUES } from "@/lib/crm/padelInteractionTypes";
 
 const MAX_LIMIT = 200;
 
@@ -21,7 +21,7 @@ async function _GET(req: NextRequest, context: { params: Promise<{ customerId: s
   if (!access.ok) return access.response;
 
   const { customerId } = await context.params;
-  const domain = (req.nextUrl.searchParams.get("domain") ?? "all").trim().toLowerCase();
+  const domain = (req.nextUrl.searchParams.get("domain") ?? "padel").trim().toLowerCase();
   const limit = parseLimit(req.nextUrl.searchParams.get("limit"));
 
   const contact = await prisma.crmContact.findFirst({
@@ -36,7 +36,7 @@ async function _GET(req: NextRequest, context: { params: Promise<{ customerId: s
     where: {
       organizationId: access.organization.id,
       contactId: customerId,
-      ...(domain === "padel" ? { type: { in: [...PADEL_ACTIVITY_INTERACTION_TYPES] } } : {}),
+      ...(domain === "padel" ? { type: { in: [...CRM_PADEL_INTERACTION_TYPE_VALUES] } } : {}),
     },
     orderBy: { occurredAt: "desc" },
     take: limit,

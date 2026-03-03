@@ -242,7 +242,7 @@
       ]
     },
     {
-      "route": "/api/org/[orgId]/padel/trainers",
+      "route": "/api/org/[orgId]/padel/coaches",
       "reason": "dynamic_org_api_builder",
       "files": [
         "app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx"
