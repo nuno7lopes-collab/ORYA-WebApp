@@ -1,0 +1,14 @@
+[
+  {
+    "route": "/org/22/calendar",
+    "status": 200,
+    "criticalCount": 0,
+    "critical": []
+  },
+  {
+    "route": "/org/22/calendar?view=day",
+    "status": 200,
+    "criticalCount": 0,
+    "critical": []
+  }
+]

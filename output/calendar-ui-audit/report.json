@@ -1,0 +1,46 @@
+[
+  {
+    "viewport": "mobile",
+    "route": "/org/22/calendar",
+    "status": 200,
+    "isLogin": false,
+    "hasBlockingError": false,
+    "overflow": 0,
+    "aggregateCards": 0,
+    "filterButtons": 2,
+    "screenshot": "/Users/nuno/orya/ORYA-WebApp/output/calendar-ui-audit/mobile-org-22-calendar.png"
+  },
+  {
+    "viewport": "mobile",
+    "route": "/org/22/calendar?view=day",
+    "status": 200,
+    "isLogin": false,
+    "hasBlockingError": false,
+    "overflow": 0,
+    "aggregateCards": 0,
+    "filterButtons": 2,
+    "screenshot": "/Users/nuno/orya/ORYA-WebApp/output/calendar-ui-audit/mobile-org-22-calendar-view-day.png"
+  },
+  {
+    "viewport": "desktop",
+    "route": "/org/22/calendar",
+    "status": 200,
+    "isLogin": false,
+    "hasBlockingError": false,
+    "overflow": 0,
+    "aggregateCards": 0,
+    "filterButtons": 2,
+    "screenshot": "/Users/nuno/orya/ORYA-WebApp/output/calendar-ui-audit/desktop-org-22-calendar.png"
+  },
+  {
+    "viewport": "desktop",
+    "route": "/org/22/calendar?view=day",
+    "status": 200,
+    "isLogin": false,
+    "hasBlockingError": false,
+    "overflow": 0,
+    "aggregateCards": 0,
+    "filterButtons": 2,
+    "screenshot": "/Users/nuno/orya/ORYA-WebApp/output/calendar-ui-audit/desktop-org-22-calendar-view-day.png"
+  }
+]
