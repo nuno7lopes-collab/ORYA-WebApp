@@ -19,6 +19,10 @@ describe("calendar ux guardrails", () => {
     expect(dayClient).not.toContain("Modo A");
     expect(dayClient).not.toContain("Modo B");
     expect(dayClient).not.toContain("ZOOM");
+    expect(weekClient).toContain("CalendarCommandBar");
+    expect(dayClient).toContain("CalendarCommandBar");
+    expect(weekClient).not.toContain("Calendário operacional");
+    expect(dayClient).not.toContain("Calendário operacional");
   });
 
   it("keeps general calendar communication visible without fallback copy antiga", () => {

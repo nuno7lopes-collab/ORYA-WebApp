@@ -1,8 +1,20 @@
 import { NextRequest } from "next/server";
+import {
+  AddressSourceProvider,
+  BookingStatus,
+  ReservationAssignmentMode,
+  ServiceKind,
+  ServiceLocationMode,
+} from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { createBooking } from "@/domain/bookings/commands";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { resolveAcademyOrgAccess } from "@/lib/academy/apiAccess";
+
+const ACTIVE_ENROLLMENT_STATUSES = ["PENDING", "CONFIRMED"] as const;
+const WAITLIST_ACTIVE_STATUSES = ["WAITING", "PROMOTED"] as const;
+const PENDING_HOLD_MINUTES = 10;
 
 function parsePositiveInt(raw: string) {
   const parsed = Number(raw);
@@ -10,19 +22,51 @@ function parsePositiveInt(raw: string) {
   return Math.floor(parsed);
 }
 
+function parsePartySize(raw: unknown) {
+  if (raw == null) return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return Math.floor(value);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function extractBooking(payload: unknown): Record<string, unknown> | null {
-  if (!isRecord(payload)) return null;
-  if (isRecord(payload.booking)) return payload.booking;
-  if (isRecord(payload.data) && isRecord(payload.data.booking)) return payload.data.booking;
-  if (isRecord(payload.result) && isRecord(payload.result.booking)) return payload.result.booking;
-  if (isRecord(payload.data) && isRecord(payload.data.data) && isRecord(payload.data.data.booking)) {
-    return payload.data.data.booking;
+class EnrollmentRouteError extends Error {
+  status: number;
+  errorCode: string;
+  retryable: boolean;
+  constructor(status: number, errorCode: string, message: string, retryable = false) {
+    super(message);
+    this.status = status;
+    this.errorCode = errorCode;
+    this.retryable = retryable;
   }
-  return null;
+}
+
+function mapAssignmentMode(
+  assignmentMode: ReservationAssignmentMode,
+  resourceId: number | null,
+) {
+  if (assignmentMode === ReservationAssignmentMode.RESOURCE_ONLY) {
+    return ReservationAssignmentMode.PROFESSIONAL_ONLY;
+  }
+  if (assignmentMode === ReservationAssignmentMode.PROFESSIONAL_AND_RESOURCE && !resourceId) {
+    return ReservationAssignmentMode.PROFESSIONAL_ONLY;
+  }
+  return assignmentMode;
+}
+
+function resolveSessionDurationMinutes(params: {
+  startsAt: Date;
+  endsAt: Date;
+  serviceDurationMinutes: number;
+}) {
+  const diffMs = params.endsAt.getTime() - params.startsAt.getTime();
+  const diffMinutes = Math.round(diffMs / 60000);
+  if (Number.isFinite(diffMinutes) && diffMinutes > 0) return diffMinutes;
+  return params.serviceDurationMinutes;
 }
 
 async function _POST(
@@ -46,10 +90,28 @@ async function _POST(
     where: {
       id: sessionId,
       organizationId: access.organization.id,
-      service: { kind: "CLASS" },
+      service: { kind: ServiceKind.CLASS },
     },
-    include: {
-      service: { select: { id: true } },
+    select: {
+      id: true,
+      organizationId: true,
+      startsAt: true,
+      endsAt: true,
+      capacity: true,
+      professionalId: true,
+      courtId: true,
+      service: {
+        select: {
+          id: true,
+          durationMinutes: true,
+          unitPriceCents: true,
+          currency: true,
+          assignmentMode: true,
+          locationMode: true,
+          addressId: true,
+          organization: { select: { timezone: true, addressId: true } },
+        },
+      },
       professional: { select: { id: true, isActive: true } },
     },
   });
@@ -72,142 +134,242 @@ async function _POST(
     );
   }
 
-  const body = await req.json().catch(() => ({}));
+  const body = await req.json().catch(() => null);
   const payload = isRecord(body) ? body : {};
-  const userId = typeof payload.userId === "string"
+  const rawUserId = typeof payload.userId === "string"
     ? payload.userId
     : typeof payload.studentId === "string"
       ? payload.studentId
       : null;
-  const partySize = typeof payload.partySize === "number" ? payload.partySize : undefined;
-  const addressId = typeof payload.addressId === "string" ? payload.addressId : undefined;
-
-  const activeEnrollments = await prisma.academyEnrollment.count({
-    where: {
-      organizationId: access.organization.id,
-      classSessionId: session.id,
-      status: { in: ["PENDING", "CONFIRMED"] },
-    },
-  });
-
-  if (activeEnrollments >= session.capacity) {
-    return respondError(
-      access.ctx,
-      {
-        errorCode: "SESSION_FULL",
-        message: "Sessão sem vagas. Usa a waitlist.",
-        retryable: false,
-      },
-      { status: 409 },
-    );
-  }
+  const userId = rawUserId?.trim() || null;
+  const partySize = parsePartySize(payload.partySize);
+  const addressId = typeof payload.addressId === "string" ? payload.addressId.trim() || null : null;
 
   if (userId) {
-    const existingEnrollment = await prisma.academyEnrollment.findFirst({
-      where: {
-        organizationId: access.organization.id,
-        classSessionId: session.id,
-        userId,
-        status: { in: ["PENDING", "CONFIRMED"] },
-      },
-      select: { id: true, bookingId: true, status: true, createdAt: true, updatedAt: true },
+    const student = await prisma.profile.findUnique({
+      where: { id: userId },
+      select: { id: true },
     });
-    if (existingEnrollment) {
-      return respondOk(access.ctx, {
-        enrollment: {
-          id: existingEnrollment.id,
-          bookingId: existingEnrollment.bookingId,
-          classSessionId: session.id,
-          userId,
-          status: existingEnrollment.status,
-          createdAt: existingEnrollment.createdAt,
-          updatedAt: existingEnrollment.updatedAt,
-        },
-      });
+    if (!student) {
+      return respondError(
+        access.ctx,
+        { errorCode: "STUDENT_NOT_FOUND", message: "Aluno não encontrado.", retryable: false },
+        { status: 404 },
+      );
     }
   }
 
-  const legacyUrl = new URL(req.url);
-  legacyUrl.pathname = legacyUrl.pathname.replace(
-    /\/academy\/sessions\/\d+\/enrollments\/?$/i,
-    "/reservas",
-  );
+  try {
+    const txResult = await prisma.$transaction(async (tx) => {
+      const lockKey = `academy_enrollment:${access.organization.id}:${session.id}`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
 
-  const legacyResponse = await fetch(legacyUrl.toString(), {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-orya-academy-bridge": "1",
-      ...(req.headers.get("cookie") ? { cookie: req.headers.get("cookie") as string } : {}),
-      ...(req.headers.get("authorization") ? { authorization: req.headers.get("authorization") as string } : {}),
-    },
-    body: JSON.stringify({
-      serviceId: session.service.id,
-      startsAt: session.startsAt.toISOString(),
-      ...(userId ? { userId } : {}),
-      ...(typeof partySize === "number" ? { partySize } : {}),
-      ...(addressId ? { addressId } : {}),
-      ...(session.professionalId ? { professionalId: session.professionalId } : {}),
-      ...(session.courtId ? { courtId: session.courtId } : {}),
-    }),
-  });
+      if (userId) {
+        const existingEnrollment = await tx.academyEnrollment.findFirst({
+          where: {
+            organizationId: access.organization.id,
+            classSessionId: session.id,
+            userId,
+            status: { in: [...ACTIVE_ENROLLMENT_STATUSES] },
+          },
+          select: {
+            id: true,
+            bookingId: true,
+            classSessionId: true,
+            userId: true,
+            status: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        });
+        if (existingEnrollment) {
+          return { kind: "existing" as const, enrollment: existingEnrollment };
+        }
+      }
 
-  const legacyPayload = await legacyResponse.json().catch(() => null);
-  if (!legacyResponse.ok) {
+      const activeEnrollments = await tx.academyEnrollment.count({
+        where: {
+          organizationId: access.organization.id,
+          classSessionId: session.id,
+          status: { in: [...ACTIVE_ENROLLMENT_STATUSES] },
+        },
+      });
+      if (activeEnrollments >= session.capacity) {
+        throw new EnrollmentRouteError(409, "SESSION_FULL", "Sessão sem vagas. Usa a waitlist.");
+      }
+
+      const resolvedAddressId =
+        addressId ||
+        (session.service.locationMode === ServiceLocationMode.FIXED
+          ? session.service.addressId ?? session.service.organization?.addressId ?? null
+          : null);
+
+      if (session.service.locationMode === ServiceLocationMode.FIXED && !resolvedAddressId) {
+        throw new EnrollmentRouteError(400, "LOCATION_REQUIRED", "Morada obrigatória para esta sessão.");
+      }
+      if (resolvedAddressId) {
+        const resolvedAddress = await tx.address.findUnique({
+          where: { id: resolvedAddressId },
+          select: { sourceProvider: true },
+        });
+        if (!resolvedAddress) {
+          throw new EnrollmentRouteError(400, "LOCATION_REQUIRED", "Morada inválida.");
+        }
+        if (resolvedAddress.sourceProvider !== AddressSourceProvider.APPLE_MAPS) {
+          throw new EnrollmentRouteError(400, "LOCATION_REQUIRED", "Morada deve ser Apple Maps.");
+        }
+      }
+
+      const resourceId = session.courtId
+        ? (
+            await tx.reservationResource.findFirst({
+              where: {
+                organizationId: access.organization.id,
+                courtId: session.courtId,
+                isActive: true,
+              },
+              select: { id: true },
+            })
+          )?.id ?? null
+        : null;
+
+      const durationMinutes = resolveSessionDurationMinutes({
+        startsAt: session.startsAt,
+        endsAt: session.endsAt,
+        serviceDurationMinutes: session.service.durationMinutes,
+      });
+      const assignmentMode = mapAssignmentMode(session.service.assignmentMode, resourceId);
+      const pendingExpiresAt = new Date(Date.now() + PENDING_HOLD_MINUTES * 60 * 1000);
+
+      const { booking } = await createBooking({
+        tx,
+        organizationId: access.organization.id,
+        actorUserId: access.profile.id,
+        data: {
+          serviceId: session.service.id,
+          organizationId: access.organization.id,
+          userId,
+          startsAt: session.startsAt,
+          durationMinutes,
+          price: session.service.unitPriceCents,
+          currency: session.service.currency || "EUR",
+          status: BookingStatus.PENDING_CONFIRMATION,
+          assignmentMode,
+          professionalId: session.professionalId,
+          resourceId,
+          courtId: session.courtId,
+          partySize,
+          pendingExpiresAt,
+          snapshotTimezone: session.service.organization?.timezone || "Europe/Lisbon",
+          locationMode: session.service.locationMode,
+          addressId: resolvedAddressId,
+        },
+        select: {
+          id: true,
+          status: true,
+          pendingExpiresAt: true,
+        },
+      });
+
+      const enrollment = await tx.academyEnrollment.create({
+        data: {
+          organizationId: access.organization.id,
+          academyClassId: session.service.id,
+          classSessionId: session.id,
+          bookingId: booking.id,
+          userId,
+          status: "CONFIRMED",
+          source: "BACKOFFICE",
+          holdExpiresAt: pendingExpiresAt,
+          priceCents: session.service.unitPriceCents,
+          currency: session.service.currency || "EUR",
+        },
+        select: {
+          id: true,
+          bookingId: true,
+          classSessionId: true,
+          userId: true,
+          status: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+
+      if (userId) {
+        await tx.academyWaitlistEntry.updateMany({
+          where: {
+            organizationId: access.organization.id,
+            classSessionId: session.id,
+            userId,
+            status: { in: [...WAITLIST_ACTIVE_STATUSES] },
+          },
+          data: {
+            status: "REMOVED",
+            acceptanceWindowEndsAt: null,
+          },
+        });
+      }
+
+      return {
+        kind: "created" as const,
+        enrollment,
+        booking: {
+          id: booking.id,
+          status: booking.status,
+          pendingExpiresAt,
+        },
+      };
+    });
+
+    if (txResult.kind === "existing") {
+      return respondOk(access.ctx, {
+        enrollment: {
+          id: txResult.enrollment.id,
+          bookingId: txResult.enrollment.bookingId,
+          classSessionId: txResult.enrollment.classSessionId,
+          userId: txResult.enrollment.userId,
+          status: txResult.enrollment.status,
+          createdAt: txResult.enrollment.createdAt,
+          updatedAt: txResult.enrollment.updatedAt,
+        },
+      });
+    }
+
+    return respondOk(access.ctx, {
+      enrollment: {
+        id: txResult.enrollment.id,
+        bookingId: txResult.enrollment.bookingId,
+        classSessionId: txResult.enrollment.classSessionId,
+        userId: txResult.enrollment.userId,
+        status: txResult.enrollment.status,
+        createdAt: txResult.enrollment.createdAt,
+        updatedAt: txResult.enrollment.updatedAt,
+      },
+      booking: txResult.booking,
+    });
+  } catch (err) {
+    if (err instanceof EnrollmentRouteError) {
+      return respondError(
+        access.ctx,
+        {
+          errorCode: err.errorCode,
+          message: err.message,
+          retryable: err.retryable,
+        },
+        { status: err.status },
+      );
+    }
+    console.error("POST /api/org/[orgId]/academy/sessions/[sessionId]/enrollments error:", err);
     return respondError(
       access.ctx,
       {
         errorCode: "ENROLLMENT_FAILED",
-        message:
-          (isRecord(legacyPayload) && typeof legacyPayload.message === "string"
-            ? legacyPayload.message
-            : "Não foi possível inscrever na sessão."),
-        retryable: legacyResponse.status >= 500,
+        message: "Não foi possível inscrever na sessão.",
+        retryable: true,
       },
-      { status: legacyResponse.status },
+      { status: 500 },
     );
   }
-
-  const booking = extractBooking(legacyPayload);
-  const bookingId =
-    booking && typeof booking.id === "number" && Number.isFinite(booking.id)
-      ? Math.floor(booking.id)
-      : null;
-
-  if (!bookingId) {
-    return respondError(
-      access.ctx,
-      {
-        errorCode: "ENROLLMENT_FAILED",
-        message: "Reserva criada sem identificador válido.",
-        retryable: false,
-      },
-      { status: 502 },
-    );
-  }
-
-  const enrollment = await prisma.academyEnrollment.create({
-    data: {
-      organizationId: access.organization.id,
-      academyClassId: session.service.id,
-      classSessionId: session.id,
-      bookingId,
-      userId,
-      status: "CONFIRMED",
-    },
-  });
-
-  return respondOk(access.ctx, {
-    enrollment: {
-      id: enrollment.id,
-      bookingId: enrollment.bookingId,
-      classSessionId: enrollment.classSessionId,
-      userId: enrollment.userId,
-      status: enrollment.status,
-      createdAt: enrollment.createdAt,
-      updatedAt: enrollment.updatedAt,
-    },
-  });
 }
 
 export const POST = withApiEnvelope(_POST);

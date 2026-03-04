@@ -599,7 +599,7 @@ export default function CheckoutScreen() {
     safePush(router, { pathname: "/auth", params: { next: "/checkout" } });
   }, [router]);
   const handleBack = () => {
-    safeBack(router, navigation, TAB_PATHNAMES.index);
+    safeBack(router, navigation, TAB_PATHNAMES.inicio);
   };
 
   useEffect(() => {
@@ -1692,7 +1692,7 @@ export default function CheckoutScreen() {
         actionLabel: "Voltar",
         action: () => {
           clearDraft();
-          router.replace(TAB_PATHNAMES.index);
+          router.replace(TAB_PATHNAMES.inicio);
         },
       };
     }
@@ -1818,7 +1818,7 @@ export default function CheckoutScreen() {
               params: { slug: draft.slug },
             });
           } else {
-            router.replace(TAB_PATHNAMES.index);
+            router.replace(TAB_PATHNAMES.inicio);
           }
         },
       };
@@ -1896,7 +1896,7 @@ export default function CheckoutScreen() {
               <Pressable
                 className="rounded-xl bg-white/10 px-4 py-3"
                 style={{ minHeight: tokens.layout.touchTarget }}
-                onPress={() => router.replace(TAB_PATHNAMES.index)}
+                onPress={() => router.replace(TAB_PATHNAMES.inicio)}
                 accessibilityRole="button"
                 accessibilityLabel="Voltar ao Descobrir"
               >

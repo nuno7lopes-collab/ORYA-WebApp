@@ -147,7 +147,7 @@ export function TopAppHeader({
         ) : null}
         {renderMessages ? (
           <Pressable
-            onPress={() => safePush(router, "/messages")}
+            onPress={() => safePush(router, "/comunidade/mensagens")}
             accessibilityRole="button"
             accessibilityLabel="Mensagens"
             hitSlop={10}

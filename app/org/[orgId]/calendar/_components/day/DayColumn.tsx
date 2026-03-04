@@ -108,7 +108,7 @@ export function DayColumn({
       {outsideIntervals.map((interval) => (
         <div
           key={`${column.id}-${interval.startMinute}-${interval.endMinute}`}
-          className="absolute left-0 right-0 border-y border-white/5 bg-[repeating-linear-gradient(135deg,rgba(4,8,16,0.42),rgba(4,8,16,0.42)_8px,rgba(255,255,255,0.035)_8px,rgba(255,255,255,0.035)_16px)]"
+          className="absolute left-0 right-0 bg-[repeating-linear-gradient(135deg,rgba(2,6,14,0.18),rgba(2,6,14,0.18)_10px,rgba(255,255,255,0.02)_10px,rgba(255,255,255,0.02)_20px)]"
           style={{
             top: interval.startMinute * minuteHeight,
             height: (interval.endMinute - interval.startMinute) * minuteHeight,
@@ -126,8 +126,8 @@ export function DayColumn({
               title={minuteToLabel(minute)}
               className={cn(
                 "absolute left-0 right-0 border-t transition",
-                isHour ? "border-white/10" : "border-white/5",
-                "hover:border-cyan-300/45 hover:bg-cyan-300/10",
+                isHour ? "border-white/9" : "border-white/5",
+                "hover:bg-white/[0.04]",
               )}
               style={{ top: row.start, height: row.size }}
             />

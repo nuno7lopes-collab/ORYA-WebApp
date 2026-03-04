@@ -313,6 +313,7 @@ export const fetchMessageRequests = async (
       contextType: "USER_DM",
       contextId: item.contextId ?? null,
       createdAt: item.createdAt,
+      expiresAt: item.expiresAt ?? null,
       requester: item.requester,
     })),
   };
@@ -363,6 +364,17 @@ export const declineMessageRequest = async (
 ): Promise<{ ok: boolean }> => {
   return requestMessagesApi<{ ok: boolean }>(
     withB2CScope(`/api/messages/grants/${encodeURIComponent(requestId)}/decline`),
+    accessToken,
+    { method: "POST" },
+  );
+};
+
+export const declineCommunityInvite = async (
+  inviteId: string,
+  accessToken?: string | null,
+): Promise<{ ok: boolean }> => {
+  return requestMessagesApi<{ ok: boolean }>(
+    withB2CScope(`/api/messages/grants/${encodeURIComponent(inviteId)}/decline`),
     accessToken,
     { method: "POST" },
   );

@@ -2233,6 +2233,29 @@ export default function ChatInternoV2Client() {
     }
   }, [activeConversation?.id, fetchChat, loadConversations, sendWsMessage]);
 
+  const openCommunityManagement = useCallback(
+    (conversationId: string) => {
+      if (typeof window === "undefined") return;
+      const resolvedOrgId = organizationId ?? fallbackOrganizationId ?? getOrganizationIdFromBrowser();
+      if (resolvedOrgId) {
+        window.location.assign(
+          buildOrgHref(resolvedOrgId, "/chat/comunidades", {
+            communityId: conversationId,
+            panel: "participants",
+          }),
+        );
+        return;
+      }
+      const current = new URL(window.location.href);
+      const nextPath = current.pathname.replace(/\/chat(?:\/.*)?$/, "/chat/comunidades");
+      current.pathname = nextPath === current.pathname ? "/chat/comunidades" : nextPath;
+      current.searchParams.set("communityId", conversationId);
+      current.searchParams.set("panel", "participants");
+      window.location.assign(`${current.pathname}${current.search}${current.hash}`);
+    },
+    [fallbackOrganizationId, organizationId],
+  );
+
   const activeTypingLabel = useMemo(() => {
     if (typingUsers.length === 0) {
       return "";
@@ -2338,19 +2361,41 @@ export default function ChatInternoV2Client() {
     const directMember = members.find((member) => member.userId !== user?.id) ?? members[0] ?? null;
     return directMember?.profile.avatarUrl ?? null;
   }, [activeConversation, members, user?.id]);
+  const activeConversationIsCommunity = useMemo(
+    () => Boolean(activeConversation && isCommunityConversation(activeConversation)),
+    [activeConversation],
+  );
+  const activeConversationKindLabel = useMemo(() => {
+    if (!activeConversation) return null;
+    return resolveConversationKindLabel(activeConversation);
+  }, [activeConversation]);
+  const scopeOptions = useMemo(
+    () =>
+      [
+        { value: "ALL", label: "Todas", count: conversationScopeStats.all },
+        { value: "COMMUNITIES", label: "Comunidades", count: conversationScopeStats.communities },
+        { value: "CHANNELS", label: "Canais", count: conversationScopeStats.channels },
+        { value: "DIRECT", label: "Diretas", count: conversationScopeStats.directs },
+        { value: "UNREAD", label: "Não lidas", count: conversationScopeStats.unread },
+      ] as Array<{ value: ConversationScope; label: string; count: number }>,
+    [conversationScopeStats],
+  );
   const actionPill =
-    "rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-white/70 transition hover:-translate-y-[1px] hover:border-white/20 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20";
+    "rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] text-white/85 transition hover:-translate-y-[1px] hover:border-white/35 hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30";
   const subtlePill =
-    "rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[9px] tracking-wide text-white/55";
+    "rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[9px] tracking-wide text-white/75";
   return (
     <div className={cn(DASHBOARD_CARD, "flex h-full min-h-0 flex-col overflow-hidden")}>
       <div className="flex min-h-0 flex-1">
         <div className="mx-auto flex min-h-0 w-full max-w-[1320px] flex-1 px-4 py-4">
-          <div className="grid min-h-0 w-full flex-1 grid-cols-[320px_minmax(0,1fr)] overflow-hidden rounded-3xl border border-white/10 bg-black/10 shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
+          <div className="grid min-h-0 w-full flex-1 grid-cols-1 overflow-hidden rounded-3xl border border-white/15 bg-black/20 shadow-[0_18px_50px_rgba(0,0,0,0.45)] lg:grid-cols-[320px_minmax(0,1fr)]">
           <section
             ref={leftPaneRef}
             tabIndex={-1}
-            className="flex min-h-0 min-w-0 flex-col gap-2.5 border-r border-white/10 bg-[var(--orya-surface-1)]/85 p-2.5 outline-none focus:ring-2 focus:ring-[#22D3EE]/50"
+            className={cn(
+              "min-h-0 min-w-0 flex-col gap-2.5 border-r border-white/15 bg-[var(--orya-surface-1)]/95 p-2.5 outline-none focus:ring-2 focus:ring-[#22D3EE]/50",
+              activeConversation ? "hidden lg:flex" : "flex",
+            )}
             aria-label="Lista de conversas"
             onKeyDown={(event) => {
               if (event.key === "ArrowDown") {
@@ -2371,14 +2416,15 @@ export default function ChatInternoV2Client() {
               }
             }}
           >
-        <header className="space-y-1.5">
+        <header className="space-y-2">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[12px] font-semibold text-white">Conversas</p>
+              <p className="text-[10px] text-white/80">Filtra por contexto para gerir melhor comunidades e chats ativos.</p>
             </div>
             <button
               type="button"
-              className="flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70 transition hover:border-white/20 hover:bg-white/10"
+              className="flex h-7 w-7 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white/90 transition hover:border-white/30 hover:bg-white/20"
               onClick={openNewConversationDialog}
               aria-label="Nova conversa"
             >
@@ -2396,9 +2442,29 @@ export default function ChatInternoV2Client() {
             <input
               value={conversationSearch}
               onChange={(event) => setConversationSearch(event.target.value)}
-              placeholder="Pesquisar"
-              className="w-full rounded-full border border-white/10 bg-black/25 px-3 py-1.5 text-[12px] text-white outline-none transition focus:border-white/40 focus:ring-2 focus:ring-white/10"
+              placeholder="Pesquisar conversa ou membro"
+              className="w-full rounded-full border border-white/20 bg-black/35 px-3 py-1.5 text-[12px] text-white outline-none transition focus:border-cyan-300 focus:ring-2 focus:ring-cyan-500/30"
             />
+          </div>
+          <div className="flex items-center gap-1 overflow-x-auto pb-0.5 pr-1 orya-scrollbar-hide">
+            {scopeOptions.map((option) => {
+              const selected = conversationScope === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setConversationScope(option.value)}
+                  className={cn(
+                    "whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-medium transition",
+                    selected
+                      ? "border-cyan-300/60 bg-cyan-400/20 text-cyan-100"
+                      : "border-white/20 bg-white/10 text-white/80 hover:border-white/35 hover:bg-white/20",
+                  )}
+                >
+                  {option.label} ({option.count})
+                </button>
+              );
+            })}
           </div>
         </header>
 
@@ -2445,7 +2511,7 @@ export default function ChatInternoV2Client() {
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
                         <p className="truncate text-[11px] font-semibold text-white/90">{requesterName}</p>
-                        <p className="truncate text-[10px] text-white/50">{subtitle}</p>
+                        <p className="truncate text-[10px] text-white/75">{subtitle}</p>
                       </div>
                       <div className="flex items-center gap-2">
                         <button
@@ -2482,8 +2548,8 @@ export default function ChatInternoV2Client() {
             {conversationsError}
           </div>
         ) : conversationFiltered.length === 0 ? (
-          <div className="rounded-xl border border-white/12 bg-black/20 px-3 py-4 text-center text-[12px] text-white/60">
-            <p>Ainda não tens conversas.</p>
+          <div className="rounded-xl border border-white/20 bg-black/25 px-3 py-4 text-center text-[12px] text-white/85">
+            <p>{conversationSearch.trim() || conversationScope !== "ALL" ? "Sem resultados para os filtros aplicados." : "Ainda não tens conversas."}</p>
             <button
               type="button"
               className={cn(CTA_NEUTRAL, "mt-3 text-[11px]")}
@@ -2528,8 +2594,9 @@ export default function ChatInternoV2Client() {
                 const muted = conversation.mutedUntil
                   ? new Date(conversation.mutedUntil) > new Date()
                   : false;
-                const isCustomerConversation =
-                  conversation.contextType && conversation.contextType !== "ORG_CHANNEL";
+                const isCommunity = isCommunityConversation(conversation);
+                const isCustomer = isCustomerConversation(conversation);
+                const kindLabel = resolveConversationKindLabel(conversation);
                 return (
                   <div
                     key={conversation.id}
@@ -2546,12 +2613,12 @@ export default function ChatInternoV2Client() {
                       type="button"
                       onClick={() => setActiveConversationId(conversation.id)}
                       className={cn(
-                        "group relative w-full border-b border-white/5 px-3 py-2 text-left transition",
-                        isActive ? "bg-white/8" : "bg-transparent hover:bg-white/5",
+                        "group relative w-full border-b border-white/10 px-3 py-2 text-left transition",
+                        isActive ? "bg-cyan-400/12" : "bg-transparent hover:bg-white/10",
                       )}
                       aria-current={isActive ? "true" : undefined}
                     >
-                      {isActive ? <span className="absolute left-0 top-0 h-full w-1 bg-[#22D3EE]/70" /> : null}
+                      {isActive ? <span className="absolute left-0 top-0 h-full w-1 bg-[#22D3EE]" /> : null}
                       <div className="flex items-center gap-3">
                         <Avatar
                           src={avatarUrl}
@@ -2561,17 +2628,26 @@ export default function ChatInternoV2Client() {
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex min-w-0 items-center gap-2">
-                              <p className="truncate text-[13px] font-semibold text-white/95">{displayTitle}</p>
-                              {isCustomerConversation ? (
-                                <span className={subtlePill}>Cliente</span>
-                              ) : null}
+                              <p className="truncate text-[13px] font-semibold text-white">{displayTitle}</p>
+                              <span
+                                className={cn(
+                                  subtlePill,
+                                  isCommunity
+                                    ? "border-cyan-300/35 bg-cyan-500/15 text-cyan-100"
+                                    : isCustomer
+                                      ? "border-amber-300/35 bg-amber-500/15 text-amber-100"
+                                      : "",
+                                )}
+                              >
+                                {kindLabel}
+                              </span>
                             </div>
-                            {lastTime ? <span className="text-[10px] text-white/45">{lastTime}</span> : null}
+                            {lastTime ? <span className="text-[10px] text-white/65">{lastTime}</span> : null}
                           </div>
                           <div className="mt-0.5 flex items-center justify-between gap-2">
-                            <p className="min-w-0 flex-1 truncate text-[11px] text-white/55">{lastPreview}</p>
+                            <p className="min-w-0 flex-1 truncate text-[11px] text-white/80">{lastPreview}</p>
                             <div className="flex items-center gap-2">
-                              {muted ? <span className="text-[10px] text-white/35">Silenciado</span> : null}
+                              {muted ? <span className="text-[10px] text-white/65">Silenciado</span> : null}
                               {unread ? (
                                 <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-emerald-400 px-2 text-[10px] font-semibold text-emerald-950">
                                   {conversation.unreadCount}
@@ -2593,11 +2669,31 @@ export default function ChatInternoV2Client() {
       <section
         ref={centerPaneRef}
         tabIndex={-1}
-        className="flex min-h-0 min-w-0 flex-col bg-[var(--orya-surface-2)] outline-none focus:ring-2 focus:ring-[#22D3EE]/50"
+        className={cn(
+          "min-h-0 min-w-0 flex-col bg-[var(--orya-surface-2)] outline-none focus:ring-2 focus:ring-[#22D3EE]/50",
+          activeConversation ? "flex" : "hidden lg:flex",
+        )}
         aria-label="Conversação ativa"
       >
-        <header className="flex items-center justify-between border-b border-white/10 px-4 py-2">
+        <header className="flex items-center justify-between border-b border-white/15 px-3 py-2.5 sm:px-4">
           <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => setActiveConversationId(null)}
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white transition hover:border-white/35 hover:bg-white/20 lg:hidden"
+              aria-label="Voltar à lista de conversas"
+            >
+              <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+                <path
+                  d="M15 18l-6-6 6-6"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  fill="none"
+                />
+              </svg>
+            </button>
             <Avatar
               src={headerAvatarUrl}
               name={headerTitle}
@@ -2605,7 +2701,19 @@ export default function ChatInternoV2Client() {
             />
             <div className="min-w-0">
               <p className="truncate text-[14px] font-semibold text-white">{headerTitle}</p>
-              <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-white/55">
+              <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-white/80">
+                {activeConversationKindLabel ? (
+                  <span
+                    className={cn(
+                      "rounded-full border px-2 py-0.5 text-[10px]",
+                      activeConversationIsCommunity
+                        ? "border-cyan-300/35 bg-cyan-500/15 text-cyan-100"
+                        : "border-white/20 bg-white/10 text-white/80",
+                    )}
+                  >
+                    {activeConversationKindLabel}
+                  </span>
+                ) : null}
                 <span>{activeConversation ? `${conversationMembersCount} membros` : "—"}</span>
                 <button
                   ref={membersButtonRef}
@@ -2616,7 +2724,7 @@ export default function ChatInternoV2Client() {
                     setShowConversationMenu(false);
                   }}
                   disabled={!activeConversation}
-                  className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] text-white/70 hover:border-white/20 hover:bg-white/5"
+                  className="rounded-full border border-white/20 px-2 py-0.5 text-[10px] text-white hover:border-white/35 hover:bg-white/15"
                 >
                   Ver membros
                 </button>
@@ -2626,9 +2734,18 @@ export default function ChatInternoV2Client() {
           </div>
           <div className="relative flex items-center gap-2">
             {connectionLabel ? (
-              <span className="rounded-full border border-white/10 bg-black/30 px-2 py-1 text-[10px] text-white/70">
+              <span className="hidden rounded-full border border-white/20 bg-black/30 px-2 py-1 text-[10px] text-white/85 sm:inline-flex">
                 {connectionLabel}
               </span>
+            ) : null}
+            {activeConversationIsCommunity && activeConversation ? (
+              <button
+                type="button"
+                onClick={() => openCommunityManagement(activeConversation.id)}
+                className={cn(CTA_NEUTRAL, "hidden h-8 px-3 text-[10px] sm:inline-flex")}
+              >
+                Gerir comunidade
+              </button>
             ) : null}
             <button
               type="button"
@@ -2636,7 +2753,7 @@ export default function ChatInternoV2Client() {
                 setShowSearchOverlay(true);
                 setShowConversationMenu(false);
               }}
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70 transition hover:border-white/20 hover:bg-white/10"
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white transition hover:border-white/35 hover:bg-white/20"
               aria-label="Pesquisar"
               disabled={!activeConversation}
             >
@@ -2654,7 +2771,7 @@ export default function ChatInternoV2Client() {
               ref={conversationMenuButtonRef}
               type="button"
               onClick={() => setShowConversationMenu((prev) => !prev)}
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70 transition hover:border-white/20 hover:bg-white/10"
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white transition hover:border-white/35 hover:bg-white/20"
               aria-label="Mais opções"
               aria-haspopup="menu"
               aria-controls="chat-conversation-menu"
@@ -2673,12 +2790,12 @@ export default function ChatInternoV2Client() {
                 ref={conversationMenuRef}
                 role="menu"
                 aria-label="Opções da conversa"
-                className="absolute right-0 top-11 z-30 w-56 space-y-1 rounded-2xl border border-white/15 bg-black/90 p-2 shadow-[0_20px_45px_rgba(0,0,0,0.5)]"
+                className="absolute right-0 top-11 z-30 w-56 space-y-1 rounded-2xl border border-white/20 bg-black/90 p-2 shadow-[0_20px_45px_rgba(0,0,0,0.5)]"
               >
                 <button
                   type="button"
                   role="menuitem"
-                  className="w-full rounded-xl px-3 py-2 text-left text-[12px] text-white/80 transition hover:bg-white/10"
+                  className="w-full rounded-xl px-3 py-2 text-left text-[12px] text-white/90 transition hover:bg-white/15"
                   onClick={() => {
                     setShowMembersPanel(true);
                     setMembersSearch("");
@@ -2690,7 +2807,7 @@ export default function ChatInternoV2Client() {
                 <button
                   type="button"
                   role="menuitem"
-                  className="w-full rounded-xl px-3 py-2 text-left text-[12px] text-white/80 transition hover:bg-white/10"
+                  className="w-full rounded-xl px-3 py-2 text-left text-[12px] text-white/90 transition hover:bg-white/15"
                   onClick={() => {
                     setShowSearchOverlay(true);
                     setShowConversationMenu(false);
@@ -2698,14 +2815,27 @@ export default function ChatInternoV2Client() {
                 >
                   Pesquisar nesta conversa
                 </button>
+                {activeConversationIsCommunity && activeConversation ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="w-full rounded-xl px-3 py-2 text-left text-[12px] text-cyan-100 transition hover:bg-cyan-500/20"
+                    onClick={() => {
+                      openCommunityManagement(activeConversation.id);
+                      setShowConversationMenu(false);
+                    }}
+                  >
+                    Gerir comunidade
+                  </button>
+                ) : null}
                 <div className="my-1 h-px bg-white/10" />
-                <p className="px-3 py-1 text-[10px] uppercase tracking-[0.08em] text-white/45">
+                <p className="px-3 py-1 text-[10px] uppercase tracking-[0.08em] text-white/70">
                   Notificações: {conversationNotificationLabel}
                 </p>
                 <button
                   type="button"
                   role="menuitem"
-                  className="w-full rounded-xl px-3 py-2 text-left text-[12px] text-white/80 transition hover:bg-white/10"
+                  className="w-full rounded-xl px-3 py-2 text-left text-[12px] text-white/90 transition hover:bg-white/15"
                   onClick={() => {
                     void handleUpdateNotifSettings("ALL", null);
                     setShowConversationMenu(false);
@@ -2716,7 +2846,7 @@ export default function ChatInternoV2Client() {
                 <button
                   type="button"
                   role="menuitem"
-                  className="w-full rounded-xl px-3 py-2 text-left text-[12px] text-white/80 transition hover:bg-white/10"
+                  className="w-full rounded-xl px-3 py-2 text-left text-[12px] text-white/90 transition hover:bg-white/15"
                   onClick={() => {
                     void handleUpdateNotifSettings("MENTIONS_ONLY", null);
                     setShowConversationMenu(false);
@@ -2727,7 +2857,7 @@ export default function ChatInternoV2Client() {
                 <button
                   type="button"
                   role="menuitem"
-                  className="w-full rounded-xl px-3 py-2 text-left text-[12px] text-white/80 transition hover:bg-white/10"
+                  className="w-full rounded-xl px-3 py-2 text-left text-[12px] text-white/90 transition hover:bg-white/15"
                   onClick={() => {
                     const mutedUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
                     void handleUpdateNotifSettings("OFF", mutedUntil);
@@ -2775,9 +2905,9 @@ export default function ChatInternoV2Client() {
           >
             <div className="w-full">
               {!activeConversation ? (
-                <div className="rounded-2xl border border-dashed border-white/15 bg-black/20 px-4 py-4 text-center text-[12px] text-white/60">
+                <div className="rounded-2xl border border-dashed border-white/25 bg-black/20 px-4 py-4 text-center text-[12px] text-white/80">
                   <p className="text-sm font-semibold text-white/80">Seleciona uma conversa</p>
-                  <p className="mt-1 text-[12px] text-white/60">
+                  <p className="mt-1 text-[12px] text-white/80">
                     Escolhe um chat à esquerda ou cria uma nova conversa.
                   </p>
                 </div>
@@ -2788,9 +2918,9 @@ export default function ChatInternoV2Client() {
                   ))}
                 </div>
               ) : displayMessages.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-white/15 bg-black/20 px-4 py-4 text-center text-[12px] text-white/60">
+                <div className="rounded-2xl border border-dashed border-white/25 bg-black/20 px-4 py-4 text-center text-[12px] text-white/80">
                   <p className="text-sm font-semibold text-white/80">Ainda sem mensagens</p>
-                  <p className="mt-1 text-[12px] text-white/60">Diz olá para começar.</p>
+                  <p className="mt-1 text-[12px] text-white/80">Diz olá para começar.</p>
                 </div>
               ) : (
                 <div
@@ -2815,7 +2945,7 @@ export default function ChatInternoV2Client() {
                           }}
                           className="flex items-center justify-center py-2"
                         >
-                          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-white/60">
+                          <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] text-white/85">
                             {item.label}
                           </span>
                         </div>
@@ -2875,7 +3005,7 @@ export default function ChatInternoV2Client() {
                           {!grouped ? (
                             <div
                               className={cn(
-                                "mb-0.5 flex flex-wrap items-center gap-2 text-[10px] text-white/55",
+                                "mb-0.5 flex flex-wrap items-center gap-2 text-[10px] text-white/75",
                                 isOwn ? "justify-end" : "justify-start",
                               )}
                             >
@@ -2985,8 +3115,8 @@ export default function ChatInternoV2Client() {
                             {pending?.status === "FAILED" ? (
                               <p className="mt-2 text-[11px] text-amber-200/80">Falha ao enviar.</p>
                             ) : null}
-                          {pending?.status === "PENDING" || pending?.status === "QUEUED" ? (
-                            <p className="mt-2 text-[11px] text-white/45">A enviar...</p>
+                            {pending?.status === "PENDING" || pending?.status === "QUEUED" ? (
+                            <p className="mt-2 text-[11px] text-white/70">A enviar...</p>
                           ) : null}
                           </div>
                           </div>
@@ -3019,7 +3149,7 @@ export default function ChatInternoV2Client() {
             </div>
           </div>
           {showUnreadToast ? (
-            <div className="absolute left-1/2 top-3 -translate-x-1/2 rounded-full border border-white/10 bg-black/70 px-3 py-1 text-[11px] text-white/80 shadow-[0_12px_30px_rgba(0,0,0,0.35)]">
+            <div className="absolute left-1/2 top-3 -translate-x-1/2 rounded-full border border-white/20 bg-black/80 px-3 py-1 text-[11px] text-white shadow-[0_12px_30px_rgba(0,0,0,0.35)]">
               Não lidas
             </div>
           ) : null}
@@ -3040,15 +3170,15 @@ export default function ChatInternoV2Client() {
           ) : null}
         </div>
 
-        <div className="shrink-0 border-t border-white/10 bg-[var(--orya-surface-2)] px-4 py-3">
+        <div className="shrink-0 border-t border-white/15 bg-[var(--orya-surface-2)] px-4 py-3">
           {showCommandPalette && filteredCommands.length ? (
-            <div className="mb-2 rounded-2xl border border-white/10 bg-black/40 p-2 text-[11px] text-white/80">
+            <div className="mb-2 rounded-2xl border border-white/20 bg-black/45 p-2 text-[11px] text-white">
               {filteredCommands.map((cmd) => (
                 <button
                   key={cmd}
                   type="button"
                   onClick={() => setMessageBody(cmd + " ")}
-                  className="block w-full rounded-lg px-2 py-1 text-left hover:bg-white/5"
+                  className="block w-full rounded-lg px-2 py-1 text-left hover:bg-white/10"
                 >
                   {cmd}
                 </button>
@@ -3060,7 +3190,7 @@ export default function ChatInternoV2Client() {
               ref={composerRef}
               value={messageBody}
               onChange={(event) => setMessageBody(event.target.value)}
-              className="min-h-[44px] w-full flex-1 resize-none rounded-2xl border border-white/10 bg-black/20 px-4 py-2 text-[13px] text-white outline-none transition focus:border-white/40 focus:ring-2 focus:ring-white/10"
+              className="min-h-[44px] w-full flex-1 resize-none rounded-2xl border border-white/20 bg-black/30 px-4 py-2 text-[13px] text-white outline-none transition focus:border-cyan-300 focus:ring-2 focus:ring-cyan-500/30"
               placeholder="Escreve a tua mensagem..."
               disabled={!activeConversation}
               onKeyDown={(event) => {
@@ -3079,7 +3209,7 @@ export default function ChatInternoV2Client() {
               Enviar
             </button>
           </div>
-          <p className="mt-2 text-[10px] text-white/35">Enter envia • Shift+Enter nova linha</p>
+          <p className="mt-2 text-[10px] text-white/65">Enter envia • Shift+Enter nova linha</p>
         </div>
       </section>
           </div>
@@ -3151,7 +3281,7 @@ export default function ChatInternoV2Client() {
                         <Avatar src={member.avatarUrl} name={displayName} className="h-9 w-9" />
                         <div className="min-w-0">
                           <p className="truncate text-[12px] font-semibold text-white/90">{displayName}</p>
-                          <p className="truncate text-[11px] text-white/55">{presence}</p>
+                          <p className="truncate text-[11px] text-white/80">{presence}</p>
                         </div>
                       </div>
                       <div className="ml-3 flex items-center gap-2">
@@ -3216,7 +3346,7 @@ export default function ChatInternoV2Client() {
 
             <div className="mt-4 space-y-3">
               {directoryLoading ? (
-                <p className="text-[12px] text-white/60">A carregar membros...</p>
+                <p className="text-[12px] text-white/80">A carregar membros...</p>
               ) : directoryError ? (
                 <p className="text-[12px] text-rose-200">{directoryError}</p>
               ) : null}
@@ -3387,9 +3517,9 @@ export default function ChatInternoV2Client() {
             </div>
             <div className="mt-4 space-y-2">
               {searchLoading ? (
-                <p className="text-[12px] text-white/60">A pesquisar...</p>
+                <p className="text-[12px] text-white/80">A pesquisar...</p>
               ) : searchResults.length === 0 ? (
-                <p className="text-[12px] text-white/60">Sem resultados.</p>
+                <p className="text-[12px] text-white/80">Sem resultados.</p>
               ) : (
                 searchResults.map((result) => (
                   <button
@@ -3398,7 +3528,7 @@ export default function ChatInternoV2Client() {
                     onClick={() => handleJumpToMessage(result)}
                     className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-left text-[12px] text-white/80"
                   >
-                    <p className="text-[10px] text-white/50">{formatMessageTime(result.createdAt)}</p>
+                    <p className="text-[10px] text-white/75">{formatMessageTime(result.createdAt)}</p>
                     <p>{renderSnippet(result.snippet)}</p>
                   </button>
                 ))

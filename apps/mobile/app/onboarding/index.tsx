@@ -506,7 +506,7 @@ export default function OnboardingScreen() {
       });
       await setOnboardingDone(true);
       await clearOnboardingDraft();
-      router.replace(TAB_PATHNAMES.agora);
+      router.replace(TAB_PATHNAMES.inicio);
     } catch (err: unknown) {
       const raw = resolveErrorMessage(err);
       const message = t("onboarding:errors.finalizeFailed");

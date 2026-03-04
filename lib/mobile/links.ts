@@ -9,8 +9,6 @@ export type ResolveMobileLinkOptions = {
   apiBaseUrl?: string;
 };
 
-// Exceções raras que podem abrir no webview.
-// Adiciona aqui apenas o que for estritamente necessário.
 const WEB_ALLOWED_PATHS = new Set<string>([]);
 const WEB_ALLOWED_PREFIXES: string[] = [];
 
@@ -49,6 +47,24 @@ const buildNative = (path: string, search: string, source?: string): ResolvedMob
   path: appendSourceParam(path, search, source),
 });
 
+const mapLegacyMessagesPath = (path: string) => {
+  const normalized = stripTrailingSlash(path);
+  if (normalized === "/messages") return "/comunidade/mensagens";
+  if (normalized === "/messages/requests") return "/comunidade/mensagens/pedidos";
+
+  const segments = normalized.split("/").filter(Boolean);
+  if (segments[0] !== "messages") return normalized;
+
+  if (segments.length === 3 && segments[1] === "community-invite") {
+    return `/comunidade/mensagens/convite/${segments[2]}`;
+  }
+  if (segments.length === 2) {
+    return `/comunidade/mensagens/${segments[1]}`;
+  }
+
+  return "/comunidade/mensagens";
+};
+
 export const resolveMobileLink = (
   input?: string | null,
   options: ResolveMobileLinkOptions = {},
@@ -71,21 +87,29 @@ export const resolveMobileLink = (
     return buildNative(`/event/${parts[1]}`, search, source);
   }
   if (path === "/eventos") {
-    return buildNative("/(tabs)/index", "", source);
+    return buildNative("/competir", "", source);
   }
-  if (path.startsWith("/messages")) {
+
+  if (path === "/me") {
+    return buildNative("/perfil", "", source);
+  }
+  if (path === "/perfil") {
+    return buildNative("/perfil", "", source);
+  }
+  if (path === "/comunidade") {
+    return buildNative("/comunidade", search, source);
+  }
+  if (path.startsWith("/comunidade/mensagens")) {
     return buildNative(path, search, source);
   }
+  if (path.startsWith("/messages")) {
+    return buildNative(mapLegacyMessagesPath(path), search, source);
+  }
+
   if (path.startsWith("/wallet/")) {
     return buildNative(path, search, source);
   }
-  if (path === "/me") {
-    return buildNative("/profile", "", source);
-  }
-  if (path === "/profile") {
-    return buildNative("/profile", "", source);
-  }
-  if (path === "/network" || path === "/notifications" || path === "/tickets") {
+  if (path === "/notifications" || path === "/tickets" || path === "/reservas" || path === "/competir") {
     return buildNative(path, search, source);
   }
   if (path === "/me/bilhetes") {
@@ -109,9 +133,14 @@ export const resolveMobileLink = (
   if (parts[0] === "me" && parts[1] === "bilhetes" && parts[2]) {
     return buildNative(`/wallet/${parts[2]}`, "", source);
   }
+
   if (path === "/convites/organizacoes") {
     return buildNative(path, search, source);
   }
+  if (path === "/aulas") {
+    return buildNative(path, search, source);
+  }
+
   if (path.startsWith("/store/")) {
     return buildNative(path, search, source);
   }
@@ -143,28 +172,29 @@ export const resolveMobileLink = (
     }
     return buildNative(`/store/${username}`, search, source);
   }
+
   if (path === "/social") {
     const tab = url.searchParams.get("tab");
     if (tab === "notifications") {
       return buildNative("/notifications", "", source);
     }
   }
+
   if (parts[0] === "org" && parts[2] === "chat") {
     const conversationId = url.searchParams.get("conversationId");
     if (conversationId) {
-      return buildNative(`/messages/${conversationId}`, "", source);
+      return buildNative(`/comunidade/mensagens/${conversationId}`, "", source);
     }
-    return buildNative("/messages", "", source);
+    return buildNative("/comunidade/mensagens", "", source);
   }
 
   const reserved = new Set([
     "eventos",
     "event",
-    "messages",
+    "comunidade",
     "wallet",
     "me",
-    "profile",
-    "network",
+    "perfil",
     "notifications",
     "tickets",
     "social",
@@ -173,9 +203,9 @@ export const resolveMobileLink = (
     "auth",
     "map",
     "search",
-    "agora",
-    "index",
-    "servicos",
+    "inicio",
+    "competir",
+    "aulas",
     "service",
     "reservas",
     "inscricoes",

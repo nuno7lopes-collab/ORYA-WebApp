@@ -166,6 +166,7 @@ const rolePackLabels: Record<OrganizationRolePack, string> = ROLE_PACK_LABELS;
 const STAFF_ROLE_PACK_OPTIONS = [...getAllowedRolePacksForRole("STAFF" as OrganizationMemberRole)] as OrganizationRolePack[];
 const DEFAULT_STAFF_ROLE_PACK =
   (getDefaultRolePackForRole("STAFF" as OrganizationMemberRole) ?? STAFF_ROLE_PACK_OPTIONS[0] ?? null) as OrganizationRolePack | null;
+const STAFF_ROLE_ASSIGNMENT_PLACEHOLDER = "STAFF:__UNASSIGNED__";
 const GOVERNANCE_ASSIGNMENT_OPTIONS: RoleAssignmentOption[] = [
   { value: "OWNER", label: roleLabels.OWNER, role: "OWNER", rolePack: null },
   { value: "CO_OWNER", label: roleLabels.CO_OWNER, role: "CO_OWNER", rolePack: null },
@@ -204,6 +205,7 @@ const auditActionLabels: Record<string, string> = {
   MEMBER_REMOVED: "Membro removido",
   OWNER_PROMOTED: "Dono promovido",
   OWNER_DEMOTED: "Dono despromovido",
+  OWNER_REMOVED: "Dono removido",
   PERMISSION_UPDATED: "Permissão atualizada",
   PERMISSION_CLEARED: "Permissão removida",
 };
@@ -288,8 +290,7 @@ function resolveRolePackForRole(
   const options = getRolePackOptions(role);
   if (options.length === 0) return null;
   if (rolePack && options.includes(rolePack)) return rolePack;
-  const fallback = getDefaultRolePackForRole(role as OrganizationMemberRole);
-  return (fallback && options.includes(fallback) ? fallback : options[0]) ?? null;
+  return null;
 }
 
 function resolveRoleAssignmentValue(
@@ -298,7 +299,7 @@ function resolveRoleAssignmentValue(
 ) {
   if (role !== "STAFF") return role;
   const normalizedRolePack = resolveRolePackForRole("STAFF", rolePack);
-  return normalizedRolePack ? `STAFF:${normalizedRolePack}` : "STAFF";
+  return normalizedRolePack ? `STAFF:${normalizedRolePack}` : STAFF_ROLE_ASSIGNMENT_PLACEHOLDER;
 }
 
 function parseRoleAssignmentValue(value: string): { role: MemberRole; rolePack: OrganizationRolePack | null } {
@@ -310,7 +311,7 @@ function parseRoleAssignmentValue(value: string): { role: MemberRole; rolePack: 
     const parsedPack = parseOrganizationRolePack(normalized.slice("STAFF:".length));
     return { role: "STAFF", rolePack: resolveRolePackForRole("STAFF", parsedPack) };
   }
-  return { role: "STAFF", rolePack: resolveRolePackForRole("STAFF", null) ?? DEFAULT_STAFF_ROLE_PACK };
+  return { role: "STAFF", rolePack: null };
 }
 
 function resolveRoleAssignmentLabel(
@@ -320,7 +321,7 @@ function resolveRoleAssignmentLabel(
   if (role !== "STAFF") return roleLabels[role] ?? role;
   const normalizedRolePack = resolveRolePackForRole("STAFF", rolePack);
   if (normalizedRolePack) return rolePackLabels[normalizedRolePack] ?? normalizedRolePack;
-  return roleLabels.STAFF;
+  return "Equipa (função por definir)";
 }
 
 function RoleAssignmentBadge({
@@ -414,6 +415,27 @@ function formatAuditMeta(metadata: Record<string, unknown> | null | undefined) {
   if (moduleKey && Object.prototype.hasOwnProperty.call(MODULE_LABELS, moduleKey)) {
     parts.push(`Ferramenta: ${MODULE_LABELS[moduleKey as OrganizationModule]}`);
   }
+  const scopeTypeRaw = typeof metadata.scopeType === "string" ? metadata.scopeType.trim().toUpperCase() : null;
+  const scopeIdRaw = metadata.scopeId;
+  const scopeId =
+    typeof scopeIdRaw === "string" || typeof scopeIdRaw === "number"
+      ? String(scopeIdRaw).trim()
+      : null;
+  if (scopeTypeRaw) {
+    if (scopeTypeRaw === "CHAT_COMMUNITIES") {
+      if (!scopeId || scopeId.toUpperCase() === "GLOBAL") {
+        parts.push("Âmbito: Todas as comunidades");
+      } else {
+        parts.push(`Âmbito: Comunidade ${scopeId}`);
+      }
+    } else {
+      const scopeTypeLabel =
+        scopeTypeRaw in RESERVAS_SCOPE_TYPE_LABELS
+          ? RESERVAS_SCOPE_TYPE_LABELS[scopeTypeRaw as ReservasScopeType]
+          : scopeTypeRaw;
+      parts.push(scopeId ? `Âmbito: ${scopeTypeLabel} #${scopeId}` : `Âmbito: ${scopeTypeLabel}`);
+    }
+  }
   const accessLevel = typeof metadata.accessLevel === "string" ? metadata.accessLevel : null;
   const normalizedAccess = normalizeAccessLevel(accessLevel);
   if (normalizedAccess) {
@@ -487,6 +509,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   const [scopeDraftId, setScopeDraftId] = useState<string>("");
   const [scopeDraftLevel, setScopeDraftLevel] = useState<"VIEW" | "EDIT">("VIEW");
   const [communityScopeDraftId, setCommunityScopeDraftId] = useState<string>("GLOBAL");
+  const [communityScopeDraftLevel, setCommunityScopeDraftLevel] = useState<"VIEW" | "EDIT">("VIEW");
 
   const organizationIdParam = searchParams?.get("organizationId") ?? null;
   const organizationIdParsed = organizationIdParam ? Number(organizationIdParam) : null;
@@ -615,6 +638,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
     setScopeDraftId("");
     setScopeDraftLevel("VIEW");
     setCommunityScopeDraftId("GLOBAL");
+    setCommunityScopeDraftLevel("VIEW");
   }, [selectedMember?.userId]);
 
   useEffect(() => {
@@ -1461,11 +1485,11 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                                     <div className="space-y-1">
                                       <p className="text-sm font-semibold text-white">{scopeLabel}</p>
                                       <p className="text-[11px] text-white/60">
-                                        Acesso: {ACCESS_LABELS[normalizeAccessLevel(perm.accessLevel) ?? "EDIT"]}
+                                        Acesso: {ACCESS_LABELS[normalizeAccessLevel(perm.accessLevel) ?? "VIEW"]}
                                       </p>
                                     </div>
                                     <select
-                                      value={normalizeAccessLevel(perm.accessLevel) ?? "EDIT"}
+                                      value={normalizeAccessLevel(perm.accessLevel) ?? "VIEW"}
                                       disabled={!canManageMember(viewerRole, selectedMember.role) || isSaving}
                                       onChange={(e) =>
                                         handlePermissionUpdate(
@@ -1479,6 +1503,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                                       className="rounded-full border border-white/15 bg-black/40 px-4 py-2 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,0.35)] outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)] disabled:opacity-60"
                                     >
                                       <option value="DEFAULT">Remover</option>
+                                      <option value="VIEW">Ver</option>
                                       <option value="EDIT">Editar</option>
                                     </select>
                                   </div>
@@ -1498,13 +1523,21 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                                 </option>
                               ))}
                             </select>
+                            <select
+                              value={communityScopeDraftLevel}
+                              onChange={(e) => setCommunityScopeDraftLevel(e.target.value as "VIEW" | "EDIT")}
+                              className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
+                            >
+                              <option value="VIEW">Ver</option>
+                              <option value="EDIT">Editar</option>
+                            </select>
                             <button
                               type="button"
                               onClick={() =>
                                 handlePermissionUpdate(
                                   selectedMember.userId,
                                   "MENSAGENS",
-                                  "EDIT",
+                                  communityScopeDraftLevel,
                                   "CHAT_COMMUNITIES",
                                   communityScopeDraftId || "GLOBAL",
                                 )
@@ -1693,6 +1726,11 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                         }}
                         className="rounded-full border border-white/15 bg-black/40 px-4 py-2 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,0.35)] outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)] disabled:opacity-60"
                       >
+                        {m.role === "STAFF" && !resolveRolePackForRole("STAFF", m.rolePack) && (
+                          <option value={STAFF_ROLE_ASSIGNMENT_PLACEHOLDER} disabled>
+                            Selecionar função da equipa
+                          </option>
+                        )}
                         <optgroup label="Governança">
                           {GOVERNANCE_ASSIGNMENT_OPTIONS.map((option) => (
                             <option
@@ -1932,6 +1970,11 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                   }}
                   className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
                 >
+                  {inviteRole === "STAFF" && !resolveRolePackForRole("STAFF", inviteRolePack) && (
+                    <option value={STAFF_ROLE_ASSIGNMENT_PLACEHOLDER} disabled>
+                      Selecionar função da equipa
+                    </option>
+                  )}
                   <optgroup label="Governança">
                     {GOVERNANCE_ASSIGNMENT_OPTIONS.map((option) => (
                       <option

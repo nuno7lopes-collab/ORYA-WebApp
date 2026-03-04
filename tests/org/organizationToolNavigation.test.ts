@@ -93,8 +93,8 @@ describe("organizationToolNavigation", () => {
 
     expect(tools[state.activeToolIndex]?.id).toBe("calendar");
     const calendar = tools.find((tool) => tool.id === "calendar");
-    const expectedDayIndex = calendar?.items.findIndex((item) => item.id === "day") ?? -1;
-    expect(state.activeSubIndexByToolId.calendar).toBe(expectedDayIndex);
+    const expectedAgendaIndex = calendar?.items.findIndex((item) => item.id === "agenda") ?? -1;
+    expect(state.activeSubIndexByToolId.calendar).toBe(expectedAgendaIndex);
 
     const activeCount = Object.values(state.activeSubIndexByToolId).filter((index) => index >= 0).length;
     expect(activeCount).toBe(1);

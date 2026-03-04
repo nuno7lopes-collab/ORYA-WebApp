@@ -117,7 +117,7 @@ export default function SearchScreen() {
           : "all";
   const includeOffers = activeTab !== "people" && activeTab !== "orgs";
   const handleBack = useCallback(() => {
-    safeBack(router, navigation, TAB_PATHNAMES.index);
+    safeBack(router, navigation, TAB_PATHNAMES.inicio);
   }, [navigation, router]);
 
   const {
@@ -580,7 +580,7 @@ export default function SearchScreen() {
                 </Pressable>
               ) : null}
               <Pressable
-                onPress={() => safePush(router, TAB_PATHNAMES.index)}
+                onPress={() => safePush(router, TAB_PATHNAMES.inicio)}
                 className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
                 style={{ minHeight: tokens.layout.touchTarget }}
                 accessibilityRole="button"

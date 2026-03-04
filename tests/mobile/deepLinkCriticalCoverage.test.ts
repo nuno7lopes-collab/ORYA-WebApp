@@ -23,12 +23,17 @@ describe("mobile deep-link critical coverage", () => {
   it("maps org chat links and keeps legacy manage links blocked", () => {
     expect(resolveMobileLink("https://orya.pt/org/51/chat")).toEqual({
       kind: "native",
-      path: "/messages",
+      path: "/comunidade/mensagens",
     });
 
     expect(resolveMobileLink("https://orya.pt/org/51/chat?conversationId=abc")).toEqual({
       kind: "native",
-      path: "/messages/abc",
+      path: "/comunidade/mensagens/abc",
+    });
+
+    expect(resolveMobileLink("https://orya.pt/messages/community-invite/token_xyz")).toEqual({
+      kind: "native",
+      path: "/comunidade/mensagens/convite/token_xyz",
     });
 
     expect(resolveMobileLink("https://orya.pt/org/51/manage", { allowWeb: true })).toEqual({

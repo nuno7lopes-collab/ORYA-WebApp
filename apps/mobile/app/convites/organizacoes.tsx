@@ -77,7 +77,7 @@ export default function OrganizationInvitesScreen() {
     if (typeof raw === "string" && raw.trim().length > 0) return raw;
     return null;
   }, [params.source]);
-  const fallbackRoute = source === "notifications" ? "/notifications" : TAB_PATHNAMES.index;
+  const fallbackRoute = source === "notifications" ? "/notifications" : TAB_PATHNAMES.inicio;
   const backButton = (
     <Pressable
       onPress={() => safeBack(router, navigation, fallbackRoute)}

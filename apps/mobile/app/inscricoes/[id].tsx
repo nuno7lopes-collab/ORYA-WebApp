@@ -80,7 +80,7 @@ export default function RegistrationDetailScreen() {
   const backButton = (
     <Pressable
       onPress={() =>
-        handleActionPress(() => safeBack(router, navigation, TAB_PATHNAMES.profile))
+        handleActionPress(() => safeBack(router, navigation, TAB_PATHNAMES.perfil))
       }
       accessibilityRole="button"
       accessibilityLabel="Voltar"
@@ -163,7 +163,7 @@ export default function RegistrationDetailScreen() {
                         next:
                           Number.isFinite(entryId) && entryId > 0
                             ? `/inscricoes/${entryId}`
-                            : TAB_PATHNAMES.profile,
+                            : TAB_PATHNAMES.perfil,
                       },
                     }),
                   )
@@ -353,7 +353,7 @@ export default function RegistrationDetailScreen() {
                 <Pressable
                   onPress={() =>
                     handleActionPress(() =>
-                      safeBack(router, navigation, TAB_PATHNAMES.profile),
+                      safeBack(router, navigation, TAB_PATHNAMES.perfil),
                     )
                   }
                   className="rounded-xl border border-white/15 bg-white/5 px-4 py-3"

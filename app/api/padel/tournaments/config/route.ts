@@ -218,14 +218,10 @@ async function _POST(req: NextRequest) {
   }
   const confirmFormatChange = body?.confirmFormatChange === true;
   const hasNumberOfCourts = Object.prototype.hasOwnProperty.call(body, "numberOfCourts");
-  const numberOfCourtsRaw =
-    hasNumberOfCourts && (typeof body.numberOfCourts === "number" || typeof body.numberOfCourts === "string")
-      ? Number(body.numberOfCourts)
-      : null;
-  const numberOfCourtsParsed =
-    hasNumberOfCourts && typeof numberOfCourtsRaw === "number" && Number.isFinite(numberOfCourtsRaw)
-      ? Math.max(1, Math.floor(numberOfCourtsRaw))
-      : null;
+  const numberOfCourtsParsed = hasNumberOfCourts ? parsePositiveInt(body.numberOfCourts) : null;
+  if (hasNumberOfCourts && numberOfCourtsParsed === null) {
+    return jsonWrap({ ok: false, error: "INVALID_NUMBER_OF_COURTS" }, { status: 400 });
+  }
   const hasRuleSetId = Object.prototype.hasOwnProperty.call(body, "ruleSetId");
   const ruleSetInput = hasRuleSetId ? body.ruleSetId : undefined;
   const shouldClearRuleSetId =
@@ -251,6 +247,9 @@ async function _POST(req: NextRequest) {
     Object.values(PadelEligibilityType).includes(body.eligibilityType as PadelEligibilityType)
       ? (body.eligibilityType as PadelEligibilityType)
       : null;
+  if (hasEligibilityType && eligibilityType === null) {
+    return jsonWrap({ ok: false, error: "INVALID_ELIGIBILITY_TYPE" }, { status: 400 });
+  }
   const splitDeadlineHours = FIXED_SPLIT_DEADLINE_HOURS;
   const hasEnabledFormats = Object.prototype.hasOwnProperty.call(body, "enabledFormats");
   let invalidEnabledFormats = false;

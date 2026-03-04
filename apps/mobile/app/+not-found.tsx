@@ -26,7 +26,7 @@ export default function NotFoundScreen() {
         {pathname || "/"}
       </Text>
       <Pressable
-        onPress={() => router.replace(TAB_PATHNAMES.agora)}
+        onPress={() => router.replace(TAB_PATHNAMES.inicio)}
         style={{
           marginTop: 16,
           paddingHorizontal: 16,
@@ -35,9 +35,9 @@ export default function NotFoundScreen() {
           backgroundColor: "rgba(255,255,255,0.12)",
         }}
         accessibilityRole="button"
-        accessibilityLabel="Ir para Agora"
+        accessibilityLabel="Ir para Início"
       >
-        <Text style={{ color: "white", fontWeight: "600" }}>Ir para Agora</Text>
+        <Text style={{ color: "white", fontWeight: "600" }}>Ir para Início</Text>
       </Pressable>
     </View>
   );

@@ -201,7 +201,7 @@ export default function ServicoDetalhePage() {
     fetcher,
   );
   const { data: professionalsData } = useSWR<{ ok: boolean; items: ProfessionalItem[] }>(
-    resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/profissionais"),
+    resolveCanonicalOrgApiPath("/api/org/[orgId]/academy/trainers"),
     fetcher,
   );
   const { data: resourcesData } = useSWR<{ ok: boolean; items: ResourceItem[] }>(

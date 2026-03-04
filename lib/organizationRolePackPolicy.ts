@@ -81,9 +81,8 @@ export function resolveRolePackForRole(input: {
   role: OrganizationMemberRole;
   rolePackRaw: unknown;
   rolePackProvided: boolean;
-  allowDefaultForLegacy?: boolean;
 }): ResolveRolePackResult {
-  const { role, rolePackRaw, rolePackProvided, allowDefaultForLegacy = false } = input;
+  const { role, rolePackRaw, rolePackProvided } = input;
   const allowedRolePacks = getAllowedRolePacksForRole(role);
   const parsedRolePack = parseOrganizationRolePack(rolePackRaw);
   const hasRawValue =
@@ -103,12 +102,6 @@ export function resolveRolePackForRole(input: {
   }
 
   if (!parsedRolePack) {
-    if (allowDefaultForLegacy) {
-      const fallback = getDefaultRolePackForRole(role);
-      if (fallback) {
-        return { ok: true, rolePack: fallback, usedDefault: true };
-      }
-    }
     return { ok: false, errorCode: "ROLE_PACK_REQUIRED", allowedRolePacks };
   }
 

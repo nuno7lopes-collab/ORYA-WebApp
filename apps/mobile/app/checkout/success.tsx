@@ -161,7 +161,7 @@ export default function CheckoutSuccessScreen() {
       router.replace({ pathname: "/event/[slug]", params: { slug } });
       return;
     }
-    safeBack(router, navigation, TAB_PATHNAMES.index);
+    safeBack(router, navigation, TAB_PATHNAMES.inicio);
   };
 
   return (

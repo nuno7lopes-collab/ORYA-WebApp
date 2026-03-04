@@ -8,6 +8,9 @@ import { cn } from "@/lib/utils";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
 import { ContextDrawer } from "@/components/ui/context-drawer";
 import { OryaDateField } from "@/components/ui/datetime";
+import { CalendarCommandBar } from "./CalendarCommandBar";
+import type { CalendarView } from "./ViewSwitcher";
+import { resolveAvailabilityOverlayHint, resolveAvailabilityOverlayState } from "./availabilityOverlayMode";
 import { SearchableEntitySelect, type SearchableEntityOption } from "./day/SearchableEntitySelect";
 import { buildCalendarOperationalGuidance } from "./operationalGuidance";
 import {
@@ -73,6 +76,8 @@ type ResourceItem = {
   isActive: boolean;
   priority: number;
   sourceType?: "RESOURCE" | "COURT";
+  resourceId?: number | null;
+  availabilityScopeId?: number | null;
   courtId?: number | null;
   padelClubId?: number | null;
   clubName?: string | null;
@@ -150,10 +155,6 @@ type PositionedAgendaItem = {
 type ProjectedAgendaItem = WeekProjectedAgendaItem<AgendaItem> & PositionedAgendaItem;
 type AggregateAgendaItem = WeekAggregateAgendaItem<AgendaItem>;
 
-const CHIP_BASE =
-  "rounded-full border border-white/12 bg-white/[0.04] px-3 py-1 text-[12px] text-white/70 transition hover:border-white/25 hover:bg-white/10 hover:text-white";
-const CHIP_ACTIVE =
-  "border-white/40 bg-white/18 text-white shadow-[0_10px_24px_rgba(0,0,0,0.3)]";
 const DEFAULT_HOUR_HEIGHT = 56;
 const VISIBLE_HOURS = 10;
 const HOUR_START = 0;
@@ -518,17 +519,16 @@ export default function WeekCalendarReadClient() {
   const orgIdRaw = Array.isArray(params?.orgId) ? params.orgId[0] : params?.orgId;
   const organizationId = Number(orgIdRaw);
   const [selectedAggregateKey, setSelectedAggregateKey] = useState<string | null>(null);
-  const [hoveredAggregateKey, setHoveredAggregateKey] = useState<string | null>(null);
   const [visibleKinds, setVisibleKinds] = useState<Array<(typeof ALL_KIND_FILTER_OPTIONS)[number]["value"]>>(
     ALL_KIND_FILTER_OPTIONS.map((option) => option.value),
   );
+  const [quickPanelOpen, setQuickPanelOpen] = useState(false);
   const hourHeight = DEFAULT_HOUR_HEIGHT;
   const timezone = useMemo(
     () => normalizeCalendarTimezone(searchParams.get("tz")),
     [searchParams],
   );
   const gridScrollRef = useRef<HTMLDivElement | null>(null);
-  const hoverLeaveTimeoutRef = useRef<number | null>(null);
 
   const selectedResourceIds = useMemo(() => parseIdList(searchParams.get("resources")), [searchParams]);
   const selectedCourtIds = useMemo(() => parseIdList(searchParams.get("courts")), [searchParams]);
@@ -536,6 +536,7 @@ export default function WeekCalendarReadClient() {
     () => parseIdList(searchParams.get("professionals")),
     [searchParams],
   );
+  const selectedScopesCountRaw = selectedProfessionalIds.length + selectedResourceIds.length + selectedCourtIds.length;
   const anchorDate = useMemo(
     () => parseDateParam(searchParams.get("date"), timezone) ?? new Date(),
     [searchParams, timezone],
@@ -554,13 +555,8 @@ export default function WeekCalendarReadClient() {
     setIdListParam(nextParams, "resources", input.nextResources ?? selectedResourceIds);
     setIdListParam(nextParams, "courts", input.nextCourts ?? selectedCourtIds);
     setIdListParam(nextParams, "professionals", input.nextProfessionals ?? selectedProfessionalIds);
-    const selectedScopesCountRaw =
-      (input.nextProfessionals ?? selectedProfessionalIds).length +
-      (input.nextResources ?? selectedResourceIds).length +
-      (input.nextCourts ?? selectedCourtIds).length;
-    const defaultOverlay = selectedScopesCountRaw === 1;
     const rawOverlay = searchParams.get("showAvailabilityOverlay");
-    const currentOverlay = rawOverlay === "1" ? true : rawOverlay === "0" ? false : defaultOverlay;
+    const currentOverlay = rawOverlay === "1" ? true : rawOverlay === "0" ? false : true;
     const nextOverlay =
       typeof input.nextShowAvailabilityOverlay === "boolean"
         ? input.nextShowAvailabilityOverlay
@@ -638,7 +634,6 @@ export default function WeekCalendarReadClient() {
   const { data, error, isLoading } = useSWR<AgendaResponse>(apiUrl, fetchJson);
   const agendaCapabilities = data?.capabilities ?? null;
   const operationalMode = data?.operationalMode ?? null;
-  const acceptsNewBookings = data?.reservasOperational?.acceptsNewBookings ?? true;
   const reservationsCapability = agendaCapabilities?.reservas;
   const reservationsEnabled = reservationsCapability === true;
   const scopeSelectionEnabled = reservationsCapability !== false;
@@ -731,20 +726,14 @@ export default function WeekCalendarReadClient() {
     ],
     [selectedCourtIds, selectedResourceIds],
   );
-  const hasActiveSelection =
-    scopeSelectionEnabled &&
-    (selectedProfessionalIds.length > 0 || selectedResourceIds.length > 0 || selectedCourtIds.length > 0);
-  const selectedScopesCount =
-    scopeSelectionEnabled ? selectedProfessionalIds.length + selectedResourceIds.length + selectedCourtIds.length : 0;
+  const hasActiveSelection = scopeSelectionEnabled && selectedScopesCountRaw > 0;
+  const selectedScopesCount = scopeSelectionEnabled ? selectedScopesCountRaw : 0;
   const hasSingleScopeSelection = scopeSelectionEnabled && selectedScopesCount === 1;
-  const showAvailabilityOverlayParam = searchParams.get("showAvailabilityOverlay");
-  const showAvailabilityOverlay =
-    showAvailabilityOverlayParam === "1"
-      ? true
-      : showAvailabilityOverlayParam === "0"
-        ? false
-        : hasSingleScopeSelection;
-  const renderAvailabilityOverlay = showAvailabilityOverlay && hasSingleScopeSelection;
+  const { showAvailabilityOverlay, overlayMode, renderAvailabilityOverlay } =
+    resolveAvailabilityOverlayState({
+      showAvailabilityOverlayParam: searchParams.get("showAvailabilityOverlay"),
+      hasSingleScopeSelection,
+    });
   const selectedScopesLabel = useMemo(() => {
     const parts: string[] = [];
     if (selectedProfessionalIds.length > 0) {
@@ -780,6 +769,17 @@ export default function WeekCalendarReadClient() {
     const search = nextParams.toString();
     return search ? `${nextPath}?${search}` : nextPath;
   }, [anchorDate, organizationId, searchParams, timezone]);
+  const setView = (nextView: CalendarView) => {
+    if (nextView === "day") {
+      router.push(dayViewHref, { scroll: false });
+      return;
+    }
+    if (nextView === "month") {
+      router.push(monthViewHref, { scroll: false });
+      return;
+    }
+    replaceState({});
+  };
 
   const items = data?.items ?? [];
   const filteredItems = useMemo(() => {
@@ -832,8 +832,6 @@ export default function WeekCalendarReadClient() {
     return map;
   }, [aggregateByDay]);
   const selectedAggregate = selectedAggregateKey ? aggregatesByKey.get(selectedAggregateKey) ?? null : null;
-  const hoveredAggregate = hoveredAggregateKey ? aggregatesByKey.get(hoveredAggregateKey) ?? null : null;
-  const hoverPreviewAggregate = selectedAggregate ? null : hoveredAggregate;
   const singleScopeSelection = useMemo(() => {
     if (!hasSingleScopeSelection) return null;
     if (
@@ -906,24 +904,37 @@ export default function WeekCalendarReadClient() {
       }
     },
   );
+  const organizationAvailabilityKey =
+    reservationsEnabled && Number.isFinite(organizationId) && organizationId > 0
+      ? `org-availability:${organizationId}`
+      : null;
+  const { data: organizationAvailability } = useSWR<NormalizedAvailability | undefined>(
+    organizationAvailabilityKey,
+    async () => {
+      const url = `/api/org/${organizationId}/reservas/disponibilidade?scopeType=ORGANIZATION&includeTemplates=all`;
+      try {
+        const payload = await fetchJson<AvailabilityResponse>(url);
+        if (!payload?.ok) return undefined;
+        return normalizeAvailability(payload, timezone);
+      } catch {
+        return undefined;
+      }
+    },
+  );
   const availabilityOverlayByDay = useMemo(() => {
     const map = new Map<string, Interval[]>();
     const source =
-      renderAvailabilityOverlay && singleScopeSelection
+      overlayMode === "scope" && singleScopeSelection
         ? selectedScopeAvailability
-        : undefined;
+        : overlayMode === "general"
+          ? organizationAvailability
+          : undefined;
     days.forEach((day) => {
       map.set(getDayKey(day, timezone), resolveIntervalsForDay(source, day, timezone));
     });
     return map;
-  }, [days, renderAvailabilityOverlay, selectedScopeAvailability, singleScopeSelection, timezone]);
-  const availabilityOverlayHint = renderAvailabilityOverlay
-    ? "Sobreposição de disponibilidade ativa para o escopo selecionado."
-    : hasActiveSelection
-      ? showAvailabilityOverlay
-        ? "Sobreposição desativada para múltiplos escopos."
-        : "Sobreposição de disponibilidade desligada."
-      : "Seleciona um único escopo para ativar a sobreposição de disponibilidade.";
+  }, [days, organizationAvailability, overlayMode, selectedScopeAvailability, singleScopeSelection, timezone]);
+  const availabilityOverlayHint = resolveAvailabilityOverlayHint({ overlayMode, hasActiveSelection });
 
   const now = new Date();
   const isTodayInRange = days.some((day) => isSameDay(day, now, timezone));
@@ -941,6 +952,15 @@ export default function WeekCalendarReadClient() {
       }),
     [agendaCapabilities, operationalMode, organizationId],
   );
+  const commandBarHint = hasActiveSelection
+    ? `Escopo ativo (${selectedScopesCount}): ${selectedScopesLabel}.`
+    : operationalGuidance.selectionHint;
+  const commandBarActions = operationalGuidance.actions.slice(0, 2).map((action) => ({
+    ...action,
+    tone: action.tone === "primary" ? ("primary" as const) : ("neutral" as const),
+  }));
+  const hasCachedAgendaItems = (data?.items?.length ?? 0) > 0;
+  const showSoftAgendaError = Boolean(error) && hasCachedAgendaItems;
   const dayHeaderFormatter = useMemo(() => getDayHeaderFormatter(timezone), [timezone]);
   const scrollWeekToMinute = (minute: number) => {
     const node = gridScrollRef.current;
@@ -949,44 +969,15 @@ export default function WeekCalendarReadClient() {
     node.scrollTo({ top, behavior: "smooth" });
   };
   const jumpTimes = [8, 12, 16, 20];
-  const cancelHoverLeaveTimeout = () => {
-    if (hoverLeaveTimeoutRef.current === null) return;
-    window.clearTimeout(hoverLeaveTimeoutRef.current);
-    hoverLeaveTimeoutRef.current = null;
-  };
-  const setHoveredAggregateImmediate = (aggregateKey: string) => {
-    cancelHoverLeaveTimeout();
-    setHoveredAggregateKey((current) => (current === aggregateKey ? current : aggregateKey));
-  };
-  const scheduleHoveredAggregateClear = (aggregateKey: string) => {
-    cancelHoverLeaveTimeout();
-    hoverLeaveTimeoutRef.current = window.setTimeout(() => {
-      setHoveredAggregateKey((current) => (current === aggregateKey ? null : current));
-      hoverLeaveTimeoutRef.current = null;
-    }, 90);
-  };
 
   useEffect(() => {
-    cancelHoverLeaveTimeout();
     setSelectedAggregateKey(null);
-    setHoveredAggregateKey(null);
   }, [dateInputValue, selectedCourtIds, selectedProfessionalIds, selectedResourceIds]);
   useEffect(() => {
     if (selectedAggregateKey && !aggregatesByKey.has(selectedAggregateKey)) {
       setSelectedAggregateKey(null);
     }
-    if (hoveredAggregateKey && !aggregatesByKey.has(hoveredAggregateKey)) {
-      cancelHoverLeaveTimeout();
-      setHoveredAggregateKey(null);
-    }
-  }, [aggregatesByKey, hoveredAggregateKey, selectedAggregateKey]);
-  useEffect(() => {
-    return () => {
-      if (hoverLeaveTimeoutRef.current !== null) {
-        window.clearTimeout(hoverLeaveTimeoutRef.current);
-      }
-    };
-  }, []);
+  }, [aggregatesByKey, selectedAggregateKey]);
 
   useEffect(() => {
     const node = gridScrollRef.current;
@@ -1046,217 +1037,171 @@ export default function WeekCalendarReadClient() {
   }
 
   return (
-    <div className="space-y-4 p-4 md:p-6">
-      <div className="rounded-2xl border border-white/10 bg-[rgba(10,14,26,0.9)] p-4 shadow-[0_24px_90px_rgba(0,0,0,0.45)]">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="max-w-3xl">
-            <p className="text-xs uppercase tracking-[0.22em] text-cyan-100/70">{operationalGuidance.badge}</p>
-            <h1 className="mt-1 text-2xl font-semibold text-white">Calendário operacional</h1>
-            <p className="mt-2 text-sm text-white/80">{operationalGuidance.description}</p>
-            <p className="mt-2 text-xs text-white/60">{operationalGuidance.title}</p>
-          </div>
-          {operationalGuidance.actions.length > 0 ? (
-            <div className="flex flex-wrap items-center gap-2">
-              {operationalGuidance.actions.map((action) => (
-                <Link
-                  key={`week-guidance-action-${action.id}`}
-                  href={action.href}
+    <div className="space-y-3 p-3 md:p-4">
+      <CalendarCommandBar
+        view="week"
+        onViewChange={setView}
+        rangeLabel={range.label}
+        onPrevious={() => shiftRange(-1)}
+        onNext={() => shiftRange(1)}
+        onToday={setToday}
+        dateControl={
+          <OryaDateField
+            value={dateInputValue}
+            onChange={(nextDateRaw) => {
+              const nextDate = parseDateParam(nextDateRaw, timezone);
+              if (!nextDate) return;
+              replaceState({ nextDate });
+            }}
+            buttonClassName="rounded-full px-3 py-1 text-xs"
+          />
+        }
+        timezoneControl={
+          <label className="inline-flex h-9 items-center gap-2 rounded-full border border-white/20 bg-black/35 px-3 text-xs text-white/80">
+            <span className="text-[10px] uppercase tracking-[0.14em] text-white/55">Fuso</span>
+            <select
+              value={timezone}
+              onChange={(event) => replaceState({ nextTimezone: event.target.value })}
+              className="bg-transparent text-xs text-white/90 outline-none"
+              aria-label="Selecionar fuso horário"
+            >
+              {CALENDAR_TIMEZONE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value} className="bg-slate-900 text-white">
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        }
+        scopeControl={
+          scopeSelectionEnabled ? (
+            <div className="inline-flex items-center gap-2">
+              <SearchableEntitySelect
+                label="Treinador"
+                placeholder="Treinador"
+                options={professionalOptions}
+                selectedIds={selectedProfessionalOptionIds}
+                onChange={setSelectedProfessionals}
+              />
+              <SearchableEntitySelect
+                label="Campo"
+                placeholder="Campo/recurso"
+                options={resourceOptions}
+                selectedIds={selectedResourceOptionIds}
+                onChange={setSelectedResourcesAndCourts}
+              />
+              <button
+                type="button"
+                onClick={clearSelections}
+                className={cn(
+                  "inline-flex h-9 items-center rounded-full border px-3 text-xs transition",
+                  hasActiveSelection
+                    ? "border-white/20 bg-black/35 text-white/75 hover:border-white/35 hover:text-white"
+                    : "border-cyan-300/45 bg-cyan-400/14 text-cyan-100",
+                )}
+              >
+                Geral
+              </button>
+            </div>
+          ) : null
+        }
+        filterControl={
+          <button
+            type="button"
+            onClick={() => setQuickPanelOpen((current) => !current)}
+            className={cn(
+              "inline-flex h-9 items-center rounded-full border px-3 text-xs transition",
+              quickPanelOpen
+                ? "border-cyan-300/45 bg-cyan-400/14 text-cyan-100"
+                : "border-white/20 bg-black/35 text-white/80 hover:border-white/35 hover:text-white",
+            )}
+          >
+            Tipos e resumo
+          </button>
+        }
+        overlayControl={
+          <button
+            type="button"
+            onClick={() => replaceState({ nextShowAvailabilityOverlay: !showAvailabilityOverlay })}
+            className={cn(
+              "inline-flex h-9 items-center rounded-full border px-3 text-xs transition",
+              showAvailabilityOverlay
+                ? "border-cyan-300/45 bg-cyan-400/14 text-cyan-100 hover:border-cyan-300/75"
+                : "border-white/20 bg-black/35 text-white/75 hover:border-white/35 hover:text-white",
+            )}
+          >
+            Disponibilidade {showAvailabilityOverlay ? "ON" : "OFF"}
+          </button>
+        }
+        actions={commandBarActions}
+        hint={commandBarHint}
+      />
+
+      {quickPanelOpen ? (
+        <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] uppercase tracking-[0.14em] text-white/55">Tipo</span>
+            {availableKindOptions.map((option) => {
+              const isActive = visibleKinds.includes(option.value);
+              return (
+                <button
+                  key={`week-kind-${option.value}`}
+                  type="button"
+                  onClick={() => toggleVisibleKind(option.value)}
                   className={cn(
-                    "rounded-full border px-3 py-1.5 text-xs transition",
-                    action.tone === "primary"
-                      ? "border-cyan-300/45 bg-cyan-400/12 text-cyan-100 hover:border-cyan-300/75"
-                      : "border-white/20 bg-white/5 text-white/80 hover:border-white/35 hover:text-white",
+                    "rounded-full border px-3 py-1 text-xs transition",
+                    isActive
+                      ? "border-cyan-300/45 bg-cyan-400/12 text-cyan-100"
+                      : "border-white/15 bg-white/5 text-white/70 hover:border-white/30 hover:text-white",
                   )}
                 >
-                  {action.label}
-                </Link>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-      {reservationsEnabled ? (
-        <section
-          className={cn(
-            "rounded-2xl border p-4 shadow-[0_18px_54px_rgba(0,0,0,0.4)]",
-            acceptsNewBookings
-              ? "border-emerald-300/30 bg-[linear-gradient(145deg,rgba(16,185,129,0.16),rgba(7,10,22,0.86))]"
-              : "border-rose-300/35 bg-[linear-gradient(145deg,rgba(244,63,94,0.2),rgba(7,10,22,0.86))]",
-          )}
-        >
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.2em] text-white/75">
-                Reservas {acceptsNewBookings ? "ON" : "OFF"}
-              </p>
-              <p className="mt-1 text-sm font-semibold text-white">
-                {acceptsNewBookings
-                  ? "Novas reservas ativas, limitadas pela disponibilidade."
-                  : "Novas reservas bloqueadas. Historico preservado."}
-              </p>
-            </div>
-            <Link
-              href={buildOrgHref(organizationId, "/calendar/availability")}
-              className="rounded-full border border-white/25 px-3 py-1.5 text-xs text-white/85 transition hover:border-white/45 hover:text-white"
-            >
-              Gerir reservas ON/OFF
-            </Link>
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-[11px] text-white/55">{availabilityOverlayHint}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]" aria-live="polite">
+            <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-white/75">
+              Total {statusSummary.total}
+            </span>
+            {statusSummary.confirmed > 0 ? (
+              <span className="rounded-full border border-sky-300/45 bg-sky-400/12 px-2 py-0.5 text-sky-100">
+                Confirmado {statusSummary.confirmed}
+              </span>
+            ) : null}
+            {statusSummary.pending > 0 ? (
+              <span className="rounded-full border border-amber-300/45 bg-amber-400/12 px-2 py-0.5 text-amber-100">
+                Pendente {statusSummary.pending}
+              </span>
+            ) : null}
+            {statusSummary.cancelled > 0 ? (
+              <span className="rounded-full border border-rose-300/45 bg-rose-400/12 px-2 py-0.5 text-rose-100">
+                Cancelado/No-show {statusSummary.cancelled}
+              </span>
+            ) : null}
+            {statusSummary.disputed > 0 ? (
+              <span className="rounded-full border border-fuchsia-300/45 bg-fuchsia-400/12 px-2 py-0.5 text-fuchsia-100">
+                Disputa {statusSummary.disputed}
+              </span>
+            ) : null}
+            <span className="text-[11px] text-white/50">{visibleCountLabel}</span>
           </div>
         </section>
       ) : null}
 
-      <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => shiftRange(-1)}
-              className={CHIP_BASE}
-              title="Anterior"
-              aria-label="Intervalo anterior"
-            >
-              ←
-            </button>
-            <button type="button" onClick={setToday} className={CHIP_BASE}>
-              Hoje
-            </button>
-            <button
-              type="button"
-              onClick={() => shiftRange(1)}
-              className={CHIP_BASE}
-              title="Seguinte"
-              aria-label="Intervalo seguinte"
-            >
-              →
-            </button>
-            <OryaDateField
-              value={dateInputValue}
-              onChange={(nextDateRaw) => {
-                const nextDate = parseDateParam(nextDateRaw, timezone);
-                if (!nextDate) return;
-                replaceState({ nextDate });
-              }}
-              buttonClassName="rounded-xl px-3 py-1 text-xs"
-            />
-            <span className="text-sm font-medium text-white">{range.label}</span>
-            <label className="flex items-center gap-2 rounded-full border border-white/20 bg-black/30 px-3 py-1 text-xs text-white/80">
-              <span className="text-[10px] uppercase tracking-[0.2em] text-white/55">Fuso</span>
-              <select
-                value={timezone}
-                onChange={(event) => replaceState({ nextTimezone: event.target.value })}
-                className="bg-transparent text-xs text-white/90 outline-none"
-                aria-label="Selecionar fuso horário"
-              >
-                {CALENDAR_TIMEZONE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value} className="bg-slate-900 text-white">
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+      {showSoftAgendaError ? (
+        <p className="rounded-xl border border-amber-300/35 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">
+          A mostrar dados anteriores da agenda enquanto a sincronização falha.
+        </p>
+      ) : null}
 
-        </div>
-
-        {scopeSelectionEnabled ? (
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <SearchableEntitySelect
-              label="Equipa ou profissional"
-              placeholder="Equipa/profissional"
-              options={professionalOptions}
-              selectedIds={selectedProfessionalOptionIds}
-              onChange={setSelectedProfessionals}
-            />
-            <SearchableEntitySelect
-              label="Recurso"
-              placeholder="Recurso"
-              options={resourceOptions}
-              selectedIds={selectedResourceOptionIds}
-              onChange={setSelectedResourcesAndCourts}
-            />
-            <button
-              type="button"
-              onClick={clearSelections}
-              className={cn(CHIP_BASE, !hasActiveSelection && CHIP_ACTIVE)}
-            >
-              Geral
-            </button>
-          </div>
-        ) : null}
-
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span className="text-[11px] uppercase tracking-[0.14em] text-white/50">Tipo</span>
-          {availableKindOptions.map((option) => {
-            const isActive = visibleKinds.includes(option.value);
-            return (
-              <button
-                key={`week-kind-${option.value}`}
-                type="button"
-                onClick={() => toggleVisibleKind(option.value)}
-                className={`rounded-full border px-3 py-1 text-xs transition ${
-                  isActive
-                    ? "border-cyan-300/45 bg-cyan-400/12 text-cyan-100"
-                    : "border-white/15 bg-white/5 text-white/70 hover:border-white/30 hover:text-white"
-                }`}
-              >
-                {option.label}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-[11px] text-white/58">
-            {hasActiveSelection
-              ? `Seleção ativa (${selectedScopesCount}): ${selectedScopesLabel}.`
-              : operationalGuidance.selectionHint}
-          </p>
-          <div className="flex items-center gap-2">
-            {scopeSelectionEnabled && hasActiveSelection ? (
-              <button
-                type="button"
-                onClick={clearSelections}
-                className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 transition hover:border-white/35 hover:text-white"
-              >
-                Limpar seleção
-              </button>
-            ) : null}
-          </div>
-        </div>
-      </section>
-
-      <div className="grid gap-4">
+      <div className="grid gap-3">
         <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-3 shadow-[0_24px_80px_rgba(3,8,20,0.45)]">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2 px-1">
             <div>
               <h2 className="text-sm font-semibold text-white">Agenda em grelha</h2>
               <p className="text-xs text-white/55">{visibleCountLabel}</p>
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px]" aria-live="polite">
-                <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-white/75">
-                  Total {statusSummary.total}
-                </span>
-                {statusSummary.confirmed > 0 ? (
-                  <span className="rounded-full border border-sky-300/45 bg-sky-400/12 px-2 py-0.5 text-sky-100">
-                    Confirmado {statusSummary.confirmed}
-                  </span>
-                ) : null}
-                {statusSummary.pending > 0 ? (
-                  <span className="rounded-full border border-amber-300/45 bg-amber-400/12 px-2 py-0.5 text-amber-100">
-                    Pendente {statusSummary.pending}
-                  </span>
-                ) : null}
-                {statusSummary.cancelled > 0 ? (
-                  <span className="rounded-full border border-rose-300/45 bg-rose-400/12 px-2 py-0.5 text-rose-100">
-                    Cancelado/No-show {statusSummary.cancelled}
-                  </span>
-                ) : null}
-                {statusSummary.disputed > 0 ? (
-                  <span className="rounded-full border border-fuchsia-300/45 bg-fuchsia-400/12 px-2 py-0.5 text-fuchsia-100">
-                    Disputa {statusSummary.disputed}
-                  </span>
-                ) : null}
-              </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {jumpTimes.map((hour) => (
@@ -1279,18 +1224,6 @@ export default function WeekCalendarReadClient() {
               >
                 Ir para agora
               </button>
-              <button
-                type="button"
-                onClick={() => replaceState({ nextShowAvailabilityOverlay: !showAvailabilityOverlay })}
-                className={cn(
-                  "rounded-full border px-3 py-1 text-xs transition",
-                  showAvailabilityOverlay
-                    ? "border-cyan-300/45 bg-cyan-400/12 text-cyan-100 hover:border-cyan-300/75"
-                    : "border-white/20 text-white/75 hover:border-white/35 hover:text-white",
-                )}
-              >
-                Disponibilidade {showAvailabilityOverlay ? "ON" : "OFF"}
-              </button>
               {reservationsEnabled ? (
                 <Link
                   href={buildOrgHref(organizationId, "/calendar/availability")}
@@ -1301,46 +1234,13 @@ export default function WeekCalendarReadClient() {
               ) : null}
             </div>
           </div>
-          <div className="mb-3 flex flex-wrap items-center gap-2 px-1 text-[10px] text-white/65">
-            <span className="rounded-full border border-sky-300/45 bg-sky-400/12 px-2 py-0.5 text-sky-100">Confirmado</span>
-            <span className="rounded-full border border-amber-300/45 bg-amber-400/12 px-2 py-0.5 text-amber-100">Pendente</span>
-            <span className="rounded-full border border-rose-300/45 bg-rose-400/12 px-2 py-0.5 text-rose-100">Cancelado/No-show</span>
-            <span className="rounded-full border border-fuchsia-300/45 bg-fuchsia-400/12 px-2 py-0.5 text-fuchsia-100">Disputa</span>
-            <span className="text-white/45">Click fixa detalhe · hover pré-visualiza</span>
-          </div>
-          <p className="mb-3 px-1 text-[11px] text-white/50">{availabilityOverlayHint}</p>
-          <div className="mb-3 h-[92px]">
-            {hoverPreviewAggregate ? (
-              <article className="h-full rounded-xl border border-cyan-300/25 bg-cyan-400/8 p-3">
-                <p className="truncate text-xs font-semibold text-cyan-100">
-                  Pré-visualização: {formatHourMinute(hoverPreviewAggregate.start, timezone)} -{" "}
-                  {formatHourMinute(hoverPreviewAggregate.end, timezone)}
-                </p>
-                <p className="mt-1 truncate text-[11px] text-cyan-50/80">
-                  {hoverPreviewAggregate.items.length} {hoverPreviewAggregate.items.length === 1 ? "ocupação" : "ocupações"}
-                </p>
-                {hoverPreviewAggregate.items.slice(0, 2).map((entry, index) => (
-                  <p key={getProjectedEntryKey(entry, index)} className="truncate text-[11px] text-cyan-50/75">
-                    {formatHourMinute(entry.start, timezone)} {entry.item.title}
-                  </p>
-                ))}
-              </article>
-            ) : (
-              <article className="h-full rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                <p className="text-xs text-white/60">
-                  Passa o cursor sobre uma ocupação para pré-visualizar sem abrir o detalhe.
-                </p>
-                <p className="mt-1 text-[11px] text-white/45">Click numa ocupação para fixar no painel lateral.</p>
-              </article>
-            )}
-          </div>
-
+          <p className="mb-3 px-1 text-[11px] text-white/52">{availabilityOverlayHint}</p>
           <div className="overflow-hidden rounded-2xl border border-white/10 bg-[rgba(5,10,22,0.82)]">
             <div className="overflow-x-auto">
               <div className="min-w-[880px]">
                 <div
                   className="grid gap-1 border-b border-white/10 bg-[rgba(5,10,22,0.9)]"
-                  style={{ gridTemplateColumns: "72px minmax(0,1fr)" }}
+                  style={{ gridTemplateColumns: "76px minmax(0,1fr)" }}
                 >
                   <div className="h-11 border-r border-white/10" />
                   <div className="grid grid-cols-7 gap-1">
@@ -1366,15 +1266,15 @@ export default function WeekCalendarReadClient() {
                 <div
                   ref={gridScrollRef}
                   className="overflow-y-auto orya-scrollbar-hide"
-                  style={{ height: viewportHeight, maxHeight: "calc(100vh - 320px)" }}
+                  style={{ height: viewportHeight, maxHeight: "calc(100dvh - 210px)" }}
                 >
-                  <div className="grid gap-1" style={{ gridTemplateColumns: "72px minmax(0,1fr)" }}>
+                  <div className="grid gap-1" style={{ gridTemplateColumns: "76px minmax(0,1fr)" }}>
                     <div
                       className="relative border-r border-white/10 bg-[rgba(7,12,25,0.65)]"
                       style={{
                         height: gridHeight,
                         backgroundImage:
-                          "linear-gradient(to bottom, rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.06) 1px, transparent 1px)",
+                          "linear-gradient(to bottom, rgba(255,255,255,0.012) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.04) 1px, transparent 1px)",
                         backgroundSize: `100% ${hourHeight / 4}px, 100% ${hourHeight}px`,
                       }}
                     >
@@ -1385,7 +1285,7 @@ export default function WeekCalendarReadClient() {
                           <div
                             key={`hour-${hour}`}
                             className={cn(
-                              "absolute right-2 text-[10px] font-mono tracking-[0.1em] text-white/42",
+                              "absolute right-2 text-[11px] tabular-nums text-white/52",
                               hour === HOUR_START ? "top-0" : "-translate-y-1/2",
                             )}
                             style={{ top }}
@@ -1407,20 +1307,20 @@ export default function WeekCalendarReadClient() {
                           <div
                             key={`calendar-day-${key}`}
                             className={cn(
-                              "relative border border-white/10 border-t-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))]",
+                              "relative border border-white/10 border-t-0 bg-[rgba(8,13,24,0.86)]",
                               isToday && "ring-1 ring-inset ring-cyan-300/25",
                             )}
                             style={{
                               height: gridHeight,
                               backgroundImage:
-                                "linear-gradient(to bottom, rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.06) 1px, transparent 1px)",
+                                "linear-gradient(to bottom, rgba(255,255,255,0.012) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.04) 1px, transparent 1px)",
                               backgroundSize: `100% ${hourHeight / 4}px, 100% ${hourHeight}px`,
                             }}
                           >
                             {outsideIntervals.map((interval) => (
                               <div
                                 key={`${key}-outside-${interval.startMinute}-${interval.endMinute}`}
-                                className="pointer-events-none absolute left-0 right-0 border-y border-white/5 bg-[repeating-linear-gradient(135deg,rgba(4,8,16,0.42),rgba(4,8,16,0.42)_8px,rgba(255,255,255,0.035)_8px,rgba(255,255,255,0.035)_16px)]"
+                                className="pointer-events-none absolute left-0 right-0 bg-[repeating-linear-gradient(135deg,rgba(2,6,14,0.18),rgba(2,6,14,0.18)_10px,rgba(255,255,255,0.02)_10px,rgba(255,255,255,0.02)_20px)]"
                                 style={{
                                   top: interval.startMinute * minuteHeight,
                                   height: (interval.endMinute - interval.startMinute) * minuteHeight,
@@ -1463,13 +1363,9 @@ export default function WeekCalendarReadClient() {
                                     left: 4,
                                     width: "calc(100% - 8px)",
                                   }}
-                                  onMouseEnter={() => setHoveredAggregateImmediate(aggregateKey)}
-                                  onMouseLeave={() => scheduleHoveredAggregateClear(aggregateKey)}
                                   onClick={() =>
                                     setSelectedAggregateKey((current) => (current === aggregateKey ? null : aggregateKey))
                                   }
-                                  onFocus={() => setHoveredAggregateImmediate(aggregateKey)}
-                                  onBlur={() => scheduleHoveredAggregateClear(aggregateKey)}
                                   onKeyDown={(event) => {
                                     if (event.key === "Enter" || event.key === " ") {
                                       event.preventDefault();
@@ -1481,16 +1377,16 @@ export default function WeekCalendarReadClient() {
                                     {formatHourMinute(aggregate.start, timezone)} - {formatHourMinute(aggregate.end, timezone)} ·{" "}
                                     {aggregate.items.length} {aggregate.items.length === 1 ? "ocupação" : "ocupações"}
                                   </p>
-                                  {aggregate.items.slice(0, 3).map((entry, index) => (
+                                  {aggregate.items.slice(0, 2).map((entry, index) => (
                                     <p
                                       key={getProjectedEntryKey(entry, index)}
-                                      className="mt-0.5 truncate text-[10px] text-white/80"
+                                      className="mt-0.5 truncate text-[11px] text-white/78"
                                     >
                                       {formatHourMinute(entry.start, timezone)} {entry.item.title}
                                     </p>
                                   ))}
-                                  {aggregate.items.length > 3 ? (
-                                    <p className="mt-0.5 text-[10px] text-white/65">+{aggregate.items.length - 3} adicionais</p>
+                                  {aggregate.items.length > 2 ? (
+                                    <p className="mt-0.5 text-[11px] text-white/62">+{aggregate.items.length - 2} adicionais</p>
                                   ) : null}
                                 </article>
                               );
@@ -1509,7 +1405,7 @@ export default function WeekCalendarReadClient() {
               A carregar agenda...
             </p>
           )}
-          {error && (
+          {error && !showSoftAgendaError && (
             <p role="alert" className="mt-3 text-sm text-red-200">
               Falha ao carregar agenda: {error.message}
             </p>

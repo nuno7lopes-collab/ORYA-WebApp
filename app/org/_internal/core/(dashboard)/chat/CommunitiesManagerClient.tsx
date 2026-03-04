@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { EventCoverCropModal } from "@/app/components/forms/EventCoverCropModal";
 import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/org/_internal/core/dashboardUi";
@@ -606,6 +607,7 @@ function CommunityFormModal(props: {
 }
 
 export default function CommunitiesManagerClient() {
+  const searchParams = useSearchParams();
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<CommunityItem | null>(null);
   const [savingForm, setSavingForm] = useState(false);
@@ -623,6 +625,8 @@ export default function CommunitiesManagerClient() {
   const [copiedInviteLink, setCopiedInviteLink] = useState(false);
   const [manualInviteResult, setManualInviteResult] = useState<CommunityManualInvitesResponse | null>(null);
   const [feedback, setFeedback] = useState<{ tone: "error" | "success"; message: string } | null>(null);
+  const requestedCommunityId = searchParams.get("communityId")?.trim() ?? "";
+  const requestedPanel = searchParams.get("panel")?.trim().toLowerCase() ?? "";
 
   const communitiesKey = "/api/messages/communities";
   const {
@@ -646,6 +650,7 @@ export default function CommunitiesManagerClient() {
   const {
     data: requestsData,
     isLoading: requestsLoading,
+    isValidating: requestsValidating,
     error: requestsError,
     mutate: mutateRequests,
   } = useSWR<CommunityRequestsResponse>(requestsKey, (url: string) => apiRequest<CommunityRequestsResponse>(url), {
@@ -661,6 +666,7 @@ export default function CommunitiesManagerClient() {
   const {
     data: participantsData,
     isLoading: participantsLoading,
+    isValidating: participantsValidating,
     error: participantsError,
     mutate: mutateParticipants,
   } = useSWR<CommunityParticipantsResponse>(
@@ -673,6 +679,15 @@ export default function CommunitiesManagerClient() {
   );
 
   const communities = communitiesData?.items ?? [];
+  const sortedCommunities = useMemo(
+    () =>
+      [...communities].sort((a, b) => {
+        const left = new Date(a.lastMessageAt || a.updatedAt || a.createdAt).getTime();
+        const right = new Date(b.lastMessageAt || b.updatedAt || b.createdAt).getTime();
+        return right - left;
+      }),
+    [communities],
+  );
 
   const selectedCommunity = useMemo(
     () => communities.find((community) => community.conversationId === selectedCommunityId) ?? null,
@@ -691,8 +706,27 @@ export default function CommunitiesManagerClient() {
         const username = participant.user.username?.toLowerCase() ?? "";
         const userId = participant.userId.toLowerCase();
         return name.includes(query) || username.includes(query) || userId.includes(query);
+      })
+      .sort((a, b) => {
+        const activeDelta = Number(isActiveParticipant(b)) - Number(isActiveParticipant(a));
+        if (activeDelta !== 0) return activeDelta;
+        const adminDelta = Number(b.role === "ADMIN") - Number(a.role === "ADMIN");
+        if (adminDelta !== 0) return adminDelta;
+        const mutedDelta = Number(isMutedParticipant(b)) - Number(isMutedParticipant(a));
+        if (mutedDelta !== 0) return mutedDelta;
+        const left = getUserLabel(a.user).toLocaleLowerCase("pt-PT");
+        const right = getUserLabel(b.user).toLocaleLowerCase("pt-PT");
+        return left.localeCompare(right, "pt-PT");
       });
   }, [participantSearch, participantView, participantsData?.items]);
+
+  const sortedRequests = useMemo(
+    () =>
+      [...(requestsData?.items ?? [])].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      ),
+    [requestsData?.items],
+  );
 
   const openPanel = useCallback((communityId: string, tab: PanelTab) => {
     setActivePanel({ communityId, tab });
@@ -704,6 +738,27 @@ export default function CommunitiesManagerClient() {
     setCopiedInviteLink(false);
     setGeneratedInviteLink(null);
   }, []);
+
+  useEffect(() => {
+    setInviteUserIdsInput("");
+    setInviteMessage("");
+    setInvitePreset("");
+    setManualInviteResult(null);
+    setCopiedInviteLink(false);
+    setGeneratedInviteLink(null);
+  }, [selectedCommunityId]);
+
+  useEffect(() => {
+    if (!requestedCommunityId || !communities.length) return;
+    const exists = communities.some((community) => community.conversationId === requestedCommunityId);
+    if (!exists) return;
+    const tab: PanelTab =
+      requestedPanel === "requests" || requestedPanel === "invites" || requestedPanel === "participants"
+        ? (requestedPanel as PanelTab)
+        : "participants";
+    if (activePanel?.communityId === requestedCommunityId && activePanel.tab === tab) return;
+    openPanel(requestedCommunityId, tab);
+  }, [activePanel?.communityId, activePanel?.tab, communities, openPanel, requestedCommunityId, requestedPanel]);
 
   const runAction = useCallback(async (key: string, action: () => Promise<void>) => {
     setPendingActionKey(key);
@@ -946,6 +1001,52 @@ export default function CommunitiesManagerClient() {
     };
   }, [communities]);
 
+  const selectedParticipantStats = useMemo(() => {
+    const items = participantsData?.items ?? [];
+    return items.reduce(
+      (acc, participant) => {
+        acc.total += 1;
+        if (isActiveParticipant(participant)) acc.active += 1;
+        if (participant.role === "ADMIN") acc.admins += 1;
+        if (participant.isTeamMember) acc.team += 1;
+        if (participant.bannedAt) acc.banned += 1;
+        if (isMutedParticipant(participant)) acc.muted += 1;
+        return acc;
+      },
+      { total: 0, active: 0, admins: 0, team: 0, banned: 0, muted: 0 },
+    );
+  }, [participantsData?.items]);
+
+  const selectedRequestsCount = requestsData?.items?.length ?? 0;
+  const activeCommunityActionScope = selectedCommunity?.conversationId ?? selectedCommunityId ?? "";
+  const manualInvitesActionKey = activeCommunityActionScope ? `manual-invites:${activeCommunityActionScope}` : "";
+  const inviteLinkActionKey = activeCommunityActionScope ? `invite-link:${activeCommunityActionScope}` : "";
+  const isManualInvitesPending = Boolean(manualInvitesActionKey) && pendingActionKey === manualInvitesActionKey;
+  const isInviteLinkPending = Boolean(inviteLinkActionKey) && pendingActionKey === inviteLinkActionKey;
+  const isRequestsSyncing = selectedTab === "requests" && (requestsLoading || requestsValidating);
+  const isParticipantsSyncing = selectedTab === "participants" && (participantsLoading || participantsValidating);
+  const isPromoteByIdPending =
+    Boolean(selectedCommunityId) && Boolean(pendingActionKey?.startsWith(`PROMOTE_ADMIN:${selectedCommunityId}:`));
+  const dangerActionClass =
+    "rounded-full border border-red-300/55 bg-red-500/24 px-3 py-1.5 text-xs font-semibold text-red-50 transition hover:bg-red-500/34 disabled:opacity-60";
+  const warningActionClass =
+    "rounded-full border border-amber-300/55 bg-amber-500/26 px-3 py-1.5 text-xs font-semibold text-amber-50 transition hover:bg-amber-500/36 disabled:opacity-60";
+  const positiveActionClass =
+    "rounded-full border border-emerald-300/45 bg-emerald-500/18 px-3 py-1.5 text-xs font-semibold text-emerald-50 transition hover:bg-emerald-500/28 disabled:opacity-60";
+  const manualInviteDraftTokens = useMemo(
+    () =>
+      inviteUserIdsInput
+        .split(/[,\n\s]+/g)
+        .map((part) => part.trim())
+        .filter(Boolean),
+    [inviteUserIdsInput],
+  );
+  const manualInviteUniqueCount = useMemo(
+    () => new Set(manualInviteDraftTokens).size,
+    [manualInviteDraftTokens],
+  );
+  const manualInviteDuplicateCount = manualInviteDraftTokens.length - manualInviteUniqueCount;
+
   const openCommunityChat = useCallback((conversationId: string) => {
     const path = buildCommunityChatPath(conversationId);
     if (!path || typeof window === "undefined") return;
@@ -1039,7 +1140,7 @@ export default function CommunitiesManagerClient() {
           </div>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {communities.map((community) => {
+            {sortedCommunities.map((community) => {
               const approveAllKey = `approve-all:${community.conversationId}`;
               const isActiveCard = selectedCommunityId === community.conversationId;
               const coverStyle = community.coverImageUrl
@@ -1148,8 +1249,21 @@ export default function CommunitiesManagerClient() {
             })}
 
             {!communities.length ? (
-              <div className="col-span-full rounded-2xl border border-white/20 bg-[#060d1a] p-5 text-sm text-white/90">
-                Ainda não existem comunidades. Cria a primeira para começar o chat de grupo com regras e convites.
+              <div className="col-span-full rounded-2xl border border-white/20 bg-[#060d1a] p-5">
+                <p className="text-sm font-semibold text-white">Ainda não existem comunidades.</p>
+                <p className="mt-1 text-sm text-white/90">
+                  Cria a primeira para começar o chat de grupo com regras, moderação e convites.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFeedback(null);
+                    setCreateOpen(true);
+                  }}
+                  className={`${CTA_PRIMARY} mt-3 text-xs`}
+                >
+                  Criar primeira comunidade
+                </button>
               </div>
             ) : null}
           </div>
@@ -1157,39 +1271,73 @@ export default function CommunitiesManagerClient() {
 
         {activePanel && selectedCommunity ? (
           <section className="rounded-2xl border border-white/20 bg-[#060d1a] p-4 shadow-[0_16px_52px_rgba(0,0,0,0.4)]">
-            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h3 className="text-lg font-semibold text-white">{selectedCommunity.title}</h3>
-                <p className="text-sm text-white/85">
-                  {formatCommunityTalkPolicyLabel(selectedCommunity.talkPolicy)} ·{" "}
-                  {formatCommunityAccessModeLabel(selectedCommunity.accessMode)}
-                </p>
-                <p className="mt-1 text-xs text-white/75">
-                  {selectedCommunity.participantsCount} participantes · {selectedCommunity.pendingRequestsCount} pedidos pendentes
-                </p>
+            <div className="mb-4 space-y-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-semibold text-white">{selectedCommunity.title}</h3>
+                  <p className="text-sm text-white/92">
+                    {formatCommunityTalkPolicyLabel(selectedCommunity.talkPolicy)} ·{" "}
+                    {formatCommunityAccessModeLabel(selectedCommunity.accessMode)}
+                  </p>
+                  <p className="mt-1 text-xs text-white/80">
+                    Gestão operacional desta comunidade com impacto direto no chat e no fluxo mobile.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openCommunityChat(selectedCommunity.conversationId)}
+                    className={`${CTA_PRIMARY} text-xs`}
+                  >
+                    Abrir chat do grupo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditing(selectedCommunity)}
+                    className={`${CTA_SECONDARY} text-xs`}
+                  >
+                    Editar comunidade
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActivePanel(null)}
+                    className={`${CTA_SECONDARY} text-xs`}
+                  >
+                    Fechar painel
+                  </button>
+                </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => openCommunityChat(selectedCommunity.conversationId)}
-                  className={`${CTA_PRIMARY} text-xs`}
-                >
-                  Abrir chat do grupo
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setEditing(selectedCommunity)}
-                  className={`${CTA_SECONDARY} text-xs`}
-                >
-                  Editar comunidade
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActivePanel(null)}
-                  className={`${CTA_SECONDARY} text-xs`}
-                >
-                  Fechar painel
-                </button>
+
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-xl border border-white/20 bg-black/25 p-3">
+                  <p className="text-[11px] uppercase tracking-[0.14em] text-white/75">Participantes</p>
+                  <p className="mt-1 text-xl font-semibold text-white">{selectedCommunity.participantsCount}</p>
+                </div>
+                <div className="rounded-xl border border-white/20 bg-black/25 p-3">
+                  <p className="text-[11px] uppercase tracking-[0.14em] text-white/75">Pendentes</p>
+                  <p className="mt-1 text-xl font-semibold text-white">
+                    {selectedTab === "requests"
+                      ? requestsLoading
+                        ? selectedCommunity.pendingRequestsCount
+                        : selectedRequestsCount
+                      : selectedCommunity.pendingRequestsCount}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-white/20 bg-black/25 p-3">
+                  <p className="text-[11px] uppercase tracking-[0.14em] text-white/75">Ativos / Admins</p>
+                  <p className="mt-1 text-xl font-semibold text-white">
+                    {selectedTab === "participants" ? selectedParticipantStats.active : "—"} /{" "}
+                    {selectedTab === "participants" ? selectedParticipantStats.admins : "—"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-white/20 bg-black/25 p-3">
+                  <p className="text-[11px] uppercase tracking-[0.14em] text-white/75">Moderação</p>
+                  <p className="mt-1 text-sm font-semibold text-white">
+                    {selectedTab === "participants"
+                      ? `${selectedParticipantStats.muted} muted · ${selectedParticipantStats.banned} banidos`
+                      : "Abre Participantes para detalhe"}
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -1199,35 +1347,64 @@ export default function CommunitiesManagerClient() {
                 onClick={() => openPanel(selectedCommunity.conversationId, "requests")}
                 className={`${selectedTab === "requests" ? CTA_PRIMARY : CTA_SECONDARY} text-xs`}
               >
-                Pedidos ({selectedCommunity.pendingRequestsCount})
+                Pedidos (
+                {selectedTab === "requests"
+                  ? requestsLoading
+                    ? selectedCommunity.pendingRequestsCount
+                    : selectedRequestsCount
+                  : selectedCommunity.pendingRequestsCount}
+                )
               </button>
               <button
                 type="button"
                 onClick={() => openPanel(selectedCommunity.conversationId, "participants")}
                 className={`${selectedTab === "participants" ? CTA_PRIMARY : CTA_SECONDARY} text-xs`}
               >
-                Participantes
+                Participantes ({selectedCommunity.participantsCount})
               </button>
               <button
                 type="button"
                 onClick={() => openPanel(selectedCommunity.conversationId, "invites")}
                 className={`${selectedTab === "invites" ? CTA_PRIMARY : CTA_SECONDARY} text-xs`}
               >
-                Convites
+                Convites e links
               </button>
+            </div>
+
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              {isRequestsSyncing ? (
+                <span className="rounded-full border border-cyan-200/40 bg-cyan-500/15 px-2.5 py-1 text-[11px] text-cyan-100">
+                  A sincronizar pedidos...
+                </span>
+              ) : null}
+              {isParticipantsSyncing ? (
+                <span className="rounded-full border border-cyan-200/40 bg-cyan-500/15 px-2.5 py-1 text-[11px] text-cyan-100">
+                  A sincronizar participantes...
+                </span>
+              ) : null}
+              {isManualInvitesPending ? (
+                <span className="rounded-full border border-cyan-200/40 bg-cyan-500/15 px-2.5 py-1 text-[11px] text-cyan-100">
+                  A processar convites manuais...
+                </span>
+              ) : null}
+              {isInviteLinkPending ? (
+                <span className="rounded-full border border-cyan-200/40 bg-cyan-500/15 px-2.5 py-1 text-[11px] text-cyan-100">
+                  A gerar link de convite...
+                </span>
+              ) : null}
             </div>
 
             {selectedTab === "requests" ? (
               <div className="space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm text-white/85">Aprova ou recusa entradas pendentes nesta comunidade.</p>
+                  <p className="text-sm text-white/92">Aprova ou recusa entradas pendentes nesta comunidade.</p>
                   <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
                       onClick={() => void mutateRequests()}
                       className={`${CTA_SECONDARY} text-xs`}
                     >
-                      Atualizar
+                      {isRequestsSyncing ? "A sincronizar..." : "Atualizar"}
                     </button>
                     <button
                       type="button"
@@ -1242,7 +1419,7 @@ export default function CommunitiesManagerClient() {
                   </div>
                 </div>
 
-                {requestsLoading ? (
+                {requestsLoading && !requestsData?.items?.length ? (
                   <div className="h-24 animate-pulse rounded-xl border border-white/15 bg-white/[0.03]" />
                 ) : requestsError ? (
                   <div className="rounded-xl border border-red-300/40 bg-red-500/15 p-3 text-sm text-red-100">
@@ -1250,7 +1427,7 @@ export default function CommunitiesManagerClient() {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {(requestsData?.items ?? []).map((request) => {
+                    {sortedRequests.map((request) => {
                       const approveKey = `approve:${request.id}`;
                       const declineKey = `decline:${request.id}`;
                       const isBusy = pendingActionKey === approveKey || pendingActionKey === declineKey;
@@ -1267,13 +1444,20 @@ export default function CommunitiesManagerClient() {
                               Pedido em {formatDateTime(request.createdAt)}
                               {request.expiresAt ? ` · Expira ${formatDateTime(request.expiresAt)}` : ""}
                             </p>
+                            <p className="mt-0.5 text-[11px] text-white/75">
+                              {request.requester?.username
+                                ? `@${request.requester.username}`
+                                : request.requesterId
+                                  ? `ID: ${request.requesterId}`
+                                  : "Sem identificador público"}
+                            </p>
                           </div>
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
                               onClick={() => void declineRequest(request.id)}
                               disabled={isBusy}
-                              className={`${CTA_SECONDARY} text-xs disabled:opacity-60`}
+                              className={dangerActionClass}
                             >
                               Recusar
                             </button>
@@ -1289,9 +1473,19 @@ export default function CommunitiesManagerClient() {
                         </article>
                       );
                     })}
-                    {!requestsData?.items?.length ? (
-                      <div className="rounded-xl border border-white/15 bg-black/25 p-3 text-sm text-white/85">
-                        Sem pedidos pendentes.
+                    {!sortedRequests.length ? (
+                      <div className="rounded-xl border border-white/15 bg-black/25 p-3">
+                        <p className="text-sm font-semibold text-white">Sem pedidos pendentes.</p>
+                        <p className="mt-1 text-xs text-white/80">
+                          Quando surgirem novos pedidos de entrada, aparecem aqui para aprovação rápida.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => openPanel(selectedCommunity.conversationId, "participants")}
+                          className={`${CTA_SECONDARY} mt-2 text-xs`}
+                        >
+                          Ir para participantes
+                        </button>
                       </div>
                     ) : null}
                   </div>
@@ -1321,7 +1515,7 @@ export default function CommunitiesManagerClient() {
                     onClick={() => void mutateParticipants()}
                     className={`${CTA_SECONDARY} text-xs`}
                   >
-                    Atualizar
+                    {isParticipantsSyncing ? "A sincronizar..." : "Atualizar"}
                   </button>
                 </div>
 
@@ -1335,14 +1529,49 @@ export default function CommunitiesManagerClient() {
                   <button
                     type="button"
                     onClick={() => void promoteAdminByUserId()}
-                    disabled={pendingActionKey === `PROMOTE_ADMIN:${selectedCommunity.conversationId}:${adminDraftUserId.trim()}`}
+                    disabled={isPromoteByIdPending}
                     className={`${CTA_PRIMARY} text-xs disabled:opacity-60`}
                   >
-                    Promover admin (ID)
+                    {isPromoteByIdPending ? "A promover..." : "Promover admin (ID)"}
                   </button>
                 </div>
 
-                {participantsLoading ? (
+                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                  <div className="rounded-lg border border-white/15 bg-black/25 px-2.5 py-2">
+                    <p className="text-[10px] uppercase tracking-[0.12em] text-white/70">Total</p>
+                    <p className="mt-0.5 text-sm font-semibold text-white">{selectedParticipantStats.total}</p>
+                  </div>
+                  <div className="rounded-lg border border-white/15 bg-black/25 px-2.5 py-2">
+                    <p className="text-[10px] uppercase tracking-[0.12em] text-white/70">Ativos</p>
+                    <p className="mt-0.5 text-sm font-semibold text-white">{selectedParticipantStats.active}</p>
+                  </div>
+                  <div className="rounded-lg border border-white/15 bg-black/25 px-2.5 py-2">
+                    <p className="text-[10px] uppercase tracking-[0.12em] text-white/70">Admins</p>
+                    <p className="mt-0.5 text-sm font-semibold text-white">{selectedParticipantStats.admins}</p>
+                  </div>
+                  <div className="rounded-lg border border-white/15 bg-black/25 px-2.5 py-2">
+                    <p className="text-[10px] uppercase tracking-[0.12em] text-white/70">Muted</p>
+                    <p className="mt-0.5 text-sm font-semibold text-white">{selectedParticipantStats.muted}</p>
+                  </div>
+                  <div className="rounded-lg border border-white/15 bg-black/25 px-2.5 py-2">
+                    <p className="text-[10px] uppercase tracking-[0.12em] text-white/70">Banidos</p>
+                    <p className="mt-0.5 text-sm font-semibold text-white">{selectedParticipantStats.banned}</p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                  <span className="rounded-full border border-emerald-300/40 bg-emerald-500/16 px-2.5 py-1 text-emerald-100">
+                    Ação segura: permissões
+                  </span>
+                  <span className="rounded-full border border-amber-300/40 bg-amber-500/16 px-2.5 py-1 text-amber-100">
+                    Atenção: mute e ban
+                  </span>
+                  <span className="rounded-full border border-red-300/40 bg-red-500/16 px-2.5 py-1 text-red-100">
+                    Crítico: remover participante
+                  </span>
+                </div>
+
+                {participantsLoading && !participantsData?.items?.length ? (
                   <div className="h-24 animate-pulse rounded-xl border border-white/15 bg-white/[0.03]" />
                 ) : participantsError ? (
                   <div className="rounded-xl border border-red-300/40 bg-red-500/15 p-3 text-sm text-red-100">
@@ -1375,7 +1604,7 @@ export default function CommunitiesManagerClient() {
                               </div>
                               <div className="min-w-0">
                                 <p className="truncate text-sm font-semibold text-white">{userLabel}</p>
-                                <p className="text-xs text-white/80">
+                                <p className="text-xs text-white/90">
                                   {participant.role} · {participant.isTeamMember ? "Equipa" : "Cliente"} ·{" "}
                                   {isActive ? "Ativo" : "Inativo"}
                                 </p>
@@ -1417,7 +1646,7 @@ export default function CommunitiesManagerClient() {
                                       action: "PROMOTE_ADMIN",
                                     })
                                   }
-                                  className={`${CTA_SECONDARY} text-xs disabled:opacity-60`}
+                                  className={positiveActionClass}
                                 >
                                   Promover admin
                                 </button>
@@ -1435,7 +1664,7 @@ export default function CommunitiesManagerClient() {
                                       confirmText: "Confirmas que queres remover privilégios de admin?",
                                     })
                                   }
-                                  className={`${CTA_SECONDARY} text-xs disabled:opacity-60`}
+                                  className={positiveActionClass}
                                 >
                                   Remover admin
                                 </button>
@@ -1454,7 +1683,7 @@ export default function CommunitiesManagerClient() {
                                         "Banir este utilizador remove-o da comunidade e impede novas entradas.",
                                     })
                                   }
-                                  className={`${CTA_SECONDARY} text-xs disabled:opacity-60`}
+                                  className={warningActionClass}
                                 >
                                   Banir
                                 </button>
@@ -1469,7 +1698,7 @@ export default function CommunitiesManagerClient() {
                                       action: "UNBAN",
                                     })
                                   }
-                                  className={`${CTA_SECONDARY} text-xs disabled:opacity-60`}
+                                  className={positiveActionClass}
                                 >
                                   Remover ban
                                 </button>
@@ -1488,10 +1717,10 @@ export default function CommunitiesManagerClient() {
                                         mutedUntil: buildMuteUntil("1h"),
                                       })
                                     }
-                                    className={`${CTA_SECONDARY} text-xs disabled:opacity-60`}
-                                  >
-                                    Mutar 1h
-                                  </button>
+                                  className={warningActionClass}
+                                >
+                                  Mutar 1h
+                                </button>
                                   <button
                                     type="button"
                                     disabled={isBusy}
@@ -1503,10 +1732,10 @@ export default function CommunitiesManagerClient() {
                                         mutedUntil: buildMuteUntil("24h"),
                                       })
                                     }
-                                    className={`${CTA_SECONDARY} text-xs disabled:opacity-60`}
-                                  >
-                                    Mutar 24h
-                                  </button>
+                                  className={warningActionClass}
+                                >
+                                  Mutar 24h
+                                </button>
                                   <button
                                     type="button"
                                     disabled={isBusy}
@@ -1517,10 +1746,10 @@ export default function CommunitiesManagerClient() {
                                         action: "MUTE",
                                       })
                                     }
-                                    className={`${CTA_SECONDARY} text-xs disabled:opacity-60`}
-                                  >
-                                    Mutar indefinido
-                                  </button>
+                                  className={warningActionClass}
+                                >
+                                  Mutar indefinido
+                                </button>
                                 </>
                               ) : (
                                 <button
@@ -1533,7 +1762,7 @@ export default function CommunitiesManagerClient() {
                                       action: "UNMUTE",
                                     })
                                   }
-                                  className={`${CTA_SECONDARY} text-xs disabled:opacity-60`}
+                                  className={positiveActionClass}
                                 >
                                   Desmutar
                                 </button>
@@ -1550,7 +1779,7 @@ export default function CommunitiesManagerClient() {
                                     confirmText: "Confirmas a remoção deste participante da comunidade?",
                                   })
                                 }
-                                className={`${CTA_SECONDARY} text-xs disabled:opacity-60`}
+                                className={dangerActionClass}
                               >
                                 Remover
                               </button>
@@ -1561,8 +1790,25 @@ export default function CommunitiesManagerClient() {
                     })}
 
                     {!filteredParticipants.length ? (
-                      <div className="rounded-xl border border-white/15 bg-black/25 p-3 text-sm text-white/85">
-                        Nenhum participante encontrado com os filtros atuais.
+                      <div className="rounded-xl border border-white/15 bg-black/25 p-3">
+                        <p className="text-sm font-semibold text-white">
+                          Nenhum participante encontrado com os filtros atuais.
+                        </p>
+                        <p className="mt-1 text-xs text-white/80">
+                          Ajusta a pesquisa ou muda a vista para <strong>Todos</strong>.
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setParticipantSearch("");
+                              setParticipantView("ALL");
+                            }}
+                            className={`${CTA_SECONDARY} text-xs`}
+                          >
+                            Limpar filtros
+                          </button>
+                        </div>
                       </div>
                     ) : null}
                   </div>
@@ -1574,7 +1820,7 @@ export default function CommunitiesManagerClient() {
               <div className="space-y-4">
                 {selectedCommunity.accessMode !== "INVITE" ? (
                   <div className="rounded-xl border border-amber-300/40 bg-amber-500/15 p-3 text-sm text-amber-100">
-                    Esta comunidade não está no modo INVITE. Altera o modo de acesso para usar convites.
+                    Esta comunidade não está no modo INVITE. Altera o modo de acesso para ativar convites manuais e links.
                   </div>
                 ) : null}
 
@@ -1598,18 +1844,37 @@ export default function CommunitiesManagerClient() {
                       placeholder="Mensagem opcional do convite"
                       maxLength={600}
                     />
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/80">
+                      <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5">
+                        IDs: {manualInviteDraftTokens.length}
+                      </span>
+                      <span className="rounded-full border border-emerald-300/35 bg-emerald-500/15 px-2 py-0.5 text-emerald-100">
+                        Únicos: {manualInviteUniqueCount}
+                      </span>
+                      {manualInviteDuplicateCount > 0 ? (
+                        <span className="rounded-full border border-amber-300/35 bg-amber-500/15 px-2 py-0.5 text-amber-100">
+                          Duplicados: {manualInviteDuplicateCount}
+                        </span>
+                      ) : null}
+                    </div>
+                    {manualInviteDuplicateCount > 0 ? (
+                      <p className="text-[11px] text-amber-100/90">
+                        IDs duplicados são removidos automaticamente antes do envio.
+                      </p>
+                    ) : null}
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] text-white/75">{inviteMessage.trim().length}/600</span>
                       <button
                         type="button"
                         disabled={
                           selectedCommunity.accessMode !== "INVITE" ||
-                          pendingActionKey === `manual-invites:${selectedCommunity.conversationId}`
+                          manualInviteUniqueCount < 1 ||
+                          isManualInvitesPending
                         }
                         onClick={() => void sendManualInvites()}
                         className={`${CTA_PRIMARY} text-xs disabled:opacity-60`}
                       >
-                        {pendingActionKey === `manual-invites:${selectedCommunity.conversationId}`
+                        {isManualInvitesPending
                           ? "A enviar..."
                           : "Enviar convites"}
                       </button>
@@ -1622,6 +1887,11 @@ export default function CommunitiesManagerClient() {
                       {manualInviteResult.skipped.length ? <p>Ignorados: {manualInviteResult.skipped.length}</p> : null}
                       {manualInviteResult.missingUserIds.length ? (
                         <p>Utilizadores em falta: {manualInviteResult.missingUserIds.length}</p>
+                      ) : null}
+                      {manualInviteResult.skipped.length ? (
+                        <p className="text-white/75">
+                          Motivos ignorados: {Array.from(new Set(manualInviteResult.skipped.map((item) => item.reason))).join(", ")}
+                        </p>
                       ) : null}
                     </div>
                   ) : null}
@@ -1648,12 +1918,12 @@ export default function CommunitiesManagerClient() {
                       type="button"
                       disabled={
                         selectedCommunity.accessMode !== "INVITE" ||
-                        pendingActionKey === `invite-link:${selectedCommunity.conversationId}`
+                        isInviteLinkPending
                       }
                       onClick={() => void generateInviteLink()}
                       className={`${CTA_PRIMARY} text-xs disabled:opacity-60`}
                     >
-                      {pendingActionKey === `invite-link:${selectedCommunity.conversationId}`
+                      {isInviteLinkPending
                         ? "A gerar..."
                         : generatedInviteLink
                           ? "Regenerar link"
@@ -1704,8 +1974,34 @@ export default function CommunitiesManagerClient() {
             ) : null}
           </section>
         ) : (
-          <section className="rounded-2xl border border-dashed border-white/25 bg-[#060d1a] p-4 text-sm text-white/85">
-            Seleciona uma comunidade para abrir o painel avançado de gestão de pedidos, participantes e convites.
+          <section className="rounded-2xl border border-dashed border-white/25 bg-[#060d1a] p-4">
+            <p className="text-sm font-semibold text-white">Painel avançado de comunidade</p>
+            <p className="mt-1 text-sm text-white/85">
+              Seleciona uma comunidade para abrir gestão de pedidos, participantes, convites e moderação.
+            </p>
+
+            {sortedCommunities.length ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {sortedCommunities.slice(0, 4).map((community) => (
+                  <button
+                    key={`quick-open-${community.conversationId}`}
+                    type="button"
+                    onClick={() => openPanel(community.conversationId, "participants")}
+                    className={`${CTA_SECONDARY} text-xs`}
+                  >
+                    {community.title}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setCreateOpen(true)}
+                className={`${CTA_PRIMARY} mt-3 text-xs`}
+              >
+                Criar comunidade
+              </button>
+            )}
           </section>
         )}
       </div>

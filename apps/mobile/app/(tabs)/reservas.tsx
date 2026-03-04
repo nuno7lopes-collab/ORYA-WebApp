@@ -1,18 +1,15 @@
 import { useMemo, useState } from "react";
 import { Alert, Pressable, ScrollView, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { tokens } from "@orya/shared";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { TopAppHeader } from "../../components/navigation/TopAppHeader";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
-import { Ionicons } from "../../components/icons/Ionicons";
 import { useTopHeaderPadding } from "../../components/navigation/useTopHeaderPadding";
 import { useTopBarScroll } from "../../components/navigation/useTopBarScroll";
 import { useAuth } from "../../lib/auth";
-import { safeBack, safePush } from "../../lib/navigation";
-import { TAB_PATHNAMES } from "../../lib/tabRoutes";
+import { safePush } from "../../lib/navigation";
 import { getUserFacingError } from "../../lib/errors";
 import {
   cancelBooking,
@@ -22,6 +19,8 @@ import {
 import { useMyBookings } from "../../features/bookings/hooks";
 import type { BookingItem } from "../../features/bookings/types";
 import { splitBookingsByTimeline } from "../../features/bookings/types";
+import { useDiscoverFeed } from "../../features/discover/hooks";
+import type { DiscoverOfferCard, DiscoverServiceCard } from "../../features/discover/types";
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return "Data por definir";
@@ -52,9 +51,31 @@ const bookingOrganizationLabel = (booking: BookingItem) =>
   booking.organization?.username?.trim() ||
   "Organização";
 
+const resolveServiceVertical = (service: DiscoverServiceCard): "COURT" | "CLASS" | "SERVICE" => {
+  const byVertical = String(service.bookingVertical ?? "")
+    .trim()
+    .toUpperCase();
+  if (byVertical === "COURT" || byVertical === "CLASS" || byVertical === "SERVICE") return byVertical;
+  const byDomain = String(service.category?.domain ?? "")
+    .trim()
+    .toUpperCase();
+  if (byDomain === "COURT" || byDomain === "CLASS" || byDomain === "SERVICE") return byDomain;
+  const byKind = String(service.kind ?? "")
+    .trim()
+    .toUpperCase();
+  if (byKind === "COURT") return "COURT";
+  if (byKind === "CLASS") return "CLASS";
+  return "SERVICE";
+};
+
+const asServiceOffer = (offer: DiscoverOfferCard): offer is Extract<DiscoverOfferCard, { type: "service" }> =>
+  offer.type === "service";
+
+const formatServicePrice = (value: number, currency: string) =>
+  new Intl.NumberFormat("pt-PT", { style: "currency", currency }).format(value / 100);
+
 export default function BookingsScreen() {
   const router = useRouter();
-  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ bookingId?: string | string[] }>();
   const focusBookingIdRaw = Array.isArray(params.bookingId) ? params.bookingId[0] : params.bookingId;
@@ -64,6 +85,10 @@ export default function BookingsScreen() {
   const { session } = useAuth();
   const accessReady = Boolean(session?.user?.id);
   const bookingsQuery = useMyBookings(accessReady);
+  const courtsQuery = useDiscoverFeed(
+    { q: "padel campo", type: "all", kind: "padel", date: "upcoming", city: "" },
+    true,
+  );
   const [cancelingBookingId, setCancelingBookingId] = useState<number | null>(null);
   const [respondingRequestId, setRespondingRequestId] = useState<number | null>(null);
 
@@ -77,6 +102,18 @@ export default function BookingsScreen() {
     const remaining = timeline.active.filter((booking) => booking.id !== id);
     return [focused, ...remaining];
   }, [focusBookingId, timeline.active]);
+
+  const courtServices = useMemo(() => {
+    const offers = courtsQuery.data?.pages.flatMap((page) => page.items) ?? [];
+    const map = new Map<number, DiscoverServiceCard>();
+    offers.filter(asServiceOffer).forEach((offer) => {
+      if (resolveServiceVertical(offer.service) !== "COURT") return;
+      if (!map.has(offer.service.id)) {
+        map.set(offer.service.id, offer.service);
+      }
+    });
+    return Array.from(map.values()).slice(0, 8);
+  }, [courtsQuery.data?.pages]);
 
   const runCancel = async (bookingId: number) => {
     try {
@@ -161,26 +198,6 @@ export default function BookingsScreen() {
       setRespondingRequestId(null);
     }
   };
-
-  const backButton = (
-    <Pressable
-      onPress={() => safeBack(router, navigation, TAB_PATHNAMES.profile)}
-      accessibilityRole="button"
-      accessibilityLabel="Voltar"
-      style={({ pressed }) => [
-        {
-          width: tokens.layout.touchTarget,
-          height: tokens.layout.touchTarget,
-          alignItems: "center",
-          justifyContent: "center",
-          minHeight: tokens.layout.touchTarget,
-        },
-        pressed ? { opacity: 0.8 } : null,
-      ]}
-    >
-      <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.9)" />
-    </Pressable>
-  );
 
   const renderBookingCard = (booking: BookingItem, section: "active" | "history") => {
     const showCancelAction = section === "active" && booking.cancellation.allowed;
@@ -280,9 +297,8 @@ export default function BookingsScreen() {
         variant="title"
         title="Reservas"
         titleAlign="center"
-        leftSlot={backButton}
         showNotifications
-        showMessages={false}
+        showMessages
       />
       <ScrollView
         contentContainerStyle={{
@@ -328,6 +344,51 @@ export default function BookingsScreen() {
           </View>
         ) : (
           <View className="gap-3">
+            <View className="gap-2">
+              <Text className="text-white text-sm font-semibold">Campos disponíveis</Text>
+              {courtsQuery.isLoading ? (
+                <GlassSkeleton height={92} />
+              ) : courtServices.length === 0 ? (
+                <View className="rounded-2xl border border-white/14 bg-white/6 px-3 py-3">
+                  <Text className="text-white/70 text-xs">Sem campos de padel visíveis neste momento.</Text>
+                </View>
+              ) : (
+                courtServices.map((service) => (
+                  <Pressable
+                    key={`court-${service.id}`}
+                    onPress={() => {
+                      const params: Record<string, string> = {
+                        id: String(service.id),
+                        bookingVertical: "COURT",
+                      };
+                      if (service.organization?.username) {
+                        params.orgUsername = service.organization.username;
+                      }
+                      if (typeof service.courtId === "number" && Number.isFinite(service.courtId)) {
+                        params.courtId = String(service.courtId);
+                      }
+                      safePush(router, { pathname: "/service/[id]/booking", params });
+                    }}
+                    className="rounded-2xl border border-white/12 bg-white/6 px-4 py-3"
+                    accessibilityRole="button"
+                    accessibilityLabel={service.title}
+                  >
+                    <Text className="text-white text-sm font-semibold">{service.title}</Text>
+                    <Text className="mt-1 text-white/70 text-xs">
+                      {service.organization.publicName ??
+                        service.organization.businessName ??
+                        service.organization.username ??
+                        "Clube"}
+                    </Text>
+                    <Text className="mt-1 text-white/60 text-xs">
+                      {formatServicePrice(service.unitPriceCents, service.currency)} · {service.durationMinutes} min
+                    </Text>
+                  </Pressable>
+                ))
+              )}
+            </View>
+
+            <View style={{ height: 8 }} />
             <View className="flex-row flex-wrap gap-2">
               <View className="rounded-full border border-cyan-200/35 bg-cyan-300/12 px-3 py-1.5">
                 <Text className="text-cyan-50 text-xs font-semibold">Ativos {activeBookings.length}</Text>

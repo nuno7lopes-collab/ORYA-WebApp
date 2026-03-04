@@ -95,6 +95,7 @@ export type MessageRequest = {
   contextType: string;
   contextId?: string | null;
   createdAt: string;
+  expiresAt?: string | null;
   requester: {
     id: string;
     fullName: string | null;

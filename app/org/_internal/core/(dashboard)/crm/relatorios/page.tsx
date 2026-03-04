@@ -567,7 +567,7 @@ export default function CrmRelatoriosPage() {
             </select>
           </label>
           <label className="text-[12px] text-white/65">
-            Ordenação front desk
+            Ordenação receção
             <select
               className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
               value={frontDeskSort}
@@ -587,7 +587,7 @@ export default function CrmRelatoriosPage() {
             { id: "ab", label: "A/B" },
             { id: "retention", label: "Coortes" },
             { id: "loyalty", label: "Loyalty" },
-            { id: "frontDesk", label: "Front desk" },
+            { id: "frontDesk", label: "Receção" },
           ].map((section) => {
             const selected = isSectionVisible(section.id as SectionId);
             return (
@@ -878,7 +878,7 @@ export default function CrmRelatoriosPage() {
       {isSectionVisible("frontDesk") ? (
         <section className={cn(DASHBOARD_CARD, "space-y-3 p-4")}>
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-white">Fila front desk por risco/valor</h2>
+          <h2 className="text-sm font-semibold text-white">Fila receção por risco/valor</h2>
           <span className="text-[11px] text-white/50">{sortedFrontDeskQueue.length} contactos</span>
         </div>
         <div className="grid gap-2">

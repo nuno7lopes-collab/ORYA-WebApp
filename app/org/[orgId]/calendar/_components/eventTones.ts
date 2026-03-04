@@ -19,7 +19,6 @@ export function resolveAggregateToneBucket(
   if (buckets.includes("pending")) return "pending";
   if (buckets.includes("disputed")) return "disputed";
   if (buckets.length > 0 && buckets.every((bucket) => bucket === "cancelled")) return "cancelled";
-  if (buckets.includes("cancelled")) return "cancelled";
   return "other";
 }
 

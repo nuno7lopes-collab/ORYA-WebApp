@@ -107,6 +107,16 @@ export async function fulfillPadelRegistrationIntent(
           addressRef: { select: { formattedAddress: true } },
           startsAt: true,
           timezone: true,
+          ticketTypes: {
+            select: {
+              id: true,
+              padelEventCategoryLink: {
+                select: {
+                  padelCategoryId: true,
+                },
+              },
+            },
+          },
           organizationId: true,
           organization: {
             select: {
@@ -153,6 +163,16 @@ export async function fulfillPadelRegistrationIntent(
     },
   });
   if (!pairing) return false;
+
+  const resolvedTicketTypeId =
+    registration.event.ticketTypes.find(
+      (ticketType) => ticketType.padelEventCategoryLink?.padelCategoryId === pairing.categoryId,
+    )?.id ??
+    registration.event.ticketTypes[0]?.id ??
+    null;
+  if (!resolvedTicketTypeId) {
+    throw new Error("PADEL_TICKET_TYPE_MISSING");
+  }
 
   const snapshot = (payment.pricingSnapshotJson ?? null) as PricingSnapshot | null;
   const snapshotLines = snapshot?.lineItems ?? [];
@@ -373,6 +393,7 @@ export async function fulfillPadelRegistrationIntent(
         data: {
           saleSummaryId: saleSummary.id,
           eventId: registration.eventId,
+          ticketTypeId: resolvedTicketTypeId,
           padelRegistrationLineId: line.id,
           promoCodeId: null,
           quantity: line.qty,

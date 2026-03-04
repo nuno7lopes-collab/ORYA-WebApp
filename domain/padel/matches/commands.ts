@@ -251,6 +251,7 @@ export async function updatePadelMatch(
     MatchCommandTx & {
       matchId: number;
       data: Prisma.EventMatchSlotUpdateInput | Prisma.EventMatchSlotUncheckedUpdateInput;
+      expectedUpdatedAt?: Date | string | null;
       beforeStatus?: string | null;
       select?: Prisma.EventMatchSlotSelect;
       include?: Prisma.EventMatchSlotInclude;
@@ -262,6 +263,20 @@ export async function updatePadelMatch(
   const outboxEventType = input.outboxEventType ?? eventType;
 
   return withTx(input.tx, async (tx) => {
+    const expectedUpdatedAtRaw = input.expectedUpdatedAt ?? null;
+    const expectedUpdatedAt =
+      expectedUpdatedAtRaw instanceof Date
+        ? expectedUpdatedAtRaw
+        : typeof expectedUpdatedAtRaw === "string"
+          ? new Date(expectedUpdatedAtRaw)
+          : null;
+    if (
+      expectedUpdatedAtRaw !== null &&
+      (!expectedUpdatedAt || Number.isNaN(expectedUpdatedAt.getTime()))
+    ) {
+      throw new Error("INVALID_MATCH_VERSION");
+    }
+
     const isResultMutation = isResultMutationData(input.data);
     let resolvedBeforeStatus = input.beforeStatus ?? null;
     if (!resolvedBeforeStatus && isResultMutation) {
@@ -278,12 +293,32 @@ export async function updatePadelMatch(
       resultCardId: input.resultCardId ?? null,
     });
 
-    const updated = (await tx.eventMatchSlot.update({
-      where: { id: input.matchId },
-      data: input.data,
-      ...(input.select ? { select: input.select } : {}),
-      ...(input.include ? { include: input.include } : {}),
-    })) as EventMatchSlot;
+    let updated: EventMatchSlot | null = null;
+    if (expectedUpdatedAt) {
+      const conditionalUpdate = await tx.eventMatchSlot.updateMany({
+        where: {
+          id: input.matchId,
+          updatedAt: expectedUpdatedAt,
+        },
+        data: input.data as Prisma.EventMatchSlotUpdateManyMutationInput,
+      });
+      if (conditionalUpdate.count === 0) {
+        throw new Error("MATCH_STALE_VERSION");
+      }
+      updated = (await tx.eventMatchSlot.findUnique({
+        where: { id: input.matchId },
+        ...(input.select ? { select: input.select } : {}),
+        ...(input.include ? { include: input.include } : {}),
+      })) as EventMatchSlot | null;
+      if (!updated) throw new Error("MATCH_NOT_FOUND");
+    } else {
+      updated = (await tx.eventMatchSlot.update({
+        where: { id: input.matchId },
+        data: input.data,
+        ...(input.select ? { select: input.select } : {}),
+        ...(input.include ? { include: input.include } : {}),
+      })) as EventMatchSlot;
+    }
 
     if (resultCard && !resultCard.appliedAt) {
       await tx.padelMatchResultCard.update({

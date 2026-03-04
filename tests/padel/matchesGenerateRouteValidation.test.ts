@@ -97,4 +97,42 @@ describe("POST /api/padel/matches/generate validação fail-closed", () => {
     expect(body.errorCode ?? body.error).toBe("INVALID_SEED_SOURCE");
     expect(prisma.event.findUnique).not.toHaveBeenCalled();
   });
+
+  it("rejeita existingPolicy inválida", async () => {
+    const req = new NextRequest("http://localhost/api/padel/matches/generate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ...baseBody,
+        existingPolicy: "force",
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode ?? body.error).toBe("INVALID_EXISTING_POLICY");
+    expect(prisma.event.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("exige confirmação explícita para existingPolicy=replace", async () => {
+    const req = new NextRequest("http://localhost/api/padel/matches/generate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ...baseBody,
+        existingPolicy: "replace",
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode ?? body.error).toBe("CONFIRM_REPLACE_REQUIRED");
+    expect(prisma.event.findUnique).not.toHaveBeenCalled();
+  });
 });

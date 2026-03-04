@@ -1,0 +1,445 @@
+import { NextRequest } from "next/server";
+import { OrganizationMemberRole, OrganizationRolePack } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+import { createSupabaseServer } from "@/lib/supabaseServer";
+import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
+import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
+import { ensureReservasModuleAccess } from "@/lib/reservas/access";
+import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
+import { listEffectiveOrganizationMembers } from "@/lib/organizationMembers";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
+import { runAcademyTrainerHardCutHygiene } from "@/lib/academy/trainerHardCutHygiene";
+
+const VIEW_ROLES: OrganizationMemberRole[] = [
+  OrganizationMemberRole.OWNER,
+  OrganizationMemberRole.CO_OWNER,
+  OrganizationMemberRole.ADMIN,
+  OrganizationMemberRole.STAFF,
+];
+
+const EDIT_ROLES: OrganizationMemberRole[] = [
+  OrganizationMemberRole.OWNER,
+  OrganizationMemberRole.CO_OWNER,
+  OrganizationMemberRole.ADMIN,
+];
+
+const TRAINER_ELIGIBLE_TEAM_ROLES: OrganizationMemberRole[] = [
+  OrganizationMemberRole.OWNER,
+  OrganizationMemberRole.CO_OWNER,
+  OrganizationMemberRole.ADMIN,
+  OrganizationMemberRole.STAFF,
+];
+
+function fail(
+  ctx: { requestId: string; correlationId: string },
+  status: number,
+  errorCode: string,
+  message: string,
+  details?: Record<string, unknown>,
+) {
+  return respondError(
+    ctx,
+    { errorCode, message, retryable: status >= 500, ...(details ? { details } : {}) },
+    { status },
+  );
+}
+
+function isTrainerEligibleRole(role: OrganizationMemberRole) {
+  return TRAINER_ELIGIBLE_TEAM_ROLES.includes(role);
+}
+
+function parseTrainerId(value: string) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export async function handleAcademyTrainersGet(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  try {
+    const supabase = await createSupabaseServer();
+    const user = await ensureAuthenticated(supabase);
+    const profile = await prisma.profile.findUnique({ where: { id: user.id } });
+
+    if (!profile) {
+      return fail(ctx, 403, "PROFILE_NOT_FOUND", "Perfil não encontrado.");
+    }
+
+    const organizationId = resolveOrganizationIdFromRequest(req);
+    const { organization, membership } = await getActiveOrganizationForUser(profile.id, {
+      organizationId: organizationId ?? undefined,
+      roles: [...VIEW_ROLES],
+    });
+
+    if (!organization || !membership) {
+      return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
+    }
+    const reservasAccess = await ensureReservasModuleAccess(organization);
+    if (!reservasAccess.ok) {
+      return fail(ctx, 403, "RESERVAS_UNAVAILABLE", reservasAccess.error ?? "Reservas indisponíveis.");
+    }
+    if (EDIT_ROLES.includes(membership.role)) {
+      await runAcademyTrainerHardCutHygiene(organization.id);
+    }
+
+    const isStaff = membership.role === OrganizationMemberRole.STAFF;
+    const where = isStaff
+      ? { organizationId: organization.id, userId: profile.id }
+      : { organizationId: organization.id, userId: { not: null } };
+
+    const items = await prisma.reservationProfessional.findMany({
+      where,
+      orderBy: [{ priority: "asc" }, { name: "asc" }],
+      select: {
+        id: true,
+        name: true,
+        roleTitle: true,
+        isActive: true,
+        priority: true,
+        user: { select: { id: true, fullName: true, username: true, avatarUrl: true } },
+      },
+    });
+
+    const linkedUserIds = items
+      .map((item) => item.user?.id)
+      .filter((userId): userId is string => typeof userId === "string" && userId.length > 0);
+
+    const [coachProfiles, coachMembers] = linkedUserIds.length
+      ? await Promise.all([
+          prisma.trainerProfile.findMany({
+            where: { organizationId: organization.id, userId: { in: linkedUserIds } },
+            select: { userId: true },
+          }),
+          listEffectiveOrganizationMembers({
+            organizationId: organization.id,
+            userIds: linkedUserIds,
+            roles: [...TRAINER_ELIGIBLE_TEAM_ROLES],
+          }),
+        ])
+      : [[], []];
+
+    const memberByUserId = new Map(coachMembers.map((member) => [member.userId, member]));
+    const coachUserIds = new Set<string>(coachProfiles.map((entry) => entry.userId));
+    for (const member of coachMembers) {
+      if (member.rolePack === OrganizationRolePack.COACH) {
+        coachUserIds.add(member.userId);
+      }
+    }
+
+    const enrichedItems = items
+      .filter((item) => (item.user?.id ? memberByUserId.has(item.user.id) : false))
+      .map((item) => {
+        const member = item.user?.id ? memberByUserId.get(item.user.id) : null;
+        const canonicalName =
+          item.user?.fullName?.trim() || item.user?.username?.trim() || item.name || "Equipa";
+        return {
+          ...item,
+          name: canonicalName,
+          roleTitle: null,
+          isCoach: item.user?.id ? coachUserIds.has(item.user.id) : false,
+          membershipRole: member?.role ?? null,
+          membershipRolePack: member?.rolePack ?? null,
+        };
+      });
+
+    return respondOk(ctx, { items: enrichedItems });
+  } catch (err) {
+    if (isUnauthenticatedError(err)) {
+      return fail(ctx, 401, "UNAUTHENTICATED", "Não autenticado.");
+    }
+    console.error("GET /api/org/[orgId]/academy/trainers error:", err);
+    return fail(ctx, 500, "INTERNAL_ERROR", "Erro ao carregar treinadores.");
+  }
+}
+
+export async function handleAcademyTrainersPost(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  try {
+    const supabase = await createSupabaseServer();
+    const user = await ensureAuthenticated(supabase);
+    const profile = await prisma.profile.findUnique({ where: { id: user.id } });
+
+    if (!profile) {
+      return fail(ctx, 403, "PROFILE_NOT_FOUND", "Perfil não encontrado.");
+    }
+
+    const organizationId = resolveOrganizationIdFromRequest(req);
+    const { organization } = await getActiveOrganizationForUser(profile.id, {
+      organizationId: organizationId ?? undefined,
+      roles: [...EDIT_ROLES],
+    });
+
+    if (!organization) {
+      return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
+    }
+    const reservasAccess = await ensureReservasModuleAccess(organization, undefined, {
+      requireVerifiedEmail: true,
+    });
+    if (!reservasAccess.ok) {
+      return fail(ctx, 403, "RESERVAS_UNAVAILABLE", reservasAccess.error ?? "Reservas indisponíveis.");
+    }
+    await runAcademyTrainerHardCutHygiene(organization.id);
+
+    const payload = await req.json().catch(() => ({}));
+    if (
+      Object.prototype.hasOwnProperty.call(payload ?? {}, "name") ||
+      Object.prototype.hasOwnProperty.call(payload ?? {}, "roleTitle")
+    ) {
+      return fail(
+        ctx,
+        400,
+        "TRAINER_PROFILE_MANAGED_BY_TEAM",
+        "Nome e função interna do treinador são geridos a partir da Equipa.",
+      );
+    }
+    const userIdRaw = typeof payload?.userId === "string" ? payload.userId.trim() : "";
+    const isActive = typeof payload?.isActive === "boolean" ? payload.isActive : true;
+    const priority = Number.isFinite(Number(payload?.priority)) ? Number(payload.priority) : 0;
+
+    if (!userIdRaw) {
+      return fail(ctx, 400, "TEAM_MEMBER_REQUIRED", "Seleciona um membro da equipa.");
+    }
+
+    const member = await resolveGroupMemberForOrg({
+      organizationId: organization.id,
+      userId: userIdRaw,
+    });
+    if (!member) {
+      return fail(ctx, 400, "USER_NOT_IN_ORG", "Utilizador não pertence à organização.");
+    }
+    if (!isTrainerEligibleRole(member.role)) {
+      return fail(
+        ctx,
+        400,
+        "TRAINER_ROLE_NOT_ELIGIBLE",
+        "Só membros da equipa com papel Owner/Co-owner/Admin/Staff podem ser treinadores.",
+      );
+    }
+
+    const userProfile = await prisma.profile.findUnique({
+      where: { id: userIdRaw },
+      select: { fullName: true, username: true },
+    });
+    const resolvedName = userProfile?.fullName?.trim() || userProfile?.username?.trim() || "Equipa";
+
+    const professional = await prisma.reservationProfessional.create({
+      data: {
+        organizationId: organization.id,
+        userId: userIdRaw,
+        name: resolvedName,
+        roleTitle: null,
+        isActive,
+        priority,
+      },
+      select: {
+        id: true,
+        name: true,
+        roleTitle: true,
+        isActive: true,
+        priority: true,
+        user: { select: { id: true, fullName: true, username: true, avatarUrl: true } },
+      },
+    });
+
+    const trainer = {
+      ...professional,
+      name:
+        professional.user?.fullName?.trim() ||
+        professional.user?.username?.trim() ||
+        professional.name ||
+        "Equipa",
+      roleTitle: null,
+      isCoach: member.rolePack === OrganizationRolePack.COACH,
+      membershipRole: member.role,
+      membershipRolePack: member.rolePack,
+    };
+
+    return respondOk(
+      ctx,
+      {
+        trainer,
+        professional: trainer,
+      },
+      { status: 201 },
+    );
+  } catch (err) {
+    if (typeof err === "object" && err != null && "code" in err && (err as { code?: string }).code === "P2002") {
+      return fail(ctx, 409, "PROFESSIONAL_EXISTS", "Profissional já existe para este utilizador.");
+    }
+    if (isUnauthenticatedError(err)) {
+      return fail(ctx, 401, "UNAUTHENTICATED", "Não autenticado.");
+    }
+    console.error("POST /api/org/[orgId]/academy/trainers error:", err);
+    return fail(ctx, 500, "INTERNAL_ERROR", "Erro ao criar treinador.");
+  }
+}
+
+export async function handleAcademyTrainerPatch(req: NextRequest, trainerIdRaw: string) {
+  const ctx = getRequestContext(req);
+  const trainerId = parseTrainerId(trainerIdRaw);
+  if (!trainerId) {
+    return fail(ctx, 400, "INVALID_PROFESSIONAL", "Profissional inválido.");
+  }
+
+  try {
+    const supabase = await createSupabaseServer();
+    const user = await ensureAuthenticated(supabase);
+    const profile = await prisma.profile.findUnique({ where: { id: user.id } });
+
+    if (!profile) {
+      return fail(ctx, 403, "PROFILE_NOT_FOUND", "Perfil não encontrado.");
+    }
+
+    const organizationId = resolveOrganizationIdFromRequest(req);
+    const { organization } = await getActiveOrganizationForUser(profile.id, {
+      organizationId: organizationId ?? undefined,
+      roles: [...EDIT_ROLES],
+    });
+
+    if (!organization) {
+      return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
+    }
+    const reservasAccess = await ensureReservasModuleAccess(organization, undefined, {
+      requireVerifiedEmail: true,
+    });
+    if (!reservasAccess.ok) {
+      return fail(ctx, 403, "RESERVAS_UNAVAILABLE", reservasAccess.error ?? "Reservas indisponíveis.");
+    }
+    await runAcademyTrainerHardCutHygiene(organization.id);
+
+    const trainer = await prisma.reservationProfessional.findFirst({
+      where: { id: trainerId, organizationId: organization.id },
+      select: { id: true, userId: true },
+    });
+
+    if (!trainer) {
+      return fail(ctx, 404, "PROFESSIONAL_NOT_FOUND", "Profissional não encontrado.");
+    }
+
+    const payload = await req.json().catch(() => ({}));
+    if (
+      Object.prototype.hasOwnProperty.call(payload ?? {}, "name") ||
+      Object.prototype.hasOwnProperty.call(payload ?? {}, "roleTitle")
+    ) {
+      return fail(
+        ctx,
+        400,
+        "TRAINER_PROFILE_MANAGED_BY_TEAM",
+        "Nome e função interna do treinador são geridos a partir da Equipa.",
+      );
+    }
+    const isActiveRaw = typeof payload?.isActive === "boolean" ? payload.isActive : null;
+    const priorityRaw = Number.isFinite(Number(payload?.priority)) ? Number(payload.priority) : null;
+    if (!trainer.userId) {
+      return fail(
+        ctx,
+        409,
+        "PROFESSIONAL_NOT_LINKED_TO_TEAM",
+        "Treinador sem ligação a membro de equipa. Remove e volta a adicionar via Equipa.",
+      );
+    }
+
+    const member = await resolveGroupMemberForOrg({
+      organizationId: organization.id,
+      userId: trainer.userId,
+    });
+    if (!member || !isTrainerEligibleRole(member.role)) {
+      return fail(ctx, 409, "PROFESSIONAL_NOT_LINKED_TO_TEAM", "Treinador sem ligação válida à Equipa.");
+    }
+
+    const data: Record<string, unknown> = {};
+    if (isActiveRaw !== null) data.isActive = isActiveRaw;
+    if (priorityRaw !== null) data.priority = priorityRaw;
+
+    if (Object.keys(data).length === 0) {
+      return fail(ctx, 400, "NOTHING_TO_UPDATE", "Nada para atualizar.");
+    }
+
+    const updated = await prisma.reservationProfessional.update({
+      where: { id: trainer.id },
+      data,
+      select: {
+        id: true,
+        name: true,
+        roleTitle: true,
+        isActive: true,
+        priority: true,
+        user: { select: { id: true, fullName: true, username: true, avatarUrl: true } },
+      },
+    });
+
+    const trainerPayload = {
+      ...updated,
+      name: updated.user?.fullName?.trim() || updated.user?.username?.trim() || updated.name || "Equipa",
+      roleTitle: null,
+      membershipRole: member.role,
+      membershipRolePack: member.rolePack ?? null,
+    };
+
+    return respondOk(ctx, {
+      trainer: trainerPayload,
+      professional: trainerPayload,
+    });
+  } catch (err) {
+    if (isUnauthenticatedError(err)) {
+      return fail(ctx, 401, "UNAUTHENTICATED", "Não autenticado.");
+    }
+    console.error("PATCH /api/org/[orgId]/academy/trainers/[trainerId] error:", err);
+    return fail(ctx, 500, "INTERNAL_ERROR", "Erro ao atualizar treinador.");
+  }
+}
+
+export async function handleAcademyTrainerDelete(req: NextRequest, trainerIdRaw: string) {
+  const ctx = getRequestContext(req);
+  const trainerId = parseTrainerId(trainerIdRaw);
+  if (!trainerId) {
+    return fail(ctx, 400, "INVALID_PROFESSIONAL", "Profissional inválido.");
+  }
+
+  try {
+    const supabase = await createSupabaseServer();
+    const user = await ensureAuthenticated(supabase);
+    const profile = await prisma.profile.findUnique({ where: { id: user.id } });
+
+    if (!profile) {
+      return fail(ctx, 403, "PROFILE_NOT_FOUND", "Perfil não encontrado.");
+    }
+
+    const organizationId = resolveOrganizationIdFromRequest(req);
+    const { organization } = await getActiveOrganizationForUser(profile.id, {
+      organizationId: organizationId ?? undefined,
+      roles: [...EDIT_ROLES],
+    });
+
+    if (!organization) {
+      return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
+    }
+    const reservasAccess = await ensureReservasModuleAccess(organization, undefined, {
+      requireVerifiedEmail: true,
+    });
+    if (!reservasAccess.ok) {
+      return fail(ctx, 403, "RESERVAS_UNAVAILABLE", reservasAccess.error ?? "Reservas indisponíveis.");
+    }
+    await runAcademyTrainerHardCutHygiene(organization.id);
+
+    const trainer = await prisma.reservationProfessional.findFirst({
+      where: { id: trainerId, organizationId: organization.id },
+      select: { id: true },
+    });
+
+    if (!trainer) {
+      return fail(ctx, 404, "PROFESSIONAL_NOT_FOUND", "Profissional não encontrado.");
+    }
+
+    await prisma.reservationProfessional.delete({ where: { id: trainer.id } });
+
+    return respondOk(ctx, { deleted: true });
+  } catch (err) {
+    if (isUnauthenticatedError(err)) {
+      return fail(ctx, 401, "UNAUTHENTICATED", "Não autenticado.");
+    }
+    console.error("DELETE /api/org/[orgId]/academy/trainers/[trainerId] error:", err);
+    return fail(ctx, 500, "INTERNAL_ERROR", "Erro ao remover treinador.");
+  }
+}

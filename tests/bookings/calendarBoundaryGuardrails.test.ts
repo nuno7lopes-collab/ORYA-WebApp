@@ -29,7 +29,7 @@ describe("bookings x calendar boundary guardrails", () => {
     const bookingsHomePage = readLocal("app/org/[orgId]/bookings/page.tsx");
     const operationsPage = readLocal("app/org/[orgId]/bookings/operations/page.tsx");
 
-    expect(bookingsHomePage).toContain("reservas/aulas/page");
+    expect(bookingsHomePage).toContain('/academy/classes');
     expect(bookingsHomePage).not.toContain("DashboardClient");
     expect(bookingsHomePage).not.toContain("reservas/page");
     expect(operationsPage).toContain("reservas/page");

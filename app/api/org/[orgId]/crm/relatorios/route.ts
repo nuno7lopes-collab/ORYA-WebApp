@@ -98,7 +98,7 @@ function resolveRecommendedAction(params: {
     return "Convite torneio competitivo";
   }
   if (params.rfmScore >= 400) return "Upsell aulas/eventos premium";
-  return "Ação manual semanal da front desk";
+  return "Ação manual semanal da receção";
 }
 
 function toObject(value: unknown): Record<string, unknown> {

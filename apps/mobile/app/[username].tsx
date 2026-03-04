@@ -78,7 +78,7 @@ export default function PublicProfileScreen() {
   const organizationStoreHref = canOpenStore && profile?.username ? `/store/${profile.username}` : null;
   const backButton = (
     <Pressable
-      onPress={() => safeBack(router, navigation, "/network")}
+      onPress={() => safeBack(router, navigation, "/comunidade")}
       accessibilityRole="button"
       accessibilityLabel="Voltar"
       style={({ pressed }) => [

@@ -2,7 +2,7 @@ import type { Router } from "expo-router";
 import type { NavigationProp } from "@react-navigation/native";
 import { TAB_PATHNAMES } from "./tabRoutes";
 
-const DEFAULT_FALLBACK = TAB_PATHNAMES.agora;
+const DEFAULT_FALLBACK = TAB_PATHNAMES.inicio;
 const DEFAULT_PUSH_DEDUPE_MS = 180;
 const DEFAULT_PUSH_LOCK_MS = 320;
 const PUSH_STALE_MS = 6000;

@@ -91,7 +91,7 @@ export default function ServiceDetailScreen() {
     [source],
   );
   const idValue = useMemo(() => (Array.isArray(id) ? id[0] : id) ?? "", [id]);
-  const nextRoute = useMemo(() => (idValue ? `/service/${idValue}` : TAB_PATHNAMES.index), [idValue]);
+  const nextRoute = useMemo(() => (idValue ? `/service/${idValue}` : TAB_PATHNAMES.inicio), [idValue]);
   const openAuth = useCallback(() => {
     safePush(router, { pathname: "/auth", params: { next: nextRoute } });
   }, [nextRoute, router]);
@@ -147,11 +147,11 @@ export default function ServiceDetailScreen() {
       case "search":
         return "/search";
       case "discover":
-        return TAB_PATHNAMES.index;
+        return TAB_PATHNAMES.inicio;
       case "agora":
-        return TAB_PATHNAMES.agora;
+        return TAB_PATHNAMES.inicio;
       default:
-        return TAB_PATHNAMES.index;
+        return TAB_PATHNAMES.inicio;
     }
   }, [sourceValue]);
   const handleBack = () => {

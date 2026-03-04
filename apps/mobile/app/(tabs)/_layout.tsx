@@ -32,7 +32,7 @@ const ExpoTopTabs = withLayoutContext<
   MaterialTopTabNavigationEventMap
 >(MaterialTopTabs.Navigator);
 const APP_BACKGROUND = tokens.colors.background;
-const VISIBLE_TAB_KEYS: ReadonlyArray<TabKey> = ["agora", "index", "network", "messages", "profile"];
+const VISIBLE_TAB_KEYS: ReadonlyArray<TabKey> = ["inicio", "competir", "reservas", "comunidade", "perfil"];
 
 export default function TabsLayout() {
   const { t } = useTranslation();
@@ -210,11 +210,8 @@ export default function TabsLayout() {
 
   const { isBlocked } = useTabSwipeBlocker();
   const renderTabBar = useCallback((props: MaterialTopTabBarProps) => {
-    const activeRoute = props.state.routes[props.state.index]?.name ?? "agora";
-    if (activeRoute === "padel") {
-      return null;
-    }
-    const activeKey = (VISIBLE_TAB_KEYS.includes(activeRoute as TabKey) ? activeRoute : "agora") as TabKey;
+    const activeRoute = props.state.routes[props.state.index]?.name ?? "inicio";
+    const activeKey = (VISIBLE_TAB_KEYS.includes(activeRoute as TabKey) ? activeRoute : "inicio") as TabKey;
     return (
       <Animated.View
         pointerEvents="box-none"
@@ -291,7 +288,7 @@ export default function TabsLayout() {
         id="main-tabs"
         tabBarPosition="bottom"
         backBehavior="history"
-        initialRouteName="agora"
+        initialRouteName="inicio"
         initialLayout={{ width }}
         tabBar={renderTabBar}
         screenOptions={{
@@ -305,12 +302,11 @@ export default function TabsLayout() {
           lazyPreloadDistance: tabPreloadDistance,
         }}
       >
-        <ExpoTopTabs.Screen name="padel" options={{ title: "Padel" }} />
-        <ExpoTopTabs.Screen name="agora" options={{ title: "Agora" }} />
-        <ExpoTopTabs.Screen name="index" options={{ title: "Descobrir" }} />
-        <ExpoTopTabs.Screen name="network" options={{ title: "Rede" }} />
-        <ExpoTopTabs.Screen name="messages" options={{ title: "Mensagens" }} />
-        <ExpoTopTabs.Screen name="profile" options={{ title: "Perfil" }} />
+        <ExpoTopTabs.Screen name="inicio" options={{ title: "Início" }} />
+        <ExpoTopTabs.Screen name="competir" options={{ title: "Competir" }} />
+        <ExpoTopTabs.Screen name="reservas" options={{ title: "Reservas" }} />
+        <ExpoTopTabs.Screen name="comunidade" options={{ title: "Comunidade" }} />
+        <ExpoTopTabs.Screen name="perfil" options={{ title: "Perfil" }} />
       </ExpoTopTabs>
       <LocationPermissionModal
         visible={locationModalVisible}

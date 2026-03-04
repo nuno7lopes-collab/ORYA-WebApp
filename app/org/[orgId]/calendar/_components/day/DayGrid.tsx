@@ -21,7 +21,7 @@ type DayGridProps = {
   onSelectEvent?: (event: CalendarEvent) => void;
 };
 
-const TIME_GUTTER_WIDTH = 72;
+const TIME_GUTTER_WIDTH = 76;
 const DEFAULT_COLUMN_WIDTH = 240;
 const MIN_COLUMN_WIDTH = 220;
 const FIT_MIN_COLUMN_WIDTH = 160;
@@ -184,51 +184,40 @@ export function DayGrid({
   const jumpTimes = [8, 12, 16, 20];
 
   return (
-    <section className="rounded-2xl border border-white/10 bg-[rgba(6,10,20,0.88)] p-3 shadow-[0_28px_80px_rgba(0,0,0,0.45)]">
-      <div className="mb-2 px-1">
-        <h2 className="text-sm font-semibold text-white">Agenda diária</h2>
-        <p className="text-xs text-white/55">Slots de 15 minutos, altura proporcional por duração real e colunas por entidade.</p>
-        <p className="mt-1 text-[11px] text-white/50">
+    <section className="rounded-2xl border border-white/10 bg-[rgba(6,10,20,0.9)] p-2.5 shadow-[0_24px_70px_rgba(0,0,0,0.45)]">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1">
+        <p className="text-[11px] text-white/55">
           {availabilityOverlayHint ??
             (showAvailabilityOverlay
               ? "Sobreposição de disponibilidade ativa."
               : "Sobreposição de disponibilidade desligada.")}
         </p>
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-2 text-[10px] text-white/65">
-          <span className="rounded-full border border-sky-300/45 bg-sky-400/12 px-2 py-0.5 text-sky-100">Confirmado</span>
-          <span className="rounded-full border border-amber-300/45 bg-amber-400/12 px-2 py-0.5 text-amber-100">Pendente</span>
-          <span className="rounded-full border border-rose-300/45 bg-rose-400/12 px-2 py-0.5 text-rose-100">Cancelado/No-show</span>
-          <span className="rounded-full border border-fuchsia-300/45 bg-fuchsia-400/12 px-2 py-0.5 text-fuchsia-100">Disputa</span>
-          <span className="text-white/45">Click fixa detalhe · hover pré-visualiza</span>
-          </div>
-          <div className="flex items-center gap-2">
-            {jumpTimes.map((hour) => (
-              <button
-                key={`jump-hour-${hour}`}
-                type="button"
-                onClick={() => scrollToMinute(hour * 60)}
-                className="rounded-full border border-white/15 px-2 py-1 text-[10px] text-white/70 transition hover:border-white/30 hover:text-white"
-              >
-                {pad2(hour)}:00
-              </button>
-            ))}
+        <div className="flex items-center gap-2">
+          {jumpTimes.map((hour) => (
             <button
+              key={`jump-hour-${hour}`}
               type="button"
-              onClick={() => {
-                const parts = getTimeParts(new Date(), timezone);
-                scrollToMinute(parts.hour * 60 + parts.minute);
-              }}
-              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 transition hover:border-white/35 hover:text-white"
+              onClick={() => scrollToMinute(hour * 60)}
+              className="rounded-full border border-white/15 px-2 py-1 text-[10px] text-white/70 transition hover:border-white/30 hover:text-white"
             >
-              Ir para agora
+              {pad2(hour)}:00
             </button>
-          </div>
+          ))}
+          <button
+            type="button"
+            onClick={() => {
+              const parts = getTimeParts(new Date(), timezone);
+              scrollToMinute(parts.hour * 60 + parts.minute);
+            }}
+            className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 transition hover:border-white/35 hover:text-white"
+          >
+            Ir para agora
+          </button>
         </div>
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-white/10" data-virtual-ready="true">
-        <div className="grid border-b border-white/10 bg-[rgba(5,10,20,0.92)]" style={{ gridTemplateColumns: `${TIME_GUTTER_WIDTH}px minmax(0,1fr)` }}>
+        <div className="grid border-b border-white/10 bg-[rgba(5,10,20,0.94)]" style={{ gridTemplateColumns: `${TIME_GUTTER_WIDTH}px minmax(0,1fr)` }}>
           <div className="h-12 border-r border-white/10" />
           <div className="relative h-12 overflow-hidden">
             <div className="relative h-full" style={{ width: totalColumnsWidth, transform: `translateX(${-scrollLeft}px)` }}>
@@ -252,7 +241,7 @@ export function DayGrid({
                         <p className="truncate text-xs font-semibold uppercase tracking-[0.08em] text-white/80">
                           {column.label}
                         </p>
-                        {column.subtitle ? <p className="truncate text-[10px] text-white/55">{column.subtitle}</p> : null}
+                        {column.subtitle ? <p className="truncate text-[11px] text-white/55">{column.subtitle}</p> : null}
                       </div>
                     </div>
                   </div>
@@ -266,7 +255,7 @@ export function DayGrid({
           ref={scrollRef}
           className="overflow-auto orya-scrollbar-hide"
           onScroll={(event) => setScrollLeft(event.currentTarget.scrollLeft)}
-          style={{ height: hourHeight * 10, maxHeight: "calc(100vh - 320px)" }}
+          style={{ height: hourHeight * 10, maxHeight: "calc(100dvh - 210px)" }}
         >
           <div
             className="relative"
@@ -283,7 +272,7 @@ export function DayGrid({
                 height: totalHeight,
                 transform: `translateX(${scrollLeft}px)`,
                 backgroundImage:
-                  "linear-gradient(to bottom, rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.06) 1px, transparent 1px)",
+                  "linear-gradient(to bottom, rgba(255,255,255,0.012) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.04) 1px, transparent 1px)",
                 backgroundSize: `100% ${rowSize}px, 100% ${hourHeight}px`,
               }}
             >
@@ -294,7 +283,7 @@ export function DayGrid({
                   <div
                     key={`hour-${hour}`}
                     className={cn(
-                      "absolute right-2 text-[10px] font-mono tracking-[0.1em] text-white/45",
+                      "absolute right-2 text-[11px] tabular-nums text-white/52",
                       hour === HOUR_START ? "top-0" : "-translate-y-1/2",
                     )}
                     style={{ top }}
@@ -362,7 +351,7 @@ export function DayGrid({
                   const left = columnIndex * columnWidth;
                   return (
                     <div className="pointer-events-none absolute z-40" style={{ top, left, width: columnWidth }}>
-                      <span className="absolute left-2 top-0 -translate-y-1/2 rounded-md border border-cyan-200/60 bg-[#050912]/95 px-2 py-0.5 text-[10px] font-mono text-cyan-100">
+                      <span className="absolute left-2 top-0 -translate-y-1/2 rounded-md border border-cyan-200/60 bg-[#050912]/95 px-2 py-0.5 text-[10px] tabular-nums text-cyan-100">
                         {minuteToLabel(minute)}
                       </span>
                       <span className="absolute left-0 right-0 top-0 h-px bg-cyan-300/60" />

@@ -6,39 +6,40 @@ import {
   ScrollView,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { useEffect, useMemo, useState } from "react";
-import { safePush } from "../../lib/navigation";
-import { LiquidBackground } from "../../components/liquid/LiquidBackground";
-import { TopAppHeader } from "../../components/navigation/TopAppHeader";
-import { useTopHeaderPadding } from "../../components/navigation/useTopHeaderPadding";
-import { useTopBarScroll } from "../../components/navigation/useTopBarScroll";
-import { Ionicons } from "../../components/icons/Ionicons";
+import { safePush } from "../../../lib/navigation";
+import { LiquidBackground } from "../../../components/liquid/LiquidBackground";
+import { TopAppHeader } from "../../../components/navigation/TopAppHeader";
+import { useTopHeaderPadding } from "../../../components/navigation/useTopHeaderPadding";
+import { useTopBarScroll } from "../../../components/navigation/useTopBarScroll";
+import { Ionicons } from "../../../components/icons/Ionicons";
 import { tokens, useTranslation } from "@orya/shared";
 import { useRouter } from "expo-router";
-import { useAuth } from "../../lib/auth";
+import { useAuth } from "../../../lib/auth";
 import {
   useMessagesInbox,
   useMessageRequests,
   useMessageCommunityInvites,
-} from "../../features/messages/hooks";
-import { createMessageRequest } from "../../features/messages/api";
-import { GlassCard } from "../../components/liquid/GlassCard";
-import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
-import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
-import { SafeFlashList } from "../../components/lists/SafeFlashList";
-import { formatDate } from "../../lib/formatters";
+} from "../../../features/messages/hooks";
+import { createMessageRequest } from "../../../features/messages/api";
+import { GlassCard } from "../../../components/liquid/GlassCard";
+import { GlassSkeleton } from "../../../components/glass/GlassSkeleton";
+import { useTabBarPadding } from "../../../components/navigation/useTabBarPadding";
+import { SafeFlashList } from "../../../components/lists/SafeFlashList";
+import { formatDate } from "../../../lib/formatters";
 import { useIsFocused } from "@react-navigation/native";
-import { AvatarCircle } from "../../components/avatar/AvatarCircle";
-import type { InboxItem } from "../../features/messages/types";
-import { useNetworkSuggestions } from "../../features/network/hooks";
-import { searchOrganizations, searchUsers } from "../../features/search/api";
+import { AvatarCircle } from "../../../components/avatar/AvatarCircle";
+import type { InboxItem } from "../../../features/messages/types";
+import { useNetworkSuggestions } from "../../../features/network/hooks";
+import { searchOrganizations, searchUsers } from "../../../features/search/api";
 import { useQuery } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { getUserFacingError } from "../../lib/errors";
-import type { SearchOrganization, SearchUser } from "../../features/search/types";
-import { useFocusFrameMonitor } from "../../components/perf/useFocusFrameMonitor";
+import { getUserFacingError } from "../../../lib/errors";
+import type { SearchOrganization, SearchUser } from "../../../features/search/types";
+import { useFocusFrameMonitor } from "../../../components/perf/useFocusFrameMonitor";
 
 const formatInboxTimestamp = (value?: string | null) => {
   if (!value) return "";
@@ -55,6 +56,15 @@ const formatInboxTimestamp = (value?: string | null) => {
   return formatDate(date, { day: "2-digit", month: "short" });
 };
 
+const resolveConversationContextLabel = (item: InboxItem) => {
+  if (item.kind === "EVENT") return "Evento";
+  if (item.contextType === "ORG_COMMUNITY") return "Comunidade";
+  if (item.contextType === "ORG_CHANNEL") return "Canal";
+  if (item.contextType === "USER_GROUP") return "Grupo";
+  if (item.contextType === "ORG_CONTACT") return "Organização";
+  return "Conversa";
+};
+
 type ComposerTab = "users" | "orgs";
 
 export default function MessagesTabScreen() {
@@ -62,11 +72,14 @@ export default function MessagesTabScreen() {
   const topPadding = useTopHeaderPadding(24);
   const tabBarPadding = useTabBarPadding();
   const insets = useSafeAreaInsets();
+  const { width: screenWidth } = useWindowDimensions();
+  const isCompactWidth = screenWidth < 360;
+  const horizontalGutter = isCompactWidth ? 14 : 20;
   const topBar = useTopBarScroll({ hideOnScroll: false });
   useFocusFrameMonitor("screen_messages");
   const router = useRouter();
   const openAuth = () => {
-    safePush(router, { pathname: "/auth", params: { next: "/messages" } });
+    safePush(router, { pathname: "/auth", params: { next: "/comunidade/mensagens" } });
   };
   const { session } = useAuth();
   const isFocused = useIsFocused();
@@ -193,7 +206,7 @@ export default function MessagesTabScreen() {
       await Promise.all([inboxQuery.refetch(), requestsQuery.refetch()]);
       if (response.conversationId) {
         safePush(router, {
-          pathname: "/messages/[threadId]",
+          pathname: "/comunidade/mensagens/[threadId]",
           params: { threadId: response.conversationId, source: "conversation" },
         });
       } else {
@@ -228,7 +241,7 @@ export default function MessagesTabScreen() {
       await Promise.all([inboxQuery.refetch(), requestsQuery.refetch()]);
       if (response.conversationId) {
         safePush(router, {
-          pathname: "/messages/[threadId]",
+          pathname: "/comunidade/mensagens/[threadId]",
           params: { threadId: response.conversationId, source: "conversation" },
         });
       } else {
@@ -258,7 +271,7 @@ export default function MessagesTabScreen() {
     const isEvent = item.kind === "EVENT";
     if (isEvent && item.conversationId && item.event) {
       safePush(router, {
-        pathname: "/messages/[threadId]",
+        pathname: "/comunidade/mensagens/[threadId]",
         params: {
           threadId: item.conversationId,
           eventId: String(item.event.id),
@@ -274,7 +287,7 @@ export default function MessagesTabScreen() {
     }
     if (item.conversationId) {
       safePush(router, {
-        pathname: "/messages/[threadId]",
+        pathname: "/comunidade/mensagens/[threadId]",
         params: {
           threadId: item.conversationId,
           title: item.title,
@@ -313,7 +326,7 @@ export default function MessagesTabScreen() {
         contentContainerStyle={{
           paddingTop: topPadding,
           paddingBottom: tabBarPadding,
-          paddingHorizontal: 20,
+          paddingHorizontal: horizontalGutter,
         }}
         onScroll={topBar.onScroll}
         onScrollEndDrag={topBar.onScrollEndDrag}
@@ -331,23 +344,23 @@ export default function MessagesTabScreen() {
         refreshing={Boolean(session?.user?.id) && inboxQuery.isFetching}
         ListHeaderComponent={
           <View className="pb-4 gap-3">
-            <Text className="text-white/60 text-sm">{t("messages:subtitle")}</Text>
+            <Text className="text-white/90 text-sm">{t("messages:subtitle")}</Text>
             {session?.user?.id ? (
               <GlassCard intensity={46} padding={10}>
                 <Pressable
-                  onPress={() => safePush(router, "/messages/requests")}
+                  onPress={() => safePush(router, "/comunidade/mensagens/pedidos")}
                   className="rounded-2xl px-2 py-2"
                   style={{ minHeight: tokens.layout.touchTarget }}
                   accessibilityRole="button"
                   accessibilityLabel={t("messages:requests")}
                 >
                   <View className="flex-row items-center gap-3">
-                    <View className="h-10 w-10 items-center justify-center rounded-full border border-white/12 bg-white/8">
+                    <View className="h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-white/14">
                       <Ionicons name="mail-unread-outline" size={18} color="rgba(255,255,255,0.9)" />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text className="text-white text-sm font-semibold">{t("messages:requests")}</Text>
-                      <Text className="text-white/60 text-xs">
+                      <Text className="text-white/90 text-xs">
                         {requestsCount > 0
                           ? t("messages:requestsWithCount", { count: requestsCount })
                           : t("messages:requestsHint")}
@@ -368,7 +381,7 @@ export default function MessagesTabScreen() {
 
                 <View className="rounded-2xl px-2 py-2">
                   <View className="flex-row items-center gap-3">
-                    <View className="h-10 w-10 items-center justify-center rounded-full border border-white/12 bg-white/8">
+                    <View className="h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-white/14">
                       <Ionicons
                         name={unreadTotal > 0 ? "chatbubble-ellipses" : "chatbubble-ellipses-outline"}
                         size={18}
@@ -377,7 +390,7 @@ export default function MessagesTabScreen() {
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text className="text-white text-sm font-semibold">{t("messages:title")}</Text>
-                      <Text className="text-white/60 text-xs">
+                      <Text className="text-white/90 text-xs">
                         {unreadTotal > 0
                           ? t("messages:inboxStatus.newMessages", { count: unreadTotal })
                           : t("messages:inboxStatus.noNewMessages")}
@@ -402,7 +415,7 @@ export default function MessagesTabScreen() {
               <Text className="text-white text-sm font-semibold mb-2">
                 {t("messages:signin.title")}
               </Text>
-              <Text className="text-white/65 text-sm">{t("messages:signin.body")}</Text>
+              <Text className="text-white/82 text-sm">{t("messages:signin.body")}</Text>
               <Pressable
                 onPress={openAuth}
                 className="mt-4 rounded-2xl bg-white/90 px-4 py-3"
@@ -442,7 +455,7 @@ export default function MessagesTabScreen() {
                 <Ionicons name="mail-outline" size={16} color="rgba(255,255,255,0.78)" />
                 <Text className="text-white text-sm font-semibold">{t("messages:empty.noConversations")}</Text>
               </View>
-              <Text className="mt-2 text-white/62 text-sm">{t("messages:empty.newMessagesHint")}</Text>
+              <Text className="mt-2 text-white/80 text-sm">{t("messages:empty.newMessagesHint")}</Text>
             </GlassCard>
           )
         }
@@ -453,6 +466,19 @@ export default function MessagesTabScreen() {
           const isMuted =
             Boolean(item.mutedUntil) && new Date(item.mutedUntil ?? "").getTime() > now;
           const timestamp = formatInboxTimestamp(item.lastMessageAt ?? item.lastMessage?.createdAt ?? null);
+          const contextLabel = resolveConversationContextLabel(item);
+          const contextStyle =
+            item.contextType === "ORG_COMMUNITY"
+              ? {
+                  borderColor: "rgba(125,211,252,0.4)",
+                  backgroundColor: "rgba(56,189,248,0.16)",
+                  color: "rgba(224,242,254,0.95)",
+                }
+              : {
+                  borderColor: "rgba(255,255,255,0.24)",
+                  backgroundColor: "rgba(255,255,255,0.1)",
+                  color: "rgba(255,255,255,0.9)",
+                };
           return (
             <Pressable
               onPress={() => openThread(item)}
@@ -481,12 +507,32 @@ export default function MessagesTabScreen() {
                         {item.title}
                       </Text>
                       {timestamp ? (
-                        <Text className="text-white/45 text-[11px]">{timestamp}</Text>
+                        <Text className="text-white/85 text-[11px]">{timestamp}</Text>
                       ) : null}
                     </View>
 
+                    <View className="flex-row items-center gap-2">
+                      <View
+                        style={{
+                          borderWidth: 1,
+                          borderRadius: 999,
+                          paddingHorizontal: 8,
+                          paddingVertical: 2,
+                          borderColor: contextStyle.borderColor,
+                          backgroundColor: contextStyle.backgroundColor,
+                        }}
+                      >
+                        <Text
+                          className="text-[10px] font-semibold uppercase tracking-[0.08em]"
+                          style={{ color: contextStyle.color }}
+                        >
+                          {contextLabel}
+                        </Text>
+                      </View>
+                    </View>
+
                     {isEvent && (item.event?.startsAt || item.subtitle) ? (
-                      <Text className="text-white/58 text-xs" numberOfLines={1}>
+                      <Text className="text-white/88 text-xs" numberOfLines={1}>
                         {item.event?.startsAt
                           ? formatDate(item.event.startsAt, { day: "2-digit", month: "short" })
                           : null}
@@ -494,13 +540,13 @@ export default function MessagesTabScreen() {
                         {item.subtitle ?? null}
                       </Text>
                     ) : item.subtitle ? (
-                      <Text className="text-white/58 text-xs" numberOfLines={1}>
+                      <Text className="text-white/88 text-xs" numberOfLines={1}>
                         {item.subtitle}
                       </Text>
                     ) : null}
 
                     <Text
-                      className={unreadCount > 0 ? "text-white text-xs font-medium" : "text-white/65 text-xs"}
+                      className={unreadCount > 0 ? "text-white text-xs font-medium" : "text-white/90 text-xs"}
                       numberOfLines={1}
                     >
                       {lastMessage?.body ?? t("messages:lastMessageEmpty")}
@@ -515,13 +561,13 @@ export default function MessagesTabScreen() {
                         </Text>
                       </View>
                     ) : isEvent ? (
-                      <Text className="text-[10px] uppercase tracking-[0.14em] text-white/40">
+                      <Text className="text-[10px] uppercase tracking-[0.14em] text-white/85">
                         {resolveStatusLabel(item.status)}
                       </Text>
                     ) : null}
 
                     {isMuted ? (
-                      <Text className="text-[10px] uppercase tracking-[0.14em] text-white/35">
+                      <Text className="text-[10px] uppercase tracking-[0.14em] text-white/85">
                         {t("messages:thread.muted")}
                       </Text>
                     ) : null}
@@ -570,10 +616,10 @@ export default function MessagesTabScreen() {
               borderWidth: 1,
               borderColor: "rgba(255,255,255,0.12)",
               backgroundColor: "rgba(12,18,30,0.96)",
-              paddingHorizontal: 18,
+              paddingHorizontal: isCompactWidth ? 14 : 18,
               paddingTop: 14,
               paddingBottom: Math.max(insets.bottom, 12) + 10,
-              maxHeight: "78%",
+              maxHeight: isCompactWidth ? "86%" : "78%",
             }}
           >
             <View className="mb-3 items-center">
@@ -586,7 +632,7 @@ export default function MessagesTabScreen() {
                 onPress={closeComposer}
                 accessibilityRole="button"
                 accessibilityLabel={t("common:actions.close")}
-                className="h-9 w-9 items-center justify-center rounded-full border border-white/12 bg-white/8"
+                className="h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/14"
               >
                 <Ionicons name="close" size={16} color="rgba(255,255,255,0.9)" />
               </Pressable>
@@ -600,7 +646,7 @@ export default function MessagesTabScreen() {
                 accessibilityState={{ selected: composerTab === "users" }}
                 accessibilityLabel={t("messages:composer.tabs.users")}
               >
-                <Text className={composerTab === "users" ? "text-center text-xs font-semibold text-slate-900" : "text-center text-xs font-semibold text-white/80"}>
+                <Text className={composerTab === "users" ? "text-center text-xs font-semibold text-slate-900" : "text-center text-xs font-semibold text-white/92"}>
                   {t("messages:composer.tabs.users")}
                 </Text>
               </Pressable>
@@ -611,13 +657,13 @@ export default function MessagesTabScreen() {
                 accessibilityState={{ selected: composerTab === "orgs" }}
                 accessibilityLabel={t("messages:composer.tabs.orgs")}
               >
-                <Text className={composerTab === "orgs" ? "text-center text-xs font-semibold text-slate-900" : "text-center text-xs font-semibold text-white/80"}>
+                <Text className={composerTab === "orgs" ? "text-center text-xs font-semibold text-slate-900" : "text-center text-xs font-semibold text-white/92"}>
                   {t("messages:composer.tabs.orgs")}
                 </Text>
               </Pressable>
             </View>
 
-            <View className="mb-3 rounded-2xl border border-white/12 bg-white/8 px-3">
+            <View className="mb-3 rounded-2xl border border-white/20 bg-white/14 px-3">
               <TextInput
                 value={composerQuery}
                 onChangeText={setComposerQuery}
@@ -626,7 +672,7 @@ export default function MessagesTabScreen() {
                     ? t("messages:composer.searchUsersPlaceholder")
                     : t("messages:composer.searchOrgsPlaceholder")
                 }
-                placeholderTextColor="rgba(255,255,255,0.42)"
+                placeholderTextColor="rgba(255,255,255,0.62)"
                 autoCapitalize="none"
                 autoCorrect={false}
                 className="h-11 text-white"
@@ -636,7 +682,7 @@ export default function MessagesTabScreen() {
             </View>
 
             {composerTab === "users" && !hasComposerQuery ? (
-              <Text className="mb-2 text-white/58 text-xs">
+              <Text className="mb-2 text-white/75 text-xs">
                 {t("messages:composer.suggestionsTitle")}
               </Text>
             ) : null}
@@ -646,6 +692,12 @@ export default function MessagesTabScreen() {
               contentContainerStyle={{ paddingBottom: 6, gap: 8 }}
               keyboardShouldPersistTaps="handled"
             >
+              {pendingComposerKey ? (
+                <View className="mb-1 flex-row items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-3 py-2">
+                  <ActivityIndicator size="small" color="rgba(255,255,255,0.9)" />
+                  <Text className="text-[11px] text-white/92">{t("common:actions.loading")}</Text>
+                </View>
+              ) : null}
               {composerTab === "users" ? (
                 usersLoading ? (
                   <View className="py-4">
@@ -670,7 +722,7 @@ export default function MessagesTabScreen() {
                   </GlassCard>
                 ) : composerUsers.length === 0 ? (
                   <GlassCard intensity={55} padding={14}>
-                    <Text className="text-white/75 text-sm">{t("messages:composer.emptyUsers")}</Text>
+                    <Text className="text-white/88 text-sm">{t("messages:composer.emptyUsers")}</Text>
                   </GlassCard>
                 ) : (
                   composerUsers.map((user) => {
@@ -680,32 +732,38 @@ export default function MessagesTabScreen() {
                     const subtitle = user.username ? `@${user.username}` : t("messages:composer.userNoHandle");
                     return (
                       <GlassCard key={itemKey} intensity={58} padding={12}>
-                        <View className="flex-row items-center gap-3">
-                          <AvatarCircle
-                            size={44}
-                            uri={user.avatarUrl ?? null}
-                            iconName="person-outline"
-                            iconColor="rgba(255,255,255,0.7)"
-                            borderColor="rgba(255,255,255,0.12)"
-                            backgroundColor="rgba(255,255,255,0.08)"
-                          />
-                          <View style={{ flex: 1 }}>
-                            <Text className="text-white text-sm font-semibold" numberOfLines={1}>
-                              {displayName}
-                            </Text>
-                            <Text className="text-white/55 text-xs" numberOfLines={1}>
-                              {subtitle}
-                            </Text>
+                        <View className={isCompactWidth ? "gap-3" : "flex-row items-center gap-3"}>
+                          <View className="flex-row items-center gap-3" style={{ flex: 1 }}>
+                            <AvatarCircle
+                              size={44}
+                              uri={user.avatarUrl ?? null}
+                              iconName="person-outline"
+                              iconColor="rgba(255,255,255,0.7)"
+                              borderColor="rgba(255,255,255,0.12)"
+                              backgroundColor="rgba(255,255,255,0.08)"
+                            />
+                            <View style={{ flex: 1 }}>
+                              <Text className="text-white text-sm font-semibold" numberOfLines={1}>
+                                {displayName}
+                              </Text>
+                              <Text className="text-white/78 text-xs" numberOfLines={1}>
+                                {subtitle}
+                              </Text>
+                            </View>
                           </View>
                           <Pressable
                             onPress={() => handleStartUserMessage(user)}
                             disabled={Boolean(pendingComposerKey)}
                             className="rounded-xl bg-white/90 px-3 py-2"
-                            style={{ minHeight: tokens.layout.touchTarget, justifyContent: "center" }}
+                            style={{
+                              minHeight: tokens.layout.touchTarget,
+                              justifyContent: "center",
+                              alignSelf: isCompactWidth ? "stretch" : "center",
+                            }}
                             accessibilityRole="button"
                             accessibilityLabel={t("messages:composer.startMessage")}
                           >
-                            <Text className="text-xs font-semibold text-slate-900">
+                            <Text className="text-center text-xs font-semibold text-slate-900">
                               {itemBusy ? t("common:actions.sending") : t("messages:composer.startMessage")}
                             </Text>
                           </Pressable>
@@ -734,11 +792,11 @@ export default function MessagesTabScreen() {
                 </GlassCard>
               ) : !hasComposerQuery ? (
                 <GlassCard intensity={55} padding={14}>
-                  <Text className="text-white/75 text-sm">{t("messages:composer.searchOrgsHint")}</Text>
+                  <Text className="text-white/88 text-sm">{t("messages:composer.searchOrgsHint")}</Text>
                 </GlassCard>
               ) : composerOrgs.length === 0 ? (
                 <GlassCard intensity={55} padding={14}>
-                  <Text className="text-white/75 text-sm">{t("messages:composer.emptyOrgs")}</Text>
+                  <Text className="text-white/88 text-sm">{t("messages:composer.emptyOrgs")}</Text>
                 </GlassCard>
               ) : (
                 composerOrgs.map((org) => {
@@ -748,32 +806,38 @@ export default function MessagesTabScreen() {
                   const subtitle = org.username ? `@${org.username}` : t("messages:composer.orgNoHandle");
                   return (
                     <GlassCard key={itemKey} intensity={58} padding={12}>
-                      <View className="flex-row items-center gap-3">
-                        <AvatarCircle
-                          size={44}
-                          uri={org.brandingAvatarUrl ?? null}
-                          iconName="business-outline"
-                          iconColor="rgba(255,255,255,0.7)"
-                          borderColor="rgba(255,255,255,0.12)"
-                          backgroundColor="rgba(255,255,255,0.08)"
-                        />
-                        <View style={{ flex: 1 }}>
-                          <Text className="text-white text-sm font-semibold" numberOfLines={1}>
-                            {displayName}
-                          </Text>
-                          <Text className="text-white/55 text-xs" numberOfLines={1}>
-                            {subtitle}
-                          </Text>
+                      <View className={isCompactWidth ? "gap-3" : "flex-row items-center gap-3"}>
+                        <View className="flex-row items-center gap-3" style={{ flex: 1 }}>
+                          <AvatarCircle
+                            size={44}
+                            uri={org.brandingAvatarUrl ?? null}
+                            iconName="business-outline"
+                            iconColor="rgba(255,255,255,0.7)"
+                            borderColor="rgba(255,255,255,0.12)"
+                            backgroundColor="rgba(255,255,255,0.08)"
+                          />
+                          <View style={{ flex: 1 }}>
+                            <Text className="text-white text-sm font-semibold" numberOfLines={1}>
+                              {displayName}
+                            </Text>
+                            <Text className="text-white/78 text-xs" numberOfLines={1}>
+                              {subtitle}
+                            </Text>
+                          </View>
                         </View>
                         <Pressable
                           onPress={() => handleStartOrgMessage(org)}
                           disabled={Boolean(pendingComposerKey)}
                           className="rounded-xl bg-white/90 px-3 py-2"
-                          style={{ minHeight: tokens.layout.touchTarget, justifyContent: "center" }}
+                          style={{
+                            minHeight: tokens.layout.touchTarget,
+                            justifyContent: "center",
+                            alignSelf: isCompactWidth ? "stretch" : "center",
+                          }}
                           accessibilityRole="button"
                           accessibilityLabel={t("messages:composer.startMessage")}
                         >
-                          <Text className="text-xs font-semibold text-slate-900">
+                          <Text className="text-center text-xs font-semibold text-slate-900">
                             {itemBusy ? t("common:actions.sending") : t("messages:composer.startMessage")}
                           </Text>
                         </Pressable>

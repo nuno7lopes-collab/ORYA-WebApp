@@ -141,7 +141,7 @@ export default function TicketsScreen({ showBackButton = true, embedded = false 
 
   const backButton = (
     <Pressable
-      onPress={() => safeBack(router, navigation, TAB_PATHNAMES.index)}
+      onPress={() => safeBack(router, navigation, TAB_PATHNAMES.inicio)}
       accessibilityRole="button"
       accessibilityLabel="Voltar"
       style={({ pressed }) => [
@@ -233,7 +233,7 @@ export default function TicketsScreen({ showBackButton = true, embedded = false 
               <Pressable
                 className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
                 onPress={() => {
-                  safePush(router, TAB_PATHNAMES.index);
+                  safePush(router, TAB_PATHNAMES.inicio);
                 }}
                 style={{ minHeight: tokens.layout.touchTarget }}
                 accessibilityRole="button"

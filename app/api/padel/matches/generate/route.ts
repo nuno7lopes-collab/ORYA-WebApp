@@ -107,6 +107,19 @@ async function _POST(req: NextRequest) {
     seedSourceRaw === "NONE" || seedSourceRaw === "RANKING_SNAPSHOT" || seedSourceRaw === "TOURNAMENT_CONFIG"
       ? (seedSourceRaw as PadelSeedSource)
       : "TOURNAMENT_CONFIG";
+  const hasExistingPolicy = Object.prototype.hasOwnProperty.call(body, "existingPolicy");
+  const existingPolicyRaw = typeof body.existingPolicy === "string" ? body.existingPolicy.trim().toLowerCase() : "";
+  if (hasExistingPolicy && existingPolicyRaw !== "skip" && existingPolicyRaw !== "error" && existingPolicyRaw !== "replace") {
+    return jsonWrap({ ok: false, error: "INVALID_EXISTING_POLICY" }, { status: 400 });
+  }
+  const existingPolicyFromBody =
+    existingPolicyRaw === "skip" || existingPolicyRaw === "error" || existingPolicyRaw === "replace"
+      ? (existingPolicyRaw as "skip" | "error" | "replace")
+      : null;
+  const confirmReplaceExisting = body.confirmReplaceExisting === true;
+  if (existingPolicyFromBody === "replace" && !confirmReplaceExisting) {
+    return jsonWrap({ ok: false, error: "CONFIRM_REPLACE_REQUIRED" }, { status: 400 });
+  }
   const drawSeed =
     typeof body.drawSeed === "string" || typeof body.drawSeed === "number" ? body.drawSeed : null;
   let invalidSeedRanks = false;
@@ -336,7 +349,7 @@ async function _POST(req: NextRequest) {
   const effectiveFormatForGeneration = parsePadelFormat(effectiveFormatForGenerationRaw) ?? format;
   const phaseNormalized = phase;
   const isGroupsFormat = effectiveFormatForGeneration === "GRUPOS_ELIMINATORIAS";
-  const existingPolicy = isGroupsFormat ? "error" : "replace";
+  const existingPolicy = existingPolicyFromBody ?? "error";
   const notifyUsers = !isGroupsFormat || phaseNormalized === "KNOCKOUT";
 
   if (isGroupsFormat && phaseNormalized === "KNOCKOUT" && allowIncomplete) {

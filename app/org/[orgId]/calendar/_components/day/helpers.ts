@@ -13,6 +13,8 @@ import type {
   AvailabilityResponse,
 } from "./types";
 
+export { getDateParts };
+
 export const SLOT_MINUTES = 15;
 export const DAY_MINUTES = 24 * 60;
 export const HOUR_START = 0;

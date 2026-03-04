@@ -119,7 +119,7 @@ const buildDemoCarouselItems = (discoverHref: string, cityLabel: string): Carous
     },
     {
       key: "demo-padel-5",
-      title: "Treino Técnico com Coach",
+      title: "Treino Técnico com Treinador",
       imageUrl: "https://images.unsplash.com/photo-1471295253337-3ceaaedca402?auto=format&fit=crop&w=1200&q=80",
       tag: "Qua · 19:00",
       meta: "Aula",

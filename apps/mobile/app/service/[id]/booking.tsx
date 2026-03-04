@@ -598,7 +598,7 @@ export default function ServiceBookingScreen() {
     safeBack(
       router,
       navigation,
-      serviceId ? `/service/${serviceId}` : TAB_PATHNAMES.index,
+      serviceId ? `/service/${serviceId}` : TAB_PATHNAMES.inicio,
     );
   };
 

@@ -211,7 +211,7 @@ export default function NotificationsScreen() {
   const showSkeleton = feed.isLoading && items.length === 0;
   const backButton = (
     <Pressable
-      onPress={() => safeBack(router, navigation, TAB_PATHNAMES.index)}
+      onPress={() => safeBack(router, navigation, TAB_PATHNAMES.inicio)}
       accessibilityRole="button"
       accessibilityLabel="Voltar"
       style={({ pressed }) => [

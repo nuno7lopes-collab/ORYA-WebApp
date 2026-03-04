@@ -598,19 +598,19 @@ export default function EventDetail() {
       case "notifications":
         return "/notifications";
       case "messages":
-        return "/messages";
+        return "/comunidade/mensagens";
       case "agora":
-        return TAB_PATHNAMES.agora;
+        return TAB_PATHNAMES.inicio;
       case "discover":
-        return TAB_PATHNAMES.index;
+        return TAB_PATHNAMES.inicio;
       case "search":
         return "/search";
       case "tickets":
         return "/tickets";
       case "profile":
-        return TAB_PATHNAMES.profile;
+        return TAB_PATHNAMES.perfil;
       default:
-        return TAB_PATHNAMES.index;
+        return TAB_PATHNAMES.inicio;
     }
   }, [source]);
 
@@ -685,6 +685,7 @@ export default function EventDetail() {
     detailInviteToken,
   );
   const inviteTokenRequestIdRef = useRef(0);
+  const inviteIdentifierRequestIdRef = useRef(0);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(
     null,
   );
@@ -818,13 +819,24 @@ export default function EventDetail() {
     ]).start();
   }, [data?.id, fade, transitionSource, translate]);
 
+  const createInviteTokenRequestId = () => {
+    const requestId = inviteTokenRequestIdRef.current + 1;
+    inviteTokenRequestIdRef.current = requestId;
+    if (requestId !== inviteTokenRequestIdRef.current) return;
+    return requestId;
+  };
+
   const validateInviteToken = useCallback(
     async (token: string) => {
-      const requestId = inviteTokenRequestIdRef.current + 1;
-      inviteTokenRequestIdRef.current = requestId;
+      const tokenRequestId = createInviteTokenRequestId();
+      if (typeof tokenRequestId !== "number") return;
+
+      const requestId = inviteIdentifierRequestIdRef.current + 1;
+      inviteIdentifierRequestIdRef.current = requestId;
       const trimmed = token.trim();
       if (!trimmed || !slugValue) {
-        if (requestId !== inviteTokenRequestIdRef.current) return;
+        if (tokenRequestId !== inviteTokenRequestIdRef.current) return;
+        if (requestId !== inviteIdentifierRequestIdRef.current) return;
         setInviteState({
           status: "invalid",
           message: t("events:invite.tokenInvalid"),
@@ -845,7 +857,8 @@ export default function EventDetail() {
           reason?: string;
           ticketTypeId?: number | null;
         }>(response);
-        if (requestId !== inviteTokenRequestIdRef.current) return;
+        if (tokenRequestId !== inviteTokenRequestIdRef.current) return;
+        if (requestId !== inviteIdentifierRequestIdRef.current) return;
         if (!result.allow) {
           const reasonMessage = mapInviteTokenReason(result.reason, t);
           setDetailInviteToken(null);
@@ -882,7 +895,8 @@ export default function EventDetail() {
         });
         setDetailInviteToken(trimmed);
       } catch (err: unknown) {
-        if (requestId !== inviteTokenRequestIdRef.current) return;
+        if (tokenRequestId !== inviteTokenRequestIdRef.current) return;
+        if (requestId !== inviteIdentifierRequestIdRef.current) return;
         setDetailInviteToken(null);
         setInviteState({
           status: "invalid",
@@ -1837,7 +1851,7 @@ export default function EventDetail() {
           t("events:padel.onboardingRequiredTitle"),
           t("events:padel.onboardingRequiredBody"),
         );
-        safePush(router, TAB_PATHNAMES.profile);
+        safePush(router, TAB_PATHNAMES.perfil);
         return;
       }
       Alert.alert(

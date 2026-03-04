@@ -415,6 +415,7 @@ async function _POST(req: NextRequest) {
       select: {
         id: true,
         categoryId: true,
+        updatedAt: true,
         plannedDurationMinutes: true,
         courtId: true,
         roundLabel: true,
@@ -656,6 +657,10 @@ async function _POST(req: NextRequest) {
       const score = match.score && typeof match.score === "object" ? (match.score as Record<string, unknown>) : {};
       scoreByMatchId.set(match.id, score);
     });
+    const expectedUpdatedAtByMatchId = new Map<number, Date | null>();
+    unscheduledMatches.forEach((match) => {
+      expectedUpdatedAtByMatchId.set(match.id, match.updatedAt ?? null);
+    });
 
     const scheduledUpdates: Array<{
       matchId: number;
@@ -663,6 +668,7 @@ async function _POST(req: NextRequest) {
       start: Date;
       end: Date;
       durationMinutes: number;
+      expectedUpdatedAt: Date | null;
       score?: Record<string, unknown> | null;
     }> = scheduleResult.scheduled.map((update) => {
       const score = scoreByMatchId.get(update.matchId) ?? {};
@@ -670,6 +676,7 @@ async function _POST(req: NextRequest) {
       const shouldMarkRescheduled = delayStatusRaw === "DELAYED";
       return {
         ...update,
+        expectedUpdatedAt: expectedUpdatedAtByMatchId.get(update.matchId) ?? null,
         ...(shouldMarkRescheduled
           ? {
               score: {
@@ -850,6 +857,7 @@ async function _POST(req: NextRequest) {
         endsAt: update.end,
         details: {
           durationMinutes: update.durationMinutes,
+          expectedUpdatedAt: update.expectedUpdatedAt?.toISOString?.() ?? null,
         } as Prisma.InputJsonValue,
       })),
       ...skipped.map((item) => ({
@@ -895,6 +903,7 @@ async function _POST(req: NextRequest) {
         start: update.start.toISOString(),
         end: update.end.toISOString(),
         durationMinutes: update.durationMinutes,
+        expectedUpdatedAt: update.expectedUpdatedAt?.toISOString?.() ?? null,
         score: (update.score ?? null) as Prisma.InputJsonValue,
       })),
       skipped,

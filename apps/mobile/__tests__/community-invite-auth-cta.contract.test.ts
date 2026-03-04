@@ -6,13 +6,13 @@ describe("community invite auth CTA contract", () => {
     const filePath = path.resolve(
       __dirname,
       "..",
-      "app/messages/community-invite/[token].tsx",
+      "app/comunidade/mensagens/convite/[token].tsx",
     );
     const source = fs.readFileSync(filePath, "utf8");
 
     expect(source).toContain("setRequiresAuth(true)");
     expect(source).toContain('pathname: "/auth"');
-    expect(source).toContain("next: `/messages/community-invite/${encodeURIComponent(token.trim())}`");
+    expect(source).toContain("next: `/comunidade/mensagens/convite/${encodeURIComponent(token.trim())}`");
     expect(source).toContain("Iniciar sessão");
   });
 });

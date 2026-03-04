@@ -6,6 +6,8 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
 import { OryaDateField } from "@/components/ui/datetime";
+import { CalendarCommandBar } from "../CalendarCommandBar";
+import type { CalendarView } from "../ViewSwitcher";
 import { CALENDAR_TIMEZONE_OPTIONS, normalizeCalendarTimezone } from "../timezones";
 import { summarizeAgendaItemsByStatus } from "../statusSummary";
 import { resolveEventToneClass } from "../eventTones";
@@ -16,7 +18,6 @@ import {
   fetchJson,
   formatDateParam,
   formatMonthLabel,
-  getDateParts,
   getDayKey,
   parseDateParam,
   parseIdList,
@@ -42,6 +43,21 @@ function formatSlotTime(value: string, timezone: string) {
   }).format(new Date(value));
 }
 
+function getMonthDateParts(date: Date, timezone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const map = new Map(parts.map((part) => [part.type, part.value]));
+  return {
+    year: Number(map.get("year")),
+    month: Number(map.get("month")),
+    day: Number(map.get("day")),
+  };
+}
+
 export default function MonthCalendarReadClient() {
   const params = useParams();
   const router = useRouter();
@@ -59,6 +75,7 @@ export default function MonthCalendarReadClient() {
   const [visibleKinds, setVisibleKinds] = useState<Array<(typeof ALL_KIND_FILTER_OPTIONS)[number]["value"]>>(
     ALL_KIND_FILTER_OPTIONS.map((option) => option.value),
   );
+  const [quickPanelOpen, setQuickPanelOpen] = useState(false);
 
   const replaceState = (input: { nextDate?: Date; nextTimezone?: string; nextView?: "day" | "week" | "month" }) => {
     if (!Number.isFinite(organizationId) || organizationId <= 0) return;
@@ -68,7 +85,7 @@ export default function MonthCalendarReadClient() {
     const nextDate =
       input.nextDate ??
       (input.nextTimezone
-        ? buildZonedDate(getDateParts(selectedDate, timezone), nextTimezone, 12, 0)
+        ? buildZonedDate(getMonthDateParts(selectedDate, timezone), nextTimezone, 12, 0)
         : selectedDate);
     nextParams.set("date", formatDateParam(nextDate, nextTimezone));
     nextParams.set("view", input.nextView ?? "month");
@@ -77,9 +94,10 @@ export default function MonthCalendarReadClient() {
     const serialized = nextParams.toString();
     router.replace(serialized ? `${destination}?${serialized}` : destination, { scroll: false });
   };
+  const setView = (nextView: CalendarView) => replaceState({ nextView });
 
   const monthParts = useMemo(() => {
-    const parts = getDateParts(selectedDate, timezone);
+    const parts = getMonthDateParts(selectedDate, timezone);
     return { year: parts.year, month: parts.month };
   }, [selectedDate, timezone]);
   const monthWindow = useMemo(() => buildMonthGridWindow(monthParts, timezone), [monthParts, timezone]);
@@ -127,6 +145,8 @@ export default function MonthCalendarReadClient() {
     });
   }, [data?.items, selectedCourtIds, selectedProfessionalIds, selectedResourceIds, visibleKinds]);
   const statusSummary = useMemo(() => summarizeAgendaItemsByStatus(filteredItems), [filteredItems]);
+  const hasCachedAgendaItems = (data?.items?.length ?? 0) > 0;
+  const showSoftAgendaError = Boolean(error) && hasCachedAgendaItems;
 
   const itemsByDay = useMemo(() => {
     const map = new Map<string, AgendaItem[]>();
@@ -143,42 +163,25 @@ export default function MonthCalendarReadClient() {
   }
 
   return (
-    <div className="space-y-4 p-4 md:p-6">
-      <section className="rounded-2xl border border-white/10 bg-[rgba(8,12,24,0.88)] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.45)]">
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              const next = addMonthsToParts(monthParts, -1);
-              replaceState({
-                nextDate: buildZonedDate({ year: next.year, month: next.month, day: 1 }, timezone, 12, 0),
-              });
-            }}
-            className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-xs text-white/80 transition hover:border-white/35 hover:text-white"
-            aria-label="Mês anterior"
-          >
-            ←
-          </button>
-          <button
-            type="button"
-            onClick={() => replaceState({ nextDate: new Date() })}
-            className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-xs text-white/80 transition hover:border-white/35 hover:text-white"
-          >
-            Hoje
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              const next = addMonthsToParts(monthParts, 1);
-              replaceState({
-                nextDate: buildZonedDate({ year: next.year, month: next.month, day: 1 }, timezone, 12, 0),
-              });
-            }}
-            className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-xs text-white/80 transition hover:border-white/35 hover:text-white"
-            aria-label="Mês seguinte"
-          >
-            →
-          </button>
+    <div className="space-y-3 p-3 md:p-4">
+      <CalendarCommandBar
+        view="month"
+        onViewChange={setView}
+        rangeLabel={monthLabel}
+        onPrevious={() => {
+          const next = addMonthsToParts(monthParts, -1);
+          replaceState({
+            nextDate: buildZonedDate({ year: next.year, month: next.month, day: 1 }, timezone, 12, 0),
+          });
+        }}
+        onNext={() => {
+          const next = addMonthsToParts(monthParts, 1);
+          replaceState({
+            nextDate: buildZonedDate({ year: next.year, month: next.month, day: 1 }, timezone, 12, 0),
+          });
+        }}
+        onToday={() => replaceState({ nextDate: new Date() })}
+        dateControl={
           <OryaDateField
             value={formatDateParam(selectedDate, timezone)}
             onChange={(nextDateRaw) => {
@@ -186,11 +189,12 @@ export default function MonthCalendarReadClient() {
               if (!nextDate) return;
               replaceState({ nextDate });
             }}
-            buttonClassName="rounded-xl px-3 py-1 text-xs"
+            buttonClassName="rounded-full px-3 py-1 text-xs"
           />
-          <h2 className="text-lg font-semibold text-white">{monthLabel}</h2>
-          <label className="ml-auto inline-flex items-center gap-2 rounded-full border border-white/20 bg-black/30 px-3 py-1 text-xs text-white/80">
-            <span className="text-[10px] uppercase tracking-[0.16em] text-white/55">Fuso</span>
+        }
+        timezoneControl={
+          <label className="inline-flex h-9 items-center gap-2 rounded-full border border-white/20 bg-black/35 px-3 text-xs text-white/80">
+            <span className="text-[10px] uppercase tracking-[0.14em] text-white/55">Fuso</span>
             <select
               value={timezone}
               onChange={(event) => replaceState({ nextTimezone: event.target.value })}
@@ -204,37 +208,62 @@ export default function MonthCalendarReadClient() {
               ))}
             </select>
           </label>
-        </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span className="text-[11px] uppercase tracking-[0.14em] text-white/55">Tipo</span>
-          {availableKindOptions.map((option) => {
-            const isActive = visibleKinds.includes(option.value);
-            return (
-              <button
-                key={`month-kind-${option.value}`}
-                type="button"
-                onClick={() => {
-                  setVisibleKinds((current) => {
-                    if (current.includes(option.value)) {
-                      const next = current.filter((entry) => entry !== option.value);
-                      return next.length > 0 ? next : current;
-                    }
-                    return [...current, option.value];
-                  });
-                }}
-                className={cn(
-                  "rounded-full border px-3 py-1 text-xs transition",
-                  isActive
-                    ? "border-cyan-300/45 bg-cyan-400/12 text-cyan-100"
-                    : "border-white/15 bg-white/5 text-white/70 hover:border-white/30 hover:text-white",
-                )}
-              >
-                {option.label}
-              </button>
-            );
-          })}
-        </div>
-      </section>
+        }
+        filterControl={
+          <button
+            type="button"
+            onClick={() => setQuickPanelOpen((current) => !current)}
+            className={cn(
+              "inline-flex h-9 items-center rounded-full border px-3 text-xs transition",
+              quickPanelOpen
+                ? "border-cyan-300/45 bg-cyan-400/14 text-cyan-100"
+                : "border-white/20 bg-black/35 text-white/80 hover:border-white/35 hover:text-white",
+            )}
+          >
+            Tipos e resumo
+          </button>
+        }
+      />
+
+      {quickPanelOpen ? (
+        <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] uppercase tracking-[0.14em] text-white/55">Tipo</span>
+            {availableKindOptions.map((option) => {
+              const isActive = visibleKinds.includes(option.value);
+              return (
+                <button
+                  key={`month-kind-${option.value}`}
+                  type="button"
+                  onClick={() => {
+                    setVisibleKinds((current) => {
+                      if (current.includes(option.value)) {
+                        const next = current.filter((entry) => entry !== option.value);
+                        return next.length > 0 ? next : current;
+                      }
+                      return [...current, option.value];
+                    });
+                  }}
+                  className={cn(
+                    "rounded-full border px-3 py-1 text-xs transition",
+                    isActive
+                      ? "border-cyan-300/45 bg-cyan-400/12 text-cyan-100"
+                      : "border-white/15 bg-white/5 text-white/70 hover:border-white/30 hover:text-white",
+                  )}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
+
+      {showSoftAgendaError ? (
+        <p className="rounded-xl border border-amber-300/35 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">
+          A mostrar dados anteriores da agenda enquanto a sincronização falha.
+        </p>
+      ) : null}
 
       <section className="rounded-2xl border border-white/10 bg-[rgba(6,10,20,0.9)] p-3 shadow-[0_24px_64px_rgba(0,0,0,0.45)]">
         <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px]">
@@ -331,7 +360,7 @@ export default function MonthCalendarReadClient() {
         </div>
 
         {isLoading ? <p className="mt-3 text-sm text-white/70">A carregar agenda...</p> : null}
-        {error ? <p className="mt-3 text-sm text-rose-200">Falha ao carregar agenda: {error.message}</p> : null}
+        {error && !showSoftAgendaError ? <p className="mt-3 text-sm text-rose-200">Falha ao carregar agenda: {error.message}</p> : null}
       </section>
     </div>
   );

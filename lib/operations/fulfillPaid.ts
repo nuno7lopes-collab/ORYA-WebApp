@@ -261,6 +261,8 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
     await saleLineRepo(tx).deleteMany({ where: { saleSummaryId: saleSummary.id } });
     let createdTicketsTotal = 0;
     for (const line of breakdown.lines) {
+      const unitPriceCents = Math.max(0, Number(line.unitPriceCents ?? 0));
+      const lineTotalCents = line.lineTotalCents ?? unitPriceCents * line.quantity;
       const saleLine = await saleLineRepo(tx).create({
         data: {
           saleSummaryId: saleSummary.id,
@@ -268,14 +270,14 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
           ticketTypeId: line.ticketTypeId,
           promoCodeId,
           quantity: line.quantity,
-          unitPriceCents: line.unitPriceCents,
+          unitPriceCents,
           discountPerUnitCents: line.discountPerUnitCents ?? 0,
-          grossCents: line.lineTotalCents ?? line.unitPriceCents * line.quantity,
+          grossCents: lineTotalCents,
           netCents:
             line.lineNetCents ??
             Math.max(
               0,
-              (line.lineTotalCents ?? line.unitPriceCents * line.quantity) -
+              lineTotalCents -
                 (line.discountPerUnitCents ?? 0) * line.quantity,
             ),
           platformFeeCents: line.platformFeeCents ?? 0,
@@ -288,7 +290,7 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
       const qty = Math.max(1, Number(line.quantity ?? 0));
       const ownerKey = buildOwnerKey({ ownerIdentityId });
       const entitlementOwnerUserId = null;
-      const lineNetCents = line.lineNetCents ?? line.lineTotalCents ?? line.unitPriceCents * qty;
+      const lineNetCents = line.lineNetCents ?? line.lineTotalCents ?? unitPriceCents * qty;
       const pricePerTicketCents = Math.round(lineNetCents / Math.max(1, qty));
       const totalPlatformFeeCents = line.platformFeeCents ?? 0;
       const basePlatformFee = Math.floor(totalPlatformFeeCents / Math.max(1, qty));

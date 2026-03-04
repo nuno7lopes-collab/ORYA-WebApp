@@ -318,12 +318,14 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     baseUrl = `https://${baseUrl}`;
   }
   const origin = new URL(baseUrl).toString().replace(/\/+$/, "");
+  const authorization = req.headers.get("authorization");
   try {
     const res = await fetch(`${origin}/api/payments/intent`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         cookie: req.headers.get("cookie") ?? "",
+        ...(authorization ? { Authorization: authorization } : {}),
       },
       body: JSON.stringify({
         slug: pairing.event.slug ?? categoryLink.event?.slug ?? null,

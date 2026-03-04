@@ -17,6 +17,7 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const ACCESS_LEVELS = ["NONE", "VIEW", "EDIT"] as const;
+const ALLOWED_SCOPE_TYPES = new Set(["COURT", "RESOURCE", "PROFESSIONAL", "CHAT_COMMUNITIES"]);
 
 type AccessLevel = (typeof ACCESS_LEVELS)[number];
 
@@ -47,6 +48,85 @@ function errorCodeForStatus(status: number) {
   if (status === 400) return "BAD_REQUEST";
   return "INTERNAL_ERROR";
 }
+
+function parsePositiveScopeId(scopeId: string | null) {
+  if (!scopeId) return null;
+  const parsed = Number.parseInt(scopeId, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return parsed;
+}
+
+async function validateScopedPermissionTarget(params: {
+  organizationId: number;
+  moduleKey: OrganizationModule;
+  scopeType: string;
+  scopeId: string;
+}) {
+  const { organizationId, moduleKey, scopeType } = params;
+  const normalizedScopeId = params.scopeId.trim();
+  if (!normalizedScopeId) return { ok: false as const, errorCode: "INVALID_SCOPE_ID" };
+
+  if (scopeType === "CHAT_COMMUNITIES") {
+    if (moduleKey !== OrganizationModule.MENSAGENS) {
+      return { ok: false as const, errorCode: "SCOPE_TYPE_MODULE_MISMATCH" };
+    }
+    if (normalizedScopeId.toUpperCase() === "GLOBAL") {
+      return { ok: true as const, scopeId: "GLOBAL" };
+    }
+    const community = await prisma.chatCommunity.findFirst({
+      where: { organizationId, conversationId: normalizedScopeId },
+      select: { conversationId: true },
+    });
+    if (!community) return { ok: false as const, errorCode: "INVALID_SCOPE_ID" };
+    return { ok: true as const, scopeId: normalizedScopeId };
+  }
+
+  if (moduleKey !== OrganizationModule.RESERVAS) {
+    return { ok: false as const, errorCode: "SCOPE_TYPE_MODULE_MISMATCH" };
+  }
+
+  const numericScopeId = parsePositiveScopeId(normalizedScopeId);
+  if (!numericScopeId) {
+    return { ok: false as const, errorCode: "INVALID_SCOPE_ID" };
+  }
+
+  if (scopeType === "COURT") {
+    const court = await prisma.padelClubCourt.findFirst({
+      where: {
+        id: numericScopeId,
+        deletedAt: null,
+        club: {
+          organizationId,
+          deletedAt: null,
+        },
+      },
+      select: { id: true },
+    });
+    if (!court) return { ok: false as const, errorCode: "INVALID_SCOPE_ID" };
+    return { ok: true as const, scopeId: String(numericScopeId) };
+  }
+
+  if (scopeType === "RESOURCE") {
+    const resource = await prisma.reservationResource.findFirst({
+      where: { id: numericScopeId, organizationId },
+      select: { id: true },
+    });
+    if (!resource) return { ok: false as const, errorCode: "INVALID_SCOPE_ID" };
+    return { ok: true as const, scopeId: String(numericScopeId) };
+  }
+
+  if (scopeType === "PROFESSIONAL") {
+    const professional = await prisma.reservationProfessional.findFirst({
+      where: { id: numericScopeId, organizationId },
+      select: { id: true },
+    });
+    if (!professional) return { ok: false as const, errorCode: "INVALID_SCOPE_ID" };
+    return { ok: true as const, scopeId: String(numericScopeId) };
+  }
+
+  return { ok: false as const, errorCode: "INVALID_SCOPE_TYPE" };
+}
+
 async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   const fail = (
@@ -163,17 +243,11 @@ async function _PATCH(req: NextRequest) {
     const accessLevelRaw = body?.accessLevel ?? null;
     const scopeTypeRaw = typeof body?.scopeType === "string" ? body.scopeType.trim().toUpperCase() : null;
     const scopeIdRaw = body?.scopeId ?? null;
-    const scopeId =
+    let scopeId =
       typeof scopeIdRaw === "string" || typeof scopeIdRaw === "number"
         ? String(scopeIdRaw).trim()
         : null;
     const scopeType = scopeTypeRaw || null;
-    const ALLOWED_SCOPE_TYPES = new Set([
-      "COURT",
-      "RESOURCE",
-      "PROFESSIONAL",
-      "CHAT_COMMUNITIES",
-    ]);
 
     if (!organizationId || !targetUserId || !moduleKey) {
       return fail(400, "INVALID_PAYLOAD");
@@ -235,8 +309,23 @@ async function _PATCH(req: NextRequest) {
     if (scopeType && !ALLOWED_SCOPE_TYPES.has(scopeType)) {
       return fail(400, "INVALID_SCOPE_TYPE");
     }
+    if (!scopeType && scopeId) {
+      return fail(400, "INVALID_SCOPE_TYPE");
+    }
     if (scopeType && !scopeId) {
       return fail(400, "INVALID_SCOPE_ID");
+    }
+    if (scopeType && scopeId) {
+      const scopedValidation = await validateScopedPermissionTarget({
+        organizationId,
+        moduleKey: moduleKey as OrganizationModule,
+        scopeType,
+        scopeId,
+      });
+      if (!scopedValidation.ok) {
+        return fail(400, scopedValidation.errorCode);
+      }
+      scopeId = scopedValidation.scopeId;
     }
 
     const shouldClear = accessLevelRaw === null || accessLevelRaw === "DEFAULT";

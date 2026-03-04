@@ -4,11 +4,11 @@ describe("resolveMobileLink org routing", () => {
   it("maps canonical org chat deep links to native messages", () => {
     expect(resolveMobileLink("https://orya.pt/org/42/chat")).toEqual({
       kind: "native",
-      path: "/messages",
+      path: "/comunidade/mensagens",
     });
     expect(resolveMobileLink("https://orya.pt/org/42/chat?conversationId=abc")).toEqual({
       kind: "native",
-      path: "/messages/abc",
+      path: "/comunidade/mensagens/abc",
     });
   });
 

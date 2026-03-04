@@ -76,7 +76,7 @@ export default function SettingsScreen() {
   ];
   const backButton = (
     <Pressable
-      onPress={() => safeBack(router, navigation, TAB_PATHNAMES.profile)}
+      onPress={() => safeBack(router, navigation, TAB_PATHNAMES.perfil)}
       accessibilityRole="button"
       accessibilityLabel={t("common:actions.back")}
       style={({ pressed }) => [

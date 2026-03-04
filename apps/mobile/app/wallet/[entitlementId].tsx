@@ -251,7 +251,7 @@ export default function WalletDetailScreen() {
         null;
       if (conversationId) {
         safePush(router, {
-          pathname: "/messages/[threadId]",
+          pathname: "/comunidade/mensagens/[threadId]",
           params: {
             threadId: conversationId,
             eventId: String(eventId),
@@ -506,7 +506,7 @@ export default function WalletDetailScreen() {
                   <Pressable
                     onPress={() =>
                       safePush(router, {
-                        pathname: "/messages/[threadId]",
+                        pathname: "/comunidade/mensagens/[threadId]",
                         params: {
                           threadId: eventConversation.conversationId,
                           eventId: String(eventId ?? ""),

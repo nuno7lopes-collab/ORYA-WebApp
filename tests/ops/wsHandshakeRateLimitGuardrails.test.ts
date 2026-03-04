@@ -39,7 +39,7 @@ describe("ws handshake rate-limit guardrails", () => {
   it("keeps client handling for RATE_LIMITED reconnect backoff", () => {
     const webChat = readLocal("app/org/_internal/core/(dashboard)/chat/ChatInternoV2Client.tsx");
     const webPreview = readLocal("app/org/_internal/core/(dashboard)/chat/preview/useChatPreviewData.ts");
-    const mobileChat = readLocal("apps/mobile/app/messages/[threadId].tsx");
+    const mobileChat = readLocal("apps/mobile/app/comunidade/mensagens/[threadId].tsx");
 
     expect(webChat).toContain('reason === "RATE_LIMITED" ? 60000 : undefined');
     expect(webPreview).toContain('reason === "RATE_LIMITED" ? 60000 : undefined');

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -8,6 +8,10 @@ import { getDateParts } from "@/lib/reservas/availability";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
 import { cn } from "@/lib/utils";
 import { ContextDrawer } from "@/components/ui/context-drawer";
+import { OryaDateField } from "@/components/ui/datetime";
+import { CalendarCommandBar } from "../CalendarCommandBar";
+import type { CalendarView } from "../ViewSwitcher";
+import { resolveAvailabilityOverlayHint, resolveAvailabilityOverlayState } from "../availabilityOverlayMode";
 import { buildCalendarOperationalGuidance } from "../operationalGuidance";
 import {
   addDays,
@@ -27,7 +31,7 @@ import {
   DEFAULT_HOUR_HEIGHT,
 } from "./helpers";
 import { emptyFilters, cloneFilters } from "./filterConfig";
-import { CalendarHeader } from "./CalendarHeader";
+import { SearchableEntitySelect } from "./SearchableEntitySelect";
 import { FiltersDrawer } from "./FiltersDrawer";
 import { DayGrid } from "./DayGrid";
 import { CALENDAR_TIMEZONE_OPTIONS, normalizeCalendarTimezone } from "../timezones";
@@ -215,37 +219,17 @@ export default function DayCalendarReadClient() {
     () => parseDateParam(searchParams.get("date"), timezone) ?? new Date(),
     [searchParams, timezone],
   );
+  const selectedScopesCountRaw = selectedProfessionalIds.length + selectedResourceIds.length + selectedCourtIds.length;
 
   const [hourHeight] = useState(DEFAULT_HOUR_HEIGHT);
-  const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [quickPanelOpen, setQuickPanelOpen] = useState(false);
   const [visibleKinds, setVisibleKinds] = useState<Array<(typeof ALL_KIND_FILTER_OPTIONS)[number]["value"]>>(
     ALL_KIND_FILTER_OPTIONS.map((option) => option.value),
   );
   const [appliedFilters, setAppliedFilters] = useState(() => emptyFilters());
   const [draftFilters, setDraftFilters] = useState(() => emptyFilters());
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
-  const [hoveredEventId, setHoveredEventId] = useState<string | null>(null);
-  const hoverLeaveTimeoutRef = useRef<number | null>(null);
-
-  const cancelHoverLeaveTimeout = () => {
-    if (hoverLeaveTimeoutRef.current === null) return;
-    window.clearTimeout(hoverLeaveTimeoutRef.current);
-    hoverLeaveTimeoutRef.current = null;
-  };
-
-  const handleHoverEventChange = (event: { id: string } | null) => {
-    if (event) {
-      cancelHoverLeaveTimeout();
-      setHoveredEventId((current) => (current === event.id ? current : event.id));
-      return;
-    }
-    cancelHoverLeaveTimeout();
-    hoverLeaveTimeoutRef.current = window.setTimeout(() => {
-      setHoveredEventId(null);
-      hoverLeaveTimeoutRef.current = null;
-    }, 90);
-  };
 
   const replaceState = (input: {
     nextDate?: Date;
@@ -254,19 +238,15 @@ export default function DayCalendarReadClient() {
     nextCourts?: number[];
     nextTimezone?: string;
     nextShowAvailabilityOverlay?: boolean;
+    nextView?: CalendarView;
   }) => {
     if (!Number.isFinite(organizationId) || organizationId <= 0) return;
     const nextParams = new URLSearchParams(searchParams.toString());
     setIdListParam(nextParams, "professionals", input.nextProfessionals ?? selectedProfessionalIds);
     setIdListParam(nextParams, "resources", input.nextResources ?? selectedResourceIds);
     setIdListParam(nextParams, "courts", input.nextCourts ?? selectedCourtIds);
-    const selectedScopesCountRaw =
-      (input.nextProfessionals ?? selectedProfessionalIds).length +
-      (input.nextResources ?? selectedResourceIds).length +
-      (input.nextCourts ?? selectedCourtIds).length;
-    const defaultOverlay = selectedScopesCountRaw === 1;
     const rawOverlay = searchParams.get("showAvailabilityOverlay");
-    const currentOverlay = rawOverlay === "1" ? true : rawOverlay === "0" ? false : defaultOverlay;
+    const currentOverlay = rawOverlay === "1" ? true : rawOverlay === "0" ? false : true;
     const nextOverlay =
       typeof input.nextShowAvailabilityOverlay === "boolean"
         ? input.nextShowAvailabilityOverlay
@@ -280,7 +260,7 @@ export default function DayCalendarReadClient() {
         ? buildZonedDate(getDateParts(selectedDate, timezone), nextTimezone, 12, 0)
         : selectedDate);
     nextParams.set("date", formatDateParam(nextDate, nextTimezone));
-    nextParams.set("view", "day");
+    nextParams.set("view", input.nextView ?? "day");
     nextParams.delete("scopeMode");
     const nextPath = buildOrgHref(organizationId, "/calendar");
     const search = nextParams.toString();
@@ -294,6 +274,9 @@ export default function DayCalendarReadClient() {
   };
   const clearSelections = () => {
     replaceState({ nextProfessionals: [], nextResources: [], nextCourts: [] });
+  };
+  const setView = (nextView: CalendarView) => {
+    replaceState({ nextView });
   };
   const weekViewHref = useMemo(() => {
     if (!Number.isFinite(organizationId) || organizationId <= 0) return "#";
@@ -337,10 +320,17 @@ export default function DayCalendarReadClient() {
   const { data: agendaData, error: agendaError, isLoading: agendaLoading } = useSWR<AgendaResponse>(agendaUrl, fetchJson);
   const agendaCapabilities = agendaData?.capabilities ?? null;
   const operationalMode = agendaData?.operationalMode ?? null;
-  const acceptsNewBookings = agendaData?.reservasOperational?.acceptsNewBookings ?? true;
   const reservationsCapability = agendaCapabilities?.reservas;
   const reservationsEnabled = reservationsCapability === true;
   const scopeSelectionEnabled = reservationsCapability !== false;
+  const hasActiveSelection = scopeSelectionEnabled && selectedScopesCountRaw > 0;
+  const selectedScopesCount = scopeSelectionEnabled ? selectedScopesCountRaw : 0;
+  const hasSingleScopeSelection = scopeSelectionEnabled && selectedScopesCount === 1;
+  const { showAvailabilityOverlay, overlayMode, renderAvailabilityOverlay } =
+    resolveAvailabilityOverlayState({
+      showAvailabilityOverlayParam: searchParams.get("showAvailabilityOverlay"),
+      hasSingleScopeSelection,
+    });
 
   const reservationsUrl =
     reservationsEnabled && Number.isFinite(organizationId) && organizationId > 0
@@ -479,9 +469,11 @@ export default function DayCalendarReadClient() {
     () =>
       columnSeeds.map((seed) => {
         const normalized =
-          seed.entityKind === "GENERAL"
+          overlayMode === "general"
             ? organizationAvailability
-            : availabilityMap?.[seed.id] ?? (seed.entityKind === "COURT" ? organizationAvailability : undefined);
+            : seed.entityKind === "GENERAL"
+              ? organizationAvailability
+              : availabilityMap?.[seed.id] ?? (seed.entityKind === "COURT" ? organizationAvailability : undefined);
         const intervals = resolveIntervalsForDay(normalized, selectedDate, timezone);
         return {
           id: seed.id,
@@ -493,7 +485,7 @@ export default function DayCalendarReadClient() {
           workingIntervals: intervals,
         };
       }),
-    [availabilityMap, columnSeeds, organizationAvailability, selectedDate, timezone],
+    [availabilityMap, columnSeeds, organizationAvailability, overlayMode, selectedDate, timezone],
   );
 
   const enrichedEvents = useMemo(
@@ -646,27 +638,7 @@ export default function DayCalendarReadClient() {
       return [...current, kind];
     });
   };
-  const hasActiveSelection =
-    scopeSelectionEnabled &&
-    (selectedProfessionalIds.length > 0 || selectedResourceIds.length > 0 || selectedCourtIds.length > 0);
-  const selectedScopesCount =
-    scopeSelectionEnabled ? selectedProfessionalIds.length + selectedResourceIds.length + selectedCourtIds.length : 0;
-  const hasSingleScopeSelection = scopeSelectionEnabled && selectedScopesCount === 1;
-  const showAvailabilityOverlayParam = searchParams.get("showAvailabilityOverlay");
-  const showAvailabilityOverlay =
-    showAvailabilityOverlayParam === "1"
-      ? true
-      : showAvailabilityOverlayParam === "0"
-        ? false
-        : hasSingleScopeSelection;
-  const renderAvailabilityOverlay = showAvailabilityOverlay && hasSingleScopeSelection;
-  const availabilityOverlayHint = renderAvailabilityOverlay
-    ? "Sobreposição de disponibilidade ativa para o escopo selecionado."
-    : hasActiveSelection
-      ? showAvailabilityOverlay
-        ? "Sobreposição desativada para múltiplos escopos."
-        : "Sobreposição de disponibilidade desligada."
-      : "Seleciona um único escopo para ativar a sobreposição de disponibilidade.";
+  const availabilityOverlayHint = resolveAvailabilityOverlayHint({ overlayMode, hasActiveSelection });
   const selectedScopesLabel = useMemo(() => {
     const parts: string[] = [];
     if (selectedProfessionalIds.length > 0) {
@@ -681,8 +653,6 @@ export default function DayCalendarReadClient() {
     return parts.join(" · ");
   }, [selectedCourtIds.length, selectedProfessionalIds.length, selectedResourceIds.length]);
   const selectedEvent = selectedEventId ? filteredEventsById.get(selectedEventId) ?? null : null;
-  const hoveredEvent = hoveredEventId ? filteredEventsById.get(hoveredEventId) ?? null : null;
-  const hoverPreviewEvent = selectedEvent ? null : hoveredEvent;
 
   useEffect(() => {
     if (!selectedEventId) return;
@@ -690,19 +660,6 @@ export default function DayCalendarReadClient() {
       setSelectedEventId(null);
     }
   }, [filteredEventsById, selectedEventId]);
-  useEffect(() => {
-    if (!hoveredEventId) return;
-    if (!filteredEventsById.has(hoveredEventId)) {
-      setHoveredEventId(null);
-    }
-  }, [filteredEventsById, hoveredEventId]);
-  useEffect(() => {
-    return () => {
-      if (hoverLeaveTimeoutRef.current !== null) {
-        window.clearTimeout(hoverLeaveTimeoutRef.current);
-      }
-    };
-  }, []);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -753,234 +710,239 @@ export default function DayCalendarReadClient() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [appliedFilters, monthViewHref, router, setToday, shiftDay, weekViewHref]);
 
+  const dayRangeLabel = useMemo(
+    () =>
+      new Intl.DateTimeFormat("pt-PT", {
+        weekday: "long",
+        day: "2-digit",
+        month: "long",
+        year: "numeric",
+        timeZone: timezone,
+      }).format(selectedDate),
+    [selectedDate, timezone],
+  );
+  const dateInputValue = formatDateParam(selectedDate, timezone);
+  const commandBarHint = hasActiveSelection
+    ? `Escopo ativo (${selectedScopesCount}): ${selectedScopesLabel}.`
+    : operationalGuidance.selectionHint;
+  const commandBarActions = operationalGuidance.actions.slice(0, 2).map((action) => ({
+    ...action,
+    tone: action.tone === "primary" ? ("primary" as const) : ("neutral" as const),
+  }));
+  const hasCachedAgendaItems = (agendaData?.items?.length ?? 0) > 0;
+  const showSoftAgendaError = Boolean(agendaError) && hasCachedAgendaItems;
+
   if (!Number.isFinite(organizationId) || organizationId <= 0) {
     return <div className="p-6 text-sm text-white/70">Organização inválida.</div>;
   }
 
   return (
-    <div className="space-y-4 p-4 md:p-6">
-      <section className="rounded-2xl border border-white/10 bg-[rgba(10,14,26,0.9)] p-4 shadow-[0_24px_90px_rgba(0,0,0,0.45)]">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="max-w-3xl">
-            <p className="text-xs uppercase tracking-[0.22em] text-cyan-100/70">{operationalGuidance.badge}</p>
-            <h1 className="mt-1 text-2xl font-semibold text-white">Calendário operacional</h1>
-            <p className="mt-2 text-sm text-white/80">{operationalGuidance.description}</p>
-            <p className="mt-2 text-xs text-white/60">{operationalGuidance.title}</p>
-          </div>
-          {operationalGuidance.actions.length > 0 ? (
-            <div className="flex flex-wrap items-center gap-2">
-              {operationalGuidance.actions.map((action) => (
-                <Link
-                  key={`day-guidance-action-${action.id}`}
-                  href={action.href}
-                  className={
-                    action.tone === "primary"
-                      ? "rounded-full border border-cyan-300/45 bg-cyan-400/12 px-3 py-1.5 text-xs text-cyan-100 transition hover:border-cyan-300/75"
-                      : "rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-xs text-white/80 transition hover:border-white/35 hover:text-white"
-                  }
-                >
-                  {action.label}
-                </Link>
+    <div className="space-y-3 p-3 md:p-4">
+      <CalendarCommandBar
+        view="day"
+        onViewChange={setView}
+        rangeLabel={dayRangeLabel}
+        onPrevious={() => shiftDay(-1)}
+        onNext={() => shiftDay(1)}
+        onToday={setToday}
+        dateControl={
+          <OryaDateField
+            value={dateInputValue}
+            onChange={(nextDateRaw) => {
+              const nextDate = parseDateParam(nextDateRaw, timezone);
+              if (!nextDate) return;
+              replaceState({ nextDate });
+            }}
+            buttonClassName="rounded-full px-3 py-1 text-xs"
+          />
+        }
+        timezoneControl={
+          <label className="inline-flex h-9 items-center gap-2 rounded-full border border-white/20 bg-black/35 px-3 text-xs text-white/80">
+            <span className="text-[10px] uppercase tracking-[0.14em] text-white/55">Fuso</span>
+            <select
+              value={timezone}
+              onChange={(event) => replaceState({ nextTimezone: event.target.value })}
+              className="bg-transparent text-xs text-white/90 outline-none"
+              aria-label="Selecionar fuso horário"
+            >
+              {CALENDAR_TIMEZONE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value} className="bg-slate-900 text-white">
+                  {option.label}
+                </option>
               ))}
+            </select>
+          </label>
+        }
+        scopeControl={
+          scopeSelectionEnabled ? (
+            <div className="inline-flex items-center gap-2">
+              <SearchableEntitySelect
+                label="Treinador"
+                placeholder="Treinador"
+                options={professionalOptions}
+                selectedIds={selectedProfessionalOptionIds}
+                onChange={(optionIds) => {
+                  const nextProfessionalIds = decodePrefixedIds(optionIds, PROFESSIONAL_OPTION_PREFIX);
+                  replaceState({ nextProfessionals: nextProfessionalIds });
+                }}
+              />
+              <SearchableEntitySelect
+                label="Campo"
+                placeholder="Campo/recurso"
+                options={resourceOptions}
+                selectedIds={selectedResourceOptionIds}
+                onChange={(optionIds) => {
+                  const nextResourceIds = decodePrefixedIds(optionIds, RESOURCE_OPTION_PREFIX);
+                  const nextCourtIds = decodePrefixedIds(optionIds, COURT_OPTION_PREFIX);
+                  replaceState({ nextResources: nextResourceIds, nextCourts: nextCourtIds });
+                }}
+              />
+              <button
+                type="button"
+                onClick={clearSelections}
+                className={cn(
+                  "inline-flex h-9 items-center rounded-full border px-3 text-xs transition",
+                  hasActiveSelection
+                    ? "border-white/20 bg-black/35 text-white/75 hover:border-white/35 hover:text-white"
+                    : "border-cyan-300/45 bg-cyan-400/15 text-cyan-100",
+                )}
+              >
+                Geral
+              </button>
+            </div>
+          ) : null
+        }
+        filterControl={
+          <div className="inline-flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setQuickPanelOpen((current) => !current)}
+              className={cn(
+                "inline-flex h-9 items-center rounded-full border px-3 text-xs transition",
+                quickPanelOpen
+                  ? "border-cyan-300/45 bg-cyan-400/14 text-cyan-100"
+                  : "border-white/20 bg-black/35 text-white/80 hover:border-white/35 hover:text-white",
+              )}
+            >
+              Tipos e resumo
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setDraftFilters(cloneFilters(appliedFilters));
+                setFiltersOpen(true);
+              }}
+              className="inline-flex h-9 items-center gap-2 rounded-full border border-white/20 bg-black/35 px-3 text-xs text-white/80 transition hover:border-white/35 hover:text-white"
+            >
+              Filtros
+              {countAppliedFilters(appliedFilters) > 0 ? (
+                <span className="rounded-full bg-cyan-300/20 px-1.5 text-[10px] text-cyan-100">
+                  {countAppliedFilters(appliedFilters)}
+                </span>
+              ) : null}
+            </button>
+          </div>
+        }
+        overlayControl={
+          <button
+            type="button"
+            onClick={() => replaceState({ nextShowAvailabilityOverlay: !showAvailabilityOverlay })}
+            className={cn(
+              "inline-flex h-9 items-center rounded-full border px-3 text-xs transition",
+              showAvailabilityOverlay
+                ? "border-cyan-300/45 bg-cyan-400/14 text-cyan-100 hover:border-cyan-300/75"
+                : "border-white/20 bg-black/35 text-white/75 hover:border-white/35 hover:text-white",
+            )}
+          >
+            Disponibilidade {showAvailabilityOverlay ? "ON" : "OFF"}
+          </button>
+        }
+        actions={commandBarActions}
+        hint={commandBarHint}
+      />
+
+      {quickPanelOpen ? (
+        <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] uppercase tracking-[0.14em] text-white/55">Tipo</span>
+            {availableKindOptions.map((option) => {
+              const isActive = visibleKinds.includes(option.value);
+              return (
+                <button
+                  key={`kind-${option.value}`}
+                  type="button"
+                  onClick={() => toggleVisibleKind(option.value)}
+                  className={cn(
+                    "rounded-full border px-3 py-1 text-xs transition",
+                    isActive
+                      ? "border-cyan-300/45 bg-cyan-400/12 text-cyan-100"
+                      : "border-white/15 bg-white/5 text-white/70 hover:border-white/30 hover:text-white",
+                  )}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-[11px] text-white/55">{availabilityOverlayHint}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]" aria-live="polite">
+            <span className="rounded-full border border-white/20 bg-white/5 px-2 py-1 text-white/80">
+              {statusSummary.total} {statusSummary.total === 1 ? "ocupação visível" : "ocupações visíveis"}
+            </span>
+            {statusSummary.confirmed > 0 ? (
+              <span className="rounded-full border border-sky-300/45 bg-sky-400/12 px-2 py-1 text-sky-100">
+                Confirmado {statusSummary.confirmed}
+              </span>
+            ) : null}
+            {statusSummary.pending > 0 ? (
+              <span className="rounded-full border border-amber-300/45 bg-amber-400/12 px-2 py-1 text-amber-100">
+                Pendente {statusSummary.pending}
+              </span>
+            ) : null}
+            {statusSummary.cancelled > 0 ? (
+              <span className="rounded-full border border-rose-300/45 bg-rose-400/12 px-2 py-1 text-rose-100">
+                Cancelado/No-show {statusSummary.cancelled}
+              </span>
+            ) : null}
+            {statusSummary.disputed > 0 ? (
+              <span className="rounded-full border border-fuchsia-300/45 bg-fuchsia-400/12 px-2 py-1 text-fuchsia-100">
+                Disputa {statusSummary.disputed}
+              </span>
+            ) : null}
+          </div>
+          {activeFilterChips.length > 0 ? (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {activeFilterChips.map((chip) => (
+                <button
+                  key={chip.id}
+                  type="button"
+                  onClick={() => removeAppliedFilterChip(chip.id)}
+                  className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-white/80 transition hover:border-white/30 hover:text-white"
+                  aria-label={`Remover filtro ${chip.label}`}
+                >
+                  {chip.label}
+                  <span className="text-[11px] text-white/55">×</span>
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => setAppliedFilters(emptyFilters())}
+                className="rounded-full border border-white/20 px-3 py-1 text-xs text-white/75 transition hover:border-white/35 hover:text-white"
+              >
+                Limpar filtros
+              </button>
             </div>
           ) : null}
-        </div>
-      </section>
-
-      {reservationsEnabled ? (
-        <section
-          className={cn(
-            "rounded-2xl border p-4 shadow-[0_18px_54px_rgba(0,0,0,0.4)]",
-            acceptsNewBookings
-              ? "border-emerald-300/30 bg-[linear-gradient(145deg,rgba(16,185,129,0.16),rgba(7,10,22,0.86))]"
-              : "border-rose-300/35 bg-[linear-gradient(145deg,rgba(244,63,94,0.2),rgba(7,10,22,0.86))]",
-          )}
-        >
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.2em] text-white/75">
-                Reservas {acceptsNewBookings ? "ON" : "OFF"}
-              </p>
-              <p className="mt-1 text-sm font-semibold text-white">
-                {acceptsNewBookings
-                  ? "Novas reservas ativas, sujeitas a disponibilidade."
-                  : "Novas reservas bloqueadas. Historico preservado."}
-              </p>
-            </div>
-            <Link
-              href={buildOrgHref(organizationId, "/calendar/availability")}
-              className="rounded-full border border-white/25 px-3 py-1.5 text-xs text-white/85 transition hover:border-white/45 hover:text-white"
-            >
-              Gerir reservas ON/OFF
-            </Link>
-          </div>
         </section>
       ) : null}
 
-      <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-[11px] text-white/58">
-            {hasActiveSelection
-              ? `Seleção ativa (${selectedScopesCount}): ${selectedScopesLabel}.`
-              : operationalGuidance.selectionHint}
-          </p>
-          {scopeSelectionEnabled && hasActiveSelection ? (
-            <button
-              type="button"
-              onClick={clearSelections}
-              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 transition hover:border-white/35 hover:text-white"
-            >
-              Limpar seleção
-            </button>
-          ) : null}
-        </div>
-      </section>
-
-      <CalendarHeader
-        date={selectedDate}
-        timezone={timezone}
-        timezoneOptions={CALENDAR_TIMEZONE_OPTIONS}
-        onTimezoneChange={(nextTimezone) => replaceState({ nextTimezone })}
-        datePickerOpen={datePickerOpen}
-        onDatePickerOpenChange={setDatePickerOpen}
-        onSelectDate={(date) => replaceState({ nextDate: date })}
-        onToday={setToday}
-        onPreviousDay={() => shiftDay(-1)}
-        onNextDay={() => shiftDay(1)}
-        professionalOptions={professionalOptions}
-        resourceOptions={resourceOptions}
-        selectedProfessionalIds={selectedProfessionalOptionIds}
-        selectedResourceIds={selectedResourceOptionIds}
-        onSelectProfessional={(optionIds) => {
-          const nextProfessionalIds = decodePrefixedIds(optionIds, PROFESSIONAL_OPTION_PREFIX);
-          replaceState({ nextProfessionals: nextProfessionalIds });
-        }}
-        onSelectResource={(optionIds) => {
-          const nextResourceIds = decodePrefixedIds(optionIds, RESOURCE_OPTION_PREFIX);
-          const nextCourtIds = decodePrefixedIds(optionIds, COURT_OPTION_PREFIX);
-          replaceState({ nextResources: nextResourceIds, nextCourts: nextCourtIds });
-        }}
-        onResetSelections={clearSelections}
-        scopeSelectionEnabled={scopeSelectionEnabled}
-        scopeSelectionHint={operationalGuidance.selectionHint}
-        hasActiveSelection={hasActiveSelection}
-        onOpenFilters={() => {
-          setDraftFilters(cloneFilters(appliedFilters));
-          setFiltersOpen(true);
-        }}
-        activeFilterCount={countAppliedFilters(appliedFilters)}
-      />
-
-      {activeFilterChips.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2">
-          {activeFilterChips.map((chip) => (
-            <button
-              key={chip.id}
-              type="button"
-              onClick={() => removeAppliedFilterChip(chip.id)}
-              className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-white/80 transition hover:border-white/30 hover:text-white"
-              aria-label={`Remover filtro ${chip.label}`}
-            >
-              {chip.label}
-              <span className="text-[11px] text-white/55">×</span>
-            </button>
-          ))}
-          <button
-            type="button"
-            onClick={() => setAppliedFilters(emptyFilters())}
-            className="rounded-full border border-white/20 px-3 py-1 text-xs text-white/75 transition hover:border-white/35 hover:text-white"
-          >
-            Limpar filtros
-          </button>
-        </div>
+      {showSoftAgendaError ? (
+        <p className="rounded-xl border border-amber-300/35 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">
+          A mostrar dados anteriores da agenda enquanto a sincronização falha.
+        </p>
       ) : null}
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11px] uppercase tracking-[0.14em] text-white/50">Tipo</span>
-          {availableKindOptions.map((option) => {
-            const isActive = visibleKinds.includes(option.value);
-            return (
-              <button
-                key={`kind-${option.value}`}
-                type="button"
-                onClick={() => toggleVisibleKind(option.value)}
-                className={`rounded-full border px-3 py-1 text-xs transition ${
-                  isActive
-                    ? "border-cyan-300/45 bg-cyan-400/12 text-cyan-100"
-                    : "border-white/15 bg-white/5 text-white/70 hover:border-white/30 hover:text-white"
-                }`}
-              >
-                {option.label}
-              </button>
-            );
-          })}
-        </div>
-        <button
-          type="button"
-          onClick={() => replaceState({ nextShowAvailabilityOverlay: !showAvailabilityOverlay })}
-          className={cn(
-            "rounded-full border px-3 py-1 text-xs transition",
-            showAvailabilityOverlay
-              ? "border-cyan-300/45 bg-cyan-400/12 text-cyan-100 hover:border-cyan-300/75"
-              : "border-white/20 text-white/75 hover:border-white/35 hover:text-white",
-          )}
-        >
-          Disponibilidade {showAvailabilityOverlay ? "ON" : "OFF"}
-        </button>
-      </div>
-      <p className="text-[11px] text-white/50">{availabilityOverlayHint}</p>
-
-      {!agendaLoading && !agendaError ? (
-        <div className="flex flex-wrap items-center gap-2 text-[11px]" aria-live="polite">
-          <span className="rounded-full border border-white/20 bg-white/5 px-2 py-1 text-white/80">
-            {statusSummary.total} {statusSummary.total === 1 ? "ocupação visível" : "ocupações visíveis"}
-          </span>
-          {statusSummary.confirmed > 0 ? (
-            <span className="rounded-full border border-sky-300/45 bg-sky-400/12 px-2 py-1 text-sky-100">
-              Confirmado {statusSummary.confirmed}
-            </span>
-          ) : null}
-          {statusSummary.pending > 0 ? (
-            <span className="rounded-full border border-amber-300/45 bg-amber-400/12 px-2 py-1 text-amber-100">
-              Pendente {statusSummary.pending}
-            </span>
-          ) : null}
-          {statusSummary.cancelled > 0 ? (
-            <span className="rounded-full border border-rose-300/45 bg-rose-400/12 px-2 py-1 text-rose-100">
-              Cancelado/No-show {statusSummary.cancelled}
-            </span>
-          ) : null}
-          {statusSummary.disputed > 0 ? (
-            <span className="rounded-full border border-fuchsia-300/45 bg-fuchsia-400/12 px-2 py-1 text-fuchsia-100">
-              Disputa {statusSummary.disputed}
-            </span>
-          ) : null}
-        </div>
-      ) : null}
-
-      <div className="grid gap-4">
-        <div className="h-[92px]">
-          {hoverPreviewEvent ? (
-            <article className="h-full rounded-xl border border-cyan-300/25 bg-cyan-400/8 p-3">
-              <p className="truncate text-sm font-semibold text-cyan-100">{hoverPreviewEvent.title}</p>
-              <p className="mt-1 truncate text-[11px] text-cyan-50/85">
-                {formatDateTime(hoverPreviewEvent.startsAt, timezone)} - {formatDateTime(hoverPreviewEvent.endsAt, timezone)}
-              </p>
-              <p className="mt-1 truncate text-[10px] uppercase tracking-[0.08em] text-cyan-50/70">
-                {resolveKindLabel(hoverPreviewEvent.kind)} · {resolveStatusLabel(hoverPreviewEvent.status)}
-              </p>
-            </article>
-          ) : (
-            <article className="h-full rounded-xl border border-white/10 bg-white/[0.03] p-3">
-              <p className="text-xs text-white/60">
-                Passa o cursor sobre uma ocupação para pré-visualizar sem abrir o detalhe.
-              </p>
-              <p className="mt-1 text-[11px] text-white/45">Click numa ocupação para fixar no painel lateral.</p>
-            </article>
-          )}
-        </div>
-
+      <div className="grid gap-3">
         <div>
           <DayGrid
             date={selectedDate}
@@ -991,7 +953,6 @@ export default function DayCalendarReadClient() {
             availabilityOverlayHint={availabilityOverlayHint}
             hourHeight={hourHeight}
             selectedEventId={selectedEvent?.id ?? null}
-            onHoverEventChange={handleHoverEventChange}
             onSelectEvent={(event) => {
               setSelectedEventId((current) => (current === event.id ? null : event.id));
             }}
@@ -1002,7 +963,7 @@ export default function DayCalendarReadClient() {
               A carregar agenda...
             </p>
           ) : null}
-          {agendaError ? (
+          {agendaError && !showSoftAgendaError ? (
             <p role="alert" className="mt-3 text-sm text-rose-200">
               Falha ao carregar agenda: {agendaError.message}
             </p>

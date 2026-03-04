@@ -1196,7 +1196,7 @@ export default function MapScreen() {
           ListHeaderComponent={
             <View>
               <MapPressable
-                onPress={() => safeBack(router, navigation, TAB_PATHNAMES.index)}
+                onPress={() => safeBack(router, navigation, TAB_PATHNAMES.inicio)}
                 accessibilityRole="button"
                 accessibilityLabel="Voltar"
                 style={{
@@ -1391,7 +1391,7 @@ export default function MapScreen() {
         <View style={{ position: "absolute", top: topPadding, left: 20, right: 20 }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <MapPressable
-              onPress={() => safeBack(router, navigation, TAB_PATHNAMES.index)}
+              onPress={() => safeBack(router, navigation, TAB_PATHNAMES.inicio)}
               accessibilityRole="button"
               accessibilityLabel="Voltar"
               style={({ pressed }) => [

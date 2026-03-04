@@ -7,14 +7,25 @@ function readLocal(pathname: string) {
 }
 
 describe("reservas professionals race guardrails", () => {
-  it("não auto-provisiona staff via GET e mantém hard-cut de equipa no POST", () => {
-    const route = readLocal("app/api/org/[orgId]/reservas/profissionais/route.ts");
+  it("mantém lógica canónica em academy/trainers e route legacy apenas como adapter", () => {
+    const academyHandlers = readLocal("lib/academy/trainersHandlers.ts");
+    const legacyListRoute = readLocal("app/api/org/[orgId]/reservas/profissionais/route.ts");
+    const legacyDetailRoute = readLocal("app/api/org/[orgId]/reservas/profissionais/[id]/route.ts");
 
-    expect(route).not.toContain("reservationProfessional.upsert");
-    expect(route).toContain("TRAINER_PROFILE_MANAGED_BY_TEAM");
-    expect(route).toContain("TRAINER_ROLE_NOT_ELIGIBLE");
-    expect(route).toContain("runAcademyTrainerHardCutHygiene");
-    expect(route).toContain("code === \"P2002\"");
-    expect(route).toContain("PROFESSIONAL_EXISTS");
+    expect(academyHandlers).not.toContain("reservationProfessional.upsert");
+    expect(academyHandlers).toContain("TRAINER_PROFILE_MANAGED_BY_TEAM");
+    expect(academyHandlers).toContain("TRAINER_ROLE_NOT_ELIGIBLE");
+    expect(academyHandlers).toContain("runAcademyTrainerHardCutHygiene");
+    expect(academyHandlers).toContain("code === \"P2002\"");
+    expect(academyHandlers).toContain("PROFESSIONAL_EXISTS");
+
+    expect(legacyListRoute).toContain("handleAcademyTrainersGet");
+    expect(legacyListRoute).toContain("handleAcademyTrainersPost");
+    expect(legacyListRoute).not.toContain("prisma.");
+    expect(legacyListRoute).not.toContain("runAcademyTrainerHardCutHygiene");
+
+    expect(legacyDetailRoute).toContain("handleAcademyTrainerPatch");
+    expect(legacyDetailRoute).toContain("handleAcademyTrainerDelete");
+    expect(legacyDetailRoute).not.toContain("prisma.");
   });
 });

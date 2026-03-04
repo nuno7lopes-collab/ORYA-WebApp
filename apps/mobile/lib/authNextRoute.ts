@@ -8,42 +8,48 @@ const INTERNAL_ROUTE_BASE = "https://orya.local";
 
 const ALLOWED_STATIC_PATHS = new Set([
   "/",
-  "/index",
-  TAB_PATHNAMES.index,
-  TAB_PATHNAMES.agora,
-  "/network",
+  TAB_PATHNAMES.inicio,
+  TAB_PATHNAMES.competir,
+  TAB_PATHNAMES.reservas,
+  TAB_PATHNAMES.comunidade,
+  TAB_PATHNAMES.perfil,
+  "/comunidade/mensagens",
+  "/comunidade/mensagens/pedidos",
   "/messages",
   "/messages/requests",
+  "/aulas",
   "/notifications",
   "/tickets",
-  "/reservas",
   "/map",
   "/search",
   "/checkout",
   "/settings",
   "/onboarding",
-  TAB_PATHNAMES.padel,
-  TAB_PATHNAMES.profile,
   "/store/downloads",
   "/store/purchases",
   "/convites/organizacoes",
 ]);
 
 const RESERVED_TOP_LEVEL_SEGMENTS = new Set([
-  "index",
+  "inicio",
+  "competir",
+  "reservas",
+  "comunidade",
+  "perfil",
+  "messages",
   "agora",
   "network",
-  "messages",
+  "profile",
+  "padel",
+  "index",
   "notifications",
   "tickets",
-  "reservas",
   "map",
   "search",
   "checkout",
   "settings",
   "onboarding",
-  "padel",
-  "profile",
+  "aulas",
   "event",
   "service",
   "wallet",
@@ -93,15 +99,22 @@ const isAllowedPathname = (pathname: string) => {
   const segments = splitSegments(pathname);
   if (!segments.length || !hasSafeSegments(segments)) return false;
 
-  const [first, second, third] = segments;
+  const [first, second, third, fourth] = segments;
 
   switch (first) {
     case "event":
     case "wallet":
     case "inscricoes":
       return segments.length === 2;
-    case "messages":
+    case "comunidade":
+      if (segments.length === 1) return true;
+      if (second !== "mensagens") return false;
       if (segments.length === 2) return true;
+      if (segments.length === 3) return third !== "convite";
+      if (segments.length === 4 && third === "convite" && Boolean(fourth)) return true;
+      return false;
+    case "messages":
+      if (segments.length === 1 || segments.length === 2) return true;
       return segments.length === 3 && second === "community-invite";
     case "service":
       return segments.length === 2 || (segments.length === 3 && third === "booking");
@@ -123,8 +136,7 @@ const parseInternalRoute = (value: string): { pathname: string; search: string }
     const pathname = stripTrailingSlash(groupedPath);
     if (pathname.includes("//")) return null;
 
-    const normalizedPathname = pathname === "/index" ? "/(tabs)/index" : pathname;
-    return { pathname: normalizedPathname, search: parsed.search || "" };
+    return { pathname, search: parsed.search || "" };
   } catch {
     return null;
   }
@@ -139,7 +151,6 @@ export const resolveSafeNextRoute = (raw: NextRouteParam): string | null => {
   if (normalized.length > MAX_NEXT_ROUTE_LENGTH) return null;
   if (CONTROL_CHARS_REGEX.test(normalized)) return null;
 
-  // Only accept internal app routes.
   if (!normalized.startsWith("/")) return null;
   if (normalized.startsWith("//")) return null;
 

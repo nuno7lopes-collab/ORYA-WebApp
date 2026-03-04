@@ -40,17 +40,15 @@ describe("organization role pack policy", () => {
     }
   });
 
-  it("uses default legacy pack when enabled", () => {
+  it("rejects invalid rolePack raw value for STAFF", () => {
     const result = resolveRolePackForRole({
       role: OrganizationMemberRole.STAFF,
-      rolePackRaw: null,
-      rolePackProvided: false,
-      allowDefaultForLegacy: true,
+      rolePackRaw: "frontdesk",
+      rolePackProvided: true,
     });
-    expect(result).toEqual({
-      ok: true,
-      rolePack: OrganizationRolePack.FRONT_DESK,
-      usedDefault: true,
-    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errorCode).toBe("INVALID_ROLE_PACK");
+    }
   });
 });

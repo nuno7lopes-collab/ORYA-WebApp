@@ -1,241 +1,24 @@
 import { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { createSupabaseServer } from "@/lib/supabaseServer";
-import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
-import { getActiveOrganizationForUser } from "@/lib/organizationContext";
-import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
-import { ensureReservasModuleAccess } from "@/lib/reservas/access";
-import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
-import { OrganizationMemberRole } from "@prisma/client";
-import { getRequestContext } from "@/lib/http/requestContext";
-import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
-import { runAcademyTrainerHardCutHygiene } from "@/lib/academy/trainerHardCutHygiene";
-
-const VIEW_ROLES: OrganizationMemberRole[] = [
-  OrganizationMemberRole.OWNER,
-  OrganizationMemberRole.CO_OWNER,
-  OrganizationMemberRole.ADMIN,
-  OrganizationMemberRole.STAFF,
-];
-
-const EDIT_ROLES: OrganizationMemberRole[] = [
-  OrganizationMemberRole.OWNER,
-  OrganizationMemberRole.CO_OWNER,
-  OrganizationMemberRole.ADMIN,
-];
-
-const TRAINER_ELIGIBLE_TEAM_ROLES: OrganizationMemberRole[] = [
-  OrganizationMemberRole.OWNER,
-  OrganizationMemberRole.CO_OWNER,
-  OrganizationMemberRole.ADMIN,
-  OrganizationMemberRole.STAFF,
-];
-
-function parseId(value: string) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function fail(
-  ctx: { requestId: string; correlationId: string },
-  status: number,
-  errorCode: string,
-  message: string,
-  details?: Record<string, unknown>,
-) {
-  return respondError(
-    ctx,
-    { errorCode, message, retryable: status >= 500, ...(details ? { details } : {}) },
-    { status },
-  );
-}
-
-function isTrainerEligibleRole(role: OrganizationMemberRole) {
-  return TRAINER_ELIGIBLE_TEAM_ROLES.includes(role);
-}
+import {
+  handleAcademyTrainerDelete,
+  handleAcademyTrainerPatch,
+} from "@/lib/academy/trainersHandlers";
 
 async function _PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const ctx = getRequestContext(req);
   const resolved = await params;
-  const professionalId = parseId(resolved.id);
-  if (!professionalId) {
-    return fail(ctx, 400, "INVALID_PROFESSIONAL", "Profissional inválido.");
-  }
-
-  try {
-    const supabase = await createSupabaseServer();
-    const user = await ensureAuthenticated(supabase);
-    const profile = await prisma.profile.findUnique({ where: { id: user.id } });
-
-    if (!profile) {
-      return fail(ctx, 403, "PROFILE_NOT_FOUND", "Perfil não encontrado.");
-    }
-
-    const organizationId = resolveOrganizationIdFromRequest(req);
-    const { organization, membership } = await getActiveOrganizationForUser(profile.id, {
-      organizationId: organizationId ?? undefined,
-      roles: [...EDIT_ROLES],
-    });
-
-    if (!organization || !membership) {
-      return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
-    }
-    const reservasAccess = await ensureReservasModuleAccess(organization, undefined, {
-      requireVerifiedEmail: true,
-    });
-    if (!reservasAccess.ok) {
-      return fail(ctx, 403, "RESERVAS_UNAVAILABLE", reservasAccess.error ?? "Reservas indisponíveis.");
-    }
-    await runAcademyTrainerHardCutHygiene(organization.id);
-
-    const professional = await prisma.reservationProfessional.findFirst({
-      where: { id: professionalId, organizationId: organization.id },
-      select: { id: true, userId: true },
-    });
-
-    if (!professional) {
-      return fail(ctx, 404, "PROFESSIONAL_NOT_FOUND", "Profissional não encontrado.");
-    }
-
-    const payload = await req.json().catch(() => ({}));
-    if (
-      Object.prototype.hasOwnProperty.call(payload ?? {}, "name") ||
-      Object.prototype.hasOwnProperty.call(payload ?? {}, "roleTitle")
-    ) {
-      return fail(
-        ctx,
-        400,
-        "TRAINER_PROFILE_MANAGED_BY_TEAM",
-        "Nome e função interna do treinador são geridos a partir da Equipa.",
-      );
-    }
-    const isActiveRaw = typeof payload?.isActive === "boolean" ? payload.isActive : null;
-    const priorityRaw = Number.isFinite(Number(payload?.priority)) ? Number(payload.priority) : null;
-    if (!professional.userId) {
-      return fail(
-        ctx,
-        409,
-        "PROFESSIONAL_NOT_LINKED_TO_TEAM",
-        "Treinador sem ligação a membro de equipa. Remove e volta a adicionar via Equipa.",
-      );
-    }
-
-    const member = await resolveGroupMemberForOrg({
-      organizationId: organization.id,
-      userId: professional.userId,
-    });
-    if (!member || !isTrainerEligibleRole(member.role)) {
-      return fail(
-        ctx,
-        409,
-        "PROFESSIONAL_NOT_LINKED_TO_TEAM",
-        "Treinador sem ligação válida à Equipa.",
-      );
-    }
-
-    const data: Record<string, unknown> = {};
-    if (isActiveRaw !== null) data.isActive = isActiveRaw;
-    if (priorityRaw !== null) data.priority = priorityRaw;
-
-    if (Object.keys(data).length === 0) {
-      return fail(ctx, 400, "NOTHING_TO_UPDATE", "Nada para atualizar.");
-    }
-
-    const updated = await prisma.reservationProfessional.update({
-      where: { id: professional.id },
-      data,
-      select: {
-        id: true,
-        name: true,
-        roleTitle: true,
-        isActive: true,
-        priority: true,
-        user: { select: { id: true, fullName: true, username: true, avatarUrl: true } },
-      },
-    });
-
-    return respondOk(ctx, {
-      professional: {
-        ...updated,
-        name:
-          updated.user?.fullName?.trim() ||
-          updated.user?.username?.trim() ||
-          updated.name ||
-          "Equipa",
-        roleTitle: null,
-        membershipRole: member.role,
-        membershipRolePack: member.rolePack ?? null,
-      },
-    });
-  } catch (err) {
-    if (isUnauthenticatedError(err)) {
-      return fail(ctx, 401, "UNAUTHENTICATED", "Não autenticado.");
-    }
-    console.error("PATCH /api/org/[orgId]/reservas/profissionais/[id] error:", err);
-    return fail(ctx, 500, "INTERNAL_ERROR", "Erro ao atualizar profissional.");
-  }
+  return handleAcademyTrainerPatch(req, resolved.id);
 }
 
 async function _DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const ctx = getRequestContext(req);
   const resolved = await params;
-  const professionalId = parseId(resolved.id);
-  if (!professionalId) {
-    return fail(ctx, 400, "INVALID_PROFESSIONAL", "Profissional inválido.");
-  }
-
-  try {
-    const supabase = await createSupabaseServer();
-    const user = await ensureAuthenticated(supabase);
-    const profile = await prisma.profile.findUnique({ where: { id: user.id } });
-
-    if (!profile) {
-      return fail(ctx, 403, "PROFILE_NOT_FOUND", "Perfil não encontrado.");
-    }
-
-    const organizationId = resolveOrganizationIdFromRequest(req);
-    const { organization, membership } = await getActiveOrganizationForUser(profile.id, {
-      organizationId: organizationId ?? undefined,
-      roles: [...EDIT_ROLES],
-    });
-
-    if (!organization || !membership) {
-      return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
-    }
-    const reservasAccess = await ensureReservasModuleAccess(organization, undefined, {
-      requireVerifiedEmail: true,
-    });
-    if (!reservasAccess.ok) {
-      return fail(ctx, 403, "RESERVAS_UNAVAILABLE", reservasAccess.error ?? "Reservas indisponíveis.");
-    }
-    await runAcademyTrainerHardCutHygiene(organization.id);
-
-    const professional = await prisma.reservationProfessional.findFirst({
-      where: { id: professionalId, organizationId: organization.id },
-      select: { id: true },
-    });
-
-    if (!professional) {
-      return fail(ctx, 404, "PROFESSIONAL_NOT_FOUND", "Profissional não encontrado.");
-    }
-
-    await prisma.reservationProfessional.delete({ where: { id: professional.id } });
-
-    return respondOk(ctx, { deleted: true });
-  } catch (err) {
-    if (isUnauthenticatedError(err)) {
-      return fail(ctx, 401, "UNAUTHENTICATED", "Não autenticado.");
-    }
-    console.error("DELETE /api/org/[orgId]/reservas/profissionais/[id] error:", err);
-    return fail(ctx, 500, "INTERNAL_ERROR", "Erro ao remover profissional.");
-  }
+  return handleAcademyTrainerDelete(req, resolved.id);
 }
 
 export const PATCH = withApiEnvelope(_PATCH);

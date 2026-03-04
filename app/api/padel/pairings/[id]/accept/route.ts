@@ -194,9 +194,6 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     if (!captainSlot || captainSlot.paymentStatus !== PadelPairingPaymentStatus.PAID) {
       return jsonWrap({ ok: false, error: "PAYMENT_REQUIRED", action: "CHECKOUT_CAPTAIN" }, { status: 402 });
     }
-    if (pendingSlot.paymentStatus !== PadelPairingPaymentStatus.PAID) {
-      return jsonWrap({ ok: false, error: "PAYMENT_REQUIRED", action: "CHECKOUT_CAPTAIN" }, { status: 402 });
-    }
   }
 
   const existingActive = await prisma.padelPairing.findFirst({

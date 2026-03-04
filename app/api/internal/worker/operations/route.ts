@@ -106,7 +106,11 @@ function shouldSkipOperationsTransaction() {
   return false;
 }
 
-async function claimOperationsBatchWithoutTransaction(now: Date, batchSize: number) {
+async function claimOperationsBatchWithoutTransaction(
+  now: Date,
+  batchSize: number,
+  operationTypes?: string[],
+) {
   if (batchSize <= 0) return [] as OperationRecord[];
   const staleBefore = new Date(now.getTime() - STALE_OPERATION_LOCK_MS);
   const priorityTypes = Array.from(PRIORITY_TYPES);
@@ -114,6 +118,10 @@ async function claimOperationsBatchWithoutTransaction(now: Date, batchSize: numb
     priorityTypes.length > 0
       ? Prisma.sql`CASE WHEN operation_type IN (${Prisma.join(priorityTypes)}) THEN 0 ELSE 1 END`
       : Prisma.sql`0`;
+  const operationTypeFilter =
+    operationTypes && operationTypes.length > 0
+      ? Prisma.sql`AND operation_type IN (${Prisma.join(operationTypes)})`
+      : Prisma.empty;
 
   const candidates = await prisma.$queryRaw<OperationRecord[]>(Prisma.sql`
       SELECT
@@ -136,6 +144,7 @@ async function claimOperationsBatchWithoutTransaction(now: Date, batchSize: numb
           OR (status = 'FAILED' AND (next_retry_at IS NULL OR next_retry_at <= ${now}))
         )
         AND (locked_at IS NULL OR locked_at <= ${staleBefore})
+        ${operationTypeFilter}
       ORDER BY ${prioritySql}, id ASC
       LIMIT ${batchSize}
   `);
@@ -1139,7 +1148,28 @@ async function _POST(req: NextRequest) {
     );
   }
 
-  const batch = await runOperationsBatch();
+  const body = (await req.json().catch(() => null)) as
+    | { operationType?: string; operationTypes?: string[] | string; batchSize?: number }
+    | null;
+  const operationTypesRaw = body?.operationTypes ?? body?.operationType;
+  const operationTypes =
+    typeof operationTypesRaw === "string"
+      ? [operationTypesRaw]
+      : Array.isArray(operationTypesRaw)
+        ? operationTypesRaw
+        : [];
+  const normalizedOperationTypes = operationTypes
+    .map((value) => (typeof value === "string" ? value.trim().toUpperCase() : ""))
+    .filter((value) => value.length > 0);
+  const requestedBatchSize =
+    typeof body?.batchSize === "number" && Number.isFinite(body.batchSize) && body.batchSize > 0
+      ? Math.floor(body.batchSize)
+      : null;
+
+  const batch = await runOperationsBatch({
+    onlyOperationTypes: normalizedOperationTypes.length > 0 ? normalizedOperationTypes : undefined,
+    forcedBatchSize: requestedBatchSize,
+  });
   return respondOk(
     ctx,
     {
@@ -1152,7 +1182,11 @@ async function _POST(req: NextRequest) {
   );
 }
 
-async function getOperationsBacklog(now: Date) {
+async function getOperationsBacklog(now: Date, operationTypes?: string[]) {
+  const operationTypeFilter =
+    operationTypes && operationTypes.length > 0
+      ? Prisma.sql`AND operation_type IN (${Prisma.join(operationTypes)})`
+      : Prisma.empty;
   const rows = await prisma.$queryRaw<
     Array<{ backlogCount: number; oldestCreatedAt: Date | null }>
   >(Prisma.sql`
@@ -1165,6 +1199,7 @@ async function getOperationsBacklog(now: Date) {
         status = 'PENDING'
         OR (status = 'FAILED' AND (next_retry_at IS NULL OR next_retry_at <= ${now}))
       )
+      ${operationTypeFilter}
   `);
   const row = rows[0] ?? { backlogCount: 0, oldestCreatedAt: null };
   const oldestAgeMs = row.oldestCreatedAt
@@ -1173,15 +1208,19 @@ async function getOperationsBacklog(now: Date) {
   return { backlogCount: row.backlogCount ?? 0, oldestAgeMs };
 }
 
-async function claimOperationsBatch(now: Date, batchSize: number) {
+async function claimOperationsBatch(now: Date, batchSize: number, operationTypes?: string[]) {
   const staleBefore = new Date(now.getTime() - STALE_OPERATION_LOCK_MS);
   const priorityTypes = Array.from(PRIORITY_TYPES);
   const prioritySql =
     priorityTypes.length > 0
       ? Prisma.sql`CASE WHEN operation_type IN (${Prisma.join(priorityTypes)}) THEN 0 ELSE 1 END`
       : Prisma.sql`0`;
+  const operationTypeFilter =
+    operationTypes && operationTypes.length > 0
+      ? Prisma.sql`AND operation_type IN (${Prisma.join(operationTypes)})`
+      : Prisma.empty;
   if (shouldSkipOperationsTransaction()) {
-    return claimOperationsBatchWithoutTransaction(now, batchSize);
+    return claimOperationsBatchWithoutTransaction(now, batchSize, operationTypes);
   }
   try {
     return await prisma.$transaction(async (tx) => {
@@ -1205,6 +1244,7 @@ async function claimOperationsBatch(now: Date, batchSize: number) {
           OR (status = 'FAILED' AND (next_retry_at IS NULL OR next_retry_at <= ${now}))
         )
         AND (locked_at IS NULL OR locked_at <= ${staleBefore})
+        ${operationTypeFilter}
       ORDER BY ${prioritySql}, id ASC
       LIMIT ${batchSize}
       FOR UPDATE SKIP LOCKED
@@ -1227,11 +1267,14 @@ async function claimOperationsBatch(now: Date, batchSize: number) {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     logWarn("operations.claim.fallback", { error: message });
-    return claimOperationsBatchWithoutTransaction(now, batchSize);
+    return claimOperationsBatchWithoutTransaction(now, batchSize, operationTypes);
   }
 }
 
-export async function runOperationsBatch() {
+export async function runOperationsBatch(options?: {
+  onlyOperationTypes?: string[];
+  forcedBatchSize?: number | null;
+}) {
   const lockState = await tryAcquireCronLock("operations", OPERATIONS_LOCK_TTL_MS);
   if (lockState.enabled && !lockState.acquired) {
     return {
@@ -1249,9 +1292,14 @@ export async function runOperationsBatch() {
   }
 
   const now = new Date();
-  const backlog = await getOperationsBacklog(now);
-  const batchSize = chooseBatchSize(backlog.backlogCount);
-  const pending = await claimOperationsBatch(now, batchSize);
+  const normalizedOperationTypes = options?.onlyOperationTypes?.filter(Boolean) ?? [];
+  const backlog = await getOperationsBacklog(now, normalizedOperationTypes);
+  const dynamicBatchSize = chooseBatchSize(backlog.backlogCount);
+  const batchSize =
+    options?.forcedBatchSize && Number.isFinite(options.forcedBatchSize) && options.forcedBatchSize > 0
+      ? Math.floor(options.forcedBatchSize)
+      : dynamicBatchSize;
+  const pending = await claimOperationsBatch(now, batchSize, normalizedOperationTypes);
 
   const results: Array<{ id: number; status: string; error?: string }> = [];
   const batchStart = Date.now();
@@ -1892,7 +1940,8 @@ async function processUpsertLedger(op: OperationRecord) {
       if (!tt) continue;
 
       const qty = Math.max(1, Number(line.quantity ?? 0));
-      const lineSubtotal = Math.max(0, Number(line.unitPriceCents ?? 0)) * qty;
+      const unitPriceCents = Math.max(0, Number(line.unitPriceCents ?? 0));
+      const lineSubtotal = unitPriceCents * qty;
       const isLastLine = index === lines.length - 1;
       const discountForLine = isLastLine
         ? remainingDiscount
@@ -1916,7 +1965,7 @@ async function processUpsertLedger(op: OperationRecord) {
           ticketTypeId: line.ticketTypeId,
           promoCodeId,
           quantity: qty,
-          unitPriceCents: line.unitPriceCents,
+          unitPriceCents,
           discountPerUnitCents,
           grossCents: lineSubtotal,
           netCents,

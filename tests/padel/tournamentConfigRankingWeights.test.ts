@@ -100,6 +100,44 @@ beforeEach(async () => {
 });
 
 describe("POST /api/padel/tournaments/config ranking weights by category", () => {
+  it("rejeita numberOfCourts inválido (fail-closed)", async () => {
+    const req = new NextRequest("http://localhost/api/padel/tournaments/config", {
+      method: "POST",
+      body: JSON.stringify({
+        eventId: 1001,
+        organizationId: 321,
+        numberOfCourts: 0,
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode ?? body.error).toBe("INVALID_NUMBER_OF_COURTS");
+    expect(prisma.event.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("rejeita eligibilityType inválido (fail-closed)", async () => {
+    const req = new NextRequest("http://localhost/api/padel/tournaments/config", {
+      method: "POST",
+      body: JSON.stringify({
+        eventId: 1001,
+        organizationId: 321,
+        eligibilityType: "INVALID",
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode ?? body.error).toBe("INVALID_ELIGIBILITY_TYPE");
+    expect(prisma.event.findUnique).not.toHaveBeenCalled();
+  });
+
   it("persists rankingWeights.byCategory and V3 format profile fields", async () => {
     const existingConfig = buildConfig({});
     const persistedAdvancedSettings = {

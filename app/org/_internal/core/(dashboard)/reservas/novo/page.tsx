@@ -82,7 +82,7 @@ export default function NovaAulaPage() {
     fetcher,
   );
   const { data: resourcesData } = useSWR<{ ok: boolean; items: ResourceItem[] }>(
-    resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/recursos?includeCourts=1"),
+    resolveCanonicalOrgApiPath("/api/org/[orgId]/academy/resources?includeCourts=1"),
     fetcher,
   );
 

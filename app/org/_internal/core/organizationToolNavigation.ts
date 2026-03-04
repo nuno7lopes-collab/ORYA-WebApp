@@ -45,9 +45,20 @@ function isOnToolPath(normalizedPathname: string | null, basePath: string) {
 }
 
 function resolveCalendarItems(orgId: number): OrganizationNavSubItem[] {
+  const basePath = buildOrgHref(orgId, "/calendar");
   return [
-    { id: "week", label: "Semana", href: buildOrgHref(orgId, "/calendar") },
-    { id: "day", label: "Dia", href: buildOrgHref(orgId, "/calendar/day") },
+    {
+      id: "agenda",
+      label: "Agenda",
+      href: buildOrgHref(orgId, "/calendar", { view: "week" }),
+      isActive: ({ normalizedPathname, searchParams }) => {
+        if (!normalizedPathname) return false;
+        if (normalizedPathname !== basePath && normalizedPathname !== `${basePath}/day`) return false;
+        if (normalizedPathname === `${basePath}/day`) return true;
+        const view = searchParams.get("view");
+        return view === null || view === "day" || view === "week" || view === "month";
+      },
+    },
     { id: "availability", label: "Disponibilidade", href: buildOrgHref(orgId, "/calendar/availability") },
     { id: "conflicts", label: "Conflitos", href: buildOrgHref(orgId, "/calendar/conflicts") },
   ];

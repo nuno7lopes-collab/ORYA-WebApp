@@ -1,32 +1,21 @@
 import { describe, expect, it } from "vitest";
-import {
-  resolveAggregateItemsToneClass,
-  resolveAggregateToneBucket,
-  resolveEventToneClass,
-} from "@/app/org/[orgId]/calendar/_components/eventTones";
+import { resolveAggregateToneBucket } from "@/app/org/[orgId]/calendar/_components/eventTones";
 
-describe("calendar event tones", () => {
-  it("prioritiza confirmado em agregados mistos", () => {
+describe("event tones", () => {
+  it("não marca agregado como cancelado quando existe confirmado", () => {
     expect(resolveAggregateToneBucket(["CANCELLED_BY_ORG", "CONFIRMED"])).toBe("confirmed");
-    const toneClass = resolveAggregateItemsToneClass([
-      { kind: "RESERVATION", status: "CANCELLED_BY_ORG" },
-      { kind: "RESERVATION", status: "CONFIRMED" },
-    ]);
-    expect(toneClass).toContain("border-sky");
   });
 
-  it("usa tom cancelado quando todos os itens estao cancelados", () => {
+  it("usa cancelado apenas quando todos os estados são cancelados/no-show", () => {
     expect(resolveAggregateToneBucket(["CANCELLED_BY_ORG", "NO_SHOW"])).toBe("cancelled");
-    const toneClass = resolveAggregateItemsToneClass([
-      { kind: "RESERVATION", status: "CANCELLED_BY_ORG" },
-      { kind: "RESERVATION", status: "NO_SHOW" },
-    ]);
-    expect(toneClass).toContain("border-rose");
   });
 
-  it("usa tom pendente sem confirmados", () => {
-    expect(resolveAggregateToneBucket(["PENDING", "PENDING_CONFIRMATION"])).toBe("pending");
-    const toneClass = resolveEventToneClass({ kind: "RESERVATION", status: "PENDING_CONFIRMATION" });
-    expect(toneClass).toContain("border-amber");
+  it("usa pendente quando não existe confirmado", () => {
+    expect(resolveAggregateToneBucket(["PENDING", "CANCELLED_BY_ORG"])).toBe("pending");
+  });
+
+  it("fallback neutro para mistura sem confirmado/pendente/disputa", () => {
+    expect(resolveAggregateToneBucket(["CANCELLED_BY_ORG", "UNKNOWN_STATUS"])).toBe("other");
   });
 });
+

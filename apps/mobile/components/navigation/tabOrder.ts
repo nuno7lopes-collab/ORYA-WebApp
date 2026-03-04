@@ -16,10 +16,10 @@ export const resolveTabKeyFromPathname = (pathname: string): TabKey | null => {
   const normalized = normalizeTabGroupedPathname(pathOnly);
   if (!normalized) return null;
 
-  if (normalized === "/" || normalized === "/index" || normalized === "/(tabs)/index") return "index";
+  if (normalized === "/" || normalized === "/inicio" || normalized === "/(tabs)/inicio") return "inicio";
   if (normalized.startsWith("/")) {
     const segment = normalized.slice(1).split("/")[0];
-    if (!segment || segment === "index") return "index";
+    if (!segment) return "inicio";
     if (isTabRouteSegment(segment)) return segment;
   }
   return null;

@@ -17,16 +17,16 @@ const TABS: Array<{
   active: keyof typeof Ionicons.glyphMap;
   inactive: keyof typeof Ionicons.glyphMap;
 }> = [
-  { key: "agora", label: "Agora", active: "home", inactive: "home-outline" },
-  { key: "index", label: "Descobrir", active: "search", inactive: "search-outline" },
-  { key: "network", label: "Rede", active: "people", inactive: "people-outline" },
+  { key: "inicio", label: "Início", active: "home", inactive: "home-outline" },
+  { key: "competir", label: "Competir", active: "trophy", inactive: "trophy-outline" },
+  { key: "reservas", label: "Reservas", active: "calendar", inactive: "calendar-outline" },
   {
-    key: "messages",
-    label: "Mensagens",
+    key: "comunidade",
+    label: "Comunidade",
     active: "chatbubble-ellipses",
     inactive: "chatbubble-ellipses-outline",
   },
-  { key: "profile", label: "Perfil", active: "person-circle", inactive: "person-circle-outline" },
+  { key: "perfil", label: "Perfil", active: "person-circle", inactive: "person-circle-outline" },
 ];
 
 export const TAB_BAR_HEIGHT = 50;
