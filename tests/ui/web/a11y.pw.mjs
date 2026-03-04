@@ -86,6 +86,7 @@ test("@a11y authenticated user/org/admin routes have no critical axe violations"
       `/org/${orgId}/bookings`,
       `/org/${orgId}/calendar`,
       `/org/${orgId}/calendar/day`,
+      `/org/${orgId}/settings`,
     );
   }
   for (const route of userRoutes) {

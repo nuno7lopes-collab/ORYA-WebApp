@@ -1,11 +1,14 @@
 "use client";
-
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
-
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { getPublicBaseUrl } from "@/lib/publicBaseUrl";
-import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
+import {
+  useParams,
+  usePathname,
+  useRouter,
+  useSearchParams,
+} from "next/navigation";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
 import { OryaDateTimeField } from "@/components/ui/datetime";
@@ -15,7 +18,6 @@ import {
   parseOrganizationId,
   parseOrganizationIdFromPathname,
 } from "@/lib/organizationIdUtils";
-
 type FieldType =
   | "TEXT"
   | "TEXTAREA"
@@ -27,7 +29,6 @@ type FieldType =
   | "MULTI_SELECT"
   | "TIME"
   | "CHECKBOX";
-
 type FormField = {
   id: number;
   label: string;
@@ -38,10 +39,14 @@ type FormField = {
   options: string[] | null;
   order: number;
 };
-
 type FormStatus = "DRAFT" | "PUBLISHED" | "ARCHIVED";
-type SubmissionStatus = "SUBMITTED" | "IN_REVIEW" | "ACCEPTED" | "WAITLISTED" | "INVITED" | "REJECTED";
-
+type SubmissionStatus =
+  | "SUBMITTED"
+  | "IN_REVIEW"
+  | "ACCEPTED"
+  | "WAITLISTED"
+  | "INVITED"
+  | "REJECTED";
 type FormResponse = {
   ok: boolean;
   form?: {
@@ -58,7 +63,6 @@ type FormResponse = {
   };
   error?: string;
 };
-
 type FieldDraft = {
   key: string;
   label: string;
@@ -68,17 +72,24 @@ type FieldDraft = {
   placeholder: string;
   options: string;
 };
-
 type SubmissionItem = {
   id: number;
   status: SubmissionStatus;
   createdAt: string;
   guestEmail: string | null;
-  user: { id: string; fullName: string | null; username: string | null; avatarUrl: string | null } | null;
+  user: {
+    id: string;
+    fullName: string | null;
+    username: string | null;
+    avatarUrl: string | null;
+  } | null;
   answers: Record<string, unknown>;
 };
-
-type SubmissionsResponse = { ok: boolean; items: SubmissionItem[]; error?: string };
+type SubmissionsResponse = {
+  ok: boolean;
+  items: SubmissionItem[];
+  error?: string;
+};
 type SummaryResponse = {
   ok: boolean;
   totalCount: number;
@@ -87,13 +98,12 @@ type SummaryResponse = {
   latestSubmission: SubmissionItem | null;
   error?: string;
 };
-
-const fetcher = (url: string) => fetch(url, { cache: "no-store" }).then((res) => res.json());
+const fetcher = (url: string) =>
+  fetch(url, { cache: "no-store" }).then((res) => res.json());
 const normalizeIntegerInput = (value: string) => {
   const match = value.trim().match(/^\d+/);
   return match ? match[0] : "";
 };
-
 const FIELD_TYPES: { value: FieldType; label: string }[] = [
   { value: "TEXT", label: "Texto curto" },
   { value: "TEXTAREA", label: "Texto longo" },
@@ -106,13 +116,11 @@ const FIELD_TYPES: { value: FieldType; label: string }[] = [
   { value: "TIME", label: "Hora" },
   { value: "CHECKBOX", label: "Confirmação" },
 ];
-
 const STATUS_LABEL: Record<FormStatus, string> = {
   DRAFT: "Rascunho",
   PUBLISHED: "Publicado",
   ARCHIVED: "Arquivado",
 };
-
 const SUBMISSION_STATUS_LABEL: Record<SubmissionStatus, string> = {
   SUBMITTED: "Submetida",
   IN_REVIEW: "Em análise",
@@ -121,7 +129,6 @@ const SUBMISSION_STATUS_LABEL: Record<SubmissionStatus, string> = {
   INVITED: "Convocado",
   REJECTED: "Recusada",
 };
-
 const SUBMISSIONS_PAGE_SIZE = 50;
 const STATUS_COUNT_DEFAULT: Record<SubmissionStatus, number> = {
   SUBMITTED: 0,
@@ -131,14 +138,15 @@ const STATUS_COUNT_DEFAULT: Record<SubmissionStatus, number> = {
   INVITED: 0,
   REJECTED: 0,
 };
-
 export default function InscricaoDetailPage() {
   const params = useParams<{ id: string }>();
   const formId = params?.id ?? "";
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const organizationIdFromQuery = parseOrganizationId(searchParams?.get("organizationId"));
+  const organizationIdFromQuery = parseOrganizationId(
+    searchParams?.get("organizationId"),
+  );
   const organizationIdFromPath = parseOrganizationIdFromPathname(pathname);
   const organizationId = organizationIdFromQuery ?? organizationIdFromPath;
   const tabParamRaw = searchParams?.get("tab") ?? "construcao";
@@ -153,7 +161,9 @@ export default function InscricaoDetailPage() {
   const respostasParam = searchParams?.get("respostas") ?? "resumo";
   const definicoesParam = searchParams?.get("definicoes") ?? "geral";
   const { data, mutate, isLoading } = useSWR<FormResponse>(
-    formId ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/inscricoes/${formId}`) : null,
+    formId
+      ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/inscricoes/${formId}`)
+      : null,
     fetcher,
   );
   const {
@@ -161,23 +171,29 @@ export default function InscricaoDetailPage() {
     mutate: mutateSummary,
     isLoading: loadingSummary,
   } = useSWR<SummaryResponse>(
-    formId ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/inscricoes/${formId}/summary`) : null,
+    formId
+      ? resolveCanonicalOrgApiPath(
+          `/api/org/[orgId]/inscricoes/${formId}/summary`,
+        )
+      : null,
     fetcher,
   );
   const submissionsKey = formId
-    ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/inscricoes/${formId}/submissions?take=${SUBMISSIONS_PAGE_SIZE}&skip=0`)
+    ? resolveCanonicalOrgApiPath(
+        `/api/org/[orgId]/inscricoes/${formId}/submissions?take=${SUBMISSIONS_PAGE_SIZE}&skip=0`,
+      )
     : null;
   const {
     data: submissionsData,
     mutate: mutateSubmissions,
     isLoading: loadingSubmissions,
   } = useSWR<SubmissionsResponse>(submissionsKey, fetcher);
-
   const form = data?.form ?? null;
   const canEditFields =
-    (summaryData?.ok ? summaryData.totalCount : form?.submissionsCount ?? 0) === 0;
+    (summaryData?.ok
+      ? summaryData.totalCount
+      : (form?.submissionsCount ?? 0)) === 0;
   const formError = data?.ok === false ? data?.error : null;
-
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState<FormStatus>("DRAFT");
@@ -202,13 +218,11 @@ export default function InscricaoDetailPage() {
   const [hasLoadedMore, setHasLoadedMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
-
   useEffect(() => {
     if (!form) return;
     const hasCapacity = form.capacity !== null && form.capacity !== undefined;
     const hasStartDate = Boolean(form.startAt);
     const hasEndDate = Boolean(form.endAt);
-
     setTitle(form.title);
     setDescription(form.description ?? "");
     setStatus(form.status);
@@ -227,29 +241,25 @@ export default function InscricaoDetailPage() {
         required: field.required,
         helpText: field.helpText ?? "",
         placeholder: field.placeholder ?? "",
-        options: field.options ? field.options.join(", ") : "",
+        options: field.options ? field.options.join(",") : "",
       })),
     );
   }, [form]);
-
   useEffect(() => {
     setNowMs(Date.now());
   }, []);
-
   useEffect(() => {
     if (!form) return;
     const baseUrl = getPublicBaseUrl();
     if (!baseUrl) return;
     setPublicUrl(`${baseUrl.replace(/\/+$/, "")}/inscricoes/${form.id}`);
   }, [form]);
-
   useEffect(() => {
     setSubmissionItems([]);
     setHasLoadedMore(false);
     setLoadingMore(false);
     setLoadMoreError(null);
   }, [formId]);
-
   useEffect(() => {
     if (!submissionsData) return;
     if (!submissionsData.ok) {
@@ -262,14 +272,19 @@ export default function InscricaoDetailPage() {
     }
     setSubmissionItems((prev) => {
       if (prev.length === 0) return submissionsData.items;
-      const updates = new Map<number, SubmissionItem>(submissionsData.items.map((item) => [item.id, item] as const));
-      const updated: SubmissionItem[] = prev.map((item) => updates.get(item.id) ?? item);
+      const updates = new Map<number, SubmissionItem>(
+        submissionsData.items.map((item) => [item.id, item] as const),
+      );
+      const updated: SubmissionItem[] = prev.map(
+        (item) => updates.get(item.id) ?? item,
+      );
       const existingIds = new Set<number>(updated.map((item) => item.id));
-      const newItems = submissionsData.items.filter((item) => !existingIds.has(item.id));
+      const newItems = submissionsData.items.filter(
+        (item) => !existingIds.has(item.id),
+      );
       return newItems.length > 0 ? [...newItems, ...updated] : updated;
     });
   }, [submissionsData, hasLoadedMore]);
-
   const addField = () => {
     setFields((prev) => [
       ...prev,
@@ -284,15 +299,14 @@ export default function InscricaoDetailPage() {
       },
     ]);
   };
-
   const removeField = (key: string) => {
     setFields((prev) => prev.filter((field) => field.key !== key));
   };
-
   const updateField = (key: string, patch: Partial<FieldDraft>) => {
-    setFields((prev) => prev.map((field) => (field.key === key ? { ...field, ...patch } : field)));
+    setFields((prev) =>
+      prev.map((field) => (field.key === key ? { ...field, ...patch } : field)),
+    );
   };
-
   const payload = useMemo(() => {
     const base: Record<string, unknown> = {
       title,
@@ -301,7 +315,9 @@ export default function InscricaoDetailPage() {
       capacity: (() => {
         if (!capacityEnabled || !capacity) return null;
         const capacityValue = Number(capacity);
-        return Number.isFinite(capacityValue) ? Math.max(0, Math.floor(capacityValue)) : null;
+        return Number.isFinite(capacityValue)
+          ? Math.max(0, Math.floor(capacityValue))
+          : null;
       })(),
       waitlistEnabled: capacityEnabled ? waitlistEnabled : false,
       startAt: dateEnabled && startAt ? startAt : null,
@@ -324,14 +340,24 @@ export default function InscricaoDetailPage() {
       }));
     }
     return base;
-  }, [title, description, status, capacity, waitlistEnabled, startAt, endAt, fields, canEditFields]);
-
+  }, [
+    title,
+    description,
+    status,
+    capacity,
+    waitlistEnabled,
+    startAt,
+    endAt,
+    fields,
+    canEditFields,
+  ]);
   const submissions = submissionItems;
-  const submissionsError = submissionsData?.ok === false ? submissionsData.error : null;
+  const submissionsError =
+    submissionsData?.ok === false ? submissionsData.error : null;
   const summaryError = summaryData?.ok === false ? summaryData.error : null;
   const responsesCount = summaryData?.ok
     ? summaryData.totalCount
-    : form?.submissionsCount ?? submissions.length;
+    : (form?.submissionsCount ?? submissions.length);
   const summaryStatusCounts = summaryData?.ok
     ? { ...STATUS_COUNT_DEFAULT, ...summaryData.statusCounts }
     : null;
@@ -363,11 +389,15 @@ export default function InscricaoDetailPage() {
     ? summaryData.latestSubmission
     : (submissions
         .slice()
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0] ?? null);
-  const initialLoadingSubmissions = loadingSubmissions && submissions.length === 0;
-  const isPartialSummary = !summaryData?.ok && !loadingSummary && responsesCount > submissions.length;
+        .sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        )[0] ?? null);
+  const initialLoadingSubmissions =
+    loadingSubmissions && submissions.length === 0;
+  const isPartialSummary =
+    !summaryData?.ok && !loadingSummary && responsesCount > submissions.length;
   const hasMore = submissions.length < responsesCount;
-
   const getAnswer = (submission: SubmissionItem, fieldType: FieldType) => {
     const field = form?.fields.find((f) => f.fieldType === fieldType) ?? null;
     if (!field) return null;
@@ -377,15 +407,14 @@ export default function InscricaoDetailPage() {
     if (typeof raw === "boolean") return raw ? "Sim" : "Não";
     return null;
   };
-
   const formatAnswerValue = (value: unknown) => {
     if (typeof value === "string") return value.trim() ? value.trim() : "—";
     if (typeof value === "number") return String(value);
     if (typeof value === "boolean") return value ? "Sim" : "Não";
-    if (Array.isArray(value)) return value.map((entry) => String(entry)).join(", ");
+    if (Array.isArray(value))
+      return value.map((entry) => String(entry)).join(",");
     return "—";
   };
-
   const getNameAnswer = (submission: SubmissionItem) => {
     const field =
       form?.fields.find((f) => f.label.toLowerCase().includes("nome")) ??
@@ -395,16 +424,23 @@ export default function InscricaoDetailPage() {
     const raw = submission.answers?.[String(field.id)];
     return typeof raw === "string" && raw.trim() ? raw.trim() : null;
   };
-
-  const handleStatusChange = async (submissionId: number, nextStatus: SubmissionStatus) => {
+  const handleStatusChange = async (
+    submissionId: number,
+    nextStatus: SubmissionStatus,
+  ) => {
     setStatusUpdatingId(submissionId);
     setStatusMessage(null);
     try {
-      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/inscricoes/${formId}/submissions`), {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ submissionId, status: nextStatus }),
-      });
+      const res = await fetch(
+        resolveCanonicalOrgApiPath(
+          `/api/org/[orgId]/inscricoes/${formId}/submissions`,
+        ),
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ submissionId, status: nextStatus }),
+        },
+      );
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
         setStatusMessage(json?.error || "Não foi possível atualizar o estado.");
@@ -421,7 +457,9 @@ export default function InscricaoDetailPage() {
         };
       }, false);
       setSubmissionItems((prev) =>
-        prev.map((item) => (item.id === submissionId ? { ...item, status: nextStatus } : item)),
+        prev.map((item) =>
+          item.id === submissionId ? { ...item, status: nextStatus } : item,
+        ),
       );
       mutateSummary();
       setStatusUpdatingId(null);
@@ -431,16 +469,18 @@ export default function InscricaoDetailPage() {
       setStatusUpdatingId(null);
     }
   };
-
   const handleSave = async () => {
     setSaving(true);
     setMessage(null);
     try {
-      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/inscricoes/${formId}`), {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      const res = await fetch(
+        resolveCanonicalOrgApiPath(`/api/org/[orgId]/inscricoes/${formId}`),
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+      );
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
         setMessage(json?.error || "Não foi possível guardar.");
@@ -456,19 +496,21 @@ export default function InscricaoDetailPage() {
       setSaving(false);
     }
   };
-
   if (isLoading) {
-    return <div className={cn("w-full py-10 text-sm text-white/70")}>A carregar...</div>;
-  }
-
-  if (!form) {
     return (
       <div className={cn("w-full py-10 text-sm text-white/70")}>
-        {formError || "Formulário não encontrado."}
+        A carregar...
       </div>
     );
   }
-
+  if (!form) {
+    return (
+      <div className={cn("w-full py-10 text-sm text-white/70")}>
+        {" "}
+        {formError || "Formulário não encontrado."}{" "}
+      </div>
+    );
+  }
   const formsListHref = organizationId
     ? buildOrgHref(organizationId, "/forms")
     : buildOrgHubHref("/organizations");
@@ -488,7 +530,9 @@ export default function InscricaoDetailPage() {
     const query = params.toString();
     return query ? `${formBasePath}?${query}` : formBasePath;
   };
-  const buildTabHref = (tab: "construcao" | "respostas" | "definicoes" | "partilha") => {
+  const buildTabHref = (
+    tab: "construcao" | "respostas" | "definicoes" | "partilha",
+  ) => {
     if (tab === "respostas") {
       return buildHref({ tab, respostas: "resumo", definicoes: null });
     }
@@ -500,34 +544,40 @@ export default function InscricaoDetailPage() {
     }
     return buildHref({ tab: "construcao", respostas: null, definicoes: null });
   };
-  const buildRespostasHref = (respostas: "resumo" | "individual" | "exportar") =>
-    buildHref({ tab: "respostas", respostas, definicoes: null });
+  const buildRespostasHref = (
+    respostas: "resumo" | "individual" | "exportar",
+  ) => buildHref({ tab: "respostas", respostas, definicoes: null });
   const buildDefinicoesHref = (definicoes: "geral" | "disponibilidade") =>
     buildHref({ tab: "definicoes", definicoes, respostas: null });
-
   const activeRespostasTab =
-    respostasParam === "individual" || respostasParam === "exportar" ? respostasParam : "resumo";
+    respostasParam === "individual" || respostasParam === "exportar"
+      ? respostasParam
+      : "resumo";
   const activeDefinicoesTab =
     definicoesParam === "disponibilidade" ? definicoesParam : "geral";
-
   const formTabs = [
     { id: "construcao", label: "Construção", href: buildTabHref("construcao") },
     { id: "respostas", label: "Respostas", href: buildTabHref("respostas") },
     { id: "definicoes", label: "Definições", href: buildTabHref("definicoes") },
     { id: "partilha", label: "Partilha", href: buildTabHref("partilha") },
   ] as const;
-
   const respostasTabs = [
     { id: "resumo", label: "Resumo", href: buildRespostasHref("resumo") },
-    { id: "individual", label: "Individual", href: buildRespostasHref("individual") },
+    {
+      id: "individual",
+      label: "Individual",
+      href: buildRespostasHref("individual"),
+    },
     { id: "exportar", label: "Exportar", href: buildRespostasHref("exportar") },
   ] as const;
-
   const definicoesTabs = [
     { id: "geral", label: "Geral", href: buildDefinicoesHref("geral") },
-    { id: "disponibilidade", label: "Disponibilidade", href: buildDefinicoesHref("disponibilidade") },
+    {
+      id: "disponibilidade",
+      label: "Disponibilidade",
+      href: buildDefinicoesHref("disponibilidade"),
+    },
   ] as const;
-
   const statusTone =
     status === "PUBLISHED"
       ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-100"
@@ -540,14 +590,17 @@ export default function InscricaoDetailPage() {
       : status === "ARCHIVED"
         ? "Arquivado e removido do perfil."
         : "Rascunho privado enquanto editas.";
-
   const embedCode = publicUrl
     ? `<iframe src="${publicUrl}" width="100%" height="900" style="border:0;"></iframe>`
     : "";
-  const publicLabel = status === "PUBLISHED" ? "Ver página pública" : "Pré-visualizar";
+  const publicLabel =
+    status === "PUBLISHED" ? "Ver página pública" : "Pré-visualizar";
   const canDelete = responsesCount === 0 && status !== "PUBLISHED";
-  const exportUrl = form ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/inscricoes/${form.id}/export`) : "";
-
+  const exportUrl = form
+    ? resolveCanonicalOrgApiPath(
+        `/api/org/[orgId]/inscricoes/${form.id}/export`,
+      )
+    : "";
   const handleCopy = async (value: string, label: string) => {
     if (!value) return;
     try {
@@ -559,7 +612,6 @@ export default function InscricaoDetailPage() {
     }
     window.setTimeout(() => setShareMessage(null), 2400);
   };
-
   const handleLoadMore = async () => {
     if (!formId || loadingMore || !hasMore) return;
     setLoadingMore(true);
@@ -567,11 +619,15 @@ export default function InscricaoDetailPage() {
     try {
       const skip = submissionItems.length;
       const res = await fetch(
-        resolveCanonicalOrgApiPath(`/api/org/[orgId]/inscricoes/${formId}/submissions?take=${SUBMISSIONS_PAGE_SIZE}&skip=${skip}`),
+        resolveCanonicalOrgApiPath(
+          `/api/org/[orgId]/inscricoes/${formId}/submissions?take=${SUBMISSIONS_PAGE_SIZE}&skip=${skip}`,
+        ),
       );
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        setLoadMoreError(json?.error || "Não foi possível carregar mais respostas.");
+        setLoadMoreError(
+          json?.error || "Não foi possível carregar mais respostas.",
+        );
         setLoadingMore(false);
         return;
       }
@@ -592,19 +648,19 @@ export default function InscricaoDetailPage() {
       setLoadingMore(false);
     }
   };
-
   const handleDeleteForm = async () => {
     if (!form || !canDelete) return;
     const confirmed = window.confirm(
-      `Apagar o formulário "${form.title}"? Esta ação é irreversível.`,
+      `Apagar o formulário"${form.title}"? Esta ação é irreversível.`,
     );
     if (!confirmed) return;
     setDeleting(true);
     setDeleteError(null);
     try {
-      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/inscricoes/${form.id}`), {
-        method: "DELETE",
-      });
+      const res = await fetch(
+        resolveCanonicalOrgApiPath(`/api/org/[orgId]/inscricoes/${form.id}`),
+        { method: "DELETE" },
+      );
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
         setDeleteError(json?.error || "Não foi possível apagar o formulário.");
@@ -619,46 +675,57 @@ export default function InscricaoDetailPage() {
       setDeleting(false);
     }
   };
-
   return (
     <div className={cn("w-full space-y-6 py-8 text-white")}>
+      {" "}
       <div className="flex flex-wrap items-center justify-between gap-4">
+        {" "}
         <div>
-          <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Formulário</p>
+          {" "}
+          <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">
+            Formulário
+          </p>{" "}
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl font-semibold">{form.title}</h1>
+            {" "}
+            <h1 className="text-2xl font-semibold">{form.title}</h1>{" "}
             <span
               className={cn(
                 "rounded-full border px-2.5 py-1 text-[11px] uppercase tracking-[0.2em]",
                 statusTone,
               )}
             >
-              {STATUS_LABEL[status]}
-            </span>
-          </div>
+              {" "}
+              {STATUS_LABEL[status]}{" "}
+            </span>{" "}
+          </div>{" "}
           <p className="text-sm text-white/60">
-            {responsesCount} resposta{responsesCount === 1 ? "" : "s"} · {STATUS_LABEL[status].toLowerCase()}
-          </p>
-        </div>
+            {" "}
+            {responsesCount} resposta{responsesCount === 1 ? "" : "s"} ·{" "}
+            {STATUS_LABEL[status].toLowerCase()}{" "}
+          </p>{" "}
+        </div>{" "}
         <div className="flex flex-wrap items-center gap-2 text-[12px]">
+          {" "}
           <Link
             href={formsListHref}
             className="rounded-full border border-white/20 px-3 py-1 text-white/80 hover:bg-white/10"
           >
-            Voltar
-          </Link>
+            {" "}
+            Voltar{" "}
+          </Link>{" "}
           {status !== "ARCHIVED" && (
             <Link
               href={`/inscricoes/${form.id}`}
               className="rounded-full border border-white/20 px-3 py-1 text-white/80 hover:bg-white/10"
             >
-              {publicLabel}
+              {" "}
+              {publicLabel}{" "}
             </Link>
-          )}
-        </div>
-      </div>
-
+          )}{" "}
+        </div>{" "}
+      </div>{" "}
       <div className="flex flex-wrap items-center gap-2">
+        {" "}
         {formTabs.map((tab) => {
           const isActive = tab.id === activeTab;
           return (
@@ -668,152 +735,195 @@ export default function InscricaoDetailPage() {
               className={cn(
                 "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[12px] font-semibold transition",
                 isActive
-                  ? "border-white/30 bg-white/15 text-white shadow-[0_12px_30px_rgba(34,211,238,0.2)]"
+                  ? "border-white/30 bg-white/15 text-white"
                   : "border-white/10 text-white/70 hover:bg-white/10",
               )}
             >
-              {tab.label}
+              {" "}
+              {tab.label}{" "}
               {tab.id === "respostas" && (
                 <span className="rounded-full border border-white/10 bg-white/10 px-2 py-0.5 text-[11px] text-white/70">
-                  {responsesCount}
+                  {" "}
+                  {responsesCount}{" "}
                 </span>
-              )}
+              )}{" "}
             </Link>
           );
-        })}
-      </div>
-
+        })}{" "}
+      </div>{" "}
       {activeTab === "construcao" && (
         <>
-          <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-5">
+          {" "}
+          <div className="rounded-3xl border border-white/12 bg-white/[0.04] p-5 space-y-5">
+            {" "}
             <div className="space-y-2">
-              <label className="text-[12px] text-white/70">Título</label>
+              {" "}
+              <label className="text-[12px] text-white/70">Título</label>{" "}
               <input
                 className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-              />
-            </div>
-
+              />{" "}
+            </div>{" "}
             <div className="space-y-2">
-              <label className="text-[12px] text-white/70">Descrição</label>
+              {" "}
+              <label className="text-[12px] text-white/70">
+                Descrição
+              </label>{" "}
               <textarea
                 className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#22D3EE] min-h-[96px]"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-4">
+              />{" "}
+            </div>{" "}
+          </div>{" "}
+          <div className="rounded-3xl border border-white/12 bg-white/[0.04] p-5 space-y-4">
+            {" "}
             <div className="flex items-center justify-between">
+              {" "}
               <div>
-                <h2 className="text-lg font-semibold">Campos do formulário</h2>
-                <p className="text-[12px] text-white/60">Edita os campos.</p>
-              </div>
+                {" "}
+                <h2 className="text-lg font-semibold">
+                  Campos do formulário
+                </h2>{" "}
+                <p className="text-[12px] text-white/60">
+                  Edita os campos.
+                </p>{" "}
+              </div>{" "}
               <button
                 type="button"
                 onClick={addField}
                 disabled={!canEditFields}
                 className="rounded-full border border-white/20 px-3 py-1 text-[12px] text-white/80 hover:bg-white/10"
               >
-                Adicionar
-              </button>
-            </div>
+                {" "}
+                Adicionar{" "}
+              </button>{" "}
+            </div>{" "}
             {!canEditFields && (
               <p className="text-[12px] text-white/60">
-                Já há respostas. Campos bloqueados.
+                {" "}
+                Já há respostas. Campos bloqueados.{" "}
               </p>
-            )}
-
+            )}{" "}
             <div className="space-y-4">
+              {" "}
               {fields.map((field) => (
-                <div key={field.key} className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3">
+                <div
+                  key={field.key}
+                  className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3"
+                >
+                  {" "}
                   <div className="flex flex-wrap gap-3">
+                    {" "}
                     <input
                       className="flex-1 rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
                       value={field.label}
                       disabled={!canEditFields}
-                      onChange={(e) => updateField(field.key, { label: e.target.value })}
-                    />
+                      onChange={(e) =>
+                        updateField(field.key, { label: e.target.value })
+                      }
+                    />{" "}
                     <select
                       className="rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
                       value={field.fieldType}
                       disabled={!canEditFields}
-                      onChange={(e) => updateField(field.key, { fieldType: e.target.value as FieldType })}
+                      onChange={(e) =>
+                        updateField(field.key, {
+                          fieldType: e.target.value as FieldType,
+                        })
+                      }
                     >
+                      {" "}
                       {FIELD_TYPES.map((option) => (
                         <option key={option.value} value={option.value}>
-                          {option.label}
+                          {" "}
+                          {option.label}{" "}
                         </option>
-                      ))}
-                    </select>
+                      ))}{" "}
+                    </select>{" "}
                     <label className="flex items-center gap-2 text-sm text-white/70">
+                      {" "}
                       <input
                         type="checkbox"
                         className="h-4 w-4 rounded border-white/30 bg-black/40 text-[#22D3EE]"
                         checked={field.required}
                         disabled={!canEditFields}
-                        onChange={(e) => updateField(field.key, { required: e.target.checked })}
-                      />
-                      Obrigatório
-                    </label>
-                  </div>
+                        onChange={(e) =>
+                          updateField(field.key, { required: e.target.checked })
+                        }
+                      />{" "}
+                      Obrigatório{" "}
+                    </label>{" "}
+                  </div>{" "}
                   <div className="grid gap-3 md:grid-cols-2">
+                    {" "}
                     <input
                       className="rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
                       placeholder="Placeholder"
                       value={field.placeholder}
                       disabled={!canEditFields}
-                      onChange={(e) => updateField(field.key, { placeholder: e.target.value })}
-                    />
+                      onChange={(e) =>
+                        updateField(field.key, { placeholder: e.target.value })
+                      }
+                    />{" "}
                     <input
                       className="rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
                       placeholder="Texto de ajuda"
                       value={field.helpText}
                       disabled={!canEditFields}
-                      onChange={(e) => updateField(field.key, { helpText: e.target.value })}
-                    />
-                  </div>
-                  {(field.fieldType === "SELECT" || field.fieldType === "MULTI_SELECT") && (
+                      onChange={(e) =>
+                        updateField(field.key, { helpText: e.target.value })
+                      }
+                    />{" "}
+                  </div>{" "}
+                  {(field.fieldType === "SELECT" ||
+                    field.fieldType === "MULTI_SELECT") && (
                     <input
                       className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
                       placeholder="Opções separadas por vírgula"
                       value={field.options}
                       disabled={!canEditFields}
-                      onChange={(e) => updateField(field.key, { options: e.target.value })}
+                      onChange={(e) =>
+                        updateField(field.key, { options: e.target.value })
+                      }
                     />
-                  )}
+                  )}{" "}
                   <button
                     type="button"
                     onClick={() => removeField(field.key)}
                     disabled={!canEditFields}
                     className="text-[12px] text-red-300 hover:text-red-200 disabled:opacity-50"
                   >
-                    Remover campo
-                  </button>
+                    {" "}
+                    Remover campo{" "}
+                  </button>{" "}
                 </div>
-              ))}
-            </div>
-
+              ))}{" "}
+            </div>{" "}
             <div className="flex flex-wrap items-center gap-3">
+              {" "}
               <button
                 type="button"
                 onClick={handleSave}
                 disabled={saving}
-                className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition hover:scale-[1.01] disabled:opacity-60"
+                className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition disabled:opacity-60"
               >
-                {saving ? "A guardar..." : "Guardar"}
-              </button>
-              {message && <span className="text-[12px] text-white/70">{message}</span>}
-            </div>
-          </div>
+                {" "}
+                {saving ? "A guardar..." : "Guardar"}{" "}
+              </button>{" "}
+              {message && (
+                <span className="text-[12px] text-white/70">{message}</span>
+              )}{" "}
+            </div>{" "}
+          </div>{" "}
         </>
-      )}
-
+      )}{" "}
       {activeTab === "respostas" && (
         <>
+          {" "}
           <div className="flex flex-wrap items-center gap-2">
+            {" "}
             {respostasTabs.map((tab) => {
               const isActive = tab.id === activeRespostasTab;
               return (
@@ -823,135 +933,185 @@ export default function InscricaoDetailPage() {
                   className={cn(
                     "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[12px] font-semibold transition",
                     isActive
-                      ? "border-white/30 bg-white/15 text-white shadow-[0_12px_30px_rgba(34,211,238,0.2)]"
+                      ? "border-white/30 bg-white/15 text-white"
                       : "border-white/10 text-white/70 hover:bg-white/10",
                   )}
                 >
-                  {tab.label}
+                  {" "}
+                  {tab.label}{" "}
                 </Link>
               );
-            })}
-          </div>
-
+            })}{" "}
+          </div>{" "}
           {activeRespostasTab === "resumo" && (
-            <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-4">
+            <div className="rounded-3xl border border-white/12 bg-white/[0.04] p-5 space-y-4">
+              {" "}
               <div className="flex items-center justify-between">
+                {" "}
                 <div>
-                  <h2 className="text-lg font-semibold">Resumo</h2>
-                  <p className="text-[12px] text-white/60">Indicadores rápidos das respostas.</p>
-                </div>
-                <span className="text-[12px] text-white/60">{responsesCount} total</span>
-              </div>
-
+                  {" "}
+                  <h2 className="text-lg font-semibold">Resumo</h2>{" "}
+                  <p className="text-[12px] text-white/60">
+                    Indicadores rápidos das respostas.
+                  </p>{" "}
+                </div>{" "}
+                <span className="text-[12px] text-white/60">
+                  {responsesCount} total
+                </span>{" "}
+              </div>{" "}
               {(loadingSummary || initialLoadingSubmissions) && (
                 <p className="text-sm text-white/60">A carregar...</p>
-              )}
-
+              )}{" "}
               {summaryError && (
                 <div className="rounded-2xl border border-amber-400/40 bg-amber-400/10 p-3 text-sm text-amber-100">
-                  {summaryError}
+                  {" "}
+                  {summaryError}{" "}
                 </div>
-              )}
-
+              )}{" "}
               {submissionsError && (
                 <div className="rounded-2xl border border-amber-400/40 bg-amber-400/10 p-3 text-sm text-amber-100">
-                  {submissionsError}
+                  {" "}
+                  {submissionsError}{" "}
                 </div>
-              )}
-
+              )}{" "}
               {!initialLoadingSubmissions && responsesCount === 0 && (
                 <div className="rounded-2xl border border-dashed border-white/15 bg-white/5 p-4 text-sm text-white/70">
-                  Sem respostas.
+                  {" "}
+                  Sem respostas.{" "}
                 </div>
-              )}
-
+              )}{" "}
               {!initialLoadingSubmissions && responsesCount > 0 && (
                 <div className="grid gap-3 md:grid-cols-3">
+                  {" "}
                   <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Respostas</p>
-                    <p className="text-2xl font-semibold text-white">{responsesCount}</p>
-                    <p className="text-[12px] text-white/60">Últimos 7 dias: {responsesLast7Days}</p>
-                  </div>
+                    {" "}
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">
+                      Respostas
+                    </p>{" "}
+                    <p className="text-2xl font-semibold text-white">
+                      {responsesCount}
+                    </p>{" "}
+                    <p className="text-[12px] text-white/60">
+                      Últimos 7 dias: {responsesLast7Days}
+                    </p>{" "}
+                  </div>{" "}
                   <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Estados</p>
+                    {" "}
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">
+                      Estados
+                    </p>{" "}
                     <div className="mt-2 space-y-1 text-[12px] text-white/70">
+                      {" "}
                       {Object.entries(SUBMISSION_STATUS_LABEL)
-                        .filter(([value]) => statusCounts[value as SubmissionStatus] > 0)
+                        .filter(
+                          ([value]) =>
+                            statusCounts[value as SubmissionStatus] > 0,
+                        )
                         .map(([value, label]) => (
-                          <div key={value} className="flex items-center justify-between">
-                            <span>{label}</span>
-                            <span className="text-white">{statusCounts[value as SubmissionStatus]}</span>
+                          <div
+                            key={value}
+                            className="flex items-center justify-between"
+                          >
+                            {" "}
+                            <span>{label}</span>{" "}
+                            <span className="text-white">
+                              {statusCounts[value as SubmissionStatus]}
+                            </span>{" "}
                           </div>
-                        ))}
-                      {Object.values(statusCounts).every((count) => count === 0) && (
+                        ))}{" "}
+                      {Object.values(statusCounts).every(
+                        (count) => count === 0,
+                      ) && (
                         <p className="text-white/60">Sem estados registados.</p>
-                      )}
-                    </div>
-                  </div>
+                      )}{" "}
+                    </div>{" "}
+                  </div>{" "}
                   <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Última resposta</p>
+                    {" "}
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">
+                      Última resposta
+                    </p>{" "}
                     {latestSubmission ? (
                       <>
+                        {" "}
                         <p className="text-sm font-semibold text-white">
+                          {" "}
                           {latestSubmission.user?.fullName ||
                             latestSubmission.user?.username ||
                             getNameAnswer(latestSubmission) ||
-                            "Participante"}
-                        </p>
+                            "Participante"}{" "}
+                        </p>{" "}
                         <p className="text-[12px] text-white/60">
-                          {new Date(latestSubmission.createdAt).toLocaleString("pt-PT", {
-                            day: "2-digit",
-                            month: "short",
-                            year: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </p>
+                          {" "}
+                          {new Date(latestSubmission.createdAt).toLocaleString(
+                            "pt-PT",
+                            {
+                              day: "2-digit",
+                              month: "short",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            },
+                          )}{" "}
+                        </p>{" "}
                       </>
                     ) : (
-                      <p className="text-[12px] text-white/60">Ainda sem respostas.</p>
-                    )}
-                  </div>
+                      <p className="text-[12px] text-white/60">
+                        Ainda sem respostas.
+                      </p>
+                    )}{" "}
+                  </div>{" "}
                 </div>
-              )}
-
+              )}{" "}
               {isPartialSummary && (
                 <p className="text-[11px] text-white/50">
-                  Resumo parcial: mostra apenas as respostas carregadas.
+                  {" "}
+                  Resumo parcial: mostra apenas as respostas carregadas.{" "}
                 </p>
-              )}
+              )}{" "}
             </div>
-          )}
-
+          )}{" "}
           {activeRespostasTab === "individual" && (
-            <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-4">
+            <div className="rounded-3xl border border-white/12 bg-white/[0.04] p-5 space-y-4">
+              {" "}
               <div className="flex items-center justify-between">
+                {" "}
                 <div>
-                  <h2 className="text-lg font-semibold">Respostas individuais</h2>
-                  <p className="text-[12px] text-white/60">Histórico de respostas e estados.</p>
-                </div>
+                  {" "}
+                  <h2 className="text-lg font-semibold">
+                    Respostas individuais
+                  </h2>{" "}
+                  <p className="text-[12px] text-white/60">
+                    Histórico de respostas e estados.
+                  </p>{" "}
+                </div>{" "}
                 <span className="text-[12px] text-white/60">
-                  A mostrar {submissions.length} de {responsesCount}
-                </span>
-              </div>
-
-              {initialLoadingSubmissions && <p className="text-sm text-white/60">A carregar...</p>}
-
+                  {" "}
+                  A mostrar {submissions.length} de {responsesCount}{" "}
+                </span>{" "}
+              </div>{" "}
+              {initialLoadingSubmissions && (
+                <p className="text-sm text-white/60">A carregar...</p>
+              )}{" "}
               {submissionsError && (
                 <div className="rounded-2xl border border-amber-400/40 bg-amber-400/10 p-3 text-sm text-amber-100">
-                  {submissionsError}
+                  {" "}
+                  {submissionsError}{" "}
                 </div>
-              )}
-
-              {!initialLoadingSubmissions && !submissionsError && responsesCount === 0 && (
-                <div className="rounded-2xl border border-dashed border-white/15 bg-white/5 p-4 text-sm text-white/70">
-                  Sem respostas.
-                </div>
-              )}
-
-              {statusMessage && <p className="text-sm text-red-300">{statusMessage}</p>}
-
+              )}{" "}
+              {!initialLoadingSubmissions &&
+                !submissionsError &&
+                responsesCount === 0 && (
+                  <div className="rounded-2xl border border-dashed border-white/15 bg-white/5 p-4 text-sm text-white/70">
+                    {" "}
+                    Sem respostas.{" "}
+                  </div>
+                )}{" "}
+              {statusMessage && (
+                <p className="text-sm text-red-300">{statusMessage}</p>
+              )}{" "}
               <div className="space-y-3">
+                {" "}
                 {submissions.map((submission) => {
                   const name =
                     submission.user?.fullName ||
@@ -963,40 +1123,58 @@ export default function InscricaoDetailPage() {
                     submission.guestEmail ||
                     submission.user?.username ||
                     "—";
-                  const createdAt = new Date(submission.createdAt).toLocaleString("pt-PT", {
+                  const createdAt = new Date(
+                    submission.createdAt,
+                  ).toLocaleString("pt-PT", {
                     day: "2-digit",
                     month: "short",
                     year: "numeric",
                     hour: "2-digit",
                     minute: "2-digit",
                   });
-
                   return (
-                    <div key={submission.id} className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-2">
+                    <div
+                      key={submission.id}
+                      className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-2"
+                    >
+                      {" "}
                       <div className="flex flex-wrap items-center justify-between gap-3">
+                        {" "}
                         <div className="space-y-1">
-                          <p className="text-sm font-semibold">{name}</p>
-                          <p className="text-[12px] text-white/60">{email}</p>
-                        </div>
+                          {" "}
+                          <p className="text-sm font-semibold">{name}</p>{" "}
+                          <p className="text-[12px] text-white/60">
+                            {email}
+                          </p>{" "}
+                        </div>{" "}
                         <div className="flex items-center gap-2 text-[12px] text-white/70">
-                          <span>{createdAt}</span>
+                          {" "}
+                          <span>{createdAt}</span>{" "}
                           <select
                             className="rounded-full border border-white/15 bg-black/30 px-3 py-1 text-[12px] text-white"
                             value={submission.status}
                             disabled={statusUpdatingId === submission.id}
                             onChange={(e) =>
-                              handleStatusChange(submission.id, e.target.value as SubmissionStatus)
+                              handleStatusChange(
+                                submission.id,
+                                e.target.value as SubmissionStatus,
+                              )
                             }
                           >
-                            {Object.entries(SUBMISSION_STATUS_LABEL).map(([value, label]) => (
-                              <option key={value} value={value}>
-                                {label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
+                            {" "}
+                            {Object.entries(SUBMISSION_STATUS_LABEL).map(
+                              ([value, label]) => (
+                                <option key={value} value={value}>
+                                  {" "}
+                                  {label}{" "}
+                                </option>
+                              ),
+                            )}{" "}
+                          </select>{" "}
+                        </div>{" "}
+                      </div>{" "}
                       <div className="grid gap-2 text-[12px] text-white/70">
+                        {" "}
                         {form.fields.map((field) => {
                           const raw = submission.answers?.[String(field.id)];
                           const display = formatAnswerValue(raw);
@@ -1005,66 +1183,81 @@ export default function InscricaoDetailPage() {
                               key={`${submission.id}-${field.id}`}
                               className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/20 px-3 py-2"
                             >
-                              <span className="text-white/60">{field.label}</span>
-                              <span className="text-white">{display}</span>
+                              {" "}
+                              <span className="text-white/60">
+                                {field.label}
+                              </span>{" "}
+                              <span className="text-white">{display}</span>{" "}
                             </div>
                           );
-                        })}
-                      </div>
+                        })}{" "}
+                      </div>{" "}
                     </div>
                   );
-                })}
-              </div>
-
-              {loadMoreError && <p className="text-sm text-red-300">{loadMoreError}</p>}
-
+                })}{" "}
+              </div>{" "}
+              {loadMoreError && (
+                <p className="text-sm text-red-300">{loadMoreError}</p>
+              )}{" "}
               {hasMore && (
                 <div className="flex flex-wrap items-center justify-between gap-3">
+                  {" "}
                   <button
                     type="button"
                     onClick={handleLoadMore}
                     disabled={loadingMore}
                     className="rounded-full border border-white/20 px-4 py-2 text-[12px] text-white/80 hover:bg-white/10 disabled:opacity-60"
                   >
-                    {loadingMore ? "A carregar..." : "Carregar mais"}
-                  </button>
+                    {" "}
+                    {loadingMore ? "A carregar..." : "Carregar mais"}{" "}
+                  </button>{" "}
                   <span className="text-[12px] text-white/60">
-                    A mostrar {submissions.length} de {responsesCount}
-                  </span>
+                    {" "}
+                    A mostrar {submissions.length} de {responsesCount}{" "}
+                  </span>{" "}
                 </div>
-              )}
+              )}{" "}
             </div>
-          )}
-
+          )}{" "}
           {activeRespostasTab === "exportar" && (
-            <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-4">
+            <div className="rounded-3xl border border-white/12 bg-white/[0.04] p-5 space-y-4">
+              {" "}
               <div className="flex items-center justify-between">
+                {" "}
                 <div>
-                  <h2 className="text-lg font-semibold">Exportar respostas</h2>
-                  <p className="text-[12px] text-white/60">CSV pronto para Excel ou Folhas Google.</p>
-                </div>
-                <span className="text-[12px] text-white/60">{responsesCount} registos</span>
-              </div>
-
+                  {" "}
+                  <h2 className="text-lg font-semibold">
+                    Exportar respostas
+                  </h2>{" "}
+                  <p className="text-[12px] text-white/60">
+                    CSV pronto para Excel ou Folhas Google.
+                  </p>{" "}
+                </div>{" "}
+                <span className="text-[12px] text-white/60">
+                  {responsesCount} registos
+                </span>{" "}
+              </div>{" "}
               {summaryError && (
                 <div className="rounded-2xl border border-amber-400/40 bg-amber-400/10 p-3 text-sm text-amber-100">
-                  {summaryError}
+                  {" "}
+                  {summaryError}{" "}
                 </div>
-              )}
-
+              )}{" "}
               {responsesCount === 0 && (
                 <div className="rounded-2xl border border-dashed border-white/15 bg-white/5 p-4 text-sm text-white/70">
-                  Sem respostas para exportar.
+                  {" "}
+                  Sem respostas para exportar.{" "}
                 </div>
-              )}
-
+              )}{" "}
               <div className="flex flex-wrap items-center gap-3">
+                {" "}
                 {responsesCount > 0 ? (
                   <a
                     href={exportUrl}
-                    className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition hover:scale-[1.01]"
+                    className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition"
                   >
-                    Exportar CSV
+                    {" "}
+                    Exportar CSV{" "}
                   </a>
                 ) : (
                   <button
@@ -1072,21 +1265,24 @@ export default function InscricaoDetailPage() {
                     disabled
                     className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black opacity-60"
                   >
-                    Exportar CSV
+                    {" "}
+                    Exportar CSV{" "}
                   </button>
-                )}
+                )}{" "}
                 <span className="text-[12px] text-white/60">
-                  Inclui estado, data e todas as respostas.
-                </span>
-              </div>
+                  {" "}
+                  Inclui estado, data e todas as respostas.{" "}
+                </span>{" "}
+              </div>{" "}
             </div>
-          )}
+          )}{" "}
         </>
-      )}
-
+      )}{" "}
       {activeTab === "definicoes" && (
         <>
+          {" "}
           <div className="flex flex-wrap items-center gap-2">
+            {" "}
             {definicoesTabs.map((tab) => {
               const isActive = tab.id === activeDefinicoesTab;
               return (
@@ -1096,53 +1292,72 @@ export default function InscricaoDetailPage() {
                   className={cn(
                     "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[12px] font-semibold transition",
                     isActive
-                      ? "border-white/30 bg-white/15 text-white shadow-[0_12px_30px_rgba(34,211,238,0.2)]"
+                      ? "border-white/30 bg-white/15 text-white"
                       : "border-white/10 text-white/70 hover:bg-white/10",
                   )}
                 >
-                  {tab.label}
+                  {" "}
+                  {tab.label}{" "}
                 </Link>
               );
-            })}
-          </div>
-
+            })}{" "}
+          </div>{" "}
           {activeDefinicoesTab === "geral" && (
-            <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-4">
+            <div className="rounded-3xl border border-white/12 bg-white/[0.04] p-5 space-y-4">
+              {" "}
               <div className="grid gap-3 md:grid-cols-[1.2fr_1fr]">
+                {" "}
                 <div className="space-y-2">
-                  <label className="text-[12px] text-white/70">Estado</label>
+                  {" "}
+                  <label className="text-[12px] text-white/70">
+                    Estado
+                  </label>{" "}
                   <select
                     className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
                     value={status}
                     onChange={(e) => setStatus(e.target.value as FormStatus)}
                   >
+                    {" "}
                     {Object.entries(STATUS_LABEL).map(([value, label]) => (
                       <option key={value} value={value}>
-                        {label}
+                        {" "}
+                        {label}{" "}
                       </option>
-                    ))}
-                  </select>
-                </div>
+                    ))}{" "}
+                  </select>{" "}
+                </div>{" "}
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Visibilidade</p>
-                  <p className="text-sm font-semibold text-white">{STATUS_LABEL[status]}</p>
-                  <p className="text-[12px] text-white/60">{statusHint}</p>
-                </div>
-              </div>
+                  {" "}
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">
+                    Visibilidade
+                  </p>{" "}
+                  <p className="text-sm font-semibold text-white">
+                    {STATUS_LABEL[status]}
+                  </p>{" "}
+                  <p className="text-[12px] text-white/60">{statusHint}</p>{" "}
+                </div>{" "}
+              </div>{" "}
             </div>
-          )}
-
+          )}{" "}
           {activeDefinicoesTab === "disponibilidade" && (
-            <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-4">
+            <div className="rounded-3xl border border-white/12 bg-white/[0.04] p-5 space-y-4">
+              {" "}
               <div className="grid gap-4 md:grid-cols-2">
+                {" "}
                 <div className="space-y-3 rounded-2xl border border-white/12 bg-white/5 p-4">
+                  {" "}
                   <div className="flex items-start justify-between gap-3">
+                    {" "}
                     <div>
-                      <p className="text-sm font-semibold text-white">Capacidade</p>
+                      {" "}
+                      <p className="text-sm font-semibold text-white">
+                        Capacidade
+                      </p>{" "}
                       <p className="text-[12px] text-white/60">
-                        Ativa vagas limitadas e lista de espera opcional.
-                      </p>
-                    </div>
+                        {" "}
+                        Ativa vagas limitadas e lista de espera opcional.{" "}
+                      </p>{" "}
+                    </div>{" "}
                     <Toggle
                       enabled={capacityEnabled}
                       onChange={(next) => {
@@ -1153,13 +1368,16 @@ export default function InscricaoDetailPage() {
                         }
                       }}
                       label="Ativar capacidade"
-                    />
-                  </div>
-
+                    />{" "}
+                  </div>{" "}
                   {capacityEnabled ? (
                     <div className="grid gap-3 sm:grid-cols-2">
+                      {" "}
                       <div className="space-y-2">
-                        <label className="text-[12px] text-white/70">Número de vagas</label>
+                        {" "}
+                        <label className="text-[12px] text-white/70">
+                          Número de vagas
+                        </label>{" "}
                         <input
                           className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
                           type="number"
@@ -1167,31 +1385,43 @@ export default function InscricaoDetailPage() {
                           step="1"
                           inputMode="numeric"
                           value={capacity}
-                          onChange={(e) => setCapacity(normalizeIntegerInput(e.target.value))}
-                        />
-                      </div>
+                          onChange={(e) =>
+                            setCapacity(normalizeIntegerInput(e.target.value))
+                          }
+                        />{" "}
+                      </div>{" "}
                       <div className="flex items-center justify-between gap-3 rounded-xl border border-white/12 bg-black/30 px-3 py-2">
-                        <span className="text-[12px] text-white/70">Lista de espera</span>
+                        {" "}
+                        <span className="text-[12px] text-white/70">
+                          Lista de espera
+                        </span>{" "}
                         <Toggle
                           enabled={waitlistEnabled}
                           onChange={(next) => setWaitlistEnabled(next)}
                           label="Ativar lista de espera"
-                        />
-                      </div>
+                        />{" "}
+                      </div>{" "}
                     </div>
                   ) : (
-                    <p className="text-[12px] text-white/60">Sem limite de vagas.</p>
-                  )}
-                </div>
-
+                    <p className="text-[12px] text-white/60">
+                      Sem limite de vagas.
+                    </p>
+                  )}{" "}
+                </div>{" "}
                 <div className="space-y-3 rounded-2xl border border-white/12 bg-white/5 p-4">
+                  {" "}
                   <div className="flex items-start justify-between gap-3">
+                    {" "}
                     <div>
-                      <p className="text-sm font-semibold text-white">Datas</p>
+                      {" "}
+                      <p className="text-sm font-semibold text-white">
+                        Datas
+                      </p>{" "}
                       <p className="text-[12px] text-white/60">
-                        Define início e, se quiseres, uma data limite.
-                      </p>
-                    </div>
+                        {" "}
+                        Define início e, se quiseres, uma data limite.{" "}
+                      </p>{" "}
+                    </div>{" "}
                     <Toggle
                       enabled={dateEnabled}
                       onChange={(next) => {
@@ -1203,23 +1433,29 @@ export default function InscricaoDetailPage() {
                         }
                       }}
                       label="Ativar datas"
-                    />
-                  </div>
-
+                    />{" "}
+                  </div>{" "}
                   {dateEnabled ? (
                     <div className="space-y-3">
+                      {" "}
                       <div className="space-y-2">
-                        <label className="text-[12px] text-white/70">Início</label>
+                        {" "}
+                        <label className="text-[12px] text-white/70">
+                          Início
+                        </label>{" "}
                         <OryaDateTimeField
                           value={startAt}
                           onChange={setStartAt}
                           className="w-full"
                           dateButtonClassName="h-10 flex-1 rounded-xl"
                           timeButtonClassName="h-10 rounded-xl"
-                        />
-                      </div>
+                        />{" "}
+                      </div>{" "}
                       <div className="flex items-center justify-between gap-3 rounded-xl border border-white/12 bg-black/30 px-3 py-2">
-                        <span className="text-[12px] text-white/70">Data limite</span>
+                        {" "}
+                        <span className="text-[12px] text-white/70">
+                          Data limite
+                        </span>{" "}
                         <Toggle
                           enabled={endDateEnabled}
                           onChange={(next) => {
@@ -1227,11 +1463,14 @@ export default function InscricaoDetailPage() {
                             if (!next) setEndAt("");
                           }}
                           label="Ativar data limite"
-                        />
-                      </div>
+                        />{" "}
+                      </div>{" "}
                       {endDateEnabled && (
                         <div className="space-y-2">
-                          <label className="text-[12px] text-white/70">Fim</label>
+                          {" "}
+                          <label className="text-[12px] text-white/70">
+                            Fim
+                          </label>{" "}
                           <OryaDateTimeField
                             value={endAt}
                             onChange={setEndAt}
@@ -1239,95 +1478,124 @@ export default function InscricaoDetailPage() {
                             className="w-full"
                             dateButtonClassName="h-10 flex-1 rounded-xl"
                             timeButtonClassName="h-10 rounded-xl"
-                          />
+                          />{" "}
                         </div>
-                      )}
+                      )}{" "}
                     </div>
                   ) : (
-                    <p className="text-[12px] text-white/60">Sem datas configuradas.</p>
-                  )}
-                </div>
-              </div>
+                    <p className="text-[12px] text-white/60">
+                      Sem datas configuradas.
+                    </p>
+                  )}{" "}
+                </div>{" "}
+              </div>{" "}
             </div>
-          )}
-
+          )}{" "}
           <div className="flex flex-wrap items-center gap-3">
+            {" "}
             <button
               type="button"
               onClick={handleSave}
               disabled={saving}
-              className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition hover:scale-[1.01] disabled:opacity-60"
+              className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition disabled:opacity-60"
             >
-              {saving ? "A guardar..." : "Guardar"}
-            </button>
-            {message && <span className="text-[12px] text-white/70">{message}</span>}
-          </div>
-
-          <div className="rounded-3xl border border-red-400/30 bg-red-500/5 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur-2xl space-y-3">
+              {" "}
+              {saving ? "A guardar..." : "Guardar"}{" "}
+            </button>{" "}
+            {message && (
+              <span className="text-[12px] text-white/70">{message}</span>
+            )}{" "}
+          </div>{" "}
+          <div className="rounded-3xl border border-red-400/30 bg-red-500/5 p-5 space-y-3">
+            {" "}
             <div className="flex flex-wrap items-center justify-between gap-3">
+              {" "}
               <div>
-                <p className="text-[11px] uppercase tracking-[0.2em] text-red-200/70">Zona de perigo</p>
-                <h3 className="text-lg font-semibold text-white">Eliminar formulário</h3>
+                {" "}
+                <p className="text-[11px] uppercase tracking-[0.2em] text-red-200/70">
+                  Zona de perigo
+                </p>{" "}
+                <h3 className="text-lg font-semibold text-white">
+                  Eliminar formulário
+                </h3>{" "}
                 <p className="text-[12px] text-white/60">
-                  Remove campos e respostas. Só é possível quando não existem respostas.
-                </p>
-              </div>
+                  {" "}
+                  Remove campos e respostas. Só é possível quando não existem
+                  respostas.{" "}
+                </p>{" "}
+              </div>{" "}
               <button
                 type="button"
                 onClick={handleDeleteForm}
                 disabled={!canDelete || deleting}
                 className="rounded-full border border-red-300/40 px-4 py-2 text-[12px] text-red-100/90 hover:bg-red-500/10 disabled:opacity-60"
               >
-                {deleting ? "A apagar..." : "Eliminar formulário"}
-              </button>
-            </div>
+                {" "}
+                {deleting ? "A apagar..." : "Eliminar formulário"}{" "}
+              </button>{" "}
+            </div>{" "}
             {!canDelete && (
               <p className="text-[12px] text-white/60">
+                {" "}
                 {responsesCount > 0
                   ? "Este formulário tem respostas. Arquiva para preservar histórico."
-                  : "Despublica ou arquiva o formulário antes de eliminar."}
+                  : "Despublica ou arquiva o formulário antes de eliminar."}{" "}
               </p>
-            )}
-            {deleteError && <p className="text-sm text-red-200">{deleteError}</p>}
-          </div>
+            )}{" "}
+            {deleteError && (
+              <p className="text-sm text-red-200">{deleteError}</p>
+            )}{" "}
+          </div>{" "}
         </>
-      )}
-
+      )}{" "}
       {activeTab === "partilha" && (
         <div className="space-y-4">
+          {" "}
           {status === "ARCHIVED" && (
             <div className="rounded-2xl border border-amber-400/40 bg-amber-400/10 p-3 text-sm text-amber-100">
-              Este formulário está arquivado. Reativa-o para poderes partilhar.
+              {" "}
+              Este formulário está arquivado. Reativa-o para poderes
+              partilhar.{" "}
             </div>
-          )}
+          )}{" "}
           {status === "DRAFT" && (
             <div className="rounded-2xl border border-white/15 bg-white/5 p-3 text-sm text-white/70">
-              Este formulário está em rascunho. Só quem tiver o link consegue pré-visualizar.
+              {" "}
+              Este formulário está em rascunho. Só quem tiver o link consegue
+              pré-visualizar.{" "}
             </div>
-          )}
-          {shareMessage && <p className="text-[12px] text-white/70">{shareMessage}</p>}
-
-          <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-4">
+          )}{" "}
+          {shareMessage && (
+            <p className="text-[12px] text-white/70">{shareMessage}</p>
+          )}{" "}
+          <div className="rounded-3xl border border-white/12 bg-white/[0.04] p-5 space-y-4">
+            {" "}
             <div className="flex flex-wrap items-center justify-between gap-3">
+              {" "}
               <div>
-                <h2 className="text-lg font-semibold">Link público</h2>
-                <p className="text-[12px] text-white/60">Partilha o formulário com a tua comunidade.</p>
-              </div>
+                {" "}
+                <h2 className="text-lg font-semibold">Link público</h2>{" "}
+                <p className="text-[12px] text-white/60">
+                  Partilha o formulário com a tua comunidade.
+                </p>{" "}
+              </div>{" "}
               <button
                 type="button"
                 onClick={() => handleCopy(publicUrl, "Link")}
                 disabled={!publicUrl || status === "ARCHIVED"}
                 className="rounded-full border border-white/20 px-4 py-2 text-[12px] text-white/80 hover:bg-white/10 disabled:opacity-60"
               >
-                Copiar link
-              </button>
-            </div>
+                {" "}
+                Copiar link{" "}
+              </button>{" "}
+            </div>{" "}
             <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+              {" "}
               <input
                 className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/80 outline-none"
                 value={publicUrl || "A gerar link..."}
                 readOnly
-              />
+              />{" "}
               {publicUrl && status !== "ARCHIVED" && (
                 <Link
                   href={`/inscricoes/${form.id}`}
@@ -1335,39 +1603,44 @@ export default function InscricaoDetailPage() {
                   rel="noreferrer"
                   className="rounded-full border border-white/20 px-4 py-2 text-[12px] text-white/80 hover:bg-white/10 text-center"
                 >
-                  Abrir
+                  {" "}
+                  Abrir{" "}
                 </Link>
-              )}
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-4">
+              )}{" "}
+            </div>{" "}
+          </div>{" "}
+          <div className="rounded-3xl border border-white/12 bg-white/[0.04] p-5 space-y-4">
+            {" "}
             <div className="flex flex-wrap items-center justify-between gap-3">
+              {" "}
               <div>
-                <h2 className="text-lg font-semibold">Embed</h2>
-                <p className="text-[12px] text-white/60">Insere o formulário no teu site.</p>
-              </div>
+                {" "}
+                <h2 className="text-lg font-semibold">Embed</h2>{" "}
+                <p className="text-[12px] text-white/60">
+                  Insere o formulário no teu site.
+                </p>{" "}
+              </div>{" "}
               <button
                 type="button"
                 onClick={() => handleCopy(embedCode, "Embed")}
                 disabled={!embedCode || status === "ARCHIVED"}
                 className="rounded-full border border-white/20 px-4 py-2 text-[12px] text-white/80 hover:bg-white/10 disabled:opacity-60"
               >
-                Copiar embed
-              </button>
-            </div>
+                {" "}
+                Copiar embed{" "}
+              </button>{" "}
+            </div>{" "}
             <textarea
               className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/80 outline-none min-h-[120px]"
               value={embedCode || "A gerar embed..."}
               readOnly
-            />
-          </div>
+            />{" "}
+          </div>{" "}
         </div>
-      )}
+      )}{" "}
     </div>
   );
 }
-
 function Toggle({
   enabled,
   onChange,
@@ -1383,17 +1656,12 @@ function Toggle({
       aria-pressed={enabled}
       aria-label={label}
       onClick={() => onChange(!enabled)}
-      className={`relative inline-flex h-6 w-11 items-center rounded-full border transition ${
-        enabled
-          ? "border-[#22D3EE]/60 bg-gradient-to-r from-[#22D3EE]/40 via-[#7FE0FF]/20 to-[#1646F5]/40 shadow-[0_0_12px_rgba(34,211,238,0.35)]"
-          : "border-white/20 bg-white/10"
-      }`}
+      className={`relative inline-flex h-6 w-11 items-center rounded-full border transition ${enabled ? "border-[#22D3EE]/60 bg-white/[0.04]" : "border-white/20 bg-white/10"}`}
     >
+      {" "}
       <span
-        className={`inline-block h-4 w-4 rounded-full bg-white transition ${
-          enabled ? "translate-x-5" : "translate-x-1"
-        }`}
-      />
+        className={`inline-block h-4 w-4 rounded-full bg-white transition ${enabled ? "translate-x-5" : "translate-x-1"}`}
+      />{" "}
     </button>
   );
 }

@@ -1,17 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import AvailabilityEditor from "@/app/org/_internal/core/(dashboard)/reservas/_components/AvailabilityEditor";
-import { CTA_PRIMARY, DASHBOARD_CARD, DASHBOARD_LABEL, DASHBOARD_MUTED } from "@/app/org/_internal/core/dashboardUi";
+import { CTA_PRIMARY, DASHBOARD_LABEL, DASHBOARD_MUTED } from "@/app/org/_internal/core/dashboardUi";
 import { buildOrgHref, parseOrgIdFromPathnameStrict } from "@/lib/organizationIdUtils";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   resolveOrganizationOperationalMode,
   type OrganizationOperationalMode,
 } from "@/lib/organizationOperationalMode";
+import {
+  CALENDAR_AVAILABILITY_OVERLAY_STORAGE_KEY,
+  parseAvailabilityOverlayPreference,
+  serializeAvailabilityOverlayPreference,
+} from "../_components/availabilityOverlayPreference";
 
 type ProfessionalItem = {
   id: number;
@@ -26,6 +31,12 @@ type ResourceItem = {
   sourceType?: "RESOURCE" | "COURT";
   resourceId?: number | null;
   availabilityScopeId?: number | null;
+};
+
+type ResourceScopeOption = {
+  scopeId: number;
+  label: string;
+  sourceType: "RESOURCE" | "COURT";
 };
 
 type ScopeType = "ORGANIZATION" | "PROFESSIONAL" | "RESOURCE";
@@ -67,10 +78,10 @@ type PendingScopeChangesetsResponse = {
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
-const CHIP_BASE =
-  "rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[12px] text-white/75 transition hover:border-white/20 hover:bg-white/10 hover:text-white";
-const CHIP_ACTIVE =
-  "border-[#22D3EE]/40 bg-[linear-gradient(120deg,rgba(34,211,238,0.22),rgba(106,123,255,0.18))] text-white shadow-[0_10px_28px_rgba(34,211,238,0.22)]";
+const SECTION_CARD = "rounded-xl border border-white/10 bg-[rgba(6,10,20,0.9)] p-4";
+const SCOPE_CARD = "rounded-xl border border-white/10 bg-[rgba(8,13,24,0.86)] p-3";
+const SCOPE_SELECT =
+  "mt-1 h-10 w-full rounded-xl border border-white/15 bg-black/35 px-3 text-sm text-white outline-none transition focus:border-cyan-300/50";
 
 function parsePositiveInt(value: string | null): number | null {
   if (!value) return null;
@@ -100,14 +111,13 @@ function resolveBookingConfigPayload(data: BookingConfigResponse | undefined): B
 }
 
 export default function OrgCalendarAvailabilityPage() {
+  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const organizationId = parseOrgIdFromPathnameStrict(pathname);
 
   const scopeTypeParam = (searchParams.get("scopeType") || "").trim().toUpperCase();
   const scopeIdParam = parsePositiveInt(searchParams.get("scopeId"));
-  const professionalIdParam = parsePositiveInt(searchParams.get("professionalId"));
-  const resourceIdParam = parsePositiveInt(searchParams.get("resourceId"));
 
   const professionalsKey = organizationId ? `/api/org/${organizationId}/reservas/profissionais` : null;
   const resourcesKey = organizationId ? `/api/org/${organizationId}/reservas/recursos?includeCourts=1` : null;
@@ -121,6 +131,24 @@ export default function OrgCalendarAvailabilityPage() {
     useSWR<BookingConfigResponse>(bookingConfigKey, fetcher);
   const [toggleBusy, setToggleBusy] = useState(false);
   const [toggleError, setToggleError] = useState<string | null>(null);
+  const [calendarOverlayEnabled, setCalendarOverlayEnabled] = useState(true);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = parseAvailabilityOverlayPreference(
+      window.localStorage.getItem(CALENDAR_AVAILABILITY_OVERLAY_STORAGE_KEY),
+    );
+    if (stored !== null) setCalendarOverlayEnabled(stored);
+  }, []);
+
+  const setCalendarOverlayPreference = (enabled: boolean) => {
+    setCalendarOverlayEnabled(enabled);
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      CALENDAR_AVAILABILITY_OVERLAY_STORAGE_KEY,
+      serializeAvailabilityOverlayPreference(enabled),
+    );
+  };
 
   const bookingConfig = useMemo(() => resolveBookingConfigPayload(bookingConfigData), [bookingConfigData]);
   const acceptsNewBookings = bookingConfig?.acceptNewBookings ?? true;
@@ -133,6 +161,23 @@ export default function OrgCalendarAvailabilityPage() {
     () => (resourcesData?.items ?? []).filter((item) => item.isActive !== false),
     [resourcesData?.items],
   );
+  const resourceScopeOptions = useMemo<ResourceScopeOption[]>(() => {
+    const byScopeId = new Map<number, ResourceScopeOption>();
+    resources.forEach((resource) => {
+      const resourceScopeId =
+        resource.availabilityScopeId ??
+        resource.resourceId ??
+        (resource.sourceType === "RESOURCE" ? resource.id : null);
+      if (!resourceScopeId || !Number.isFinite(resourceScopeId) || resourceScopeId <= 0) return;
+      if (byScopeId.has(resourceScopeId)) return;
+      byScopeId.set(resourceScopeId, {
+        scopeId: resourceScopeId,
+        label: resource.label,
+        sourceType: resource.sourceType === "COURT" ? "COURT" : "RESOURCE",
+      });
+    });
+    return [...byScopeId.values()].sort((a, b) => a.label.localeCompare(b.label, "pt-PT"));
+  }, [resources]);
   const organizationOperationalMode = useMemo<OrganizationOperationalMode>(() => {
     const organizationPayload = organizationMeData?.organization;
     if (!organizationPayload) return "SLOT_DRIVEN";
@@ -176,40 +221,14 @@ export default function OrgCalendarAvailabilityPage() {
     if (scopeTypeParam === "RESOURCE" && scopeIdParam) {
       return { scopeType: "RESOURCE" as const, scopeId: scopeIdParam };
     }
-    if (professionalIdParam) {
-      return { scopeType: "PROFESSIONAL" as const, scopeId: professionalIdParam };
-    }
-    if (resourceIdParam) {
-      const matchedResource = resources.find(
-        (item) =>
-          item.id === resourceIdParam ||
-          item.resourceId === resourceIdParam ||
-          item.availabilityScopeId === resourceIdParam,
-      );
-      if (matchedResource) {
-        const resolvedResourceScopeId =
-          matchedResource.availabilityScopeId ??
-          matchedResource.resourceId ??
-          (matchedResource.sourceType === "RESOURCE" ? matchedResource.id : null);
-        if (!resolvedResourceScopeId) {
-          return { scopeType: "ORGANIZATION" as const, scopeId: null };
-        }
-        return { scopeType: "RESOURCE" as const, scopeId: resolvedResourceScopeId };
-      }
-      const resolvedResourceScopeId = resourceIdParam;
-      return { scopeType: "RESOURCE" as const, scopeId: resolvedResourceScopeId };
-    }
     return { scopeType: "ORGANIZATION" as const, scopeId: null };
-  }, [professionalIdParam, resourceIdParam, resources, scopeIdParam, scopeTypeParam]);
+  }, [scopeIdParam, scopeTypeParam]);
 
   const selectedProfessional = professionals.find(
     (item) => resolvedScope.scopeType === "PROFESSIONAL" && item.id === resolvedScope.scopeId,
   );
-  const selectedResource = resources.find(
-    (item) =>
-      resolvedScope.scopeType === "RESOURCE" &&
-      (item.availabilityScopeId ?? item.resourceId ?? (item.sourceType === "RESOURCE" ? item.id : null)) ===
-        resolvedScope.scopeId,
+  const selectedResource = resourceScopeOptions.find(
+    (item) => resolvedScope.scopeType === "RESOURCE" && item.scopeId === resolvedScope.scopeId,
   );
 
   const scopeMeta = useMemo(() => {
@@ -230,6 +249,35 @@ export default function OrgCalendarAvailabilityPage() {
       subtitle: "Define o default de disponibilidade usado pelos servicos com reservas.",
     };
   }, [selectedProfessional, selectedResource]);
+  const scopeSummaryLabel = useMemo(() => {
+    if (selectedProfessional) return `Profissional: ${selectedProfessional.name}`;
+    if (selectedResource) return `Recurso: ${selectedResource.label}`;
+    return "Escopo geral da organizacao";
+  }, [selectedProfessional, selectedResource]);
+  const calendarHref = useMemo(
+    () =>
+      organizationId
+        ? buildOrgHref(organizationId, "/calendar", {
+            showAvailabilityOverlay: serializeAvailabilityOverlayPreference(calendarOverlayEnabled),
+          })
+        : "/org/calendar",
+    [calendarOverlayEnabled, organizationId],
+  );
+  const selectedProfessionalScopeValue =
+    resolvedScope.scopeType === "PROFESSIONAL" && resolvedScope.scopeId ? String(resolvedScope.scopeId) : "";
+  const selectedResourceScopeValue =
+    resolvedScope.scopeType === "RESOURCE" && resolvedScope.scopeId ? String(resolvedScope.scopeId) : "";
+  const navigateToScope = (scopeType: ScopeType, scopeId?: number | null) => {
+    if (!organizationId) return;
+    const href =
+      scopeType === "ORGANIZATION" || !scopeId
+        ? buildOrgHref(organizationId, "/calendar/availability")
+        : buildOrgHref(organizationId, "/calendar/availability", {
+            scopeType,
+            scopeId,
+          });
+    router.push(href, { scroll: false });
+  };
 
   const pendingScopeChangesetsKey = useMemo(() => {
     if (!organizationId) return null;
@@ -249,6 +297,8 @@ export default function OrgCalendarAvailabilityPage() {
     fetcher,
   );
   const pendingScopeChangeSet = pendingScopeChangesetsData?.data?.items?.[0] ?? null;
+  const linkedResourcesCount = resourceScopeOptions.length;
+  const unlinkedResourcesCount = Math.max(0, resources.length - linkedResourcesCount);
 
   const handleOperationalToggle = async () => {
     if (!organizationId || toggleBusy) return;
@@ -285,93 +335,38 @@ export default function OrgCalendarAvailabilityPage() {
 
   if (!organizationId) {
     return (
-      <section className={cn(DASHBOARD_CARD, "p-5")}>
-        <p className="text-sm text-white/70">Organizacao invalida.</p>
+      <section className={SECTION_CARD}>
+        <p className="text-sm text-white/82">Organizacao invalida.</p>
       </section>
     );
   }
 
   return (
-    <div className="space-y-5">
-      <header className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
+    <div className="flex min-h-[calc(100dvh-88px)] flex-col gap-3 p-2 md:p-3">
+      <header className={SECTION_CARD}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="max-w-3xl">
             <p className={DASHBOARD_LABEL}>Calendario</p>
             <h1 className="text-xl font-semibold text-white">Disponibilidade de reservas</h1>
             <p className={DASHBOARD_MUTED}>
-              Usa isto apenas para servicos com slots. Para eventos e torneios pontuais, a agenda nasce no proprio item criado.
+              Esta pagina define janelas de reserva por escopo. Eventos e torneios continuam a ser geridos na agenda
+              operacional.
             </p>
-          </div>
-          <Link href={buildOrgHref(organizationId, "/calendar")} className={CTA_PRIMARY}>
-            Abrir calendario operacional
-          </Link>
-        </div>
-      </header>
-
-      <section
-        className={cn(
-          "rounded-2xl border p-4 shadow-[0_16px_50px_rgba(0,0,0,0.35)]",
-          acceptsNewBookings
-            ? "border-emerald-300/30 bg-[linear-gradient(145deg,rgba(16,185,129,0.18),rgba(10,18,34,0.84))]"
-            : "border-rose-300/35 bg-[linear-gradient(145deg,rgba(244,63,94,0.2),rgba(10,18,34,0.84))]",
-        )}
-      >
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="max-w-3xl">
-            <p className="text-[11px] uppercase tracking-[0.2em] text-white/80">
-              Reservas {acceptsNewBookings ? "ON" : "OFF"}
-            </p>
-            <h2 className="mt-1 text-lg font-semibold text-white">
-              {acceptsNewBookings ? "Novas reservas ativas" : "Novas reservas bloqueadas"}
-            </h2>
-            <p className="mt-2 text-sm text-white/80">
-              {acceptsNewBookings
-                ? "Permite novas reservas, sempre limitadas pela disponibilidade configurada."
-                : "Bloqueia novas reservas e checkout de novas pre-reservas. Historico e reservas ja confirmadas mantem-se."}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={handleOperationalToggle}
-            disabled={toggleBusy || bookingConfigLoading}
-            className={cn(
-              "rounded-full border px-3 py-1.5 text-xs font-semibold transition disabled:opacity-60",
-              acceptsNewBookings
-                ? "border-rose-300/55 bg-rose-500/15 text-rose-100 hover:border-rose-200/80"
-                : "border-emerald-300/55 bg-emerald-500/15 text-emerald-100 hover:border-emerald-200/80",
-            )}
-          >
-            {toggleBusy
-              ? "A atualizar..."
-              : bookingConfigLoading
-                ? "A carregar..."
-                : acceptsNewBookings
-                  ? "Desligar reservas"
-                  : "Ligar reservas"}
-          </button>
-        </div>
-        {toggleError ? (
-          <p className="mt-3 rounded-xl border border-rose-300/35 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">
-            {toggleError}
-          </p>
-        ) : null}
-      </section>
-
-      <section className="rounded-2xl border border-cyan-300/20 bg-[linear-gradient(140deg,rgba(34,211,238,0.12),rgba(10,18,34,0.82))] p-4 shadow-[0_16px_50px_rgba(0,0,0,0.35)]">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="max-w-3xl">
-            <p className="text-[11px] uppercase tracking-[0.2em] text-cyan-100/75">{availabilityGuidance.badge}</p>
-            <h2 className="mt-1 text-lg font-semibold text-white">{availabilityGuidance.title}</h2>
-            <p className="mt-2 text-sm text-white/80">{availabilityGuidance.body}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Link href={buildOrgHref(organizationId, "/bookings/operations")} className={CTA_PRIMARY}>
+            <Link href={calendarHref} className={CTA_PRIMARY}>
+              Abrir calendario operacional
+            </Link>
+            <Link
+              href={buildOrgHref(organizationId, "/bookings/operations")}
+              className="rounded-full border border-white/20 bg-black/35 px-3 py-1.5 text-xs text-white/80 transition hover:border-white/35 hover:text-white"
+            >
               Abrir operacoes
             </Link>
             {organizationOperationalMode === "HYBRID" && canCreateEvent ? (
               <Link
                 href={buildOrgHref(organizationId, "/events/new")}
-                className="rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-xs text-white/80 transition hover:border-white/35 hover:text-white"
+                className="rounded-full border border-white/20 bg-black/35 px-3 py-1.5 text-xs text-white/80 transition hover:border-white/35 hover:text-white"
               >
                 Criar evento
               </Link>
@@ -379,113 +374,238 @@ export default function OrgCalendarAvailabilityPage() {
             {organizationOperationalMode === "HYBRID" && !canCreateEvent && canCreateTournament ? (
               <Link
                 href={buildOrgHref(organizationId, "/padel/tournaments/create")}
-                className="rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-xs text-white/80 transition hover:border-white/35 hover:text-white"
+                className="rounded-full border border-white/20 bg-black/35 px-3 py-1.5 text-xs text-white/80 transition hover:border-white/35 hover:text-white"
               >
                 Criar torneio
               </Link>
             ) : null}
           </div>
         </div>
-      </section>
-
-      <section className={cn(DASHBOARD_CARD, "p-4 space-y-4")}>
-        <div>
-          <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Escopo</p>
-          <p className="mt-1 text-sm text-white/70">
-            Seleciona onde queres editar disponibilidade de reservas: geral da operacao, um profissional, ou um recurso/campo.
-          </p>
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px]">
+          <span className="rounded-full border border-cyan-300/45 bg-cyan-400/14 px-2 py-0.5 text-cyan-100">
+            {availabilityGuidance.badge}
+          </span>
+          <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-white/75">
+            {scopeSummaryLabel}
+          </span>
+          <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-white/75">
+            Profissionais {professionals.length}
+          </span>
+          <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-white/75">
+            Recursos ligados {linkedResourcesCount}/{resources.length}
+          </span>
+          {pendingScopeChangeSet ? (
+            <span className="rounded-full border border-amber-300/45 bg-amber-400/12 px-2 py-0.5 text-amber-100">
+              Pedido pendente #{pendingScopeChangeSet.id}
+            </span>
+          ) : null}
         </div>
+      </header>
 
-        <div className="space-y-2">
-          <p className="text-[11px] uppercase tracking-[0.14em] text-white/50">Geral</p>
-          <div className="flex flex-wrap items-center gap-2">
-            <Link
-              href={buildOrgHref(organizationId, "/calendar/availability")}
-              className={cn(CHIP_BASE, resolvedScope.scopeType === "ORGANIZATION" && CHIP_ACTIVE)}
-            >
-              Disponibilidade geral
-            </Link>
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <p className="text-[11px] uppercase tracking-[0.14em] text-white/50">Profissionais</p>
-          <div className="flex flex-wrap items-center gap-2">
-            {professionals.map((professional) => (
-              <Link
-                key={`professional-${professional.id}`}
-                href={buildOrgHref(organizationId, "/calendar/availability", {
-                  scopeType: "PROFESSIONAL",
-                  scopeId: professional.id,
-                })}
+      <section className={SECTION_CARD}>
+        <div className="grid gap-3 lg:grid-cols-2">
+          <article
+            className={cn(
+              "rounded-xl border p-3",
+              acceptsNewBookings ? "border-emerald-300/35 bg-emerald-500/10" : "border-rose-300/35 bg-rose-500/10",
+            )}
+          >
+            <p className="text-[11px] uppercase tracking-[0.18em] text-white/70">Estado de reservas</p>
+            <h2 className="mt-1 text-base font-semibold text-white">
+              {acceptsNewBookings ? "Novas reservas ativas" : "Novas reservas bloqueadas"}
+            </h2>
+            <p className="mt-2 text-sm text-white/80">
+              {acceptsNewBookings
+                ? "Permite novas reservas, sempre limitadas pela disponibilidade configurada."
+                : "Bloqueia novas reservas e checkout de novas pre-reservas. Historico e reservas ja confirmadas mantem-se."}
+            </p>
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={handleOperationalToggle}
+                disabled={toggleBusy || bookingConfigLoading}
                 className={cn(
-                  CHIP_BASE,
-                  resolvedScope.scopeType === "PROFESSIONAL" && resolvedScope.scopeId === professional.id && CHIP_ACTIVE,
+                  "rounded-full border px-3 py-1.5 text-xs font-semibold transition disabled:opacity-60",
+                  acceptsNewBookings
+                    ? "border-rose-300/55 bg-rose-500/15 text-rose-100 hover:border-rose-200/80"
+                    : "border-emerald-300/55 bg-emerald-500/15 text-emerald-100 hover:border-emerald-200/80",
                 )}
               >
-                {professional.name}
-              </Link>
-            ))}
-          </div>
-        </div>
+                {toggleBusy
+                  ? "A atualizar..."
+                  : bookingConfigLoading
+                    ? "A carregar..."
+                    : acceptsNewBookings
+                      ? "Desligar reservas"
+                      : "Ligar reservas"}
+              </button>
+            </div>
+            {toggleError ? (
+              <p className="mt-3 rounded-xl border border-rose-300/45 bg-rose-500/14 px-3 py-2 text-xs text-rose-100">
+                {toggleError}
+              </p>
+            ) : null}
+          </article>
 
-        <div className="space-y-2">
-          <p className="text-[11px] uppercase tracking-[0.14em] text-white/50">Recursos e campos</p>
-          <div className="flex flex-wrap items-center gap-2">
-            {resources.map((resource) => {
-              const resourceScopeId =
-                resource.availabilityScopeId ??
-                resource.resourceId ??
-                (resource.sourceType === "RESOURCE" ? resource.id : null);
-              const isActive =
-                resolvedScope.scopeType === "RESOURCE" &&
-                resourceScopeId != null &&
-                resolvedScope.scopeId === resourceScopeId;
-              if (resourceScopeId == null) {
-                return (
-                  <span
-                    key={`resource-${resource.id}`}
-                    className={cn(CHIP_BASE, "cursor-not-allowed opacity-55")}
-                    title="Campo sem recurso de reservas ligado"
-                  >
-                    {resource.label}
-                  </span>
-                );
-              }
-              return (
-                <Link
-                  key={`resource-${resource.id}`}
-                  href={buildOrgHref(organizationId, "/calendar/availability", {
-                    scopeType: "RESOURCE",
-                    scopeId: resourceScopeId,
-                  })}
-                  className={cn(CHIP_BASE, isActive && CHIP_ACTIVE)}
-                >
-                  {resource.label}
-                </Link>
-              );
-            })}
-          </div>
+          <article className="rounded-xl border border-white/10 bg-[rgba(8,13,24,0.8)] p-3">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-white/70">Visualizacao na agenda</p>
+            <h2 className="mt-1 text-base font-semibold text-white">Disponibilidade ON/OFF</h2>
+            <p className="mt-2 text-sm text-white/80">
+              Controla a sobreposicao de disponibilidade no calendario (grelha de dia/semana). Esta opcao fica guardada
+              para a tua sessao.
+            </p>
+            <div className="mt-3 inline-flex rounded-full border border-white/20 bg-white/5 p-1">
+              <button
+                type="button"
+                onClick={() => setCalendarOverlayPreference(true)}
+                className={cn(
+                  "rounded-full px-3 py-1 text-xs transition",
+                  calendarOverlayEnabled
+                    ? "bg-cyan-400/20 text-cyan-100"
+                    : "text-white/70 hover:bg-white/10 hover:text-white",
+                )}
+              >
+                Disponibilidade ON
+              </button>
+              <button
+                type="button"
+                onClick={() => setCalendarOverlayPreference(false)}
+                className={cn(
+                  "rounded-full px-3 py-1 text-xs transition",
+                  !calendarOverlayEnabled
+                    ? "bg-cyan-400/20 text-cyan-100"
+                    : "text-white/70 hover:bg-white/10 hover:text-white",
+                )}
+              >
+                Disponibilidade OFF
+              </button>
+            </div>
+            <div className="mt-3">
+              <Link
+                href={calendarHref}
+                className="rounded-full border border-white/20 bg-black/35 px-3 py-1.5 text-xs text-white/80 transition hover:border-white/35 hover:text-white"
+              >
+                Abrir calendario com este estado
+              </Link>
+            </div>
+          </article>
+        </div>
+        <div className="mt-3 rounded-xl border border-cyan-300/25 bg-cyan-400/8 p-3">
+          <p className="text-[11px] uppercase tracking-[0.18em] text-cyan-100/75">{availabilityGuidance.badge}</p>
+          <p className="mt-1 text-sm font-semibold text-white">{availabilityGuidance.title}</p>
+          <p className="mt-1 text-sm text-white/75">{availabilityGuidance.body}</p>
         </div>
       </section>
 
-      {pendingScopeChangeSet && (
-        <section className="rounded-2xl border border-amber-300/35 bg-amber-500/10 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.28)]">
+      <section className={cn(SECTION_CARD, "space-y-4")}>
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Escopo</p>
+            <p className="mt-1 text-sm text-white/75">
+              Seleciona o escopo que queres editar: geral, profissional ou recurso/campo.
+            </p>
+          </div>
+          <p className="text-xs text-white/55">{scopeSummaryLabel}</p>
+        </div>
+        <div className="grid gap-3 xl:grid-cols-[220px_minmax(0,1fr)_minmax(0,1fr)]">
+          <article className={SCOPE_CARD}>
+            <p className="text-[11px] uppercase tracking-[0.16em] text-white/58">Escopo base</p>
+            <button
+              type="button"
+              onClick={() => navigateToScope("ORGANIZATION")}
+              className={cn(
+                "mt-2 inline-flex w-full items-center justify-center rounded-full border px-3 py-2 text-xs transition",
+                resolvedScope.scopeType === "ORGANIZATION"
+                  ? "border-cyan-300/45 bg-cyan-400/14 text-cyan-100"
+                  : "border-white/20 bg-black/35 text-white/78 hover:border-white/35 hover:text-white",
+              )}
+            >
+              Disponibilidade geral
+            </button>
+            <p className="mt-2 text-xs text-white/58">
+              Base de referencia para servicos de reserva sem ajuste dedicado.
+            </p>
+          </article>
+
+          <article className={SCOPE_CARD}>
+            <label htmlFor="availability-scope-professional" className="text-[11px] uppercase tracking-[0.16em] text-white/58">
+              Profissional
+            </label>
+            <select
+              id="availability-scope-professional"
+              value={selectedProfessionalScopeValue}
+              onChange={(event) => {
+                const nextScopeId = parsePositiveInt(event.target.value);
+                if (!nextScopeId) return;
+                navigateToScope("PROFESSIONAL", nextScopeId);
+              }}
+              className={SCOPE_SELECT}
+            >
+              <option value="">Selecionar profissional</option>
+              {professionals.map((professional) => (
+                <option key={`scope-professional-${professional.id}`} value={professional.id}>
+                  {professional.name}
+                </option>
+              ))}
+            </select>
+            <p className="mt-2 text-xs text-white/58">{professionals.length} profissionais ativos.</p>
+          </article>
+
+          <article className={SCOPE_CARD}>
+            <label htmlFor="availability-scope-resource" className="text-[11px] uppercase tracking-[0.16em] text-white/58">
+              Recurso ou campo
+            </label>
+            <select
+              id="availability-scope-resource"
+              value={selectedResourceScopeValue}
+              onChange={(event) => {
+                const nextScopeId = parsePositiveInt(event.target.value);
+                if (!nextScopeId) return;
+                navigateToScope("RESOURCE", nextScopeId);
+              }}
+              className={SCOPE_SELECT}
+            >
+              <option value="">Selecionar recurso/campo</option>
+              {resourceScopeOptions.map((resource) => (
+                <option key={`scope-resource-${resource.scopeId}`} value={resource.scopeId}>
+                  {resource.sourceType === "COURT" ? "Campo" : "Recurso"} · {resource.label}
+                </option>
+              ))}
+            </select>
+            <p className="mt-2 text-xs text-white/58">
+              {linkedResourcesCount} escopos ligados.
+              {unlinkedResourcesCount > 0
+                ? ` ${unlinkedResourcesCount} recursos/campos ainda sem ligacao.`
+                : " Todos os recursos visiveis ja estao ligados."}
+            </p>
+          </article>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 text-[11px]">
+          <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-white/65">Escopo ativo</span>
+          <span className="rounded-full border border-cyan-300/35 bg-cyan-400/10 px-2 py-0.5 text-cyan-100">
+            {scopeSummaryLabel}
+          </span>
+        </div>
+      </section>
+
+      {pendingScopeChangeSet ? (
+        <section className="rounded-xl border border-amber-300/35 bg-amber-400/10 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-[11px] uppercase tracking-[0.18em] text-amber-100/75">Pedido pendente</p>
               <p className="mt-1 text-sm text-amber-100">
-                Existe um pedido de disponibilidade neste escopo (#{pendingScopeChangeSet.id}) com{" "}
-                {pendingScopeChangeSet.conflictsOpen} conflitos abertos.
+                Existe um pedido neste escopo (#{pendingScopeChangeSet.id}) com {pendingScopeChangeSet.conflictsOpen}{" "}
+                conflitos abertos.
               </p>
-              <p className="text-xs text-amber-50/80">Resolve os conflitos antes de criar/aplicar novas alterações.</p>
+              <p className="text-xs text-amber-50/80">Resolve os conflitos antes de criar ou aplicar novas alteracoes.</p>
             </div>
             <Link href={buildOrgHref(organizationId, `/calendar/conflicts/${pendingScopeChangeSet.id}`)} className={CTA_PRIMARY}>
               Abrir conflitos
             </Link>
           </div>
         </section>
-      )}
+      ) : null}
 
       <AvailabilityEditor
         orgId={organizationId}

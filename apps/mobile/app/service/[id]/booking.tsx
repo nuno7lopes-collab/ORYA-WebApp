@@ -1,5 +1,5 @@
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -111,6 +111,40 @@ const formatCountdown = (ms: number) => {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 };
 
+const RESERVE_RETRY_DELAY_MS = 350;
+const RESERVE_RETRY_ATTEMPTS = 2;
+
+const isReserveTransportError = (error: unknown) => {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error ?? "").toLowerCase();
+  return (
+    message.includes("api timeout") ||
+    message.includes("network request failed") ||
+    message.includes("failed to fetch") ||
+    message.includes("offline")
+  );
+};
+
+const resolveReserveErrorCode = (payload: unknown): string | null => {
+  if (!payload || typeof payload !== "object") return null;
+  const record = payload as Record<string, unknown>;
+  if (typeof record.errorCode === "string" && record.errorCode.trim()) {
+    return record.errorCode.trim().toUpperCase();
+  }
+  if (typeof record.error === "string" && record.error.trim()) {
+    const normalized = record.error.trim().toUpperCase();
+    if (/^[A-Z0-9_]+$/.test(normalized)) return normalized;
+  }
+  return null;
+};
+
+const buildBookingClientRequestId = () => {
+  const random =
+    typeof globalThis.crypto?.randomUUID === "function"
+      ? globalThis.crypto.randomUUID().replace(/-/g, "")
+      : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
+  return `reserve_${random}`;
+};
+
 const resolveAssignmentMode = (
   service?: {
     kind?: string | null;
@@ -159,6 +193,7 @@ export default function ServiceBookingScreen() {
     orgUsername?: string | string[];
     bookingVertical?: string | string[];
     courtId?: string | string[];
+    checkoutError?: string | string[];
   }>();
   const router = useRouter();
   const navigation = useNavigation();
@@ -194,6 +229,12 @@ export default function ServiceBookingScreen() {
     const parsed = Number(raw);
     return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
   }, [params.courtId]);
+  const checkoutErrorParam = useMemo(() => {
+    const raw = Array.isArray(params.checkoutError) ? params.checkoutError[0] : params.checkoutError;
+    return String(raw ?? "")
+      .trim()
+      .toLowerCase();
+  }, [params.checkoutError]);
 
   const [selectedPackageId, setSelectedPackageId] = useState<number | null>(
     null,
@@ -235,6 +276,7 @@ export default function ServiceBookingScreen() {
   const [phoneSaving, setPhoneSaving] = useState(false);
   const [pendingSlot, setPendingSlot] = useState<AvailabilitySlot | null>(null);
   const [resumeCheckoutCountdown, setResumeCheckoutCountdown] = useState<string | null>(null);
+  const reserveClientRequestIdRef = useRef<string | null>(null);
 
   const assignmentMode = useMemo(
     () => resolveAssignmentMode(service ?? null),
@@ -586,6 +628,28 @@ export default function ServiceBookingScreen() {
     loadSlots();
   }, [loadSlots, selectedDay]);
 
+  useEffect(() => {
+    reserveClientRequestIdRef.current = null;
+  }, [
+    addonsParam,
+    addressSelection?.addressId,
+    effectiveDurationMinutes,
+    selectedDay,
+    selectedPackageId,
+    selectedPartySize,
+    selectedProfessionalId,
+    selectedServiceApiId,
+    selectedSlot?.slotKey,
+  ]);
+
+  useEffect(() => {
+    if (checkoutErrorParam !== "slot_unavailable") return;
+    setBookingError("O horário deixou de estar disponível. Escolhe outro para continuar.");
+    if (selectedDay) {
+      void loadSlots();
+    }
+  }, [checkoutErrorParam, loadSlots, selectedDay]);
+
   const openAuth = useCallback(() => {
     if (!serviceId) return;
     safePush(router, {
@@ -630,41 +694,99 @@ export default function ServiceBookingScreen() {
           packageId: isCourtService ? null : selectedPackageId,
         });
         const reserveRequest = buildReserveRequest(payload as Record<string, unknown>);
-        const result = await api.requestRaw<{
-          ok: boolean;
-          booking?: {
-            id?: number;
-            organizationId?: number;
-            startsAt?: string;
-            pendingExpiresAt?: string | null;
-            professionalId?: number | null;
-            resourceId?: number | null;
-          };
-          error?: string;
-          message?: string;
-        }>(reserveRequest.url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(reserveRequest.body),
-        });
+        const clientRequestId =
+          reserveClientRequestIdRef.current ?? buildBookingClientRequestId();
+        reserveClientRequestIdRef.current = clientRequestId;
+
+        let result: Awaited<
+          ReturnType<
+            typeof api.requestRaw<{
+              ok: boolean;
+              booking?: {
+                id?: number;
+                organizationId?: number;
+                startsAt?: string;
+                pendingExpiresAt?: string | null;
+                professionalId?: number | null;
+                resourceId?: number | null;
+              };
+              deduped?: boolean;
+              error?: string;
+              errorCode?: string;
+              message?: string;
+            }>
+          >
+        > | null = null;
+        for (let attempt = 0; attempt < RESERVE_RETRY_ATTEMPTS; attempt += 1) {
+          try {
+            result = await api.requestRaw<{
+              ok: boolean;
+              booking?: {
+                id?: number;
+                organizationId?: number;
+                startsAt?: string;
+                pendingExpiresAt?: string | null;
+                professionalId?: number | null;
+                resourceId?: number | null;
+              };
+              deduped?: boolean;
+              error?: string;
+              errorCode?: string;
+              message?: string;
+            }>(reserveRequest.url, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                ...reserveRequest.body,
+                clientRequestId,
+              }),
+            });
+
+            if (!result.ok && result.status >= 500 && attempt < RESERVE_RETRY_ATTEMPTS - 1) {
+              await new Promise((resolve) => setTimeout(resolve, RESERVE_RETRY_DELAY_MS));
+              continue;
+            }
+            break;
+          } catch (requestError) {
+            if (attempt < RESERVE_RETRY_ATTEMPTS - 1 && isReserveTransportError(requestError)) {
+              await new Promise((resolve) => setTimeout(resolve, RESERVE_RETRY_DELAY_MS));
+              continue;
+            }
+            throw requestError;
+          }
+        }
+
+        if (!result) {
+          throw new Error("Não foi possível criar a pré-reserva.");
+        }
         const json = result.data;
         if (!result.ok || !json?.ok) {
-          if (json?.error === "PHONE_REQUIRED") {
+          const errorCode = resolveReserveErrorCode(json);
+          if (errorCode === "PHONE_REQUIRED") {
+            reserveClientRequestIdRef.current = null;
             setPhoneRequired(true);
             setPendingSlot(slot);
             throw new Error(
               json?.message || "Telemóvel obrigatório para reservar.",
             );
           }
+          if (errorCode === "SLOT_NOT_AVAILABLE" || errorCode === "AGENDA_CONFLICT") {
+            reserveClientRequestIdRef.current = null;
+            await loadSlots();
+            throw new Error("O horário deixou de estar disponível. Escolhe outro para continuar.");
+          }
+          reserveClientRequestIdRef.current = null;
           throw new Error(
             json?.message ||
               json?.error ||
               "Não foi possível criar a pré-reserva.",
           );
         }
+        reserveClientRequestIdRef.current = null;
         trackEvent("booking_hold_created", {
           serviceId: selectedServiceApiId,
           bookingId: json.booking?.id ?? null,
+          deduped: Boolean(json.deduped),
         });
         const idempotencyKey = buildCheckoutIdempotencyKey();
         const holdSubjectLabel = `${service.title} · ${new Date(
@@ -739,6 +861,7 @@ export default function ServiceBookingScreen() {
       effectiveDurationMinutes,
       isCourtService,
       isAuthenticated,
+      loadSlots,
       openAuth,
       router,
       selectedAddonsPayload,

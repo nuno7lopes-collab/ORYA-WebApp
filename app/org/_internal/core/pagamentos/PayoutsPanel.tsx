@@ -5,7 +5,7 @@ import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { CTA_SECONDARY } from "@/app/org/_internal/core/dashboardUi";
+import { CTA_SECONDARY_CLEAN } from "@/app/org/_internal/core/dashboardUi";
 
 type PayoutItem = {
   id: number;
@@ -165,14 +165,14 @@ export default function PayoutsPanel() {
   };
 
   return (
-    <section className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/92 backdrop-blur-3xl p-4 space-y-3">
+    <section className="org-clean-section space-y-3 p-4">
       <div className="flex flex-wrap items-center justify-end gap-2">
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={downloadCsv}
             disabled={!items.length}
-            className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px] disabled:opacity-50")}
+            className={cn(CTA_SECONDARY_CLEAN, "px-3 py-1 text-[12px] disabled:opacity-50")}
           >
             Exportar CSV
           </button>
@@ -190,8 +190,8 @@ export default function PayoutsPanel() {
               className={cn(
                 "rounded-full border px-3 py-1 transition",
                 active
-                  ? "border-white/40 bg-white/15 text-white"
-                  : "border-white/15 bg-black/30 text-white/60 hover:border-white/30",
+                  ? "border-white/40 bg-white/12 text-white"
+                  : "border-white/18 bg-white/[0.03] text-white/72 hover:border-white/30",
               )}
             >
               {filter.label}
@@ -205,35 +205,35 @@ export default function PayoutsPanel() {
           value={searchInput}
           onChange={(event) => setSearchInput(event.target.value)}
           placeholder="Pesquisar por intenção de pagamento, motivo ou origem..."
-          className="flex-1 min-w-[220px] rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white placeholder:text-white/40"
+          className="org-clean-input min-w-[220px] flex-1 px-3 py-2 text-sm"
         />
         <button
           type="button"
           onClick={() => setSearchInput("")}
-          className="rounded-full border border-white/15 px-3 py-2 text-[11px] text-white/70"
+          className={`${CTA_SECONDARY_CLEAN} px-3 py-2 text-[12px]`}
         >
           Limpar
         </button>
       </div>
 
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/70">
+      <div className="rounded-2xl border border-white/14 bg-white/[0.03] p-3 text-[13px] text-white/82">
         Total apresentado: <span className="text-white">{formatMoney(totalAmount, items[0]?.currency)}</span>
       </div>
 
       {error && (
-        <div className="rounded-2xl border border-red-400/40 bg-red-500/10 px-3 py-2 text-[12px] text-red-100">
+        <div className="rounded-2xl border border-red-400/45 bg-red-500/12 px-3 py-2 text-[13px] text-red-100">
           {error}
         </div>
       )}
 
       {loading && items.length === 0 && (
-        <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-[12px] text-white/70">
+        <div className="rounded-2xl border border-white/14 bg-white/[0.03] px-4 py-4 text-[13px] text-white/80">
           A carregar transferências...
         </div>
       )}
 
       {!loading && items.length === 0 && !error && (
-        <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-[12px] text-white/70">
+        <div className="rounded-2xl border border-white/14 bg-white/[0.03] px-4 py-4 text-[13px] text-white/80">
           Sem transferências para o filtro atual.
         </div>
       )}
@@ -248,31 +248,31 @@ export default function PayoutsPanel() {
             return (
               <div
                 key={item.id}
-                className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+                className="flex flex-col gap-3 rounded-2xl border border-white/14 bg-white/[0.03] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div className="space-y-1">
                   <p className="text-sm font-semibold text-white">
                     {item.source?.title ?? item.sourceType}
                   </p>
-                  <p className="text-[11px] text-white/55">
+                  <p className="text-[12px] text-white/74">
                     {item.sourceType} · {item.sourceId}
                   </p>
-                  <p className="text-[10px] text-white/40">
+                  <p className="text-[11px] text-white/64">
                     PI {item.paymentIntentId.slice(0, 10)}… · Criado {formatDateTime(item.createdAt)}
                   </p>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/70">
-                  <span className={cn("rounded-full border px-2 py-1 text-[10px]", statusMeta.tone)}>
+                <div className="flex flex-wrap items-center gap-2 text-[12px] text-white/80">
+                  <span className={cn("rounded-full border px-2 py-1 text-[11px]", statusMeta.tone)}>
                     {statusMeta.label}
                   </span>
-                  {item.holdUntil && <span className="text-[10px]">Em espera até {formatDateTime(item.holdUntil)}</span>}
-                  {item.nextAttemptAt && <span className="text-[10px]">Próx. tentativa {formatDateTime(item.nextAttemptAt)}</span>}
-                  {item.releasedAt && <span className="text-[10px]">Libertado {formatDateTime(item.releasedAt)}</span>}
+                  {item.holdUntil && <span className="text-[11px]">Em espera até {formatDateTime(item.holdUntil)}</span>}
+                  {item.nextAttemptAt && <span className="text-[11px]">Próx. tentativa {formatDateTime(item.nextAttemptAt)}</span>}
+                  {item.releasedAt && <span className="text-[11px]">Libertado {formatDateTime(item.releasedAt)}</span>}
                 </div>
 
                 <div className="flex flex-col items-end gap-1 text-right">
-                  <span className="text-[11px] text-white/60">A receber</span>
+                  <span className="text-[12px] text-white/74">A receber</span>
                   <span className="text-sm font-semibold text-white">{formatMoney(item.amountCents, item.currency)}</span>
                   {item.source?.href && (
                     <Link href={item.source.href} className="text-[11px] text-[#22D3EE] hover:underline">
@@ -280,7 +280,7 @@ export default function PayoutsPanel() {
                     </Link>
                   )}
                   {item.blockedReason && (
-                    <span className="text-[10px] text-rose-200">{item.blockedReason}</span>
+                    <span className="text-[11px] text-rose-200">{item.blockedReason}</span>
                   )}
                 </div>
               </div>
@@ -294,7 +294,7 @@ export default function PayoutsPanel() {
           type="button"
           onClick={() => load(nextCursor, "append")}
           disabled={loading}
-          className="w-full rounded-full border border-white/15 bg-white/5 px-3 py-2 text-[12px] text-white/80 hover:border-white/30 disabled:opacity-60"
+          className={`${CTA_SECONDARY_CLEAN} w-full px-3 py-2 text-[13px] disabled:opacity-60`}
         >
           {loading ? "A carregar..." : "Carregar mais"}
         </button>

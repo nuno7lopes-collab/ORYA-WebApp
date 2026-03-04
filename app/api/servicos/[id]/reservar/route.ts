@@ -71,6 +71,45 @@ function parsePositiveInt(value: unknown) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+function normalizeClientRequestId(value: unknown) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  if (!normalized) return null;
+  if (!/^[a-zA-Z0-9._:-]{8,128}$/.test(normalized)) return null;
+  return normalized;
+}
+
+type BookingAddonSelection = { addonId: number; quantity: number };
+
+function normalizeAddonSelectionSignature(addons: BookingAddonSelection[]) {
+  return addons
+    .map((addon) => ({
+      addonId: Math.trunc(addon.addonId),
+      quantity: Math.max(0, Math.trunc(addon.quantity)),
+    }))
+    .filter((addon) => addon.addonId > 0 && addon.quantity > 0)
+    .sort((a, b) => {
+      if (a.addonId === b.addonId) return a.quantity - b.quantity;
+      return a.addonId - b.addonId;
+    });
+}
+
+function hasSameAddonSelection(
+  left: Array<{ addonId: number; quantity: number }>,
+  right: Array<{ addonId: number; quantity: number }>,
+) {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    const leftItem = left[index];
+    const rightItem = right[index];
+    if (!leftItem || !rightItem) return false;
+    if (leftItem.addonId !== rightItem.addonId || leftItem.quantity !== rightItem.quantity) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function buildSelectionRulesPayload(params: {
   partySizeRequired: boolean;
   partySizeMin: number;
@@ -143,6 +182,20 @@ async function _POST(
     const guestEmailNormalized = normalizeEmail(guestEmailRaw);
     const guestEmail = guestEmailRaw && EMAIL_REGEX.test(guestEmailRaw) ? guestEmailRaw : "";
     const guestPhone = guestPhoneRaw ? normalizePhone(guestPhoneRaw, phoneOptions) : "";
+    const clientRequestIdRaw =
+      typeof payload?.clientRequestId === "string" ? payload.clientRequestId : "";
+    const clientRequestId = normalizeClientRequestId(clientRequestIdRaw);
+    if (clientRequestIdRaw && !clientRequestId) {
+      return jsonWrap(
+        {
+          ok: false,
+          error: "ID de pedido inválido.",
+          errorCode: "INVALID_CLIENT_REQUEST_ID",
+          message: "clientRequestId inválido.",
+        },
+        { status: 400 },
+      );
+    }
     const startsAtRaw = typeof payload?.startsAt === "string" ? payload.startsAt : null;
     const startsAt = startsAtRaw ? new Date(startsAtRaw) : null;
     const addressIdInput = typeof payload?.addressId === "string" ? payload.addressId.trim() : "";
@@ -462,7 +515,14 @@ async function _POST(
       },
     });
     if (pendingCount >= MAX_PENDING_PER_USER) {
-      return jsonWrap({ ok: false, error: "Demasiadas pré-reservas ativas." }, { status: 429 });
+      return jsonWrap(
+        {
+          ok: false,
+          error: "Demasiadas pré-reservas ativas.",
+          errorCode: "PENDING_LIMIT_REACHED",
+        },
+        { status: 429 },
+      );
     }
 
     const bookingAssignmentMode = assignmentConfig.assignmentMode;
@@ -1001,6 +1061,18 @@ async function _POST(
       service.locationMode === "CHOOSE_AT_BOOKING"
         ? addressIdInput || null
         : service.addressId ?? service.organization?.addressId ?? null;
+    const requestedPackageId =
+      packageResolution.ok && packageResolution.package
+        ? packageResolution.package.packageId
+        : null;
+    const requestedAddons = normalizeAddonSelectionSignature(
+      addonResolution.ok
+        ? addonResolution.addons.map((addon) => ({
+            addonId: addon.addonId,
+            quantity: addon.quantity,
+          }))
+        : [],
+    );
     if (service.locationMode === "CHOOSE_AT_BOOKING" && !resolvedAddressId) {
       return jsonWrap({ ok: false, error: "Morada obrigatória para esta marcação." }, { status: 400 });
     }
@@ -1017,7 +1089,7 @@ async function _POST(
       }
     }
 
-    const { booking } = await prisma.$transaction(async (tx) => {
+    const { booking, deduped } = await prisma.$transaction(async (tx) => {
       const lockKey = `booking:${service.organizationId}`;
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
       const pendingLimitLockKey = user
@@ -1029,6 +1101,63 @@ async function _POST(
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${pendingLimitLockKey}))`;
       }
       const nowLocked = new Date();
+      const equivalentBooking = await tx.booking.findFirst({
+        where: {
+          ...pendingIdentityWhere,
+          serviceId: service.id,
+          startsAt,
+          durationMinutes: effectiveDurationMinutes,
+          professionalId,
+          resourceId,
+          partySize,
+          addressId: resolvedAddressId,
+          status: { in: ["PENDING_CONFIRMATION", "PENDING"] },
+          pendingExpiresAt: { gt: nowLocked },
+        },
+        orderBy: { id: "desc" },
+        select: {
+          id: true,
+          organizationId: true,
+          status: true,
+          startsAt: true,
+          durationMinutes: true,
+          professionalId: true,
+          resourceId: true,
+          pendingExpiresAt: true,
+          bookingPackage: { select: { packageId: true } },
+          addons: { select: { addonId: true, quantity: true } },
+        },
+      });
+      if (equivalentBooking) {
+        const existingPackageId = equivalentBooking.bookingPackage?.packageId ?? null;
+        const existingAddons = normalizeAddonSelectionSignature(
+          (equivalentBooking.addons ?? []).flatMap((addon) => {
+            if (typeof addon.addonId !== "number" || !Number.isFinite(addon.addonId)) {
+              return [];
+            }
+            return [{ addonId: addon.addonId, quantity: addon.quantity }];
+          }),
+        );
+        if (
+          existingPackageId === requestedPackageId &&
+          hasSameAddonSelection(existingAddons, requestedAddons)
+        ) {
+          return {
+            booking: {
+              id: equivalentBooking.id,
+              organizationId: equivalentBooking.organizationId,
+              status: equivalentBooking.status,
+              startsAt: equivalentBooking.startsAt,
+              durationMinutes: equivalentBooking.durationMinutes,
+              professionalId: equivalentBooking.professionalId,
+              resourceId: equivalentBooking.resourceId,
+              pendingExpiresAt: equivalentBooking.pendingExpiresAt,
+            },
+            deduped: true,
+          };
+        }
+      }
+
       const pendingCountLocked = await tx.booking.count({
         where: {
           ...pendingIdentityWhere,
@@ -1163,6 +1292,7 @@ async function _POST(
         },
         select: {
           id: true,
+          organizationId: true,
           status: true,
           startsAt: true,
           durationMinutes: true,
@@ -1198,18 +1328,20 @@ async function _POST(
         });
       }
 
-      return created;
+      return { booking: created.booking, deduped: false };
     });
 
     const { ip, userAgent } = getRequestMeta(req);
     await recordOrganizationAudit(prisma, {
       organizationId: service.organizationId,
       actorUserId: user?.id ?? null,
-      action: "BOOKING_PENDING_CREATED",
+      action: deduped ? "BOOKING_PENDING_REUSED" : "BOOKING_PENDING_CREATED",
       metadata: {
         bookingId: booking.id,
         serviceId: service.id,
         startsAt: startsAt.toISOString(),
+        deduped,
+        clientRequestId: clientRequestId ?? null,
         package: packageResolution.ok && packageResolution.package
           ? {
               packageId: packageResolution.package.packageId,
@@ -1232,19 +1364,29 @@ async function _POST(
       userAgent,
     });
 
-    return jsonWrap({ ok: true, booking, selectionRules });
+    return jsonWrap({ ok: true, booking, selectionRules, deduped });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     if (err instanceof Error && err.message === "PENDING_LIMIT_LOCKED") {
-      return jsonWrap({ ok: false, error: "Demasiadas pré-reservas ativas." }, { status: 429 });
+      return jsonWrap(
+        {
+          ok: false,
+          error: "Demasiadas pré-reservas ativas.",
+          errorCode: "PENDING_LIMIT_REACHED",
+        },
+        { status: 429 },
+      );
     }
     if (err instanceof Error && err.message === "AGENDA_CONFLICT_LOCKED") {
       return jsonWrap(agendaConflictResponse(), { status: 409 });
     }
     console.error("POST /api/servicos/[id]/reservar error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao reservar." }, { status: 500 });
+    return jsonWrap(
+      { ok: false, error: "Erro ao reservar.", errorCode: "BOOKING_RESERVE_FAILED" },
+      { status: 500 },
+    );
   }
 }
 export const POST = withApiEnvelope(_POST);

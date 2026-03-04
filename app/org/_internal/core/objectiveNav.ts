@@ -133,24 +133,24 @@ export function getObjectiveSections(
     }
 
     if (operationOverride === "RESERVAS") {
-      const baseHref = "/org/academy";
+      const academyClassesHref = "/org/academy/classes";
       sections.push(
         {
           id: "campos",
           label: "Campos",
-          href: `${baseHref}/courts`,
+          href: "/org/bookings/resources",
         },
         {
           id: "aulas",
           label: "Aulas",
-          href: `${baseHref}`,
+          href: academyClassesHref,
         },
       );
       sections.push(
         {
           id: "operacoes",
           label: "Operações",
-          href: `${baseHref}/operations`,
+          href: "/org/bookings",
         },
         {
           id: "disponibilidade",
@@ -160,17 +160,17 @@ export function getObjectiveSections(
         {
           id: "clientes",
           label: "Alunos",
-          href: `${baseHref}/students`,
+          href: "/org/academy/students",
         },
         {
           id: "profissionais",
           label: "Treinadores",
-          href: `${baseHref}/trainers`,
+          href: "/org/academy/trainers",
         },
         {
           id: "recursos",
           label: "Campos",
-          href: `${baseHref}/resources`,
+          href: "/org/bookings/resources",
         },
       );
       if (focusId) {

@@ -1,4 +1,5 @@
 import Constants from "expo-constants";
+import { NativeModules } from "react-native";
 
 type MobileEnv = {
   appEnv: string;
@@ -18,6 +19,19 @@ type LegacyManifest = {
 type ExpoConfigWithHost = {
   extra?: Record<string, unknown>;
   hostUri?: string;
+};
+
+type Manifest2WithExpoClient = {
+  runtimeVersion?: string;
+  extra?: {
+    expoClient?: {
+      hostUri?: string;
+    };
+  };
+};
+
+type SourceCodeModule = {
+  scriptURL?: string;
 };
 
 const readString = (value: unknown): string | undefined =>
@@ -83,18 +97,49 @@ const getExtra = () => {
   return expoConfig?.extra ?? manifest?.extra ?? {};
 };
 
+const extractHost = (value: string | null | undefined): string | null => {
+  if (!value || typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  try {
+    const withProtocol = trimmed.includes("://") ? trimmed : `http://${trimmed}`;
+    const parsed = new URL(withProtocol);
+    return parsed.hostname || null;
+  } catch {
+    const normalized = trimmed.replace(/^[a-z]+:\/\//i, "");
+    const firstToken = normalized.split("/")[0] ?? "";
+    const host = firstToken.split(":")[0] ?? "";
+    return host || null;
+  }
+};
+
+const resolveHostFromSourceCode = () => {
+  const sourceCode = (NativeModules as { SourceCode?: SourceCodeModule } | undefined)?.SourceCode;
+  return extractHost(readString(sourceCode?.scriptURL));
+};
+
 const resolveHostFromExpo = () => {
   const expoConfig = Constants.expoConfig as ExpoConfigWithHost | null | undefined;
   const manifest = (Constants as unknown as { manifest?: LegacyManifest | null }).manifest;
-  const hostUri =
-    expoConfig?.hostUri ??
-    manifest?.hostUri ??
-    manifest?.debuggerHost ??
-    manifest?.hostUri ??
-    expoConfig?.hostUri;
-  if (!hostUri || typeof hostUri !== "string") return null;
-  const [host] = hostUri.split(":");
-  return host ?? null;
+  const manifest2 = Constants.manifest2 as Manifest2WithExpoClient | null | undefined;
+  const expoGoConfig = (Constants as unknown as { expoGoConfig?: { debuggerHost?: string } | null })
+    .expoGoConfig;
+
+  const candidates = [
+    expoConfig?.hostUri ?? null,
+    manifest?.hostUri ?? null,
+    manifest?.debuggerHost ?? null,
+    manifest2?.extra?.expoClient?.hostUri ?? null,
+    expoGoConfig?.debuggerHost ?? null,
+    resolveHostFromSourceCode(),
+  ];
+
+  for (const candidate of candidates) {
+    const host = extractHost(candidate);
+    if (host) return host;
+  }
+  return null;
 };
 
 const isPrivateIp = (host: string) => {

@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { Alert, Pressable, ScrollView, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useIsFocused } from "@react-navigation/native";
+import { Image } from "expo-image";
 import { tokens } from "@orya/shared";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { TopAppHeader } from "../../components/navigation/TopAppHeader";
@@ -11,16 +13,15 @@ import { useTopBarScroll } from "../../components/navigation/useTopBarScroll";
 import { useAuth } from "../../lib/auth";
 import { safePush } from "../../lib/navigation";
 import { getUserFacingError } from "../../lib/errors";
+import { getMobileEnv } from "../../lib/env";
 import {
   cancelBooking,
   previewBookingCancellation,
   respondBookingChangeRequest,
 } from "../../features/bookings/api";
-import { useMyBookings } from "../../features/bookings/hooks";
+import { useAvailableCourts, useMyBookings } from "../../features/bookings/hooks";
 import type { BookingItem } from "../../features/bookings/types";
 import { splitBookingsByTimeline } from "../../features/bookings/types";
-import { useDiscoverFeed } from "../../features/discover/hooks";
-import type { DiscoverOfferCard, DiscoverServiceCard } from "../../features/discover/types";
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return "Data por definir";
@@ -51,43 +52,31 @@ const bookingOrganizationLabel = (booking: BookingItem) =>
   booking.organization?.username?.trim() ||
   "Organização";
 
-const resolveServiceVertical = (service: DiscoverServiceCard): "COURT" | "CLASS" | "SERVICE" => {
-  const byVertical = String(service.bookingVertical ?? "")
-    .trim()
-    .toUpperCase();
-  if (byVertical === "COURT" || byVertical === "CLASS" || byVertical === "SERVICE") return byVertical;
-  const byDomain = String(service.category?.domain ?? "")
-    .trim()
-    .toUpperCase();
-  if (byDomain === "COURT" || byDomain === "CLASS" || byDomain === "SERVICE") return byDomain;
-  const byKind = String(service.kind ?? "")
-    .trim()
-    .toUpperCase();
-  if (byKind === "COURT") return "COURT";
-  if (byKind === "CLASS") return "CLASS";
-  return "SERVICE";
+const normalizeImageUrl = (value?: string | null) => {
+  if (!value) return null;
+  if (/^https?:\/\//i.test(value) || value.startsWith("data:")) return value;
+  const base = getMobileEnv().apiBaseUrl.replace(/\/+$/, "");
+  return `${base}${value.startsWith("/") ? "" : "/"}${value}`;
 };
-
-const asServiceOffer = (offer: DiscoverOfferCard): offer is Extract<DiscoverOfferCard, { type: "service" }> =>
-  offer.type === "service";
-
-const formatServicePrice = (value: number, currency: string) =>
-  new Intl.NumberFormat("pt-PT", { style: "currency", currency }).format(value / 100);
 
 export default function BookingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ bookingId?: string | string[] }>();
+  const isFocused = useIsFocused();
   const focusBookingIdRaw = Array.isArray(params.bookingId) ? params.bookingId[0] : params.bookingId;
   const focusBookingId = Number(focusBookingIdRaw);
   const topPadding = useTopHeaderPadding(14);
   const topBar = useTopBarScroll();
   const { session } = useAuth();
   const accessReady = Boolean(session?.user?.id);
-  const bookingsQuery = useMyBookings(accessReady);
-  const courtsQuery = useDiscoverFeed(
-    { q: "padel campo", type: "all", kind: "padel", date: "upcoming", city: "" },
-    true,
+  const bookingsQuery = useMyBookings(accessReady && isFocused);
+  const courtsQuery = useAvailableCourts(
+    {
+      userId: session?.user?.id ?? null,
+      accessToken: session?.access_token ?? null,
+    },
+    accessReady && isFocused,
   );
   const [cancelingBookingId, setCancelingBookingId] = useState<number | null>(null);
   const [respondingRequestId, setRespondingRequestId] = useState<number | null>(null);
@@ -103,17 +92,7 @@ export default function BookingsScreen() {
     return [focused, ...remaining];
   }, [focusBookingId, timeline.active]);
 
-  const courtServices = useMemo(() => {
-    const offers = courtsQuery.data?.pages.flatMap((page) => page.items) ?? [];
-    const map = new Map<number, DiscoverServiceCard>();
-    offers.filter(asServiceOffer).forEach((offer) => {
-      if (resolveServiceVertical(offer.service) !== "COURT") return;
-      if (!map.has(offer.service.id)) {
-        map.set(offer.service.id, offer.service);
-      }
-    });
-    return Array.from(map.values()).slice(0, 8);
-  }, [courtsQuery.data?.pages]);
+  const availableCourts = courtsQuery.data?.items ?? [];
 
   const runCancel = async (bookingId: number) => {
     try {
@@ -298,7 +277,7 @@ export default function BookingsScreen() {
         title="Reservas"
         titleAlign="center"
         showNotifications
-        showMessages
+        showMessages={false}
       />
       <ScrollView
         contentContainerStyle={{
@@ -348,43 +327,114 @@ export default function BookingsScreen() {
               <Text className="text-white text-sm font-semibold">Campos disponíveis</Text>
               {courtsQuery.isLoading ? (
                 <GlassSkeleton height={92} />
-              ) : courtServices.length === 0 ? (
-                <View className="rounded-2xl border border-white/14 bg-white/6 px-3 py-3">
-                  <Text className="text-white/70 text-xs">Sem campos de padel visíveis neste momento.</Text>
+              ) : courtsQuery.isError ? (
+                <View className="rounded-2xl border border-rose-300/35 bg-rose-500/10 px-3 py-3">
+                  <Text className="text-rose-100 text-xs">
+                    Não foi possível carregar os campos disponíveis.
+                  </Text>
+                </View>
+              ) : courtsQuery.data?.configurationIssue === "COURT_CONFIG_MISSING" ? (
+                <View className="rounded-2xl border border-amber-300/35 bg-amber-400/10 px-3 py-3">
+                  <Text className="text-amber-100 text-xs font-semibold">Configuração em falta</Text>
+                  <Text className="mt-1 text-amber-100/85 text-xs">
+                    Alguns clubes não têm campos configurados para reserva (COURT_CONFIG_MISSING).
+                  </Text>
+                </View>
+              ) : availableCourts.length === 0 && !courtsQuery.data?.hasFollowingClubs ? (
+                <View className="rounded-2xl border border-white/14 bg-white/6 px-3 py-3 gap-1">
+                  <Text className="text-white text-xs font-semibold">Sem clubes seguidos</Text>
+                  <Text className="text-white/70 text-xs">
+                    Segue clubes para veres campos prioritários nesta área.
+                  </Text>
+                </View>
+              ) : availableCourts.length === 0 && courtsQuery.data?.hasFollowingClubs ? (
+                <View className="rounded-2xl border border-white/14 bg-white/6 px-3 py-3 gap-1">
+                  <Text className="text-white text-xs font-semibold">Clubes sem campos configurados</Text>
+                  <Text className="text-white/70 text-xs">
+                    Os clubes que segues ainda não têm campos de reserva ativos.
+                  </Text>
                 </View>
               ) : (
-                courtServices.map((service) => (
-                  <Pressable
-                    key={`court-${service.id}`}
-                    onPress={() => {
-                      const params: Record<string, string> = {
-                        id: String(service.id),
-                        bookingVertical: "COURT",
-                      };
-                      if (service.organization?.username) {
-                        params.orgUsername = service.organization.username;
-                      }
-                      if (typeof service.courtId === "number" && Number.isFinite(service.courtId)) {
-                        params.courtId = String(service.courtId);
-                      }
-                      safePush(router, { pathname: "/service/[id]/booking", params });
-                    }}
-                    className="rounded-2xl border border-white/12 bg-white/6 px-4 py-3"
-                    accessibilityRole="button"
-                    accessibilityLabel={service.title}
-                  >
-                    <Text className="text-white text-sm font-semibold">{service.title}</Text>
-                    <Text className="mt-1 text-white/70 text-xs">
-                      {service.organization.publicName ??
-                        service.organization.businessName ??
-                        service.organization.username ??
-                        "Clube"}
-                    </Text>
-                    <Text className="mt-1 text-white/60 text-xs">
-                      {formatServicePrice(service.unitPriceCents, service.currency)} · {service.durationMinutes} min
-                    </Text>
-                  </Pressable>
-                ))
+                <View className="gap-2">
+                  {!courtsQuery.data?.hasFollowingClubs ? (
+                    <View className="rounded-xl border border-white/18 bg-white/8 px-3 py-2">
+                      <Text className="text-white/75 text-[11px]">
+                        Ainda não segues clubes. A mostrar campos de clubes próximos.
+                      </Text>
+                    </View>
+                  ) : null}
+                  {courtsQuery.data?.hasFollowingClubs &&
+                  availableCourts.every((item) => item.source === "NEARBY") ? (
+                    <View className="rounded-xl border border-cyan-200/30 bg-cyan-300/10 px-3 py-2">
+                      <Text className="text-cyan-50 text-[11px]">
+                        Não encontrámos campos nos clubes seguidos, a mostrar clubes próximos.
+                      </Text>
+                    </View>
+                  ) : null}
+                  {availableCourts.map((court) => (
+                    <Pressable
+                      key={court.id}
+                      onPress={() => {
+                        const params: Record<string, string> = {
+                          id: String(court.serviceId),
+                          bookingVertical: "COURT",
+                          orgUsername: court.orgUsername,
+                        };
+                        safePush(router, { pathname: "/service/[id]/booking", params });
+                      }}
+                      className="rounded-2xl border border-white/12 bg-white/6 px-4 py-3"
+                      accessibilityRole="button"
+                      accessibilityLabel={`${court.courtName} ${court.clubName}`}
+                    >
+                      <View className="flex-row gap-3">
+                        <View
+                          className="overflow-hidden rounded-xl border border-white/12 bg-white/8"
+                          style={{ width: 72, height: 54 }}
+                        >
+                          {normalizeImageUrl(court.coverImageUrl) ? (
+                            <Image
+                              source={{ uri: normalizeImageUrl(court.coverImageUrl) as string }}
+                              contentFit="cover"
+                              style={{ width: "100%", height: "100%" }}
+                            />
+                          ) : (
+                            <View className="flex-1 bg-white/6" />
+                          )}
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <View className="flex-row items-center justify-between gap-2">
+                            <Text className="text-white text-sm font-semibold" numberOfLines={1}>
+                              {court.courtName}
+                            </Text>
+                            <View
+                              className="rounded-full border px-2 py-0.5"
+                              style={{
+                                borderColor:
+                                  court.source === "FOLLOWING"
+                                    ? "rgba(111,244,255,0.45)"
+                                    : "rgba(255,255,255,0.2)",
+                                backgroundColor:
+                                  court.source === "FOLLOWING"
+                                    ? "rgba(111,244,255,0.14)"
+                                    : "rgba(255,255,255,0.08)",
+                              }}
+                            >
+                              <Text className="text-[10px] text-white/90 font-semibold">
+                                {court.source === "FOLLOWING" ? "Seguido" : "Próximo"}
+                              </Text>
+                            </View>
+                          </View>
+                          <Text className="mt-1 text-white/70 text-xs" numberOfLines={1}>
+                            {court.clubName}
+                          </Text>
+                          <Text className="mt-1 text-white/60 text-xs">
+                            {formatMoney(court.unitPriceCents, court.currency)} · {court.durationMinutes} min
+                          </Text>
+                        </View>
+                      </View>
+                    </Pressable>
+                  ))}
+                </View>
               )}
             </View>
 

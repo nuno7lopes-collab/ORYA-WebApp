@@ -229,13 +229,13 @@ function buildScopedPermissionKey(scopeType: string | null | undefined, scopeId:
 
 const statusTone: Record<InviteStatus, string> = {
   PENDING:
-    "border-amber-200/60 bg-gradient-to-r from-amber-500/25 via-amber-400/15 to-amber-600/25 text-amber-50 shadow-[0_10px_32px_rgba(251,191,36,0.25)]",
-  EXPIRED: "border-white/15 bg-gradient-to-r from-white/8 via-white/4 to-white/6 text-white/60",
+    "border-amber-200/60 bg-amber-500/14 text-amber-100",
+  EXPIRED: "border-white/16 bg-white/[0.04] text-white/74",
   ACCEPTED:
-    "border-emerald-300/60 bg-gradient-to-r from-emerald-500/25 via-emerald-400/15 to-emerald-600/25 text-emerald-50 shadow-[0_10px_32px_rgba(52,211,153,0.25)]",
+    "border-emerald-300/60 bg-emerald-500/14 text-emerald-100",
   DECLINED:
-    "border-red-300/60 bg-gradient-to-r from-red-500/30 via-red-500/15 to-red-700/25 text-red-100 shadow-[0_10px_32px_rgba(239,68,68,0.25)]",
-  CANCELLED: "border-white/15 bg-gradient-to-r from-white/8 via-white/4 to-white/6 text-white/65",
+    "border-red-300/60 bg-red-500/16 text-red-100",
+  CANCELLED: "border-white/16 bg-white/[0.04] text-white/74",
 };
 
 function canManageMember(actorRole: MemberRole | null, targetRole: MemberRole) {
@@ -1156,7 +1156,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
         <>
           {canManagePermissions ? (
             <div className="grid gap-4 lg:grid-cols-[0.75fr_1.25fr]">
-              <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-4 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+              <section className="org-clean-section relative overflow-hidden space-y-3 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <h2 className="text-sm font-semibold">Permissões por membro</h2>
@@ -1208,7 +1208,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                           onClick={() => setSelectedPermissionUserId(member.userId)}
                           className={`w-full rounded-xl border px-3 py-2 text-left transition ${
                             isSelected
-                              ? "border-cyan-200/60 bg-cyan-400/10 shadow-[0_12px_30px_rgba(34,211,238,0.25)]"
+                              ? "border-cyan-200/60 bg-cyan-400/10"
                               : "border-white/10 bg-white/5 hover:border-white/20"
                           }`}
                         >
@@ -1239,7 +1239,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                 )}
               </section>
 
-              <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-4 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+              <section className="org-clean-section relative overflow-hidden space-y-3 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <h2 className="text-sm font-semibold">Detalhe de permissões</h2>
@@ -1315,7 +1315,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                                 onChange={(e) =>
                                   handlePermissionUpdate(selectedMember.userId, moduleKey, e.target.value)
                                 }
-                                className="rounded-full border border-white/15 bg-black/40 px-4 py-2 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,0.35)] outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)] disabled:opacity-60"
+                                className="org-clean-input rounded-full px-4 py-2 text-sm disabled:opacity-60"
                               >
                                 <option value="DEFAULT">Por defeito ({ACCESS_LABELS[baseLevel]})</option>
                                 <option value="NONE">Sem acesso</option>
@@ -1379,7 +1379,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                                           perm.scopeId,
                                         )
                                       }
-                                      className="rounded-full border border-white/15 bg-black/40 px-4 py-2 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,0.35)] outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)] disabled:opacity-60"
+                                      className="org-clean-input rounded-full px-4 py-2 text-sm disabled:opacity-60"
                                     >
                                       <option value="DEFAULT">Remover</option>
                                       <option value="VIEW">Ver</option>
@@ -1394,7 +1394,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                             <select
                               value={scopeDraftType}
                               onChange={(e) => setScopeDraftType(e.target.value as ReservasScopeType)}
-                              className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
+                              className="org-clean-input rounded-full px-3 py-2 text-sm"
                             >
                               {(Object.keys(RESERVAS_SCOPE_TYPE_LABELS) as ReservasScopeType[]).map((scopeType) => (
                                 <option key={scopeType} value={scopeType}>
@@ -1406,7 +1406,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                               value={scopeDraftId}
                               onChange={(e) => setScopeDraftId(e.target.value)}
                               disabled={reservasDraftOptions.length === 0}
-                              className="min-w-[220px] flex-1 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)] disabled:opacity-60"
+                              className="org-clean-input min-w-[220px] flex-1 rounded-full px-3 py-2 text-sm disabled:opacity-60"
                             >
                               {reservasDraftOptions.length === 0 && (
                                 <option value="">Sem opções disponíveis</option>
@@ -1420,7 +1420,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                             <select
                               value={scopeDraftLevel}
                               onChange={(e) => setScopeDraftLevel(e.target.value as "VIEW" | "EDIT")}
-                              className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
+                              className="org-clean-input rounded-full px-3 py-2 text-sm"
                             >
                               <option value="VIEW">Ver</option>
                               <option value="EDIT">Editar</option>
@@ -1437,7 +1437,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                                 )
                               }
                               disabled={!scopeDraftId || !canManageMember(viewerRole, selectedMember.role)}
-                              className="rounded-full border border-cyan-200/50 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(34,211,238,0.25)] transition hover:border-cyan-200/80 disabled:opacity-60"
+                              className={`${primaryCta} disabled:opacity-60`}
                             >
                               Adicionar scope
                             </button>
@@ -1500,7 +1500,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                                           perm.scopeId || "GLOBAL",
                                         )
                                       }
-                                      className="rounded-full border border-white/15 bg-black/40 px-4 py-2 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,0.35)] outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)] disabled:opacity-60"
+                                      className="org-clean-input rounded-full px-4 py-2 text-sm disabled:opacity-60"
                                     >
                                       <option value="DEFAULT">Remover</option>
                                       <option value="VIEW">Ver</option>
@@ -1515,7 +1515,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                             <select
                               value={communityScopeDraftId}
                               onChange={(e) => setCommunityScopeDraftId(e.target.value)}
-                              className="min-w-[220px] flex-1 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
+                              className="org-clean-input min-w-[220px] flex-1 rounded-full px-3 py-2 text-sm"
                             >
                               {communityScopeOptions.map((option) => (
                                 <option key={option.scopeId} value={option.scopeId}>
@@ -1526,7 +1526,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                             <select
                               value={communityScopeDraftLevel}
                               onChange={(e) => setCommunityScopeDraftLevel(e.target.value as "VIEW" | "EDIT")}
-                              className="rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
+                              className="org-clean-input rounded-full px-3 py-2 text-sm"
                             >
                               <option value="VIEW">Ver</option>
                               <option value="EDIT">Editar</option>
@@ -1543,7 +1543,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                                 )
                               }
                               disabled={!canManageMember(viewerRole, selectedMember.role)}
-                              className="rounded-full border border-cyan-200/50 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(34,211,238,0.25)] transition hover:border-cyan-200/80 disabled:opacity-60"
+                              className={`${primaryCta} disabled:opacity-60`}
                             >
                               Adicionar scope
                             </button>
@@ -1566,7 +1566,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
       {activeStaffTab === "auditoria" && (
         <>
           {canManagePermissions ? (
-            <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-4 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+            <section className="org-clean-section relative overflow-hidden space-y-3 p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <h2 className="text-sm font-semibold">Auditoria</h2>
@@ -1639,7 +1639,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
 
       {activeStaffTab === "membros" && (
         <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-          <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-4 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+          <section className="org-clean-section relative overflow-hidden space-y-3 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-sm font-semibold">Membros</h2>
@@ -1691,7 +1691,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                 return (
                   <div
                     key={m.userId}
-                    className="flex flex-col gap-2 rounded-xl border border-white/12 bg-gradient-to-r from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-3 shadow-[0_14px_45px_rgba(0,0,0,0.45)] md:flex-row md:items-center md:justify-between"
+                    className="flex flex-col gap-2 rounded-xl border border-white/16 bg-white/[0.03] p-3 md:flex-row md:items-center md:justify-between"
                   >
                     <div className="flex items-start gap-3">
                       <Avatar
@@ -1724,7 +1724,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                           const nextAssignment = parseRoleAssignmentValue(e.target.value);
                           handleRoleChange(m, nextAssignment.role, nextAssignment.rolePack);
                         }}
-                        className="rounded-full border border-white/15 bg-black/40 px-4 py-2 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,0.35)] outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)] disabled:opacity-60"
+                        className="org-clean-input rounded-full px-4 py-2 text-sm disabled:opacity-60"
                       >
                         {m.role === "STAFF" && !resolveRolePackForRole("STAFF", m.rolePack) && (
                           <option value={STAFF_ROLE_ASSIGNMENT_PLACEHOLDER} disabled>
@@ -1770,7 +1770,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
           )}
         </section>
 
-        <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-4 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+        <section className="org-clean-section relative overflow-hidden space-y-3 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-sm font-semibold">Convites</h2>
@@ -1815,7 +1815,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                 return (
                   <div
                     key={inv.id}
-                    className="flex flex-col gap-2 rounded-xl border border-white/12 bg-gradient-to-r from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-3 shadow-[0_14px_45px_rgba(0,0,0,0.45)]"
+                    className="flex flex-col gap-2 rounded-xl border border-white/16 bg-white/[0.03] p-3"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="space-y-1">
@@ -1910,8 +1910,8 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
 
       {/* Role confirm modal */}
       {roleConfirmOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur">
-          <div className="w-full max-w-lg space-y-4 rounded-2xl border border-white/10 bg-[#0c1424] p-5 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+          <div className="w-full max-w-lg space-y-4 rounded-2xl border border-white/16 bg-[#10161d] p-5">
             <div className="space-y-1">
               <p className="text-[11px] uppercase tracking-[0.22em] text-white/50">Confirmar</p>
               <h3 className="text-xl font-semibold text-white">Despromover Dono?</h3>
@@ -1923,14 +1923,14 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
               <button
                 type="button"
                 onClick={() => setRoleConfirmOpen(false)}
-                className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm text-white hover:bg-white/10"
+                className={glassButton}
               >
                 Cancelar
               </button>
               <button
                 type="button"
                 onClick={() => applyRoleChange(roleConfirm.userId, roleConfirm.newRole, roleConfirm.newRolePack)}
-                className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black shadow"
+                className={primaryCta}
               >
                 Confirmar
               </button>
@@ -1941,8 +1941,8 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
 
       {/* Invite modal */}
       {inviteModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur">
-          <div className="w-full max-w-lg space-y-4 rounded-2xl border border-white/10 bg-[#0c1424] p-5 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+          <div className="w-full max-w-lg space-y-4 rounded-2xl border border-white/16 bg-[#10161d] p-5">
             <div className="space-y-1">
               <p className="text-[11px] uppercase tracking-[0.22em] text-white/50">Convite</p>
               <h3 className="text-xl font-semibold text-white">Convidar membro</h3>
@@ -1955,7 +1955,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                   type="text"
                   value={inviteIdentifier}
                   onChange={(e) => setInviteIdentifier(e.target.value)}
-                  className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
+                  className="org-clean-input w-full rounded-lg px-3 py-2 text-sm"
                   placeholder="email@dominio.com ou @username"
                 />
               </div>
@@ -1968,7 +1968,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                     setInviteRole(nextAssignment.role);
                     setInviteRolePack(nextAssignment.rolePack);
                   }}
-                  className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
+                  className="org-clean-input w-full rounded-lg px-3 py-2 text-sm"
                 >
                   {inviteRole === "STAFF" && !resolveRolePackForRole("STAFF", inviteRolePack) && (
                     <option value={STAFF_ROLE_ASSIGNMENT_PLACEHOLDER} disabled>
@@ -2004,7 +2004,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
               <button
                 type="button"
                 onClick={() => setInviteModalOpen(false)}
-                className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm text-white hover:bg-white/10"
+                className={glassButton}
               >
                 Fechar
               </button>
@@ -2012,7 +2012,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                 type="button"
                 onClick={handleInviteSubmit}
                 disabled={inviteLoading}
-                className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black shadow disabled:opacity-60"
+                className={`${primaryCta} disabled:opacity-60`}
               >
                 {inviteLoading ? "A enviar…" : "Enviar convite"}
               </button>
@@ -2023,8 +2023,8 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
 
       {/* Transfer modal */}
       {transferModalOpen && orgTransferEnabled && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur">
-          <div className="w-full max-w-lg space-y-4 rounded-2xl border border-white/10 bg-[#0c1424] p-5 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+          <div className="w-full max-w-lg space-y-4 rounded-2xl border border-white/16 bg-[#10161d] p-5">
             <div className="space-y-1">
               <p className="text-[11px] uppercase tracking-[0.22em] text-white/50">Transferir organização</p>
               <h3 className="text-xl font-semibold text-white">Passar a propriedade</h3>
@@ -2039,7 +2039,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                   type="text"
                   value={transferTarget}
                   onChange={(e) => setTransferTarget(e.target.value)}
-                  className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
+                  className="org-clean-input w-full rounded-lg px-3 py-2 text-sm"
                   placeholder="@destino ou email@dominio.com"
                 />
               </div>
@@ -2049,7 +2049,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                   type="text"
                   value={transferConfirm}
                   onChange={(e) => setTransferConfirm(e.target.value)}
-                  className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#22D3EE]"
+                  className="org-clean-input w-full rounded-lg px-3 py-2 text-sm"
                   placeholder="Escreve novamente para confirmar"
                 />
               </div>
@@ -2058,7 +2058,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
               <button
                 type="button"
                 onClick={() => setTransferModalOpen(false)}
-                className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm text-white hover:bg-white/10"
+                className={glassButton}
               >
                 Cancelar
               </button>
@@ -2066,7 +2066,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                 type="button"
                 onClick={handleTransfer}
                 disabled={transferLoading}
-                className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black shadow disabled:opacity-60"
+                className={`${primaryCta} disabled:opacity-60`}
               >
                 {transferLoading ? "A transferir…" : "Transferir"}
               </button>

@@ -105,6 +105,22 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     return jsonWrap({ ok: false, error: "PAIRING_CANCELLED" }, { status: 400 });
   }
   if (pairing.player2UserId) {
+    if (pairing.player2UserId === user.id) {
+      const lifecycleStatus = pairing.registration?.status
+        ? mapRegistrationToPairingLifecycle(pairing.registration.status, pairing.payment_mode)
+        : null;
+      return jsonWrap(
+        {
+          ok: true,
+          idempotentReplay: true,
+          pairing: {
+            ...pairing,
+            lifecycleStatus,
+          },
+        },
+        { status: 200 },
+      );
+    }
     return jsonWrap({ ok: false, error: "INVITE_ALREADY_USED" }, { status: 409 });
   }
 
@@ -364,6 +380,29 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     return jsonWrap({ ok: true, pairing: { ...updated, lifecycleStatus } }, { status: 200 });
   } catch (err) {
     if (err instanceof Error && err.message === "SLOT_ALREADY_CLAIMED") {
+      const latestPairing = await prisma.padelPairing.findUnique({
+        where: { id: pairing.id },
+        select: pairingSelect,
+      });
+      if (latestPairing?.player2UserId === user.id) {
+        const lifecycleStatus = latestPairing.registration?.status
+          ? mapRegistrationToPairingLifecycle(
+              latestPairing.registration.status,
+              latestPairing.payment_mode,
+            )
+          : null;
+        return jsonWrap(
+          {
+            ok: true,
+            idempotentReplay: true,
+            pairing: {
+              ...latestPairing,
+              lifecycleStatus,
+            },
+          },
+          { status: 200 },
+        );
+      }
       return jsonWrap({ ok: false, error: "SLOT_ALREADY_CLAIMED" }, { status: 409 });
     }
     console.error("[padel/pairings][accept][POST]", err);

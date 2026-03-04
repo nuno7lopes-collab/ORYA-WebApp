@@ -55,7 +55,7 @@ export type PadelPairingSlot = {
   profileId?: string | null;
   invitedUserId?: string | null;
   invitedContact?: string | null;
-  ticket?: { id: number; status?: string | null; stripePaymentIntentId?: string | null } | null;
+  ticket?: { id: string; status?: string | null; stripePaymentIntentId?: string | null } | null;
 };
 
 export type PadelMyPairing = {
@@ -236,6 +236,16 @@ const resolveApiErrorCode = (error: unknown): string | null => {
   return null;
 };
 
+const FUNCTIONAL_SUCCESS_CODES = new Set([
+  "PAIRING_ALREADY_ACTIVE",
+  "INVITE_ALREADY_USED",
+  "NO_PENDING_INVITE",
+  "SLOT_ALREADY_CLAIMED",
+]);
+
+const isFunctionalSuccessCode = (code: string | null) =>
+  Boolean(code && FUNCTIONAL_SUCCESS_CODES.has(code));
+
 export const fetchPadelStandings = async (
   eventId: number,
   categoryId?: number | null,
@@ -331,25 +341,51 @@ export const joinOpenPairing = async (
     return { alreadyActive: false };
   } catch (error) {
     const code = resolveApiErrorCode(error);
-    if (code === "PAIRING_ALREADY_ACTIVE") {
+    if (isFunctionalSuccessCode(code)) {
       return { alreadyActive: true };
     }
     throw error;
   }
 };
 
-export const acceptInvite = async (pairingId: number) => {
-  const response = await api.request<unknown>(`/api/padel/pairings/${pairingId}/accept`, {
-    method: "POST",
-  });
-  return unwrapApiResponse(response);
+export const acceptInvite = async (
+  pairingId: number,
+): Promise<{ idempotentReplay: boolean }> => {
+  try {
+    const response = await api.request<unknown>(`/api/padel/pairings/${pairingId}/accept`, {
+      method: "POST",
+    });
+    const payload = unwrapApiResponse<Record<string, unknown>>(response);
+    return {
+      idempotentReplay: Boolean(payload?.idempotentReplay),
+    };
+  } catch (error) {
+    const code = resolveApiErrorCode(error);
+    if (isFunctionalSuccessCode(code)) {
+      return { idempotentReplay: true };
+    }
+    throw error;
+  }
 };
 
-export const declineInvite = async (pairingId: number) => {
-  const response = await api.request<unknown>(`/api/padel/pairings/${pairingId}/decline`, {
-    method: "POST",
-  });
-  return unwrapApiResponse(response);
+export const declineInvite = async (
+  pairingId: number,
+): Promise<{ idempotentReplay: boolean }> => {
+  try {
+    const response = await api.request<unknown>(`/api/padel/pairings/${pairingId}/decline`, {
+      method: "POST",
+    });
+    const payload = unwrapApiResponse<Record<string, unknown>>(response);
+    return {
+      idempotentReplay: Boolean(payload?.idempotentReplay),
+    };
+  } catch (error) {
+    const code = resolveApiErrorCode(error);
+    if (isFunctionalSuccessCode(code)) {
+      return { idempotentReplay: true };
+    }
+    throw error;
+  }
 };
 
 export const fetchPadelSummary = async (): Promise<PadelMeSummary> => {

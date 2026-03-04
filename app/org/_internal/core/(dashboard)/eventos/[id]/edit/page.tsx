@@ -11,31 +11,23 @@ import { AuthGate } from "@/app/components/autenticação/AuthGate";
 import { cn } from "@/lib/utils";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
-
-type PageProps = {
-  params: Promise<{ id: string }>;
-};
-
+type PageProps = { params: Promise<{ id: string }> };
 export default async function OrganizationEventEditPage({ params }: PageProps) {
   const { id } = await params;
   const eventId = Number(id);
   if (!Number.isFinite(eventId)) notFound();
-
   const supabase = await createSupabaseServer();
   const { data, error } = await supabase.auth.getUser();
   if (error || !data?.user) {
     return <AuthGate />;
   }
-
   const event = await prisma.event.findUnique({
     where: { id: eventId },
     include: {
       ticketTypes: {
         include: {
           padelEventCategoryLink: {
-            include: {
-              category: { select: { label: true } },
-            },
+            include: { category: { select: { label: true } } },
           },
         },
       },
@@ -64,31 +56,24 @@ export default async function OrganizationEventEditPage({ params }: PageProps) {
           validationStatus: true,
         },
       },
-      eventResources: {
-        select: {
-          scopeType: true,
-          scopeId: true,
-        },
-      },
+      eventResources: { select: { scopeType: true, scopeId: true } },
     },
   });
-
   if (!event || !event.organizationId) notFound();
-
   const isPadelEvent = event.templateType === "PADEL";
   const isGratis = deriveIsFreeEvent({
     pricingMode: event.pricingMode ?? undefined,
     ticketPrices: event.ticketTypes.map((t) => t.price ?? 0),
   });
-  const eventRouteBase = isPadelEvent ? "/org/padel/tournaments" : "/org/events";
+  const eventRouteBase = isPadelEvent
+    ? "/org/padel/tournaments"
+    : "/org/events";
   const primaryLabelTitle = isPadelEvent ? "Torneio" : "Evento";
   const fallbackHref = eventRouteBase;
-
-  const { organization, membership } = await getActiveOrganizationForUser(data.user.id, {
-    organizationId: event.organizationId,
-    allowFallback: true,
-  });
-
+  const { organization, membership } = await getActiveOrganizationForUser(
+    data.user.id,
+    { organizationId: event.organizationId, allowFallback: true },
+  );
   if (!organization || !membership) {
     redirect(appendOrganizationIdToHref("/org", event.organizationId));
   }
@@ -103,7 +88,6 @@ export default async function OrganizationEventEditPage({ params }: PageProps) {
   if (!access.ok) {
     redirect(appendOrganizationIdToHref(fallbackHref, event.organizationId));
   }
-
   const tickets = event.ticketTypes.map((t) => ({
     id: t.id,
     name: t.name,
@@ -125,27 +109,30 @@ export default async function OrganizationEventEditPage({ params }: PageProps) {
   const selectedProfessionalIds = event.eventResources
     .filter((item) => item.scopeType === "PROFESSIONAL")
     .map((item) => item.scopeId);
-
   return (
     <div className={cn("w-full py-8 space-y-6 text-white")}>
-      <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+      {" "}
+      <div className="rounded-3xl border border-white/12 bg-white/[0.04] p-5">
+        {" "}
         <div className="flex flex-wrap items-center justify-between gap-3">
+          {" "}
           <div>
-            <p className="text-[11px] uppercase tracking-[0.24em] text-white/70">Editar {primaryLabelTitle.toLowerCase()}</p>
-            <h1 className="text-2xl font-semibold">{event.title}</h1>
+            {" "}
+            <p className="text-[11px] uppercase tracking-[0.24em] text-white/70">
+              Editar {primaryLabelTitle.toLowerCase()}
+            </p>{" "}
+            <h1 className="text-2xl font-semibold">{event.title}</h1>{" "}
             <p className="text-sm text-white/60">
-              ID {event.id} · {event.slug}
-            </p>
-          </div>
-          <a
-            href={`/eventos/${event.slug}`}
-            className={CTA_SECONDARY}
-          >
-            Ver página pública
-          </a>
-        </div>
-      </div>
-
+              {" "}
+              ID {event.id} · {event.slug}{" "}
+            </p>{" "}
+          </div>{" "}
+          <a href={`/eventos/${event.slug}`} className={CTA_SECONDARY}>
+            {" "}
+            Ver página pública{" "}
+          </a>{" "}
+        </div>{" "}
+      </div>{" "}
       <EventEditClient
         event={{
           id: event.id,
@@ -180,7 +167,7 @@ export default async function OrganizationEventEditPage({ params }: PageProps) {
           payoutMode: event.payoutMode,
         }}
         tickets={tickets}
-      />
+      />{" "}
     </div>
   );
 }

@@ -41,3 +41,15 @@ export const fetchWalletDetail = async (entitlementId: string): Promise<WalletDe
   const response = await api.request<unknown>(`/api/me/wallet/${encodeURIComponent(entitlementId)}`);
   return unwrapApiResponse<WalletDetail>(response);
 };
+
+export const refreshWalletDetailQr = async (
+  entitlementId: string,
+): Promise<WalletDetail> => {
+  if (!entitlementId) {
+    throw new ApiError(400, "Entitlement inválido.");
+  }
+  const response = await api.request<unknown>(
+    `/api/me/wallet/${encodeURIComponent(entitlementId)}?forceRefreshQr=1`,
+  );
+  return unwrapApiResponse<WalletDetail>(response);
+};

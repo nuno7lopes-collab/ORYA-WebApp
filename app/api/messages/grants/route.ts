@@ -146,6 +146,7 @@ async function mapGrantItems(
     createdAt: Date;
     updatedAt: Date;
   }>,
+  options?: { compact?: boolean },
 ) {
   const requesterIds = Array.from(
     new Set(grants.map((grant) => grant.requesterId).filter((id): id is string => Boolean(id))),
@@ -161,15 +162,21 @@ async function mapGrantItems(
         .filter((id): id is string => typeof id === "string" && id.trim().length > 0),
     ),
   );
+  const shouldLoadEventData =
+    !options?.compact || grants.some((grant) => grant.kind === "EVENT_INVITE");
+  const shouldLoadRequesterProfiles =
+    !options?.compact ||
+    grants.some((grant) => grant.kind !== "EVENT_INVITE");
+  const shouldLoadCommunityData = communityConversationIds.length > 0;
 
   const [profiles, events, communities] = await Promise.all([
-    requesterIds.length
+    shouldLoadRequesterProfiles && requesterIds.length
       ? prisma.profile.findMany({
           where: { id: { in: requesterIds } },
           select: { id: true, fullName: true, username: true, avatarUrl: true },
         })
       : Promise.resolve([] as GrantRequesterProfile[]),
-    eventIds.length
+    shouldLoadEventData && eventIds.length
       ? prisma.event.findMany({
           where: { id: { in: eventIds }, isDeleted: false },
           select: {
@@ -185,7 +192,7 @@ async function mapGrantItems(
           },
         })
       : Promise.resolve([] as GrantEventSummary[]),
-    communityConversationIds.length
+    shouldLoadCommunityData
       ? prisma.chatCommunity.findMany({
           where: { conversationId: { in: communityConversationIds } },
           select: {
@@ -200,7 +207,7 @@ async function mapGrantItems(
       : Promise.resolve([] as GrantCommunitySummary[]),
   ]);
 
-  const eventContextConversations = eventIds.length
+  const eventContextConversations = shouldLoadEventData && eventIds.length
     ? await prisma.chatConversation.findMany({
         where: {
           contextType: "EVENT",
@@ -332,6 +339,7 @@ async function _GET(req: NextRequest) {
     const kinds = parseKinds(req);
     const statuses = parseStatuses(req);
     const eventId = parseEventId(req);
+    const compact = req.nextUrl.searchParams.get("compact") === "1";
 
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -359,7 +367,7 @@ async function _GET(req: NextRequest) {
     const grants = await prisma.chatAccessGrant.findMany({
       where: { AND: whereFilters },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      take: 200,
+      take: compact ? 120 : 200,
       select: {
         id: true,
         kind: true,
@@ -380,7 +388,7 @@ async function _GET(req: NextRequest) {
       },
     });
 
-    const items = await mapGrantItems(grants);
+    const items = await mapGrantItems(grants, { compact });
     return jsonWrap({ ok: true, items });
   } catch (err) {
     if (isUnauthenticatedError(err)) {

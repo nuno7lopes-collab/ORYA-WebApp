@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -10,20 +9,49 @@ import { mapRegistrationToPairingLifecycle } from "@/domain/padelRegistration";
 import { PadelRegistrationStatus } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
+import { env } from "@/lib/env";
 import { isWalletPassEnabled } from "@/lib/wallet/pass";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
+const QR_TTL_MS = 60 * 60 * 1000;
+
 function hashToken(token: string) {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
+function buildDeterministicQrToken(params: { entitlementId: string; expiresAt: Date }) {
+  const expirySec = Math.floor(params.expiresAt.getTime() / 1000);
+  const payload = `${params.entitlementId}:${expirySec}`;
+  const signature = crypto.createHmac("sha256", env.qrSecretKey).update(payload).digest("hex");
+  return `orya_qr_v2:${payload}:${signature}`;
+}
+
+function resolveDesiredQrExpiresAt(params: {
+  now: Date;
+  checkinWindowEnd?: Date | null;
+}) {
+  const baseExpiry = new Date(params.now.getTime() + QR_TTL_MS);
+  const end = params.checkinWindowEnd ?? null;
+  if (!end || Number.isNaN(end.getTime()) || end.getTime() <= params.now.getTime()) {
+    return baseExpiry;
+  }
+  if (end.getTime() < baseExpiry.getTime()) return end;
+  return baseExpiry;
+}
+
 type Params = { entitlementId: string };
 
-async function _GET(_: Request, context: { params: Params | Promise<Params> }) {
+async function _GET(req: Request, context: { params: Params | Promise<Params> }) {
   const { entitlementId } = await context.params;
   if (!entitlementId || typeof entitlementId !== "string") {
     return jsonWrap({ error: "INVALID_ENTITLEMENT_ID" }, { status: 400 });
   }
+  const requestUrl = new URL(req.url);
+  const forceRefreshQrRaw = requestUrl.searchParams.get("forceRefreshQr");
+  const forceRefreshQr =
+    forceRefreshQrRaw === "1" ||
+    forceRefreshQrRaw?.toLowerCase() === "true" ||
+    forceRefreshQrRaw?.toLowerCase() === "yes";
 
   const supabase = await createSupabaseServer();
   const { data, error } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
@@ -110,16 +138,50 @@ async function _GET(_: Request, context: { params: Params | Promise<Params> }) {
     : null;
 
   let qrToken: string | null = null;
+  let qrExpiresAt: Date | null = null;
   if (actions.canShowQr) {
-    await prisma.entitlementQrToken.deleteMany({ where: { entitlementId: ent.id } });
-
-    const token = crypto.randomUUID();
-    const tokenHash = hashToken(token);
-    const expiresAt = checkinWindow?.end ?? new Date(Date.now() + 1000 * 60 * 60);
-    await prisma.entitlementQrToken.create({
-      data: { tokenHash, entitlementId: ent.id, expiresAt },
+    const now = new Date();
+    const desiredExpiresAt = resolveDesiredQrExpiresAt({
+      now,
+      checkinWindowEnd: checkinWindow?.end ?? null,
     });
-    qrToken = token;
+
+    const activeToken =
+      !forceRefreshQr
+        ? await prisma.entitlementQrToken.findFirst({
+            where: {
+              entitlementId: ent.id,
+              OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+            },
+            orderBy: { createdAt: "desc" },
+            select: { tokenHash: true, expiresAt: true },
+          })
+        : null;
+
+    if (activeToken?.expiresAt && activeToken.expiresAt.getTime() > now.getTime()) {
+      const reusableToken = buildDeterministicQrToken({
+        entitlementId: ent.id,
+        expiresAt: activeToken.expiresAt,
+      });
+      if (hashToken(reusableToken) === activeToken.tokenHash) {
+        qrToken = reusableToken;
+        qrExpiresAt = activeToken.expiresAt;
+      }
+    }
+
+    if (!qrToken) {
+      await prisma.entitlementQrToken.deleteMany({ where: { entitlementId: ent.id } });
+      const token = buildDeterministicQrToken({
+        entitlementId: ent.id,
+        expiresAt: desiredExpiresAt,
+      });
+      const tokenHash = hashToken(token);
+      await prisma.entitlementQrToken.create({
+        data: { tokenHash, entitlementId: ent.id, expiresAt: desiredExpiresAt },
+      });
+      qrToken = token;
+      qrExpiresAt = desiredExpiresAt;
+    }
   }
 
   const organizationName = event?.organization?.publicName || event?.organization?.businessName || null;
@@ -324,6 +386,7 @@ async function _GET(_: Request, context: { params: Params | Promise<Params> }) {
     passAvailable,
     passUrl,
     qrToken,
+    qrExpiresAt: qrExpiresAt ? qrExpiresAt.toISOString() : null,
     pairing: pairingSummary,
     pairingActions,
     payment: paymentBreakdown,

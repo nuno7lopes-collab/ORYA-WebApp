@@ -12,7 +12,7 @@ import {
   toDeterministicUuid,
 } from "@/app/api/messages/communities/_shared";
 
-function normalizeUserIds(value: unknown) {
+function normalizeUserTargets(value: unknown) {
   if (!Array.isArray(value)) return [] as string[];
   return Array.from(
     new Set(
@@ -22,6 +22,12 @@ function normalizeUserIds(value: unknown) {
         .filter(Boolean),
     ),
   );
+}
+
+function normalizeUsernameToken(value: string) {
+  const trimmed = value.trim();
+  const withoutAt = trimmed.startsWith("@") ? trimmed.slice(1) : trimmed;
+  return withoutAt.toLowerCase();
 }
 
 async function _POST(
@@ -46,18 +52,60 @@ async function _POST(
       message?: unknown;
     } | null;
 
-    const targetUserIds = normalizeUserIds(payload?.userIds);
-    if (!targetUserIds.length) {
+    const targetRefs = normalizeUserTargets(payload?.userIds);
+    if (!targetRefs.length) {
       return jsonWrap({ ok: false, error: "INVALID_USERS" }, { status: 400 });
     }
 
-    const profiles = await prisma.profile.findMany({
-      where: { id: { in: targetUserIds } },
-      select: { id: true },
-    });
+    const usernameTargets = Array.from(
+      new Set(
+        targetRefs
+          .map((value) => normalizeUsernameToken(value))
+          .filter(Boolean),
+      ),
+    );
+    const [profilesById, profilesByUsername] = await Promise.all([
+      prisma.profile.findMany({
+        where: { id: { in: targetRefs } },
+        select: { id: true, username: true },
+      }),
+      usernameTargets.length
+        ? prisma.profile.findMany({
+            where: { username: { in: usernameTargets } },
+            select: { id: true, username: true },
+          })
+        : Promise.resolve([] as Array<{ id: string; username: string | null }>),
+    ]);
 
-    const foundSet = new Set(profiles.map((profile) => profile.id));
-    const missingUsers = targetUserIds.filter((userId) => !foundSet.has(userId));
+    const profileIdById = new Map(profilesById.map((profile) => [profile.id, profile.id]));
+    const profileIdByUsername = new Map<string, string>();
+    for (const profile of [...profilesById, ...profilesByUsername]) {
+      const key = profile.username?.trim().toLowerCase();
+      if (!key || profileIdByUsername.has(key)) continue;
+      profileIdByUsername.set(key, profile.id);
+    }
+
+    const resolvedUserIds = targetRefs.map((target) => {
+      const byId = profileIdById.get(target);
+      if (byId) return byId;
+      const byUsername = profileIdByUsername.get(normalizeUsernameToken(target));
+      return byUsername ?? null;
+    });
+    const missingUsers = targetRefs.filter((_, index) => !resolvedUserIds[index]);
+    const targetUserIds = Array.from(
+      new Set(
+        resolvedUserIds.filter((value): value is string => Boolean(value)),
+      ),
+    );
+    if (!targetUserIds.length) {
+      return jsonWrap({
+        ok: true,
+        invitedCount: 0,
+        invitedUserIds: [],
+        skipped: missingUsers.map((target) => ({ userId: target, reason: "USER_NOT_FOUND" })),
+        missingUserIds: missingUsers,
+      });
+    }
 
     const existingMembers = await prisma.chatConversationMember.findMany({
       where: {
@@ -75,14 +123,12 @@ async function _POST(
     const membershipByUser = new Map(existingMembers.map((member) => [member.userId, member] as const));
 
     const invited: string[] = [];
-    const skipped: Array<{ userId: string; reason: string }> = [];
+    const skipped: Array<{ userId: string; reason: string }> = missingUsers.map((target) => ({
+      userId: target,
+      reason: "USER_NOT_FOUND",
+    }));
 
     for (const userId of targetUserIds) {
-      if (!foundSet.has(userId)) {
-        skipped.push({ userId, reason: "USER_NOT_FOUND" });
-        continue;
-      }
-
       const member = membershipByUser.get(userId);
       if (member?.bannedAt) {
         skipped.push({ userId, reason: "BANNED" });

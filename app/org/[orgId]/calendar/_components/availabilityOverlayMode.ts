@@ -1,4 +1,4 @@
-export type AvailabilityOverlayMode = "none" | "general" | "scope";
+export type AvailabilityOverlayMode = "none" | "scope";
 
 export function resolveAvailabilityOverlayState(input: {
   showAvailabilityOverlayParam: string | null;
@@ -14,7 +14,7 @@ export function resolveAvailabilityOverlayState(input: {
     ? "none"
     : input.hasSingleScopeSelection
       ? "scope"
-      : "general";
+      : "none";
 
   return {
     showAvailabilityOverlay,
@@ -26,15 +26,16 @@ export function resolveAvailabilityOverlayState(input: {
 export function resolveAvailabilityOverlayHint(input: {
   overlayMode: AvailabilityOverlayMode;
   hasActiveSelection: boolean;
+  showAvailabilityOverlay: boolean;
 }) {
   if (input.overlayMode === "scope") {
     return "Disponibilidade do escopo selecionado.";
   }
-  if (input.overlayMode === "general") {
-    return input.hasActiveSelection
-      ? "Múltiplos escopos ativos: a sobreposição mostra disponibilidade geral."
-      : "Disponibilidade geral ativa.";
+  if (!input.showAvailabilityOverlay) {
+    return "Sobreposição de disponibilidade desligada.";
   }
-  return "Sobreposição de disponibilidade desligada.";
+  if (input.hasActiveSelection) {
+    return "Seleciona apenas 1 treinador ou 1 campo para ver indisponibilidade.";
+  }
+  return null;
 }
-

@@ -44,6 +44,18 @@ function isOnToolPath(normalizedPathname: string | null, basePath: string) {
   return normalizedPathname === basePath || normalizedPathname.startsWith(`${basePath}/`);
 }
 
+function resolveDashboardItems(orgId: number): OrganizationNavSubItem[] {
+  const basePath = `/org/${orgId}/overview`;
+  return [
+    {
+      id: "daily-summary",
+      label: "Resumo do dia",
+      href: buildOrgHref(orgId, "/overview"),
+      isActive: ({ normalizedPathname }) => normalizedPathname === basePath,
+    },
+  ];
+}
+
 function resolveCalendarItems(orgId: number): OrganizationNavSubItem[] {
   const basePath = buildOrgHref(orgId, "/calendar");
   return [
@@ -686,6 +698,13 @@ export function buildOrganizationToolNavigation(input: {
   const canUseCalendar = access.canAccessReservas || access.canAccessTorneios;
 
   const tools: Array<OrganizationNavTool | null> = [
+    {
+      id: "dashboard",
+      toolKey: "dashboard",
+      label: "Dashboard",
+      href: buildOrgHref(orgId, "/overview"),
+      items: resolveDashboardItems(orgId),
+    },
     canUseCalendar
       ? {
           id: "calendar",

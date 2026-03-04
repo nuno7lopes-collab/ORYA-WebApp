@@ -1,12 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Alert,
-  Pressable,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { safePush } from "../../lib/navigation";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
@@ -17,7 +10,7 @@ import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { SectionHeader } from "../../components/liquid/SectionHeader";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { useAuth } from "../../lib/auth";
-import { useProfileAgenda, useProfileSummary, usePublicProfile } from "../../features/profile/hooks";
+import { useProfileAgenda, useProfilePadelCard, useProfileSummary } from "../../features/profile/hooks";
 import { updateProfile } from "../../features/profile/api";
 import { uploadImage } from "../../lib/upload";
 import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
@@ -28,8 +21,6 @@ import { useTopBarScroll } from "../../components/navigation/useTopBarScroll";
 import { sanitizeUsername, validateUsername } from "../../lib/username";
 import { checkUsernameAvailability, savePadelOnboarding } from "../../features/onboarding/api";
 import {
-  INTEREST_OPTIONS,
-  InterestId,
   PADEL_GENDERS,
   PADEL_LEVELS,
   PADEL_SIDES,
@@ -39,7 +30,7 @@ import {
 } from "../../features/onboarding/types";
 import { useRouter } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
-import { useUserFollowers, useUserFollowing } from "../../features/network/followLists";
+import { useUserFollowers } from "../../features/network/followLists";
 import { FollowListModal } from "../../components/profile/FollowListModal";
 import { ProfileHeader } from "../../components/profile/ProfileHeader";
 import { ProfileTicketsSheet } from "../../components/profile/ProfileTicketsSheet";
@@ -48,17 +39,6 @@ import { splitAgendaTimeline } from "../../features/profile/timeline";
 import { getMobileEnv } from "../../lib/env";
 import { resolveMobileLink } from "../../lib/links";
 import { TAB_PATHNAMES } from "../../lib/tabRoutes";
-
-const INTEREST_ICONS: Record<InterestId, string> = {
-  padel: "tennisball",
-  concertos: "musical-notes",
-  festas: "sparkles",
-  viagens: "airplane",
-  bem_estar: "leaf",
-  gastronomia: "restaurant",
-  aulas: "book",
-  workshops: "construct",
-};
 
 const normalizePadelGenderValue = (value: unknown): PadelGender | null => {
   const normalized = String(value ?? "")
@@ -80,10 +60,13 @@ const normalizePadelSideValue = (value: unknown): PadelPreferredSide | null => {
 };
 
 const normalizePadelLevelValue = (value: unknown): PadelLevel | null => {
-  const candidate = typeof value === "number" && Number.isFinite(value) ? String(value) : String(value ?? "").trim();
+  const candidate =
+    typeof value === "number" && Number.isFinite(value) ? String(value) : String(value ?? "").trim();
   if (!candidate) return null;
   return PADEL_LEVELS.includes(candidate as PadelLevel) ? (candidate as PadelLevel) : null;
 };
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -95,8 +78,7 @@ export default function ProfileScreen() {
   const userId = session?.user?.id ?? null;
   const summary = useProfileSummary(dataReady, accessToken, userId);
   const agenda = useProfileAgenda(accessToken, userId, dataReady);
-  const profile = summary.data ?? null;
-  const publicProfile = usePublicProfile(profile?.username ?? null, accessToken, dataReady);
+  const padelCard = useProfilePadelCard(accessToken, userId, dataReady);
   const tabBarPadding = useTabBarPadding();
   const topPadding = useTopHeaderPadding(16);
   const topBar = useTopBarScroll();
@@ -107,35 +89,55 @@ export default function ProfileScreen() {
   const [fullName, setFullName] = useState("");
   const [username, setUsername] = useState("");
   const [bio, setBio] = useState("");
-  const [interests, setInterests] = useState<InterestId[]>([]);
   const [avatarLocalUri, setAvatarLocalUri] = useState<string | null>(null);
   const [coverLocalUri, setCoverLocalUri] = useState<string | null>(null);
   const [avatarRemoved, setAvatarRemoved] = useState(false);
   const [coverRemoved, setCoverRemoved] = useState(false);
-  const [showPadel, setShowPadel] = useState(true);
+
   const [padelEditorOpen, setPadelEditorOpen] = useState(false);
   const [padelSaving, setPadelSaving] = useState(false);
   const [padelGender, setPadelGender] = useState<PadelGender | null>(null);
   const [padelSide, setPadelSide] = useState<PadelPreferredSide | null>(null);
   const [padelLevel, setPadelLevel] = useState<PadelLevel | null>(null);
+
   const [followersOpen, setFollowersOpen] = useState(false);
-  const [followingOpen, setFollowingOpen] = useState(false);
   const [ticketsSheetOpen, setTicketsSheetOpen] = useState(false);
-  const [interestsError, setInterestsError] = useState<string | null>(null);
   const [usernameStatus, setUsernameStatus] = useState<
     "idle" | "checking" | "available" | "taken" | "reserved" | "error" | "unchanged"
   >("idle");
-  const interestErrorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const usernameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const usernameAbortRef = useRef<AbortController | null>(null);
   const usernameCacheRef = useRef<Map<string, "available" | "taken" | "reserved">>(new Map());
-  const followersList = useUserFollowers(userId, accessToken, Boolean(followersOpen && userId));
-  const followingList = useUserFollowing(userId, accessToken, Boolean(followingOpen && userId));
-  const padelProfile = publicProfile.data?.profile ?? null;
-  const normalizedPadelGender = normalizePadelGenderValue(padelProfile?.padelGender ?? null);
-  const normalizedPadelSide = normalizePadelSideValue(padelProfile?.padelPreferredSide ?? null);
-  const normalizedPadelLevel = normalizePadelLevelValue(padelProfile?.padelLevel ?? profile?.padelLevel ?? null);
-  const hasPadelProfile = Boolean(normalizedPadelGender && normalizedPadelSide && normalizedPadelLevel);
+  const followersList = useUserFollowers(userId, accessToken, Boolean(dataReady && userId));
+
+  const profileSummary = summary.data ?? null;
+  const profileCard = padelCard.data ?? null;
+  const profile = useMemo(
+    () => ({
+      fullName: profileCard?.profile?.fullName ?? profileSummary?.fullName ?? null,
+      username: profileCard?.profile?.username ?? profileSummary?.username ?? null,
+      avatarUrl: profileCard?.profile?.avatarUrl ?? profileSummary?.avatarUrl ?? null,
+      coverUrl: profileCard?.profile?.coverUrl ?? profileSummary?.coverUrl ?? null,
+      bio: profileCard?.profile?.bio ?? profileSummary?.bio ?? null,
+      visibility: profileCard?.profile?.visibility ?? profileSummary?.visibility ?? "PUBLIC",
+      padelLevel: profileCard?.profile?.padelLevel ?? profileSummary?.padelLevel ?? null,
+      gender: profileCard?.profile?.gender ?? null,
+      padelPreferredSide: profileCard?.profile?.padelPreferredSide ?? null,
+      ranking: profileCard?.ranking ?? null,
+      friendsCount: profileCard?.social?.friendsCount ?? 0,
+      allowEmailNotifications: profileSummary?.allowEmailNotifications ?? true,
+      allowEventReminders: profileSummary?.allowEventReminders ?? true,
+      allowFollowRequests: profileSummary?.allowFollowRequests ?? true,
+    }),
+    [profileCard, profileSummary],
+  );
+
+  const normalizedPadelGender = normalizePadelGenderValue(profile.gender);
+  const normalizedPadelSide = normalizePadelSideValue(profile.padelPreferredSide);
+  const normalizedPadelLevel = normalizePadelLevelValue(profile.padelLevel);
+  const hasPadelProfile = Boolean(normalizedPadelGender && normalizedPadelSide);
+
   const padelGenderLabels = useMemo(
     () => ({
       MALE: t("onboarding:padel.genders.male"),
@@ -153,16 +155,14 @@ export default function ProfileScreen() {
   );
 
   useEffect(() => {
-    if (!profile) return;
     setFullName(profile.fullName ?? "");
     setUsername(profile.username ?? "");
     setBio(profile.bio ?? "");
-    setInterests((profile.favouriteCategories ?? []) as InterestId[]);
     setAvatarLocalUri(null);
     setCoverLocalUri(null);
     setAvatarRemoved(false);
     setCoverRemoved(false);
-  }, [profile]);
+  }, [profile.avatarUrl, profile.bio, profile.coverUrl, profile.fullName, profile.username]);
 
   useEffect(() => {
     setPadelGender(normalizedPadelGender);
@@ -171,17 +171,10 @@ export default function ProfileScreen() {
   }, [normalizedPadelGender, normalizedPadelLevel, normalizedPadelSide]);
 
   useEffect(() => {
-    if (!showPadel) return;
     if (!hasPadelProfile) {
       setPadelEditorOpen(true);
     }
-  }, [hasPadelProfile, showPadel]);
-
-  useEffect(() => {
-    if (!showPadel) {
-      setPadelEditorOpen(false);
-    }
-  }, [showPadel]);
+  }, [hasPadelProfile]);
 
   useEffect(() => {
     if (isFocused) {
@@ -189,14 +182,10 @@ export default function ProfileScreen() {
       return;
     }
     setFollowersOpen(false);
-    setFollowingOpen(false);
   }, [isFocused]);
 
   useEffect(() => {
     return () => {
-      if (interestErrorTimeoutRef.current) {
-        clearTimeout(interestErrorTimeoutRef.current);
-      }
       if (usernameTimerRef.current) {
         clearTimeout(usernameTimerRef.current);
       }
@@ -206,9 +195,9 @@ export default function ProfileScreen() {
     };
   }, []);
 
-  const avatarPreview = avatarRemoved ? null : avatarLocalUri ?? profile?.avatarUrl ?? null;
-  const coverPreview = coverRemoved ? null : coverLocalUri ?? profile?.coverUrl ?? null;
-  const topBarTitle = profile?.username ? `@${profile.username}` : "Perfil";
+  const avatarPreview = avatarRemoved ? null : avatarLocalUri ?? profile.avatarUrl;
+  const coverPreview = coverRemoved ? null : coverLocalUri ?? profile.coverUrl;
+  const topBarTitle = profile.username ? `@${profile.username}` : "Perfil";
   const topBarRight = (
     <Pressable
       onPress={() => safePush(router, "/settings")}
@@ -245,7 +234,7 @@ export default function ProfileScreen() {
   }, [editMode, username.length, usernameValidation]);
   const usernameStatusLabel = useMemo(() => {
     if (!editMode || !username || !usernameValidation.valid) return null;
-    if (normalizedUsername === (profile?.username ?? "")) return "Atual";
+    if (normalizedUsername === (profile.username ?? "")) return "Atual";
     switch (usernameStatus) {
       case "checking":
         return "A verificar disponibilidade...";
@@ -260,18 +249,26 @@ export default function ProfileScreen() {
       default:
         return null;
     }
-  }, [editMode, normalizedUsername, profile?.username, username, usernameStatus, usernameValidation.valid]);
+  }, [editMode, normalizedUsername, profile.username, username, usernameStatus, usernameValidation.valid]);
 
   const isDirty = useMemo(() => {
-    if (!profile) return false;
     if (fullName.trim() !== (profile.fullName ?? "").trim()) return true;
     if (normalizedUsername !== (profile.username ?? "")) return true;
     if (bio.trim() !== (profile.bio ?? "").trim()) return true;
-    const profileInterests = (profile.favouriteCategories ?? []) as InterestId[];
-    if (interests.slice().sort().join("|") !== profileInterests.slice().sort().join("|")) return true;
     if (avatarRemoved || coverRemoved || avatarLocalUri || coverLocalUri) return true;
     return false;
-  }, [avatarLocalUri, avatarRemoved, bio, coverLocalUri, coverRemoved, fullName, interests, normalizedUsername, profile]);
+  }, [
+    avatarLocalUri,
+    avatarRemoved,
+    bio,
+    coverLocalUri,
+    coverRemoved,
+    fullName,
+    normalizedUsername,
+    profile.bio,
+    profile.fullName,
+    profile.username,
+  ]);
 
   const canSave = Boolean(
     fullName.trim().length >= 2 &&
@@ -297,7 +294,7 @@ export default function ProfileScreen() {
       cleanup();
       return cleanup;
     }
-    if (normalizedUsername === (profile?.username ?? "")) {
+    if (normalizedUsername === (profile.username ?? "")) {
       setUsernameStatus("unchanged");
       cleanup();
       return cleanup;
@@ -331,7 +328,7 @@ export default function ProfileScreen() {
     }, 650);
 
     return cleanup;
-  }, [accessToken, editMode, normalizedUsername, profile?.username, username, usernameValidation.valid]);
+  }, [accessToken, editMode, normalizedUsername, profile.username, username, usernameValidation.valid]);
 
   const nameNode = editMode ? (
     <View className="items-center">
@@ -470,33 +467,13 @@ export default function ProfileScreen() {
     Alert.alert(title, message, actions);
   };
 
-  const toggleInterest = (interest: InterestId) => {
-    if (!editMode) return;
-    setInterests((prev) => {
-      if (prev.includes(interest)) {
-        setInterestsError(null);
-        return prev.filter((item) => item !== interest);
-      }
-      if (prev.length >= 6) {
-        setInterestsError("Máximo 6 interesses.");
-        if (interestErrorTimeoutRef.current) clearTimeout(interestErrorTimeoutRef.current);
-        interestErrorTimeoutRef.current = setTimeout(() => setInterestsError(null), 2200);
-        return prev;
-      }
-      setInterestsError(null);
-      return [...prev, interest];
-    });
-  };
-
   const handleToggleEdit = () => {
     if (!editMode) {
       setEditMode(true);
-      setInterestsError(null);
       return;
     }
     if (!isDirty) {
       setEditMode(false);
-      setInterestsError(null);
       return;
     }
     Alert.alert("Descartar alterações?", "Queres sair sem guardar?", [
@@ -506,24 +483,20 @@ export default function ProfileScreen() {
         style: "destructive",
         onPress: () => {
           setEditMode(false);
-          setInterestsError(null);
-          if (profile) {
-            setFullName(profile.fullName ?? "");
-            setUsername(profile.username ?? "");
-            setBio(profile.bio ?? "");
-            setInterests((profile.favouriteCategories ?? []) as InterestId[]);
-            setAvatarLocalUri(null);
-            setCoverLocalUri(null);
-            setAvatarRemoved(false);
-            setCoverRemoved(false);
-          }
+          setFullName(profile.fullName ?? "");
+          setUsername(profile.username ?? "");
+          setBio(profile.bio ?? "");
+          setAvatarLocalUri(null);
+          setCoverLocalUri(null);
+          setAvatarRemoved(false);
+          setCoverRemoved(false);
         },
       },
     ]);
   };
 
   const handleSave = async () => {
-    if (!profile || !canSave) return;
+    if (!canSave) return;
     setSaving(true);
     try {
       if (profile.username !== normalizedUsername) {
@@ -555,15 +528,17 @@ export default function ProfileScreen() {
         bio: bio.trim() || null,
         avatarUrl,
         coverUrl,
-        favouriteCategories: interests,
-        visibility: profile.visibility ?? "PUBLIC",
-        allowEmailNotifications: profile.allowEmailNotifications ?? true,
-        allowEventReminders: profile.allowEventReminders ?? true,
-        allowFollowRequests: profile.allowFollowRequests ?? true,
+        padelLevel: profile.padelLevel,
+        visibility: profile.visibility,
+        allowEmailNotifications: profile.allowEmailNotifications,
+        allowEventReminders: profile.allowEventReminders,
+        allowFollowRequests: profile.allowFollowRequests,
       });
 
-      queryClient.invalidateQueries({ queryKey: ["profile", "summary"] });
-      queryClient.invalidateQueries({ queryKey: ["profile", "public"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["profile", "summary"] }),
+        queryClient.invalidateQueries({ queryKey: ["profile", "padel-card"] }),
+      ]);
       setEditMode(false);
     } catch {
       Alert.alert("Erro", "Não foi possível guardar o perfil.");
@@ -572,7 +547,7 @@ export default function ProfileScreen() {
     }
   };
 
-  const handleSavePadelProfile = async () => {
+  const handleSavePadelProfile = async (retryAttempt = false) => {
     if (!accessToken) {
       Alert.alert("Inicia sessão", "Precisas de sessão ativa para atualizar o perfil de padel.");
       return;
@@ -581,15 +556,38 @@ export default function ProfileScreen() {
       Alert.alert("Perfil de padel", "Seleciona género competitivo e lado preferido.");
       return;
     }
+
     setPadelSaving(true);
     try {
-      await savePadelOnboarding({
-        gender: padelGender,
-        preferredSide: padelSide,
-        level: padelLevel,
-        accessToken,
-      });
-      await Promise.all([summary.refetch(), publicProfile.refetch()]);
+      let lastError: unknown = null;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          await savePadelOnboarding({
+            gender: padelGender,
+            preferredSide: padelSide,
+            level: padelLevel,
+            accessToken,
+          });
+          lastError = null;
+          break;
+        } catch (error: unknown) {
+          lastError = error;
+          if (attempt === 0) {
+            await wait(500);
+          }
+        }
+      }
+
+      if (lastError) {
+        throw lastError;
+      }
+
+      await Promise.all([
+        summary.refetch(),
+        padelCard.refetch(),
+        queryClient.invalidateQueries({ queryKey: ["profile", "summary"] }),
+        queryClient.invalidateQueries({ queryKey: ["profile", "padel-card"] }),
+      ]);
       setPadelEditorOpen(false);
       Alert.alert("Perfil de padel", "Perfil atualizado com sucesso.");
     } catch (error: unknown) {
@@ -597,23 +595,24 @@ export default function ProfileScreen() {
         error instanceof Error && error.message
           ? error.message
           : "Não foi possível guardar agora.";
-      Alert.alert("Perfil de padel", errorMessage);
+      if (retryAttempt) {
+        Alert.alert("Perfil de padel", errorMessage);
+      } else {
+        Alert.alert("Perfil de padel", errorMessage, [
+          { text: "Agora não", style: "cancel" },
+          { text: "Tentar novamente", onPress: () => void handleSavePadelProfile(true) },
+        ]);
+      }
     } finally {
       setPadelSaving(false);
     }
   };
 
   const agendaStats = agenda.data?.stats ?? { upcoming: 0, past: 0, thisMonth: 0 };
-  const totalTimelineItems = agendaStats.upcoming + agendaStats.past;
-  const counts = publicProfile.data?.counts ?? { followers: 0, following: 0, events: totalTimelineItems };
   const agendaItems = useMemo(() => agenda.data?.items ?? [], [agenda.data?.items]);
   const timeline = useMemo(() => splitAgendaTimeline(agendaItems), [agendaItems]);
   const activeTimelineItems = useMemo(() => timeline.active.slice(0, 6), [timeline.active]);
   const historyTimelineItems = useMemo(() => timeline.history.slice(0, 8), [timeline.history]);
-  const selectedInterests = useMemo(
-    () => INTEREST_OPTIONS.filter((interest) => interests.includes(interest.id)),
-    [interests],
-  );
   const featuredUpcomingItem = activeTimelineItems[0] ?? null;
   const remainingUpcomingItems = featuredUpcomingItem ? activeTimelineItems.slice(1) : [];
   const historyGroups = useMemo(() => {
@@ -634,7 +633,13 @@ export default function ProfileScreen() {
   }, [historyTimelineItems]);
 
   const formatAgendaDate = (value: string, long = false) =>
-    new Date(value).toLocaleDateString("pt-PT", long ? { weekday: "short", day: "2-digit", month: "long" } : { day: "2-digit", month: "short" });
+    new Date(value).toLocaleDateString(
+      "pt-PT",
+      long
+        ? { weekday: "short", day: "2-digit", month: "long" }
+        : { day: "2-digit", month: "short" },
+    );
+
   const agendaTypeLabel = (item: AgendaItem) => {
     switch (item.type) {
       case "EVENTO":
@@ -649,6 +654,7 @@ export default function ProfileScreen() {
         return "Agenda";
     }
   };
+
   const agendaTypeColor = (item: AgendaItem) => {
     switch (item.type) {
       case "EVENTO":
@@ -692,7 +698,18 @@ export default function ProfileScreen() {
               ? "flex-row items-center gap-3 border-b border-white/10 px-1 py-3"
               : "flex-row items-center gap-3 px-1 py-3"
         }
-        style={disabled ? { opacity: 0.6 } : featured ? { shadowColor: "#6FF4FF", shadowOpacity: 0.12, shadowRadius: 14, shadowOffset: { width: 0, height: 4 } } : undefined}
+        style={
+          disabled
+            ? { opacity: 0.6 }
+            : featured
+              ? {
+                  shadowColor: "#6FF4FF",
+                  shadowOpacity: 0.12,
+                  shadowRadius: 14,
+                  shadowOffset: { width: 0, height: 4 },
+                }
+              : undefined
+        }
         accessibilityRole={disabled ? "text" : "button"}
         accessibilityLabel={item.title}
       >
@@ -711,7 +728,14 @@ export default function ProfileScreen() {
             {item.title}
           </Text>
           <View className="mt-1 flex-row items-center gap-2">
-            <View className="rounded-full px-2 py-0.5" style={{ backgroundColor: "rgba(255,255,255,0.08)", borderWidth: 1, borderColor: "rgba(255,255,255,0.18)" }}>
+            <View
+              className="rounded-full px-2 py-0.5"
+              style={{
+                backgroundColor: "rgba(255,255,255,0.08)",
+                borderWidth: 1,
+                borderColor: "rgba(255,255,255,0.18)",
+              }}
+            >
               <Text style={{ color: accentColor, fontSize: 10, fontWeight: "700" }}>{typeLabel}</Text>
             </View>
             <Text className={featured ? "text-white/75 text-xs" : "text-white/60 text-xs"}>
@@ -747,7 +771,17 @@ export default function ProfileScreen() {
       >
         <View className="items-center" style={{ width: 14 }}>
           <View style={{ width: 8, height: 8, borderRadius: 999, backgroundColor: accentColor, marginTop: 5 }} />
-          {showDivider ? <View style={{ width: 1, flex: 1, minHeight: 44, backgroundColor: "rgba(255,255,255,0.16)", marginTop: 6 }} /> : null}
+          {showDivider ? (
+            <View
+              style={{
+                width: 1,
+                flex: 1,
+                minHeight: 44,
+                backgroundColor: "rgba(255,255,255,0.16)",
+                marginTop: 6,
+              }}
+            />
+          ) : null}
         </View>
         <View style={{ flex: 1 }}>
           <Text className="text-white text-sm font-semibold" numberOfLines={1}>
@@ -762,6 +796,15 @@ export default function ProfileScreen() {
       </Pressable>
     );
   };
+
+  const rankingIsOfficial = profile.ranking?.source === "OFFICIAL" && profile.ranking?.hasOfficialRanking;
+  const rankingLabel = rankingIsOfficial ? "Ranking" : "Nível declarado";
+  const rankingValue = profile.ranking?.visualValue ?? profile.ranking?.declaredLevel ?? "-";
+  const friendsCountFromList = Array.isArray(followersList.data) ? followersList.data.length : 0;
+  const friendsCount =
+    typeof profile.friendsCount === "number"
+      ? Math.max(profile.friendsCount, friendsCountFromList)
+      : friendsCountFromList;
 
   return (
     <LiquidBackground>
@@ -789,7 +832,7 @@ export default function ProfileScreen() {
             <GlassSkeleton height={160} />
             <GlassSkeleton height={120} />
           </View>
-        ) : summary.isError || !profile ? (
+        ) : summary.isError || !profileSummary ? (
           <View className="gap-3 rounded-2xl border border-white/15 bg-white/[0.03] px-4 py-4">
             <Text className="text-white text-sm font-semibold">Não foi possível carregar o perfil.</Text>
             <Text className="text-white/75 text-xs">Tenta novamente para atualizar os teus dados.</Text>
@@ -808,52 +851,58 @@ export default function ProfileScreen() {
               isUser
               coverUrl={coverPreview}
               avatarUrl={avatarPreview}
-              displayName={profile?.fullName ?? "Utilizador ORYA"}
-              username={profile?.username ?? null}
-              bio={profile?.bio ?? null}
-              counts={{
-                followers: counts.followers,
-                following: counts.following,
-                events: counts.events ?? totalTimelineItems,
-              }}
+              displayName={profile.fullName ?? "Utilizador ORYA"}
+              username={profile.username ?? null}
+              bio={profile.bio ?? null}
+              metrics={[
+                {
+                  key: "friends",
+                  value: friendsCount,
+                  label: "Amigos",
+                  onPress: () => setFollowersOpen(true),
+                  accessibilityLabel: "Ver amigos",
+                },
+                {
+                  key: "ranking",
+                  value: rankingValue,
+                  label: rankingLabel,
+                  accessibilityLabel: rankingLabel,
+                },
+              ]}
               onCoverPress={editMode ? () => openImageActions("cover") : undefined}
               onAvatarPress={editMode ? () => openImageActions("avatar") : undefined}
-              onFollowersPress={() => setFollowersOpen(true)}
-              onFollowingPress={() => setFollowingOpen(true)}
               rightActions={
-                <>
-                  <Pressable
-                    onPress={
-                      editMode
-                        ? isDirty && canSave
-                          ? handleSave
-                          : handleToggleEdit
+                <Pressable
+                  onPress={
+                    editMode
+                      ? isDirty && canSave
+                        ? handleSave
                         : handleToggleEdit
-                    }
-                    disabled={saving}
-                    className={
-                      editMode
-                        ? "rounded-full bg-white/90 px-3 py-2"
-                        : "rounded-full border border-white/15 bg-white/10 px-3 py-2"
-                    }
-                    style={saving ? { opacity: 0.6 } : undefined}
-                    accessibilityRole="button"
-                    accessibilityLabel={
-                      editMode
-                        ? isDirty && canSave
-                          ? saving
-                            ? "A guardar"
-                            : "Guardar"
-                          : "Fechar edição"
-                        : "Editar"
-                    }
-                    accessibilityState={{ disabled: saving }}
-                  >
-                    <Text className={editMode ? "text-black text-xs font-semibold" : "text-white text-xs font-semibold"}>
-                      {editMode ? (isDirty && canSave ? (saving ? "A guardar..." : "Guardar") : "Fechar") : "Editar"}
-                    </Text>
-                  </Pressable>
-                </>
+                      : handleToggleEdit
+                  }
+                  disabled={saving}
+                  className={
+                    editMode
+                      ? "rounded-full bg-white/90 px-3 py-2"
+                      : "rounded-full border border-white/15 bg-white/10 px-3 py-2"
+                  }
+                  style={saving ? { opacity: 0.6 } : undefined}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    editMode
+                      ? isDirty && canSave
+                        ? saving
+                          ? "A guardar"
+                          : "Guardar"
+                        : "Fechar edição"
+                      : "Editar"
+                  }
+                  accessibilityState={{ disabled: saving }}
+                >
+                  <Text className={editMode ? "text-black text-xs font-semibold" : "text-white text-xs font-semibold"}>
+                    {editMode ? (isDirty && canSave ? (saving ? "A guardar..." : "Guardar") : "Fechar") : "Editar"}
+                  </Text>
+                </Pressable>
               }
               nameNode={nameNode}
               usernameNode={usernameNode}
@@ -861,341 +910,240 @@ export default function ProfileScreen() {
             />
 
             {editMode ? (
-              <Text className="text-white/55 text-xs text-center">
-                Toca na foto ou na capa para mudar ou remover.
-              </Text>
+              <Text className="text-white/55 text-xs text-center">Toca na foto ou na capa para mudar ou remover.</Text>
             ) : null}
 
-            <View className="self-center flex-row items-center rounded-full border border-white/14 bg-white/[0.04] p-1">
+            {padelCard.isError ? (
+              <View className="rounded-2xl border border-rose-300/35 bg-rose-400/10 px-4 py-3">
+                <Text className="text-rose-100 text-xs">Não foi possível atualizar os dados de ranking.</Text>
+                <Pressable
+                  onPress={() => padelCard.refetch()}
+                  className="mt-2 self-start rounded-full border border-white/20 bg-white/10 px-3 py-2"
+                  accessibilityRole="button"
+                  accessibilityLabel="Tentar novamente ranking"
+                >
+                  <Text className="text-white text-xs font-semibold">Tentar novamente</Text>
+                </Pressable>
+              </View>
+            ) : null}
+
+            <View className="gap-3 pb-3">
+              <Text className="text-white text-sm font-semibold mb-2">Perfil Padel</Text>
+
+              <View className="rounded-2xl border border-cyan-200/30 bg-cyan-300/10 px-4 py-3">
+                <Text className="text-cyan-50 text-[11px] font-semibold uppercase tracking-[0.08em]">
+                  {rankingIsOfficial ? "Ranking oficial" : "Sem ranking oficial"}
+                </Text>
+                <Text className="mt-1 text-white text-2xl font-semibold">{rankingValue}</Text>
+                <Text className="mt-1 text-white/70 text-xs">
+                  {rankingIsOfficial
+                    ? "Valor calculado pelo ranking competitivo."
+                    : "Valor declarado pelo jogador até existir ranking oficial."}
+                </Text>
+              </View>
+
+              <Text className="text-white/70 text-sm">
+                {normalizedPadelGender
+                  ? `Género competitivo: ${padelGenderLabels[normalizedPadelGender]}`
+                  : "Género competitivo por definir"}
+              </Text>
+              <Text className="text-white/70 text-sm">
+                {normalizedPadelSide
+                  ? `Lado preferido: ${padelSideLabels[normalizedPadelSide]}`
+                  : "Lado preferido por definir"}
+              </Text>
+
               <Pressable
-                onPress={() => setShowPadel(false)}
-                className={
-                  !showPadel
-                    ? "min-w-[126px] rounded-full border border-white/24 bg-white/20 px-4 py-2.5"
-                    : "min-w-[126px] rounded-full border border-transparent bg-transparent px-4 py-2.5"
-                }
+                onPress={() => setPadelEditorOpen((prev) => !prev)}
+                className="mt-2 rounded-xl border border-white/15 bg-white/7 px-4 py-3"
                 accessibilityRole="button"
-                accessibilityLabel={t("events:padel.profile.baseLabel")}
-                accessibilityState={{ selected: !showPadel }}
+                accessibilityLabel={
+                  padelEditorOpen
+                    ? "Fechar editor de perfil de padel"
+                    : hasPadelProfile
+                      ? "Editar perfil de padel"
+                      : "Completar perfil de padel"
+                }
               >
-                <Text className={!showPadel ? "text-white text-xs font-semibold text-center" : "text-white/75 text-xs font-semibold text-center"}>
-                  {t("events:padel.profile.baseLabel")}
+                <Text className="text-white text-sm font-semibold text-center">
+                  {padelEditorOpen
+                    ? "Fechar edição"
+                    : hasPadelProfile
+                      ? "Editar perfil Padel"
+                      : "Completar perfil de padel"}
                 </Text>
               </Pressable>
-              <Pressable
-                onPress={() => setShowPadel(true)}
-                className={
-                  showPadel
-                    ? "min-w-[126px] rounded-full border border-cyan-200/38 bg-cyan-300/20 px-4 py-2.5"
-                    : "min-w-[126px] rounded-full border border-transparent bg-transparent px-4 py-2.5"
-                }
-                accessibilityRole="button"
-                accessibilityLabel={t("events:padel.profile.padelLabel")}
-                accessibilityState={{ selected: showPadel }}
-              >
-                <View className="flex-row items-center justify-center gap-2">
-                  <Ionicons name="tennisball" size={14} color="rgba(255,255,255,0.9)" />
-                  <Text className={showPadel ? "text-white text-xs font-semibold text-center" : "text-white/75 text-xs font-semibold text-center"}>
-                    {t("events:padel.profile.padelLabel")}
-                  </Text>
+
+              {padelEditorOpen ? (
+                <View className="mt-3 gap-3">
+                  <Text className="text-white/70 text-xs uppercase tracking-[0.08em]">Género</Text>
+                  <View className="flex-row flex-wrap gap-2">
+                    {PADEL_GENDERS.map((gender) => {
+                      const active = padelGender === gender.id;
+                      return (
+                        <Pressable
+                          key={gender.id}
+                          onPress={() => setPadelGender(gender.id)}
+                          className={
+                            active
+                              ? "rounded-full border border-white/25 bg-white/20 px-3 py-2"
+                              : "rounded-full border border-white/10 bg-white/5 px-3 py-2"
+                          }
+                          accessibilityRole="button"
+                          accessibilityLabel={padelGenderLabels[gender.id]}
+                          accessibilityState={{ selected: active }}
+                        >
+                          <Text className={active ? "text-white text-xs font-semibold" : "text-white/70 text-xs"}>
+                            {padelGenderLabels[gender.id]}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                  <Text className="text-white/70 text-xs uppercase tracking-[0.08em]">Lado</Text>
+                  <View className="flex-row flex-wrap gap-2">
+                    {PADEL_SIDES.map((side) => {
+                      const active = padelSide === side.id;
+                      return (
+                        <Pressable
+                          key={side.id}
+                          onPress={() => setPadelSide(side.id)}
+                          className={
+                            active
+                              ? "rounded-full border border-white/25 bg-white/20 px-3 py-2"
+                              : "rounded-full border border-white/10 bg-white/5 px-3 py-2"
+                          }
+                          accessibilityRole="button"
+                          accessibilityLabel={padelSideLabels[side.id]}
+                          accessibilityState={{ selected: active }}
+                        >
+                          <Text className={active ? "text-white text-xs font-semibold" : "text-white/70 text-xs"}>
+                            {padelSideLabels[side.id]}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                  <Text className="text-white/70 text-xs uppercase tracking-[0.08em]">Nível declarado</Text>
+                  <View className="flex-row flex-wrap gap-2">
+                    {PADEL_LEVELS.map((level) => {
+                      const active = padelLevel === level;
+                      return (
+                        <Pressable
+                          key={level}
+                          onPress={() => setPadelLevel((prev) => (prev === level ? null : level))}
+                          className={
+                            active
+                              ? "rounded-full border border-white/25 bg-white/20 px-3 py-2"
+                              : "rounded-full border border-white/10 bg-white/5 px-3 py-2"
+                          }
+                          accessibilityRole="button"
+                          accessibilityLabel={`Nível ${level}`}
+                          accessibilityState={{ selected: active }}
+                        >
+                          <Text className={active ? "text-white text-xs font-semibold" : "text-white/70 text-xs"}>
+                            {level}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                  <Pressable
+                    onPress={() => void handleSavePadelProfile()}
+                    disabled={padelSaving}
+                    className="rounded-xl bg-white/90 px-4 py-3"
+                    style={padelSaving ? { opacity: 0.7 } : undefined}
+                    accessibilityRole="button"
+                    accessibilityLabel="Guardar perfil de padel"
+                    accessibilityState={{ disabled: padelSaving }}
+                  >
+                    <Text className="text-[#0b1014] text-sm font-semibold text-center">
+                      {padelSaving ? "A guardar..." : "Guardar perfil de padel"}
+                    </Text>
+                  </Pressable>
                 </View>
+              ) : null}
+
+              <Pressable
+                onPress={() => safePush(router, TAB_PATHNAMES.competir)}
+                className="mt-1 rounded-xl border border-white/15 bg-white/10 px-4 py-3"
+                accessibilityRole="button"
+                accessibilityLabel={t("common:actions.explore")}
+              >
+                <Text className="text-white text-sm font-semibold text-center">{t("common:actions.explore")}</Text>
               </Pressable>
             </View>
 
-            {showPadel ? (
-              <View className="gap-3 pb-3">
-                <Text className="text-white text-sm font-semibold mb-2">{t("events:padel.profile.title")}</Text>
-                {normalizedPadelLevel ? (
-                  <Text className="text-white/70 text-sm">
-                    {t("events:padel.profile.levelLabel", { level: normalizedPadelLevel })}
-                  </Text>
-                ) : (
-                  <Text className="text-white/60 text-sm">{t("events:padel.profile.levelMissing")}</Text>
-                )}
-                <Text className="text-white/65 text-xs mt-1">
-                  {normalizedPadelGender
-                    ? `Género competitivo: ${padelGenderLabels[normalizedPadelGender]}`
-                    : "Género competitivo por definir"}
-                </Text>
-                <Text className="text-white/65 text-xs">
-                  {normalizedPadelSide
-                    ? `Lado preferido: ${padelSideLabels[normalizedPadelSide]}`
-                    : "Lado preferido por definir"}
-                </Text>
-                <Pressable
-                  onPress={() => setPadelEditorOpen((prev) => !prev)}
-                  className="mt-2 rounded-xl border border-white/15 bg-white/7 px-4 py-3"
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    padelEditorOpen
-                      ? "Fechar editor de perfil de padel"
-                      : hasPadelProfile
-                        ? "Editar perfil de padel"
-                        : t("events:padel.profile.completeProfile")
-                  }
-                >
-                  <Text className="text-white text-sm font-semibold text-center">
-                    {padelEditorOpen
-                      ? "Fechar edição"
-                      : hasPadelProfile
-                        ? "Editar perfil Padel"
-                        : t("events:padel.profile.completeProfile")}
-                  </Text>
-                </Pressable>
-                {!padelEditorOpen && hasPadelProfile ? (
-                  <Text className="text-white/60 text-xs">
-                    Perfil completo. Podes editar sempre que quiseres.
-                  </Text>
-                ) : null}
-                {padelEditorOpen ? (
-                  <View className="mt-3 gap-3">
-                    <Text className="text-white/70 text-xs uppercase tracking-[0.08em]">Género</Text>
-                    <View className="flex-row flex-wrap gap-2">
-                      {PADEL_GENDERS.map((gender) => {
-                        const active = padelGender === gender.id;
-                        return (
-                          <Pressable
-                            key={gender.id}
-                            onPress={() => setPadelGender(gender.id)}
-                            className={
-                              active
-                                ? "rounded-full border border-white/25 bg-white/20 px-3 py-2"
-                                : "rounded-full border border-white/10 bg-white/5 px-3 py-2"
-                            }
-                            accessibilityRole="button"
-                            accessibilityLabel={padelGenderLabels[gender.id]}
-                            accessibilityState={{ selected: active }}
-                          >
-                            <Text className={active ? "text-white text-xs font-semibold" : "text-white/70 text-xs"}>
-                              {padelGenderLabels[gender.id]}
-                            </Text>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-                    <Text className="text-white/70 text-xs uppercase tracking-[0.08em]">Lado</Text>
-                    <View className="flex-row flex-wrap gap-2">
-                      {PADEL_SIDES.map((side) => {
-                        const active = padelSide === side.id;
-                        return (
-                          <Pressable
-                            key={side.id}
-                            onPress={() => setPadelSide(side.id)}
-                            className={
-                              active
-                                ? "rounded-full border border-white/25 bg-white/20 px-3 py-2"
-                                : "rounded-full border border-white/10 bg-white/5 px-3 py-2"
-                            }
-                            accessibilityRole="button"
-                            accessibilityLabel={padelSideLabels[side.id]}
-                            accessibilityState={{ selected: active }}
-                          >
-                            <Text className={active ? "text-white text-xs font-semibold" : "text-white/70 text-xs"}>
-                              {padelSideLabels[side.id]}
-                            </Text>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-                    <Text className="text-white/70 text-xs uppercase tracking-[0.08em]">Nível</Text>
-                    <View className="flex-row flex-wrap gap-2">
-                      {PADEL_LEVELS.map((level) => {
-                        const active = padelLevel === level;
-                        return (
-                          <Pressable
-                            key={level}
-                            onPress={() =>
-                              setPadelLevel((prev) => (prev === level ? null : level))
-                            }
-                            className={
-                              active
-                                ? "rounded-full border border-white/25 bg-white/20 px-3 py-2"
-                                : "rounded-full border border-white/10 bg-white/5 px-3 py-2"
-                            }
-                            accessibilityRole="button"
-                            accessibilityLabel={`Nível ${level}`}
-                            accessibilityState={{ selected: active }}
-                          >
-                            <Text className={active ? "text-white text-xs font-semibold" : "text-white/70 text-xs"}>
-                              {level}
-                            </Text>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-                    <Pressable
-                      onPress={handleSavePadelProfile}
-                      disabled={padelSaving}
-                      className="rounded-xl bg-white/90 px-4 py-3"
-                      style={padelSaving ? { opacity: 0.7 } : undefined}
-                      accessibilityRole="button"
-                      accessibilityLabel="Guardar perfil de padel"
-                      accessibilityState={{ disabled: padelSaving }}
-                    >
-                      <Text className="text-[#0b1014] text-sm font-semibold text-center">
-                        {padelSaving ? "A guardar..." : "Guardar perfil de padel"}
-                      </Text>
-                    </Pressable>
-                  </View>
-                ) : null}
-                <Pressable
-                  onPress={() => safePush(router, TAB_PATHNAMES.competir)}
-                  className="mt-1 rounded-xl border border-white/15 bg-white/10 px-4 py-3"
-                  accessibilityRole="button"
-                  accessibilityLabel={t("common:actions.explore")}
-                >
-                  <Text className="text-white text-sm font-semibold text-center">
-                    {t("common:actions.explore")}
-                  </Text>
-                </Pressable>
+            <SectionHeader title="Timeline pessoal" subtitle="Reservas, bilhetes, inscrições e jogos." />
+            {agenda.isLoading ? (
+              <View className="gap-3">
+                <GlassSkeleton height={90} />
               </View>
             ) : (
-              <View className="gap-3">
-                {editMode ? (
+              <View className="gap-5">
+                <View className="flex-row flex-wrap gap-2">
+                  <View className="rounded-full border border-cyan-200/35 bg-cyan-300/12 px-3 py-1.5">
+                    <Text className="text-cyan-50 text-xs font-semibold">Próximos {timeline.active.length}</Text>
+                  </View>
+                  <View className="rounded-full border border-white/16 bg-white/6 px-3 py-1.5">
+                    <Text className="text-white/80 text-xs font-semibold">Histórico {timeline.history.length}</Text>
+                  </View>
+                  <View className="rounded-full border border-emerald-200/26 bg-emerald-300/10 px-3 py-1.5">
+                    <Text className="text-emerald-100 text-xs font-semibold">Este mês {agendaStats.thisMonth}</Text>
+                  </View>
+                </View>
+                {activeTimelineItems.length === 0 && historyTimelineItems.length === 0 ? (
                   <View className="gap-2">
-                    <View className="flex-row flex-wrap gap-3">
-                      {INTEREST_OPTIONS.map((interest) => {
-                        const active = interests.includes(interest.id);
-                        return (
-                          <Pressable
-                            key={interest.id}
-                            onPress={() => toggleInterest(interest.id)}
-                            className={
-                              active
-                                ? "rounded-full border border-white/30 bg-white/16 px-3 py-2"
-                                : "rounded-full border border-white/12 bg-white/5 px-3 py-2"
-                            }
-                            accessibilityRole="button"
-                            accessibilityLabel={`Interesse ${interest.label}`}
-                            accessibilityState={{ selected: active }}
-                          >
-                            <Text className={active ? "text-white text-xs font-semibold" : "text-white/70 text-xs"}>
-                              {interest.label}
-                            </Text>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-                    <Text className="text-white/60 text-xs">{interests.length}/6 interesses selecionados</Text>
+                    <Text className="text-white/65 text-sm">Ainda não tens itens na tua timeline pessoal.</Text>
+                    <Pressable
+                      onPress={() => safePush(router, TAB_PATHNAMES.inicio)}
+                      className="self-start rounded-full border border-cyan-200/40 bg-cyan-300/15 px-3 py-2"
+                      accessibilityRole="button"
+                      accessibilityLabel="Explorar eventos"
+                    >
+                      <Text className="text-cyan-50 text-xs font-semibold">Explorar eventos</Text>
+                    </Pressable>
                   </View>
                 ) : (
-                  <View className="flex-row flex-wrap gap-2">
-                    {selectedInterests.length === 0 ? (
+                  <>
+                    {activeTimelineItems.length > 0 ? (
                       <View className="gap-2">
-                        <Text className="text-white/65 text-sm">Sem interesses definidos.</Text>
-                        <Pressable
-                          onPress={() => setEditMode(true)}
-                          className="self-start rounded-full border border-white/15 bg-white/8 px-3 py-2"
-                          accessibilityRole="button"
-                          accessibilityLabel="Definir interesses"
-                        >
-                          <Text className="text-white/90 text-xs font-semibold">Definir interesses</Text>
-                        </Pressable>
+                        <Text className="text-white text-base font-semibold">
+                          Próximos eventos ({activeTimelineItems.length})
+                        </Text>
+                        {featuredUpcomingItem ? renderAgendaItem(featuredUpcomingItem, { featured: true }) : null}
+                        {remainingUpcomingItems.length > 0 ? (
+                          <View className="border-b border-cyan-200/20 pb-1">
+                            {remainingUpcomingItems.map((item, index) =>
+                              renderAgendaItem(item, { showDivider: index < remainingUpcomingItems.length - 1 }),
+                            )}
+                          </View>
+                        ) : null}
                       </View>
-                    ) : (
-                      selectedInterests.map((interest) => (
-                        <View
-                          key={interest.id}
-                          className="flex-row items-center gap-2 rounded-full border border-white/15 bg-white/6 px-3 py-2"
-                        >
-                          <Ionicons
-                            name={INTEREST_ICONS[interest.id] ?? "sparkles"}
-                            size={12}
-                            color="rgba(255,255,255,0.9)"
-                          />
-                          <Text className="text-white/90 text-xs font-semibold">{interest.label}</Text>
+                    ) : null}
+                    {historyTimelineItems.length > 0 ? (
+                      <View className="gap-2">
+                        <Text className="text-white/90 text-base font-semibold">
+                          Histórico ({historyTimelineItems.length})
+                        </Text>
+                        <View className="border-b border-white/10 pb-1">
+                          {historyGroups.map((group) => (
+                            <View key={group.label} className="gap-1">
+                              <Text className="text-white/55 text-[11px] uppercase tracking-[0.08em] py-1">
+                                {group.label}
+                              </Text>
+                              {group.items.map((item, index) =>
+                                renderHistoryItem(item, index, group.items.length),
+                              )}
+                            </View>
+                          ))}
                         </View>
-                      ))
-                    )}
-                  </View>
+                      </View>
+                    ) : null}
+                  </>
                 )}
-                {editMode && interestsError ? (
-                  <Text className="text-rose-200 text-[11px]">{interestsError}</Text>
-                ) : null}
               </View>
             )}
-
-            {!showPadel ? (
-              <>
-                <SectionHeader title="Timeline pessoal" subtitle="Reservas, bilhetes, inscrições e jogos." />
-                {agenda.isLoading ? (
-                  <View className="gap-3">
-                    <GlassSkeleton height={90} />
-                  </View>
-                ) : (
-                  <View className="gap-5">
-                    <View className="flex-row flex-wrap gap-2">
-                      <View className="rounded-full border border-cyan-200/35 bg-cyan-300/12 px-3 py-1.5">
-                        <Text className="text-cyan-50 text-xs font-semibold">
-                          Próximos {timeline.active.length}
-                        </Text>
-                      </View>
-                      <View className="rounded-full border border-white/16 bg-white/6 px-3 py-1.5">
-                        <Text className="text-white/80 text-xs font-semibold">
-                          Histórico {timeline.history.length}
-                        </Text>
-                      </View>
-                      <View className="rounded-full border border-emerald-200/26 bg-emerald-300/10 px-3 py-1.5">
-                        <Text className="text-emerald-100 text-xs font-semibold">
-                          Este mês {agendaStats.thisMonth}
-                        </Text>
-                      </View>
-                    </View>
-                    {activeTimelineItems.length === 0 && historyTimelineItems.length === 0 ? (
-                      <View className="gap-2">
-                        <Text className="text-white/65 text-sm">Ainda não tens itens na tua timeline pessoal.</Text>
-                        <Pressable
-                          onPress={() => safePush(router, TAB_PATHNAMES.inicio)}
-                          className="self-start rounded-full border border-cyan-200/40 bg-cyan-300/15 px-3 py-2"
-                          accessibilityRole="button"
-                          accessibilityLabel="Explorar eventos"
-                        >
-                          <Text className="text-cyan-50 text-xs font-semibold">Explorar eventos</Text>
-                        </Pressable>
-                      </View>
-                    ) : (
-                      <>
-                        {activeTimelineItems.length > 0 ? (
-                          <View className="gap-2">
-                            <Text className="text-white text-base font-semibold">
-                              Próximos eventos ({activeTimelineItems.length})
-                            </Text>
-                            {featuredUpcomingItem ? renderAgendaItem(featuredUpcomingItem, { featured: true }) : null}
-                            {remainingUpcomingItems.length > 0 ? (
-                              <View className="border-b border-cyan-200/20 pb-1">
-                                {remainingUpcomingItems.map((item, index) =>
-                                  renderAgendaItem(item, { showDivider: index < remainingUpcomingItems.length - 1 }),
-                                )}
-                              </View>
-                            ) : null}
-                          </View>
-                        ) : null}
-                        {historyTimelineItems.length > 0 ? (
-                          <View className="gap-2">
-                            <Text className="text-white/90 text-base font-semibold">
-                              Histórico ({historyTimelineItems.length})
-                            </Text>
-                            <View className="border-b border-white/10 pb-1">
-                              {historyGroups.map((group) => (
-                                <View key={group.label} className="gap-1">
-                                  <Text className="text-white/55 text-[11px] uppercase tracking-[0.08em] py-1">
-                                    {group.label}
-                                  </Text>
-                                  {group.items.map((item, index) =>
-                                    renderHistoryItem(item, index, group.items.length),
-                                  )}
-                                </View>
-                              ))}
-                            </View>
-                          </View>
-                        ) : null}
-                      </>
-                    )}
-                  </View>
-                )}
-              </>
-            ) : null}
-
           </View>
         )}
       </ScrollView>
@@ -1209,16 +1157,6 @@ export default function ProfileScreen() {
         emptyLabel="Sem amigos ainda."
         onClose={() => setFollowersOpen(false)}
         onRetry={() => followersList.refetch()}
-      />
-      <FollowListModal
-        open={followingOpen}
-        title="Clubes seguidos"
-        items={followingList.data}
-        isLoading={followingList.isLoading}
-        isError={followingList.isError}
-        emptyLabel="Ainda não segues clubes."
-        onClose={() => setFollowingOpen(false)}
-        onRetry={() => followingList.refetch()}
       />
       <ProfileTicketsSheet visible={ticketsSheetOpen} onClose={() => setTicketsSheetOpen(false)} />
     </LiquidBackground>

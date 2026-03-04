@@ -84,7 +84,7 @@ export default function ToolSubnavShell({ items, className }: ToolSubnavShellPro
   return (
     <div
       className={cn(
-        "relative w-full max-w-full rounded-full border border-white/24 bg-[#0a111e] px-1 py-1 text-[12px] shadow-[0_18px_44px_rgba(0,0,0,0.62)]",
+        "relative w-full max-w-full rounded-full border border-white/24 bg-white/[0.04] px-1 py-1 text-[12px]",
         className,
       )}
     >
@@ -98,8 +98,8 @@ export default function ToolSubnavShell({ items, className }: ToolSubnavShellPro
                 className={cn(
                   "inline-flex items-center rounded-full px-3 py-1.5 text-[12px] font-semibold whitespace-nowrap transition",
                   active
-                    ? "border border-[#22D3EE]/45 bg-[#22D3EE]/18 text-white shadow-[0_10px_28px_rgba(34,211,238,0.24)]"
-                    : "text-white/80 hover:bg-white/10 hover:text-white",
+                    ? "border border-[#22D3EE]/55 bg-[#22D3EE]/16 text-white"
+                    : "text-white/86 hover:bg-white/[0.08] hover:text-white",
                 )}
                 aria-current={active ? "page" : undefined}
               >

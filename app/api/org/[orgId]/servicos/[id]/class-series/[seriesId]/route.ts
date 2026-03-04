@@ -16,6 +16,7 @@ import {
   getOrganizationBookingPolicy,
   validateStartMinuteAgainstPolicy,
 } from "@/lib/reservas/gridPolicy";
+import { validateClassSessionsAgainstAvailability } from "@/lib/reservas/classSeriesAvailability";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -189,6 +190,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     const hasCourtIdInput = Object.prototype.hasOwnProperty.call(payload ?? {}, "courtId");
     let professionalId: number | null = series.professionalId ?? null;
     let courtId: number | null = series.courtId ?? null;
+    let resourceScopeId: number | null = null;
 
     if (hasProfessionalIdInput) {
       if (payload?.professionalId == null || payload?.professionalId === "") {
@@ -221,12 +223,48 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     if (courtId != null) {
       const court = await prisma.padelClubCourt.findFirst({
         where: { id: courtId, club: { organizationId: organization.id }, deletedAt: null },
-        select: { id: true },
+        select: { id: true, reservationResource: { select: { id: true } } },
       });
       if (!court) return fail(404, "Campo inválido.");
+      resourceScopeId = court.reservationResource?.id ?? null;
     }
 
     const isActive = typeof payload?.isActive === "boolean" ? payload.isActive : series.isActive;
+    const generatedSessions = isActive
+      ? buildClassSessionsForSeries({
+          timezone,
+          dayOfWeek,
+          startMinute,
+          durationMinutes,
+          validFrom,
+          validUntil,
+          limitYears: 2,
+          startFromToday: true,
+        })
+      : [];
+    if (isActive && generatedSessions.length > 0) {
+      const availabilityValidation = await validateClassSessionsAgainstAvailability({
+        tx: prisma,
+        organizationId: organization.id,
+        timezone,
+        sessions: generatedSessions.map((session) => ({ startsAt: session.startsAt, endsAt: session.endsAt })),
+        professionalId,
+        resourceScopeId,
+        stepMinutes: bookingPolicy.gridMinutes,
+      });
+      if (!availabilityValidation.ok) {
+        return respondError(
+          ctx,
+          {
+            errorCode: "CLASS_SLOT_UNAVAILABLE",
+            message: "Sessão fora da disponibilidade.",
+            retryable: false,
+            details: availabilityValidation.conflict,
+          },
+          { status: 409 },
+        );
+      }
+    }
     const now = new Date();
 
     const updatedSeries = await prisma.$transaction(async (tx) => {
@@ -253,19 +291,8 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
         return savedSeries;
       }
 
-      const sessions = buildClassSessionsForSeries({
-        timezone,
-        dayOfWeek,
-        startMinute,
-        durationMinutes,
-        validFrom,
-        validUntil,
-        limitYears: 2,
-        startFromToday: true,
-      });
-
       const desiredMap = new Map<number, { startsAt: Date; endsAt: Date }>();
-      sessions.forEach((session) => {
+      generatedSessions.forEach((session) => {
         desiredMap.set(session.startsAt.getTime(), session);
       });
 
@@ -295,7 +322,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
         }),
       );
 
-      const newSessions = sessions.filter((session) => !existingTimes.has(session.startsAt.getTime()));
+      const newSessions = generatedSessions.filter((session) => !existingTimes.has(session.startsAt.getTime()));
       if (newSessions.length > 0) {
         await tx.classSession.createMany({
           data: newSessions.map((session) => ({

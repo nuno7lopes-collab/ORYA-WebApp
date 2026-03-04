@@ -5,7 +5,7 @@ import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { OryaDateField } from "@/components/ui/datetime";
 import { cn } from "@/lib/utils";
-import { CTA_SECONDARY } from "@/app/org/_internal/core/dashboardUi";
+import { CTA_SECONDARY_CLEAN } from "@/app/org/_internal/core/dashboardUi";
 
 type RefundItem = {
   id: number;
@@ -161,13 +161,13 @@ export default function RefundsPanel() {
   };
 
   return (
-    <section className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/92 backdrop-blur-3xl p-4 space-y-3">
+    <section className="org-clean-section space-y-3 p-4">
       <div className="flex flex-wrap items-center justify-end gap-2">
         <button
           type="button"
           onClick={downloadCsv}
           disabled={!items.length}
-          className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px] disabled:opacity-50")}
+          className={cn(CTA_SECONDARY_CLEAN, "px-3 py-1 text-[12px] disabled:opacity-50")}
         >
           Exportar CSV
         </button>
@@ -184,8 +184,8 @@ export default function RefundsPanel() {
               className={cn(
                 "rounded-full border px-3 py-1 transition",
                 active
-                  ? "border-white/40 bg-white/15 text-white"
-                  : "border-white/15 bg-black/30 text-white/60 hover:border-white/30",
+                  ? "border-white/40 bg-white/12 text-white"
+                  : "border-white/18 bg-white/[0.03] text-white/72 hover:border-white/30",
               )}
             >
               {filter.label}
@@ -199,36 +199,36 @@ export default function RefundsPanel() {
           value={searchInput}
           onChange={(event) => setSearchInput(event.target.value)}
           placeholder="Pesquisar por compra ou intenção de pagamento..."
-          className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white placeholder:text-white/40"
+          className="org-clean-input px-3 py-2 text-sm"
         />
-        <label className="flex flex-col gap-1 text-white/60">
+        <label className="flex flex-col gap-1 text-white/74">
           Desde
-          <OryaDateField value={from} onChange={setFrom} buttonClassName="h-10 w-full rounded-xl bg-black/40 px-3 py-2 text-white" />
+          <OryaDateField value={from} onChange={setFrom} buttonClassName="org-clean-input h-10 w-full px-3 py-2 text-sm" />
         </label>
-        <label className="flex flex-col gap-1 text-white/60">
+        <label className="flex flex-col gap-1 text-white/74">
           Até
-          <OryaDateField value={to} onChange={setTo} buttonClassName="h-10 w-full rounded-xl bg-black/40 px-3 py-2 text-white" />
+          <OryaDateField value={to} onChange={setTo} buttonClassName="org-clean-input h-10 w-full px-3 py-2 text-sm" />
         </label>
       </div>
 
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/70">
+      <div className="rounded-2xl border border-white/14 bg-white/[0.03] p-3 text-[13px] text-white/82">
         Total apresentado: <span className="text-white">{formatMoney(totalRefunded, items[0]?.currency)}</span>
       </div>
 
       {error && (
-        <div className="rounded-2xl border border-red-400/40 bg-red-500/10 px-3 py-2 text-[12px] text-red-100">
+        <div className="rounded-2xl border border-red-400/45 bg-red-500/12 px-3 py-2 text-[13px] text-red-100">
           {error}
         </div>
       )}
 
       {loading && items.length === 0 && (
-        <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-[12px] text-white/70">
+        <div className="rounded-2xl border border-white/14 bg-white/[0.03] px-4 py-4 text-[13px] text-white/80">
           A carregar reembolsos...
         </div>
       )}
 
       {!loading && items.length === 0 && !error && (
-        <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-[12px] text-white/70">
+        <div className="rounded-2xl border border-white/14 bg-white/[0.03] px-4 py-4 text-[13px] text-white/80">
           Sem reembolsos para o filtro atual.
         </div>
       )}
@@ -238,17 +238,17 @@ export default function RefundsPanel() {
           {items.map((item) => (
             <div
               key={item.id}
-              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+              className="flex flex-col gap-2 rounded-2xl border border-white/14 bg-white/[0.03] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
             >
               <div className="space-y-1">
                 <p className="text-sm font-semibold text-white">{item.eventTitle}</p>
-                <p className="text-[11px] text-white/60">
+                <p className="text-[12px] text-white/74">
                   Compra {item.purchaseId ? `${item.purchaseId.slice(0, 6)}…` : "—"} · {mapReasonLabel(item.reason)}
                 </p>
-                <p className="text-[10px] text-white/45">Reembolso {formatDateTime(item.refundedAt || item.createdAt)}</p>
+                <p className="text-[11px] text-white/64">Reembolso {formatDateTime(item.refundedAt || item.createdAt)}</p>
               </div>
               <div className="text-right">
-                <p className="text-[11px] text-white/60">Valor</p>
+                <p className="text-[12px] text-white/74">Valor</p>
                 <p className="text-sm font-semibold text-white">{formatMoney(item.baseAmountCents, item.currency)}</p>
               </div>
             </div>
@@ -261,7 +261,7 @@ export default function RefundsPanel() {
           type="button"
           onClick={() => load(nextCursor, "append")}
           disabled={loading}
-          className="w-full rounded-full border border-white/15 bg-white/5 px-3 py-2 text-[12px] text-white/80 hover:border-white/30 disabled:opacity-60"
+          className={`${CTA_SECONDARY_CLEAN} w-full px-3 py-2 text-[13px] disabled:opacity-60`}
         >
           {loading ? "A carregar..." : "Carregar mais"}
         </button>

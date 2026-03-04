@@ -30,6 +30,7 @@ import {
   renderReadablePiePercentLabel,
 } from "@/components/ui/rechartsTheme";
 import { OryaDateField } from "@/components/ui/datetime";
+import { CTA_PRIMARY_CLEAN, CTA_SECONDARY_CLEAN } from "@/app/org/_internal/core/dashboardUi";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
 import { isFinanceAllowedView, type FinanceAllowedView } from "@/lib/domainBoundaries";
 import { cn } from "@/lib/utils";
@@ -338,12 +339,12 @@ export default function FinanceToolClient({ orgId, initialView }: FinanceToolCli
   const payoutsExportHref = `${orgApiBase}/finance/exports/payouts?${buildQueryString({ from, to })}`;
 
   return (
-    <section className="space-y-5 text-white sm:space-y-6">
-      <div className="rounded-3xl border border-white/16 bg-[linear-gradient(180deg,rgba(255,255,255,0.1),rgba(20,20,20,0.92))] px-4 py-4 sm:px-6 sm:py-5 backdrop-blur-2xl">
+    <section className="org-clean-page space-y-5 sm:space-y-6">
+      <div className="org-clean-section px-4 py-4 sm:px-6 sm:py-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold">{headerByView[view]}</h1>
-            <p className="text-sm text-white/70">Finanças focadas em operação/compliance transacional, sem BI de performance.</p>
+            <p className="text-sm text-white/78">Finanças focadas em operação/compliance transacional, sem BI de performance.</p>
           </div>
           <div className="rounded-xl border border-amber-300/45 bg-amber-300/12 px-3 py-2 text-xs text-amber-100">
             Domínio de dados: <span className="font-semibold">Operação e compliance</span>
@@ -351,7 +352,7 @@ export default function FinanceToolClient({ orgId, initialView }: FinanceToolCli
         </div>
       </div>
 
-      <div className="rounded-2xl border border-white/12 bg-[#141414]/88 p-4 backdrop-blur-xl">
+      <div className="org-clean-section p-4">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <FilterSelect
             label="Âmbito"
@@ -368,29 +369,29 @@ export default function FinanceToolClient({ orgId, initialView }: FinanceToolCli
           <div className="flex items-end">
             <button
               type="button"
-              className="h-10 rounded-xl border border-[#22D3EE]/45 bg-[#22D3EE]/14 px-3 text-sm font-semibold text-white transition hover:border-[#22D3EE]/70 hover:bg-[#22D3EE]/22"
+              className={`${CTA_PRIMARY_CLEAN} h-10 px-3`}
               onClick={() => void refreshCurrentView()}
             >
               Atualizar dados
             </button>
           </div>
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-white/65">
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-white/72">
           {activeFilters.map((filter) => (
-            <span key={filter.id} className="rounded-md border border-white/24 bg-white/[0.08] px-2 py-1 text-white/85">
+            <span key={filter.id} className="org-clean-chip">
               {filter.label}
             </span>
           ))}
           <button
             type="button"
-            className="rounded-md border border-[#22D3EE]/40 bg-transparent px-2 py-1 font-semibold text-white transition hover:bg-[#22D3EE]/14"
+            className={`${CTA_SECONDARY_CLEAN} px-2 py-1 text-xs`}
             onClick={resetGlobalFilters}
           >
             Repor filtros
           </button>
           <button
             type="button"
-            className="rounded-md border border-white/24 bg-white/10 px-2 py-1 text-white/90 transition hover:border-[#22D3EE]/40 hover:bg-[#22D3EE]/12"
+            className={`${CTA_SECONDARY_CLEAN} px-2 py-1 text-xs`}
             onClick={() => {
               const nextTo = new Date();
               const nextFrom = new Date();
@@ -402,7 +403,7 @@ export default function FinanceToolClient({ orgId, initialView }: FinanceToolCli
           </button>
           <button
             type="button"
-            className="rounded-md border border-white/24 bg-white/10 px-2 py-1 text-white/90 transition hover:border-[#22D3EE]/40 hover:bg-[#22D3EE]/12"
+            className={`${CTA_SECONDARY_CLEAN} px-2 py-1 text-xs`}
             onClick={() => {
               const nextTo = new Date();
               const nextFrom = new Date();
@@ -413,7 +414,7 @@ export default function FinanceToolClient({ orgId, initialView }: FinanceToolCli
             Últimos 30 dias
           </button>
           {(view === "invoicing" || view === "payouts" || view === "refunds-disputes" || view === "ops") && (
-            <span className="rounded-md border border-cyan-300/40 bg-cyan-300/10 px-2 py-1 text-cyan-200">
+            <span className="rounded-md border border-cyan-300/40 bg-cyan-300/10 px-2 py-1 text-cyan-100">
               O âmbito afeta sobretudo resumo/reconciliação nesta versão.
             </span>
           )}
@@ -577,7 +578,7 @@ export default function FinanceToolClient({ orgId, initialView }: FinanceToolCli
                 </thead>
                 <tbody className="divide-y divide-white/10">
                   {(reconciliation?.events ?? []).map((event) => (
-                    <tr key={`rec-${event.id}`} className="bg-black/10">
+                    <tr key={`rec-${event.id}`} className="bg-black/20">
                       <td className="px-3 py-2">{event.title}</td>
                       <td className="px-3 py-2 text-right">{toCurrency(event.grossCents ?? 0)}</td>
                       <td className="px-3 py-2 text-right">{toCurrency(event.feesCents ?? 0)}</td>
@@ -596,7 +597,7 @@ export default function FinanceToolClient({ orgId, initialView }: FinanceToolCli
 
       {view === "ledger" && (
         <Panel title="Ledger operacional" subtitle="Export CSV com janela configurável">
-          <div className="rounded-xl border border-white/10 bg-black/20 p-4 text-sm text-white/80">
+          <div className="org-clean-section p-4 text-sm text-white/84">
             <p>Período selecionado: <span className="font-semibold">{from}</span> até <span className="font-semibold">{to}</span></p>
             <a className={cn("mt-3 inline-block underline text-cyan-200 hover:text-cyan-100")} href={ledgerExportHref} download>
               Descarregar ledger CSV
@@ -607,7 +608,7 @@ export default function FinanceToolClient({ orgId, initialView }: FinanceToolCli
 
       {view === "exports" && (
         <Panel title="Exportações financeiras" subtitle="Conjunto canónico para operação/compliance">
-          <div className="rounded-xl border border-white/10 bg-black/20 p-4 text-sm text-white/80">
+          <div className="org-clean-section p-4 text-sm text-white/84">
             <p>Período selecionado: <span className="font-semibold">{from}</span> até <span className="font-semibold">{to}</span></p>
             <ul className="mt-3 space-y-2">
               <li>
@@ -678,14 +679,14 @@ export default function FinanceToolClient({ orgId, initialView }: FinanceToolCli
             <Panel title="Linha temporal operacional" subtitle="Últimos eventos financeiros">
               <div className="space-y-2">
                 {(opsFeed?.items ?? []).map((item) => (
-                  <div key={item.id} className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm">
+                  <div key={item.id} className="rounded-xl border border-white/14 bg-white/[0.03] px-3 py-2 text-sm">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="rounded-md border border-cyan-300/40 bg-cyan-300/10 px-2 py-0.5 text-[11px] text-cyan-200">
                         {item.sourceType ?? "SISTEMA"}
                       </span>
                       <span className="text-white">{item.eventType}</span>
                     </div>
-                    <div className="mt-1 text-xs text-white/65">
+                    <div className="mt-1 text-xs text-white/74">
                       {compactDateTime(item.createdAt)}
                       {item.sourceId ? ` · ${item.sourceId}` : ""}
                     </div>
@@ -713,9 +714,9 @@ function FilterSelect({
 }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-[11px] uppercase tracking-[0.16em] text-white/60">{label}</span>
+      <span className="org-clean-label">{label}</span>
       <select
-        className="h-10 rounded-xl border border-white/20 bg-[#141414] px-3 text-sm text-white outline-none transition focus:border-cyan-300/80"
+        className="org-clean-input h-10 px-3 text-sm"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >
@@ -732,8 +733,8 @@ function FilterSelect({
 function FilterDate({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-[11px] uppercase tracking-[0.16em] text-white/60">{label}</span>
-      <OryaDateField value={value} onChange={onChange} buttonClassName="h-10 w-full rounded-xl bg-[#141414] text-sm" />
+      <span className="org-clean-label">{label}</span>
+      <OryaDateField value={value} onChange={onChange} buttonClassName="org-clean-input h-10 w-full text-sm" />
     </label>
   );
 }
@@ -755,9 +756,9 @@ function ViewSection({
 }) {
   if (loading) {
     return (
-      <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/[0.08] via-white/[0.04] to-transparent p-4">
-        <p className="mb-1 text-xs uppercase tracking-[0.14em] text-white/55">A carregar dados da vista</p>
-        <p className="mb-3 text-[12px] text-white/65">A sincronizar reconciliação e indicadores operacionais.</p>
+      <div className="org-clean-section p-4">
+        <p className="mb-1 text-xs uppercase tracking-[0.14em] text-white/74">A carregar dados da vista</p>
+        <p className="mb-3 text-[13px] text-white/80">A sincronizar reconciliação e indicadores operacionais.</p>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           <LoadingCard />
           <LoadingCard />
@@ -769,16 +770,16 @@ function ViewSection({
 
   if (error) {
     return (
-      <div className="rounded-2xl border border-rose-300/50 bg-gradient-to-br from-rose-500/16 via-rose-500/10 to-transparent p-4 text-sm text-rose-100">
+      <div className="rounded-2xl border border-rose-300/50 bg-rose-500/14 p-4 text-sm text-rose-100">
         <p className="font-semibold">Falha ao carregar dados desta vista.</p>
-        <p className="mt-1 rounded-md border border-rose-200/30 bg-black/15 px-2 py-1 text-rose-100/85">
+        <p className="mt-1 rounded-md border border-rose-200/30 bg-black/20 px-2 py-1 text-rose-100/88">
           {error instanceof Error ? error.message : "Erro inesperado."}
         </p>
-        <p className="mt-1 text-xs text-rose-100/65">Se persistir, valide âmbito, período e permissões financeiras.</p>
+        <p className="mt-1 text-xs text-rose-100/75">Se persistir, valide âmbito, período e permissões financeiras.</p>
         <button
           type="button"
           onClick={onRetry}
-          className="mt-3 rounded-lg border border-rose-200/50 bg-rose-200/20 px-3 py-1.5 text-xs font-semibold text-rose-50 transition hover:bg-rose-200/35"
+          className={`${CTA_SECONDARY_CLEAN} mt-3 px-3 py-1.5 text-xs`}
         >
           Tentar novamente
         </button>
@@ -795,10 +796,10 @@ function ViewSection({
 
 function Panel({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border border-white/12 bg-white/[0.05] p-4 shadow-[0_16px_46px_rgba(0,0,0,0.28)]">
+    <div className="org-clean-section p-4">
       <div className="mb-3">
-        <h2 className="text-base font-semibold text-white">{title}</h2>
-        {subtitle ? <p className="text-xs text-white/60">{subtitle}</p> : null}
+        <h2 className="org-clean-title text-base">{title}</h2>
+        {subtitle ? <p className="org-clean-subtitle text-[13px]">{subtitle}</p> : null}
       </div>
       {children}
     </div>
@@ -811,8 +812,8 @@ function ChartWrap({ children, className }: { children: React.ReactNode; classNa
 
 function MetricCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-white/14 bg-gradient-to-br from-white/12 via-[#0b1124]/72 to-[#050810]/95 p-3 shadow-[0_20px_62px_rgba(0,0,0,0.5)]">
-      <p className="text-[11px] uppercase tracking-[0.18em] text-white/70">{label}</p>
+    <div className="org-clean-section p-3">
+      <p className="org-clean-label uppercase tracking-[0.16em] text-white/78">{label}</p>
       <p className="mt-1 text-[24px] font-bold leading-tight text-white">{value}</p>
     </div>
   );
@@ -820,7 +821,7 @@ function MetricCard({ label, value }: { label: string; value: string }) {
 
 function LoadingCard() {
   return (
-    <div className="h-44 animate-pulse rounded-2xl border border-white/10 bg-white/[0.05] p-3">
+    <div className="org-clean-section h-44 animate-pulse p-3">
       <div className="h-3 w-2/5 rounded bg-white/20" />
       <div className="mt-4 h-7 w-3/5 rounded bg-white/15" />
       <div className="mt-6 h-20 w-full rounded bg-white/10" />
@@ -830,8 +831,8 @@ function LoadingCard() {
 
 function EmptyState({ label }: { label: string }) {
   return (
-    <div className="rounded-2xl border border-white/12 bg-white/[0.05] p-4 text-sm text-white/75">
-      <p className="font-semibold text-white/90">Sem dados disponíveis</p>
+    <div className="org-clean-section p-4 text-sm text-white/82">
+      <p className="font-semibold text-white/94">Sem dados disponíveis</p>
       <p className="mt-1">{label}</p>
     </div>
   );

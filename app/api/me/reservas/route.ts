@@ -29,6 +29,7 @@ function errorCodeForStatus(status: number) {
 
 async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
+  const compact = req.nextUrl.searchParams.get("compact") === "1";
   const fail = (
     status: number,
     message: string,
@@ -47,6 +48,133 @@ async function _GET(req: NextRequest) {
     const user = await ensureAuthenticated(supabase);
 
     const normalizedEmail = normalizeEmail(user.email ?? "");
+    if (compact) {
+      const bookings = await prisma.booking.findMany({
+        where: normalizedEmail
+          ? {
+              OR: [{ userId: user.id }, { guestEmail: normalizedEmail }],
+            }
+          : { userId: user.id },
+        orderBy: [{ startsAt: "asc" }, { id: "desc" }],
+        take: 120,
+        select: {
+          id: true,
+          startsAt: true,
+          durationMinutes: true,
+          status: true,
+          price: true,
+          currency: true,
+          createdAt: true,
+          pendingExpiresAt: true,
+          assignmentMode: true,
+          partySize: true,
+          changeRequests: {
+            where: { status: "PENDING" },
+            orderBy: { createdAt: "desc" },
+            take: 1,
+            select: {
+              id: true,
+              requestedBy: true,
+              status: true,
+              proposedStartsAt: true,
+              priceDeltaCents: true,
+              currency: true,
+              expiresAt: true,
+            },
+          },
+          service: {
+            select: {
+              id: true,
+              title: true,
+              organization: {
+                select: {
+                  id: true,
+                  publicName: true,
+                  businessName: true,
+                  username: true,
+                  brandingAvatarUrl: true,
+                  addressRef: { select: { formattedAddress: true } },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      const now = new Date();
+      const items = bookings.map((booking) => {
+        const pendingState = resolvePendingBookingState({
+          status: booking.status,
+          startsAt: booking.startsAt,
+          pendingExpiresAt: booking.pendingExpiresAt,
+          createdAt: booking.createdAt,
+          now,
+        });
+        const effectiveStatus = resolveEffectiveBookingStatus(booking.status, pendingState);
+        const isPendingActive = pendingState === "ACTIVE";
+        const isStalePending = pendingState === "EXPIRED" || pendingState === "PAST_START";
+        const cancellationDecision = decideCancellation(booking.startsAt, null, now);
+        const canCancel =
+          !isStalePending &&
+          (isPendingActive || (effectiveStatus === "CONFIRMED" && cancellationDecision.allowed));
+        const canReschedule =
+          !isStalePending &&
+          !isPendingActive &&
+          effectiveStatus === "CONFIRMED" &&
+          cancellationDecision.allowed;
+
+        return {
+          id: booking.id,
+          startsAt: booking.startsAt,
+          durationMinutes: booking.durationMinutes,
+          status: booking.status,
+          effectiveStatus,
+          pendingState,
+          price: booking.price,
+          currency: booking.currency,
+          createdAt: booking.createdAt,
+          assignmentMode: booking.assignmentMode,
+          partySize: booking.partySize ?? null,
+          estimatedStartsAt: null,
+          delayMinutes: null,
+          delayReason: null,
+          service: booking.service ? { id: booking.service.id, title: booking.service.title } : null,
+          organization: booking.service?.organization ?? null,
+          changeRequest: booking.changeRequests?.[0]
+            ? {
+                id: booking.changeRequests[0].id,
+                requestedBy: booking.changeRequests[0].requestedBy,
+                status: booking.changeRequests[0].status,
+                proposedStartsAt: booking.changeRequests[0].proposedStartsAt,
+                priceDeltaCents: booking.changeRequests[0].priceDeltaCents,
+                currency: booking.changeRequests[0].currency,
+                expiresAt: booking.changeRequests[0].expiresAt,
+              }
+            : null,
+          cancellation: {
+            allowed: canCancel,
+            reason: canCancel
+              ? null
+              : isStalePending
+                ? "PENDING_EXPIRED"
+                : cancellationDecision.reason,
+            deadline: cancellationDecision.deadline,
+          },
+          reschedule: {
+            allowed: canReschedule,
+            reason: canReschedule
+              ? null
+              : isStalePending
+                ? "PENDING_EXPIRED"
+                : cancellationDecision.reason,
+            deadline: cancellationDecision.deadline,
+          },
+        };
+      });
+
+      return respondOk(ctx, { items });
+    }
+
     const bookings = await prisma.booking.findMany({
       where: normalizedEmail
         ? {

@@ -45,6 +45,60 @@ export type BookingItem = {
   changeRequest?: BookingChangeRequest | null;
 };
 
+export type BookingHubOrganization = {
+  id: number;
+  username: string | null;
+  publicName: string | null;
+  businessName: string | null;
+  timezone: string | null;
+};
+
+export type BookingHubCourt = {
+  id: number;
+  configId: number;
+  isActive: boolean;
+  name: string | null;
+  description: string | null;
+  coverImageUrl: string | null;
+  serviceId: number;
+  service: {
+    id: number;
+    title: string;
+    durationMinutes: number;
+    unitPriceCents: number;
+    currency: string;
+    bookingVertical: "COURT" | "CLASS" | "SERVICE";
+  };
+};
+
+export type BookingHubPayload = {
+  organization: BookingHubOrganization;
+  sections: {
+    courts: BookingHubCourt[];
+  };
+};
+
+export type BookingCourtCard = {
+  id: string;
+  serviceId: number;
+  orgUsername: string;
+  clubName: string;
+  courtName: string;
+  description: string | null;
+  durationMinutes: number;
+  unitPriceCents: number;
+  currency: string;
+  coverImageUrl: string | null;
+  source: "FOLLOWING" | "NEARBY";
+};
+
+export type BookingCourtsState = {
+  items: BookingCourtCard[];
+  hasFollowingClubs: boolean;
+  hasAnyClubWithUsername: boolean;
+  configurationIssue: "COURT_CONFIG_MISSING" | null;
+};
+
 export type BookingCancelPreview = {
   allowed: boolean;
   reason: string | null;

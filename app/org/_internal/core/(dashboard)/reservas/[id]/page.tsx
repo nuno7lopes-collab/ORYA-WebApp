@@ -20,7 +20,7 @@ import {
   DASHBOARD_CARD,
   DASHBOARD_LABEL,
   DASHBOARD_MUTED,
-} from "@/app/org/_shared/dashboardUi";
+} from "@/app/org/_internal/core/dashboardUi";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 

@@ -1,11 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { resolveActions } from "@/lib/entitlements/accessResolver";
 import { buildDefaultCheckinWindow } from "@/lib/checkin/policy";
 import { EntitlementStatus, EntitlementType, Prisma } from "@prisma/client";
-import crypto from "crypto";
 import { getUserIdentityIds } from "@/lib/ownership/identity";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logError } from "@/lib/observability/logger";
@@ -32,10 +31,6 @@ function parseCursor(cursor: string | null): CursorPayload | null {
 
 function buildCursor(payload: CursorPayload) {
   return Buffer.from(JSON.stringify(payload)).toString("base64url");
-}
-
-function hashToken(token: string) {
-  return crypto.createHash("sha256").update(token).digest("hex");
 }
 
 async function _GET(req: NextRequest) {
@@ -257,24 +252,6 @@ async function _GET(req: NextRequest) {
           e.status.toUpperCase() === "ACTIVE";
         const consumedAt = entitlementCheckins[0]?.checkedInAt ?? null;
 
-        let qrToken: string | null = null;
-        if (actions.canShowQr) {
-          // Limpa tokens antigos deste entitlement antes de gerar um novo, para evitar acumulação.
-          await prisma.entitlementQrToken.deleteMany({ where: { entitlementId: e.id } });
-
-          const token = crypto.randomUUID();
-          const tokenHash = hashToken(token);
-          const expiresAt = checkinWindow?.end ?? new Date(Date.now() + 1000 * 60 * 60);
-          await prisma.entitlementQrToken.create({
-            data: {
-              tokenHash,
-              entitlementId: e.id,
-              expiresAt,
-            },
-          });
-          qrToken = token;
-        }
-
         return {
           entitlementId: e.id,
           type: e.type,
@@ -290,7 +267,7 @@ async function _GET(req: NextRequest) {
           },
           actions,
           passAvailable,
-          qrToken,
+          qrToken: null,
           updatedAt: e.updatedAt,
         };
       }),

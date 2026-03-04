@@ -10,6 +10,7 @@ describe("padel_generate_autoschedule_top_paddel", () => {
     expect(parsed.strategy).toBe("BALANCED_BY_CATEGORY");
     expect(parsed.dryRun).toBe(false);
     expect(parsed.startFromNow).toBe(false);
+    expect(parsed.bypassHardBlockGenerate).toBe(true);
   });
 
   it("aceita overrides válidos", () => {
@@ -32,6 +33,7 @@ describe("padel_generate_autoschedule_top_paddel", () => {
       "120000",
       "--dry-run",
       "--start-from-now",
+      "--no-hardblock-bypass",
     ]);
     expect(parsed.baseUrl).toBe("http://localhost:33123");
     expect(parsed.generateExistingPolicy).toBe("replace");
@@ -41,6 +43,7 @@ describe("padel_generate_autoschedule_top_paddel", () => {
     expect(parsed.pollTimeoutMs).toBe(120000);
     expect(parsed.dryRun).toBe(true);
     expect(parsed.startFromNow).toBe(true);
+    expect(parsed.bypassHardBlockGenerate).toBe(false);
   });
 
   it("rejeita policy inválida", () => {
@@ -53,4 +56,3 @@ describe("padel_generate_autoschedule_top_paddel", () => {
     expect(() => parseGenerateScheduleArgs([])).toThrow("Missing --run-tag");
   });
 });
-

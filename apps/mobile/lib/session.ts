@@ -26,7 +26,7 @@ const getErrorMessage = (error: unknown) => {
   return String(error);
 };
 
-const isInvalidRefreshTokenError = (error: unknown) => {
+export const isInvalidRefreshTokenError = (error: unknown) => {
   const message = getErrorMessage(error).toLowerCase();
   return INVALID_REFRESH_TOKEN_PATTERNS.some((pattern) =>
     message.includes(pattern),
@@ -46,9 +46,40 @@ const clearLocalSession = async () => {
   return clearSessionInFlight;
 };
 
+export const clearLocalSessionSafely = async () => {
+  await clearLocalSession();
+};
+
 const hasRefreshToken = (session: Session | null | undefined) => {
   const refreshToken = session?.refresh_token;
   return typeof refreshToken === "string" && refreshToken.trim().length > 0;
+};
+
+let getSessionInFlight: Promise<Session | null> | null = null;
+const readSession = async (): Promise<Session | null> => {
+  if (getSessionInFlight) return getSessionInFlight;
+
+  getSessionInFlight = (async () => {
+    try {
+      const { data, error } = await supabase.auth.getSession();
+      if (error) {
+        if (isInvalidRefreshTokenError(error)) {
+          await clearLocalSession();
+        }
+        return null;
+      }
+      return data.session ?? null;
+    } catch (error) {
+      if (isInvalidRefreshTokenError(error)) {
+        await clearLocalSession();
+      }
+      return null;
+    }
+  })().finally(() => {
+    getSessionInFlight = null;
+  });
+
+  return getSessionInFlight;
 };
 
 let refreshInFlight: Promise<Session | null> | null = null;
@@ -63,14 +94,7 @@ export const refreshSessionIfPossible = async (
       let sessionCandidate = currentSession;
 
       if (sessionCandidate === undefined) {
-        const { data, error } = await supabase.auth.getSession();
-        if (error) {
-          if (isInvalidRefreshTokenError(error)) {
-            await clearLocalSession();
-          }
-          return null;
-        }
-        sessionCandidate = data.session ?? null;
+        sessionCandidate = await readSession();
       }
 
       if (!hasRefreshToken(sessionCandidate)) {
@@ -106,14 +130,7 @@ export const getActiveSession = async (
   const refreshIfNearExpiry =
     typeof options === "number" ? true : options.refreshIfNearExpiry ?? true;
   try {
-    const { data, error } = await supabase.auth.getSession();
-    if (error) {
-      if (isInvalidRefreshTokenError(error)) {
-        await clearLocalSession();
-      }
-      return null;
-    }
-    let session = data.session ?? null;
+    let session = await readSession();
     if (!session) return null;
     if (!refreshIfNearExpiry) return session;
 

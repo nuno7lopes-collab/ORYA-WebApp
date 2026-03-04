@@ -693,7 +693,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
 
   return (
     <div className={cn("w-full space-y-7 py-8 text-white")}>
-      <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+      <div className="rounded-3xl border border-white/12   /70 /90 p-5  ">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
             <p className="text-[11px] uppercase tracking-[0.3em] text-white/70">Gestão de {primaryLabel}</p>
@@ -728,7 +728,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
       )}
 
       {isPadelEvent && !standardEventCancelled && (
-        <section className="rounded-2xl border border-white/12 bg-gradient-to-br from-[#0b1226]/85 via-[#0b1126]/75 to-[#050810]/90 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+        <section className="rounded-2xl border border-white/12  /85 /75 /90 p-4  ">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Operação premium</p>
@@ -809,7 +809,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
       )}
 
       <div className="grid grid-cols-1 gap-5 md:grid-cols-[minmax(0,1.7fr)_minmax(0,1.1fr)]">
-        <div className="space-y-3 rounded-2xl border border-white/14 bg-gradient-to-br from-white/8 via-[#0b1226]/70 to-[#050912]/90 p-5 backdrop-blur-xl">
+        <div className="space-y-3 rounded-2xl border border-white/14   /70 /90 p-5 ">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="text-xl md:text-2xl font-semibold tracking-tight">
@@ -1088,7 +1088,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
         </div>
 
       <section id="padel-finance" className="scroll-mt-24 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="rounded-2xl border border-[#22D3EE]/40 bg-[#02040b]/95 backdrop-blur-xl px-4 py-3.5">
+        <div className="rounded-2xl border border-[#22D3EE]/40 bg-[#02040b]/95  px-4 py-3.5">
           <p className="text-[11px] text-[#22D3EE]/80">
             {ticketsSoldLabel}
           </p>
@@ -1104,14 +1104,14 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
             {overallOccupancy !== null && (
               <div className="mt-2 h-1.5 rounded-full bg-white/10 overflow-hidden">
                 <div
-                  className="h-full rounded-full bg-gradient-to-r from-[#22D3EE] to-[#FF00C8]"
+                  className="h-full rounded-full   "
                   style={{ width: `${overallOccupancy}%` }}
                 />
               </div>
             )}
           </div>
 
-          <div className="rounded-2xl border border-white/14 bg-white/5 backdrop-blur-xl px-4 py-3.5">
+          <div className="rounded-2xl border border-white/14 bg-white/5  px-4 py-3.5">
             <p className="text-[11px] text-white/65">Receita bruta</p>
             <p className="mt-1 text-2xl font-semibold tracking-tight">
               {totalRevenue.replace(".", ",")} €
@@ -1129,7 +1129,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
         </section>
       )}
 
-      <section id="padel-categories" className="scroll-mt-24 rounded-2xl border border-white/12 bg-black/40 backdrop-blur-xl p-5 space-y-4">
+      <section id="padel-categories" className="scroll-mt-24 rounded-2xl border border-white/12 bg-black/40  p-5 space-y-4">
         <div className="flex items-center justify-between gap-2">
           <div>
             <h2 className="text-sm font-semibold text-white/90">
@@ -1160,7 +1160,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
                 return (
                   <article
                     key={category.key}
-                    className="rounded-xl border border-white/14 bg-gradient-to-br from-white/5 via-black/80 to-black/95 px-4 py-4 flex flex-col gap-3"
+                    className="rounded-xl border border-white/14     px-4 py-4 flex flex-col gap-3"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
@@ -1194,7 +1194,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
                     {category.occupancy !== null && (
                       <div className="h-1.5 w-40 rounded-full bg-white/10 overflow-hidden">
                         <div
-                          className="h-full rounded-full bg-gradient-to-r from-[#22D3EE] to-[#FF00C8]"
+                          className="h-full rounded-full   "
                           style={{ width: `${category.occupancy}%` }}
                         />
                       </div>
@@ -1272,7 +1272,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
               return (
                 <article
                   key={ticket.id}
-                  className="rounded-xl border border-white/14 bg-gradient-to-br from-white/5 via-black/80 to-black/95 px-4 py-4 flex flex-col gap-3"
+                  className="rounded-xl border border-white/14     px-4 py-4 flex flex-col gap-3"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -1343,7 +1343,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
                       {occupancy !== null && (
                         <div className="h-1.5 w-40 rounded-full bg-white/10 overflow-hidden">
                           <div
-                            className="h-full rounded-full bg-gradient-to-r from-[#22D3EE] to-[#FF00C8]"
+                            className="h-full rounded-full   "
                             style={{ width: `${occupancy}%` }}
                           />
                         </div>

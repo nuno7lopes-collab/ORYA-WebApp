@@ -358,6 +358,139 @@ describe("POST /api/servicos/[id]/reservar (HYBRID)", () => {
     expect(body.booking?.durationMinutes).toBe(90);
   });
 
+  it("reaproveita pré-reserva equivalente ativa e devolve deduped=true", async () => {
+    const day = formatLisbonYmd(new Date(Date.now() + 24 * 60 * 60 * 1000));
+    const slot = new Date(`${day}T10:00:00.000Z`);
+    prisma.service.findFirst.mockResolvedValue({
+      id: 1,
+      organizationId: 10,
+      kind: "COURT",
+      assignmentMode: "PROFESSIONAL_AND_RESOURCE",
+      partySizeRequired: true,
+      partySizeMin: 2,
+      partySizeMax: 4,
+      partySizeStep: 1,
+      durationMinutes: 90,
+      unitPriceCents: 0,
+      currency: "EUR",
+      locationMode: "FIXED",
+      addressId: "addr_1",
+      policy: { guestBookingAllowed: true },
+      organization: {
+        id: 10,
+        status: "ACTIVE",
+        timezone: "Europe/Lisbon",
+        reservationAssignmentMode: null,
+        orgType: "CLUB",
+        officialEmail: null,
+        officialEmailVerifiedAt: null,
+        stripeAccountId: null,
+        stripeChargesEnabled: false,
+        stripePayoutsEnabled: false,
+        addressId: "addr_1",
+      },
+      professionalLinks: [],
+      resourceLinks: [],
+    });
+    prisma.reservationProfessional.findMany.mockResolvedValue([{ id: 1, priority: 1 }]);
+    prisma.reservationResource.findMany.mockResolvedValue([{ id: 2, capacity: 4, priority: 1, courtId: 99 }]);
+    prisma.booking.findFirst.mockResolvedValue({
+      id: 987,
+      organizationId: 10,
+      status: "PENDING_CONFIRMATION",
+      startsAt: slot,
+      durationMinutes: 90,
+      professionalId: 1,
+      resourceId: 2,
+      pendingExpiresAt: new Date(slot.getTime() + 10 * 60 * 1000),
+      bookingPackage: null,
+      addons: [],
+    });
+
+    getAvailableSlotsForScope.mockImplementation((args: any) => {
+      if (args.scopeType === "PROFESSIONAL" && args.scopeId === 1) {
+        return [{ startsAt: slot, durationMinutes: 90 }];
+      }
+      if (args.scopeType === "RESOURCE" && args.scopeId === 2) {
+        return [{ startsAt: slot, durationMinutes: 90 }];
+      }
+      return [];
+    });
+
+    const { POST } = await import("@/app/api/servicos/[id]/reservar/route");
+    const req = new NextRequest("http://localhost/api/servicos/1/reservar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        startsAt: slot.toISOString(),
+        partySize: 2,
+        guest: { name: "Guest", email: "guest@example.com", phone: "+351912345678", consent: true },
+      }),
+    });
+    const res = await POST(req, { params: Promise.resolve({ id: "1" }) });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.deduped).toBe(true);
+    expect(body.booking?.id).toBe(987);
+    expect(createBooking).not.toHaveBeenCalled();
+  });
+
+  it("valida clientRequestId inválido com errorCode consistente", async () => {
+    const day = formatLisbonYmd(new Date(Date.now() + 24 * 60 * 60 * 1000));
+    const slot = new Date(`${day}T10:00:00.000Z`);
+    prisma.service.findFirst.mockResolvedValue({
+      id: 1,
+      organizationId: 10,
+      kind: "COURT",
+      assignmentMode: "PROFESSIONAL_AND_RESOURCE",
+      partySizeRequired: true,
+      partySizeMin: 2,
+      partySizeMax: 4,
+      partySizeStep: 1,
+      durationMinutes: 90,
+      unitPriceCents: 0,
+      currency: "EUR",
+      locationMode: "FIXED",
+      addressId: "addr_1",
+      policy: { guestBookingAllowed: true },
+      organization: {
+        id: 10,
+        status: "ACTIVE",
+        timezone: "Europe/Lisbon",
+        reservationAssignmentMode: null,
+        orgType: "CLUB",
+        officialEmail: null,
+        officialEmailVerifiedAt: null,
+        stripeAccountId: null,
+        stripeChargesEnabled: false,
+        stripePayoutsEnabled: false,
+        addressId: "addr_1",
+      },
+      professionalLinks: [],
+      resourceLinks: [],
+    });
+
+    const { POST } = await import("@/app/api/servicos/[id]/reservar/route");
+    const req = new NextRequest("http://localhost/api/servicos/1/reservar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        startsAt: slot.toISOString(),
+        partySize: 2,
+        clientRequestId: "x",
+        guest: { name: "Guest", email: "guest@example.com", phone: "+351912345678", consent: true },
+      }),
+    });
+    const res = await POST(req, { params: Promise.resolve({ id: "1" }) });
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode).toBe("INVALID_CLIENT_REQUEST_ID");
+  });
+
   it("bloqueia novas reservas quando estado operacional está OFF", async () => {
     const day = formatLisbonYmd(new Date(Date.now() + 24 * 60 * 60 * 1000));
     const slot = new Date(`${day}T10:00:00.000Z`);

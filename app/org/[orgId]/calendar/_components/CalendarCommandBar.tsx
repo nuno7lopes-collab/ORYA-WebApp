@@ -21,17 +21,15 @@ type CalendarCommandBarProps = {
   onNext: () => void;
   onToday: () => void;
   dateControl?: ReactNode;
-  timezoneControl?: ReactNode;
   scopeControl?: ReactNode;
   filterControl?: ReactNode;
-  overlayControl?: ReactNode;
   actions?: CalendarCommandBarAction[];
   hint?: string;
   className?: string;
 };
 
 const CHIP_BASE =
-  "inline-flex h-9 items-center rounded-full border border-white/20 bg-black/35 px-3 text-xs text-white/85 transition hover:border-white/40 hover:text-white";
+  "inline-flex h-8 items-center rounded-full border border-white/24 bg-white/[0.04] px-3 text-xs text-white/90 transition hover:border-white/40 hover:bg-white/[0.08] hover:text-white";
 
 export function CalendarCommandBar({
   view,
@@ -41,10 +39,8 @@ export function CalendarCommandBar({
   onNext,
   onToday,
   dateControl,
-  timezoneControl,
   scopeControl,
   filterControl,
-  overlayControl,
   actions = [],
   hint,
   className,
@@ -52,11 +48,11 @@ export function CalendarCommandBar({
   return (
     <section
       className={cn(
-        "rounded-2xl border border-white/12 bg-[rgba(8,12,22,0.9)] px-3 py-3 shadow-[0_18px_54px_rgba(0,0,0,0.45)]",
+        "rounded-xl border border-white/16 bg-white/[0.03] px-2 py-2",
         className,
       )}
     >
-      <div className="orya-scrollbar-hide flex items-center gap-2 overflow-x-auto whitespace-nowrap pb-1">
+      <div className="orya-scrollbar-hide flex items-center gap-2 overflow-x-auto whitespace-nowrap">
         <button type="button" onClick={onPrevious} className={CHIP_BASE} aria-label="Anterior">
           ←
         </button>
@@ -66,18 +62,17 @@ export function CalendarCommandBar({
         <button type="button" onClick={onNext} className={CHIP_BASE} aria-label="Seguinte">
           →
         </button>
+        <span className="h-5 w-px bg-white/12" />
         {dateControl ? <div className="inline-flex">{dateControl}</div> : null}
-        <span className="inline-flex items-center text-sm font-semibold text-white">{rangeLabel}</span>
-        {timezoneControl ? <div className="inline-flex">{timezoneControl}</div> : null}
+        <span className="inline-flex items-center px-1 text-sm font-semibold text-white">{rangeLabel}</span>
         <ViewSwitcher value={view} onChange={onViewChange} />
         {scopeControl ? <div className="inline-flex">{scopeControl}</div> : null}
         {filterControl ? <div className="inline-flex">{filterControl}</div> : null}
-        {overlayControl ? <div className="inline-flex">{overlayControl}</div> : null}
         {actions.map((action) => {
           const toneClass =
             action.tone === "primary"
-              ? "border-cyan-300/45 bg-cyan-400/14 text-cyan-100 hover:border-cyan-300/75"
-              : "border-white/20 bg-black/35 text-white/80 hover:border-white/35 hover:text-white";
+              ? "border-cyan-300/45 bg-cyan-400/12 text-cyan-100 hover:border-cyan-300/75"
+              : "border-white/24 bg-white/[0.03] text-white/82 hover:border-white/35 hover:text-white";
           if (action.href) {
             return (
               <Link key={action.id} href={action.href} className={cn(CHIP_BASE, toneClass)}>
@@ -92,8 +87,7 @@ export function CalendarCommandBar({
           );
         })}
       </div>
-      {hint ? <p className="mt-2 truncate text-[11px] text-white/58">{hint}</p> : null}
+      {hint ? <p className="mt-1 truncate px-1 text-[12px] text-white/72">{hint}</p> : null}
     </section>
   );
 }
-

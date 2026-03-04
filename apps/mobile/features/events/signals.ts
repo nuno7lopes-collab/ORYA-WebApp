@@ -18,6 +18,7 @@ export type EventSignalPayload = {
 
 const DEDUPED_SIGNAL_TYPES = new Set<EventSignalPayload["signalType"]>(["CLICK", "VIEW", "DWELL"]);
 const SIGNAL_DEDUPE_WINDOW_MS = 6000;
+const SIGNAL_REQUEST_TIMEOUT_MS = 2500;
 const recentSignals = new Map<string, number>();
 
 const buildSignalKey = (payload: EventSignalPayload) =>
@@ -35,11 +36,18 @@ export const sendEventSignal = async (payload: EventSignalPayload) => {
   }
 
   try {
-    await api.request("/api/me/events/signals", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), SIGNAL_REQUEST_TIMEOUT_MS);
+    try {
+      await api.request("/api/me/events/signals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
   } catch (err) {
     if (__DEV__) {
       console.warn("[signals] falha ao enviar sinal", err);

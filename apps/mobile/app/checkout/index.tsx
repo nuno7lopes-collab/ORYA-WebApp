@@ -1622,6 +1622,29 @@ export default function CheckoutScreen() {
       }
     } catch (err: unknown) {
       const errorCode = resolveApiErrorCode(err);
+      if (isServiceBooking && errorCode === "SLOT_NOT_AVAILABLE") {
+        const serviceIdForReturn =
+          draft?.serviceId != null ? String(draft.serviceId) : null;
+        clearDraft();
+        resetIntent();
+        setCheckoutStatus(null);
+        setError("O horário deixou de estar disponível. Escolhe outro para continuar.");
+        if (serviceIdForReturn) {
+          router.replace({
+            pathname: "/service/[id]/booking",
+            params: {
+              id: serviceIdForReturn,
+              checkoutError: "slot_unavailable",
+            },
+          });
+        }
+        trackEvent("checkout_payment_blocked", {
+          sourceType: draft?.sourceType ?? null,
+          method: resolvedMethod,
+          code: errorCode,
+        });
+        return;
+      }
       setError(
         getUserFacingError(err, "Não foi possível concluir o pagamento."),
       );

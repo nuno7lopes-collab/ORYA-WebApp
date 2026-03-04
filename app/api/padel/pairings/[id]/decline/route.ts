@@ -1,6 +1,6 @@
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { PadelPairingPaymentStatus, PadelPairingSlotStatus, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -21,6 +21,8 @@ const pairingSlotSelect = {
 const pairingSelect = {
   id: true,
   pairingStatus: true,
+  player1UserId: true,
+  player2UserId: true,
   slots: {
     select: pairingSlotSelect,
   },
@@ -43,12 +45,12 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   });
   if (!pairing) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
   if (pairing.pairingStatus === "CANCELLED") {
-    return jsonWrap({ ok: true, pairing }, { status: 200 });
+    return jsonWrap({ ok: true, pairing, idempotentReplay: true }, { status: 200 });
   }
 
   const partnerSlot = pairing.slots.find((s) => s.slot_role === "PARTNER" && s.slotStatus === "PENDING");
   if (!partnerSlot) {
-    return jsonWrap({ ok: false, error: "NO_PENDING_INVITE" }, { status: 400 });
+    return jsonWrap({ ok: true, pairing, idempotentReplay: true }, { status: 200 });
   }
   if (partnerSlot.paymentStatus === "PAID") {
     return jsonWrap({ ok: false, error: "ALREADY_PAID" }, { status: 409 });
@@ -72,6 +74,9 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       ));
 
   if (!isInviteTarget) {
+    if (!partnerSlot.invitedUserId && !partnerSlot.invitedContact) {
+      return jsonWrap({ ok: true, pairing, idempotentReplay: true }, { status: 200 });
+    }
     return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
@@ -103,6 +108,6 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     });
   });
 
-  return jsonWrap({ ok: true, pairing: updated }, { status: 200 });
+  return jsonWrap({ ok: true, pairing: updated, idempotentReplay: false }, { status: 200 });
 }
 export const POST = withApiEnvelope(_POST);

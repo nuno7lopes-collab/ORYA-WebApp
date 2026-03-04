@@ -7,6 +7,7 @@ import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
 import { trackEvent } from "../../lib/analytics";
 import { resolveSafeNextRoute } from "../../lib/authNextRoute";
+import { clearLocalSessionSafely, isInvalidRefreshTokenError } from "../../lib/session";
 
 type ParsedAuth = {
   code?: string;
@@ -95,6 +96,9 @@ export default function AuthCallbackScreen() {
         }
       }
       if (error) {
+        if (isInvalidRefreshTokenError(error) || isInvalidRefreshTokenError(errorDescription)) {
+          await clearLocalSessionSafely();
+        }
         trackEvent("auth_fail_email", { reason: error });
         if (!active) return;
         setStatus("error");
@@ -126,6 +130,13 @@ export default function AuthCallbackScreen() {
         }
         router.replace(nextRoute ?? "/");
       } catch (err: unknown) {
+        if (isInvalidRefreshTokenError(err)) {
+          await clearLocalSessionSafely();
+          if (!active) return;
+          setStatus("error");
+          setMessage("A tua sessão expirou. Inicia sessão novamente para continuar.");
+          return;
+        }
         trackEvent("auth_fail_email", { reason: "callback_error" });
         if (!active) return;
         setStatus("error");

@@ -10,6 +10,7 @@ const ensureReservasModuleAccess = vi.hoisted(() => vi.fn());
 const ensureOrganizationWriteAccess = vi.hoisted(() => vi.fn());
 const getOrganizationBookingPolicy = vi.hoisted(() => vi.fn());
 const validateStartMinuteAgainstPolicy = vi.hoisted(() => vi.fn());
+const validateClassSessionsAgainstAvailability = vi.hoisted(() => vi.fn());
 
 const prisma = vi.hoisted(() => ({
   profile: { findUnique: vi.fn() },
@@ -31,6 +32,9 @@ vi.mock("@/lib/reservas/gridPolicy", () => ({
   getOrganizationBookingPolicy,
   validateStartMinuteAgainstPolicy,
 }));
+vi.mock("@/lib/reservas/classSeriesAvailability", () => ({
+  validateClassSessionsAgainstAvailability,
+}));
 vi.mock("@/lib/prisma", () => ({ prisma }));
 vi.mock("@/lib/http/withApiEnvelope", () => ({
   withApiEnvelope: (handler: unknown) => handler,
@@ -50,6 +54,7 @@ beforeEach(async () => {
   ensureOrganizationWriteAccess.mockReset();
   getOrganizationBookingPolicy.mockReset();
   validateStartMinuteAgainstPolicy.mockReset();
+  validateClassSessionsAgainstAvailability.mockReset();
   prisma.profile.findUnique.mockReset();
   prisma.service.findFirst.mockReset();
   prisma.classSeries.findFirst.mockReset();
@@ -75,6 +80,7 @@ beforeEach(async () => {
   ensureOrganizationWriteAccess.mockReturnValue({ ok: true });
   getOrganizationBookingPolicy.mockResolvedValue({ gridMinutes: 30, allowedDurations: [60, 90] });
   validateStartMinuteAgainstPolicy.mockReturnValue({ ok: true });
+  validateClassSessionsAgainstAvailability.mockResolvedValue({ ok: true });
   prisma.profile.findUnique.mockResolvedValue({ id: "actor_user" });
   prisma.reservationProfessional.findFirst.mockResolvedValue({ id: 88 });
   prisma.padelClubCourt.findFirst.mockResolvedValue({ id: 44 });
@@ -120,6 +126,47 @@ describe("class-series routes regression", () => {
     expect(prisma.classSeries.create).toHaveBeenCalledTimes(1);
   });
 
+  it("POST devolve CLASS_SLOT_UNAVAILABLE quando a disponibilidade falha", async () => {
+    prisma.service.findFirst.mockResolvedValue({
+      id: 11,
+      kind: "CLASS",
+      organization: { timezone: "Europe/Lisbon" },
+    });
+    validateClassSessionsAgainstAvailability.mockResolvedValue({
+      ok: false,
+      conflict: {
+        date: "2030-01-08",
+        start: "11:00",
+        end: "12:00",
+        reason: "outside_scope_availability",
+        scopeType: "PROFESSIONAL",
+        scopeId: 88,
+      },
+    });
+
+    const req = new NextRequest("http://localhost/api/org/21/servicos/11/class-series", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        dayOfWeek: 2,
+        startMinute: 660,
+        durationMinutes: 60,
+        capacity: 4,
+        validFrom: "2026-03-01",
+        validUntil: null,
+        professionalId: 88,
+        isActive: true,
+      }),
+    });
+    const res = await POST_SERIES(req, { params: Promise.resolve({ id: "11" }) });
+    const body = await res.json();
+
+    expect(res.status).toBe(409);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode).toBe("CLASS_SLOT_UNAVAILABLE");
+    expect(prisma.classSeries.create).not.toHaveBeenCalled();
+  });
+
   it("PATCH permite limpar professionalId/courtId com null explícito", async () => {
     prisma.classSeries.findFirst.mockResolvedValue({
       id: 777,
@@ -139,7 +186,7 @@ describe("class-series routes regression", () => {
 
     const req = new NextRequest("http://localhost/api/org/21/servicos/11/class-series/777", {
       method: "PATCH",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "x-orya-academy-bridge": "1" },
       body: JSON.stringify({
         professionalId: null,
         courtId: null,

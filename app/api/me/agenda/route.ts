@@ -11,7 +11,6 @@ import { resolveEventLocation } from "@/lib/location/eventLocation";
 import { listEffectiveOrganizationMembershipsForUser } from "@/lib/organizationMembers";
 import { OrganizationStatus } from "@prisma/client";
 import {
-  PENDING_BOOKING_STATUSES,
   resolvePendingBookingState,
 } from "@/lib/reservas/pendingBookingState";
 
@@ -110,9 +109,6 @@ const participationPriority: Record<string, number> = {
   RESERVA: 3,
 };
 
-const isPendingState = (status: string | null | undefined) =>
-  typeof status === "string" && PENDING_BOOKING_STATUSES.includes(status as any);
-
 async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
@@ -126,6 +122,7 @@ async function _GET(req: NextRequest) {
     }
 
     const { start, end } = buildRange(req);
+    const compact = req.nextUrl.searchParams.get("compact") === "1";
     const userId = user.id;
     const now = new Date();
 
@@ -171,41 +168,43 @@ async function _GET(req: NextRequest) {
           },
         },
       }),
-      prisma.ticketReservation.findMany({
-        where: {
-          userId,
-          status: "ACTIVE",
-          expiresAt: { gte: now },
-          event: {
-            isDeleted: false,
-            status: { in: PUBLIC_EVENT_STATUSES },
-            startsAt: { lte: end },
-            endsAt: { gte: start },
-          },
-        },
-        select: {
-          event: {
+      compact
+        ? Promise.resolve([])
+        : prisma.ticketReservation.findMany({
+            where: {
+              userId,
+              status: "ACTIVE",
+              expiresAt: { gte: now },
+              event: {
+                isDeleted: false,
+                status: { in: PUBLIC_EVENT_STATUSES },
+                startsAt: { lte: end },
+                endsAt: { gte: start },
+              },
+            },
             select: {
-              id: true,
-              title: true,
-              slug: true,
-              startsAt: true,
-              endsAt: true,
-              status: true,
-              templateType: true,
-              coverImageUrl: true,
-              addressRef: {
+              event: {
                 select: {
-                  formattedAddress: true,
-                  canonical: true,
-                  latitude: true,
-                  longitude: true,
+                  id: true,
+                  title: true,
+                  slug: true,
+                  startsAt: true,
+                  endsAt: true,
+                  status: true,
+                  templateType: true,
+                  coverImageUrl: true,
+                  addressRef: {
+                    select: {
+                      formattedAddress: true,
+                      canonical: true,
+                      latitude: true,
+                      longitude: true,
+                    },
+                  },
                 },
               },
             },
-          },
-        },
-      }),
+          }),
       prisma.booking.findMany({
         where: {
           userId,
@@ -268,87 +267,93 @@ async function _GET(req: NextRequest) {
           },
         },
       }),
-      prisma.eventMatchSlot.findMany({
-        where: {
-          AND: [
-            {
-              OR: [
+      compact
+        ? Promise.resolve([])
+        : prisma.eventMatchSlot.findMany({
+            where: {
+              AND: [
                 {
-                  pairingA: {
-                    OR: [{ player1UserId: userId }, { player2UserId: userId }],
-                  },
+                  OR: [
+                    {
+                      pairingA: {
+                        OR: [{ player1UserId: userId }, { player2UserId: userId }],
+                      },
+                    },
+                    {
+                      pairingB: {
+                        OR: [{ player1UserId: userId }, { player2UserId: userId }],
+                      },
+                    },
+                  ],
                 },
                 {
-                  pairingB: {
-                    OR: [{ player1UserId: userId }, { player2UserId: userId }],
-                  },
+                  OR: [
+                    { plannedStartAt: { gte: start, lte: end } },
+                    { startTime: { gte: start, lte: end } },
+                    { actualStartAt: { gte: start, lte: end } },
+                  ],
+                },
+                {
+                  event: { isDeleted: false, status: { in: PUBLIC_EVENT_STATUSES } },
                 },
               ],
             },
-            {
-              OR: [
-                { plannedStartAt: { gte: start, lte: end } },
-                { startTime: { gte: start, lte: end } },
-                { actualStartAt: { gte: start, lte: end } },
-              ],
-            },
-            {
-              event: { isDeleted: false, status: { in: PUBLIC_EVENT_STATUSES } },
-            },
-          ],
-        },
-        select: {
-          id: true,
-          startTime: true,
-          plannedStartAt: true,
-          plannedEndAt: true,
-          actualStartAt: true,
-          roundLabel: true,
-          groupLabel: true,
-          courtName: true,
-          event: {
             select: {
               id: true,
-              title: true,
-              slug: true,
-              startsAt: true,
-              coverImageUrl: true,
-              addressRef: {
+              startTime: true,
+              plannedStartAt: true,
+              plannedEndAt: true,
+              actualStartAt: true,
+              roundLabel: true,
+              groupLabel: true,
+              courtName: true,
+              event: {
                 select: {
-                  formattedAddress: true,
-                  canonical: true,
-                  latitude: true,
-                  longitude: true,
+                  id: true,
+                  title: true,
+                  slug: true,
+                  startsAt: true,
+                  coverImageUrl: true,
+                  addressRef: {
+                    select: {
+                      formattedAddress: true,
+                      canonical: true,
+                      latitude: true,
+                      longitude: true,
+                    },
+                  },
                 },
               },
             },
-          },
-        },
-      }),
-      prisma.organizationFormSubmission.findMany({
-        where: { userId },
-        select: {
-          id: true,
-          status: true,
-          createdAt: true,
-          form: {
+          }),
+      compact
+        ? Promise.resolve([])
+        : prisma.organizationFormSubmission.findMany({
+            where: { userId },
             select: {
               id: true,
-              title: true,
               status: true,
-              startAt: true,
-              endAt: true,
+              createdAt: true,
+              form: {
+                select: {
+                  id: true,
+                  title: true,
+                  status: true,
+                  startAt: true,
+                  endAt: true,
+                },
+              },
             },
-          },
-        },
-      }),
+          }),
     ]);
 
-    const staffMemberships = await listEffectiveOrganizationMembershipsForUser({
-      userId,
-      roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
-      allowedStatuses: [OrganizationStatus.ACTIVE],
-    });
+    const staffMemberships = compact
+      ? []
+      : await listEffectiveOrganizationMembershipsForUser({
+          userId,
+          roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
+          allowedStatuses: [OrganizationStatus.ACTIVE],
+        });
     const staffOrganizationIds = Array.from(
       new Set(staffMemberships.map((membership) => membership.organizationId)),
     );
@@ -440,28 +445,6 @@ async function _GET(req: NextRequest) {
 
     const items: AgendaItem[] = Array.from(eventMap.values()).map((entry) => entry.item);
 
-    const stalePendingBookingIds = bookingRows
-      .filter((row) => {
-        if (!isPendingState(row.status)) return false;
-        const pendingState = resolvePendingBookingState({
-          status: row.status,
-          startsAt: row.startsAt,
-          pendingExpiresAt: row.pendingExpiresAt,
-          createdAt: row.createdAt,
-          now,
-        });
-        return pendingState === "EXPIRED" || pendingState === "PAST_START";
-      })
-      .map((row) => row.id);
-    if (stalePendingBookingIds.length > 0) {
-      await prisma.booking.updateMany({
-        where: {
-          id: { in: stalePendingBookingIds },
-          status: { in: [...PENDING_BOOKING_STATUSES] as any },
-        },
-        data: { status: "CANCELLED_BY_CLIENT" },
-      });
-    }
     const visibleBookingRows = bookingRows.filter((row) => {
       const pendingState = resolvePendingBookingState({
         status: row.status,

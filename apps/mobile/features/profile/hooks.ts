@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   fetchProfileAgenda,
+  fetchProfilePadelCard,
   fetchProfileSummary,
   fetchPublicOrganizationAgenda,
   fetchPublicProfile,
@@ -27,6 +28,19 @@ export const useProfileAgenda = (
   useQuery({
     queryKey: ["profile", "agenda", userId ?? "anon"],
     queryFn: () => fetchProfileAgenda(accessToken),
+    staleTime: 1000 * 60,
+    enabled: enabled && Boolean(accessToken),
+    refetchOnWindowFocus: false,
+  });
+
+export const useProfilePadelCard = (
+  accessToken?: string | null,
+  userId?: string | null,
+  enabled = true,
+) =>
+  useQuery({
+    queryKey: ["profile", "padel-card", userId ?? "anon"],
+    queryFn: () => fetchProfilePadelCard(accessToken),
     staleTime: 1000 * 60,
     enabled: enabled && Boolean(accessToken),
     refetchOnWindowFocus: false,

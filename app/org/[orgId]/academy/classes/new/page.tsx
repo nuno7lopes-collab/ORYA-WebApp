@@ -16,7 +16,7 @@ import {
   DASHBOARD_CARD,
   DASHBOARD_LABEL,
   DASHBOARD_MUTED,
-} from "@/app/org/_shared/dashboardUi";
+} from "@/app/org/_internal/core/dashboardUi";
 
 type LocationMode = "FIXED" | "CHOOSE_AT_BOOKING";
 type CreationKind = "CLASS";

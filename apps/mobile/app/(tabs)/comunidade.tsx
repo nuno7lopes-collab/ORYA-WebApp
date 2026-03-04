@@ -58,20 +58,23 @@ export default function ComunidadeTabScreen() {
     setSegment(next);
   }, [secaoParamRaw]);
 
-  const socialQuery = useSocialFeed(10, isFocused);
-  const { data: ipLocation } = useIpLocation(isFocused);
+  const feedEnabled = isFocused && segment === "feed";
+  const messagesEnabled = isFocused && segment === "mensagens";
+
+  const socialQuery = useSocialFeed(10, feedEnabled);
+  const { data: ipLocation } = useIpLocation(feedEnabled);
   const userLat = ipLocation?.approxLatLon?.lat ?? null;
   const userLon = ipLocation?.approxLatLon?.lon ?? null;
 
   const accessToken = session?.access_token ?? null;
-  const inboxQuery = useMessagesInbox(Boolean(session?.user?.id) && isFocused, accessToken);
+  const inboxQuery = useMessagesInbox(Boolean(session?.user?.id) && messagesEnabled, accessToken);
   const requestsQuery = useMessageRequests(
-    Boolean(session?.user?.id) && isFocused,
+    Boolean(session?.user?.id) && messagesEnabled,
     accessToken,
     session?.user?.id,
   );
   const communityInvitesQuery = useMessageCommunityInvites(
-    Boolean(session?.user?.id) && isFocused,
+    Boolean(session?.user?.id) && messagesEnabled,
     accessToken,
     session?.user?.id,
   );

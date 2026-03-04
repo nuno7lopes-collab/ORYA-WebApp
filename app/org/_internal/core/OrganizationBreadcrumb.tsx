@@ -6,12 +6,12 @@ import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbSeparator, Breadc
 import { buildOrgHref, buildOrgHubHref, parseOrgIdFromPathnameStrict } from "@/lib/organizationIdUtils";
 
 const SECTION_LABELS: Record<string, string> = {
-  overview: "Dashboard clube",
+  overview: "Dashboard do clube",
   ferramentas: "Ferramentas",
   eventos: "Eventos do clube",
   "padel-club": "Clube de Padel",
   "padel-tournaments": "Competição",
-  calendar: "Calendário",
+  calendar: "Agenda",
   clubs: "Clubes",
   courts: "Campos",
   categories: "Categorias",
@@ -87,23 +87,23 @@ function resolveLabel(
     }
     return "Competição";
   }
-  if (/^\/org\/(?:\d+\/)?calendar\/day(?:\/|$)/.test(pathname)) return "Calendário · Dia";
+  if (/^\/org\/(?:\d+\/)?calendar\/day(?:\/|$)/.test(pathname)) return "Agenda · Dia";
   if (
     /^\/org\/(?:\d+\/)?calendar\/conflicts(?:\/|$)/.test(pathname) ||
     /^\/org\/(?:\d+\/)?calendar\/availability\/conflicts(?:\/|$)/.test(pathname)
   ) {
-    return "Calendário · Conflitos de disponibilidade";
+    return "Agenda · Conflitos de disponibilidade";
   }
   if (/^\/org\/(?:\d+\/)?calendar\/availability(?:\/|$)/.test(pathname)) {
-    return "Calendário · Disponibilidade";
+    return "Agenda · Disponibilidade";
   }
-  if (/^\/org\/(?:\d+\/)?calendar(?:\/|$)/.test(pathname)) return "Calendário";
+  if (/^\/org\/(?:\d+\/)?calendar(?:\/|$)/.test(pathname)) return "Agenda";
   if (/^\/org\/(?:\d+\/)?bookings\/new(?:\/|$)/.test(pathname)) return "Operação · Criar aula";
   if (/^\/org\/(?:\d+\/)?bookings\/customers(?:\/|$)/.test(pathname)) return "Operação · Alunos";
   if (/^\/org\/(?:\d+\/)?bookings\/professionals(?:\/|$)/.test(pathname)) return "Operação · Treinadores";
   if (/^\/org\/(?:\d+\/)?bookings\/resources(?:\/|$)/.test(pathname)) return "Operação · Campos";
   if (/^\/org\/(?:\d+\/)?bookings(?:\/|$)/.test(pathname)) {
-    if (/^\/org\/(?:\d+\/)?bookings\/availability(?:\/|$)/.test(pathname)) return "Calendário · Disponibilidade";
+    if (/^\/org\/(?:\d+\/)?bookings\/availability(?:\/|$)/.test(pathname)) return "Agenda · Disponibilidade";
     const sectionLabel = section ? SECTION_LABELS[section] : null;
     if (sectionLabel && section !== "reservas") {
       return `Operação · ${sectionLabel}`;
@@ -143,8 +143,8 @@ function resolveLabel(
   }
   if (objectiveLabel) return objectiveLabel;
 
-  if (tab === "overview") return "Dashboard clube";
-  return "Dashboard clube";
+  if (tab === "overview") return "Dashboard do clube";
+  return "Dashboard do clube";
 }
 
 export function OrganizationBreadcrumb() {
@@ -172,7 +172,7 @@ export function OrganizationBreadcrumb() {
     <Breadcrumb className="text-base md:text-lg font-semibold text-white/80">
         <BreadcrumbList className="gap-3">
         <BreadcrumbItem className="text-white/75 hover:text-white transition">
-          <Link href={dashboardHref}>Dashboard clube</Link>
+          <Link href={dashboardHref}>Dashboard do clube</Link>
         </BreadcrumbItem>
         <BreadcrumbSeparator className="text-white/50" />
         <BreadcrumbItem>

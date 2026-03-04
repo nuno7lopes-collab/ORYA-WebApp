@@ -5118,6 +5118,7 @@ model Booking {
   @@index([resourceId])
   @@index([partySize])
   @@index([status])
+  @@index([organizationId, startsAt, id], map: "bookings_org_start_id_idx")
   @@index([pendingExpiresAt])
   @@index([addressId], map: "bookings_address_idx")
   @@index([guestEmail], map: "bookings_guest_email_idx")

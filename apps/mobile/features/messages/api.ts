@@ -123,7 +123,7 @@ async function requestMessagesApi<T>(
 
 export const fetchMessagesInbox = async (accessToken?: string | null): Promise<InboxResponse> => {
   return requestMessagesApi<InboxResponse>(
-    withB2CScope("/api/messages/conversations"),
+    withB2CScope("/api/messages/conversations?compact=1"),
     accessToken,
   );
 };
@@ -132,7 +132,7 @@ export const fetchMessageInvites = async (
   eventId?: number | null,
   accessToken?: string | null,
 ): Promise<MessageInvitesResponse> => {
-  const path = withB2CScope("/api/messages/grants");
+  const path = withB2CScope("/api/messages/grants?compact=1");
   const url = new URL(path, "https://orya.local");
   url.searchParams.set("kind", "EVENT_INVITE");
   if (typeof eventId === "number" && Number.isFinite(eventId) && eventId > 0) {
@@ -162,7 +162,7 @@ export const fetchMessageCommunityInvites = async (
   currentUserId?: string | null,
   accessToken?: string | null,
 ): Promise<MessageCommunityInvitesResponse> => {
-  const path = withB2CScope("/api/messages/grants");
+  const path = withB2CScope("/api/messages/grants?compact=1");
   const url = new URL(path, "https://orya.local");
   url.searchParams.set("kind", "COMMUNITY_INVITE");
   url.searchParams.set("status", "PENDING");
@@ -274,7 +274,7 @@ export const fetchMessageRequests = async (
   currentUserId?: string | null,
   accessToken?: string | null,
 ): Promise<MessageRequestsResponse> => {
-  const path = withB2CScope("/api/messages/grants");
+  const path = withB2CScope("/api/messages/grants?compact=1");
   const url = new URL(path, "https://orya.local");
   url.searchParams.set("kind", "USER_DM_REQUEST");
   url.searchParams.set("status", "PENDING");

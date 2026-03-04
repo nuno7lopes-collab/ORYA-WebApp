@@ -309,6 +309,21 @@ const isCheckoutSettledStatus = (status: string | null | undefined) =>
   status === "PAID" || status === "SUCCEEDED";
 const resolveErrorMessage = (err: unknown) =>
   err instanceof Error ? err.message : String(err ?? "");
+const resolvePairingErrorCode = (err: unknown) => {
+  if (err instanceof ApiError && err.code) {
+    return err.code.trim().toUpperCase();
+  }
+  const message = resolveErrorMessage(err);
+  const errorCodeMatch = message.match(/"errorCode"\s*:\s*"([^"]+)"/i);
+  if (errorCodeMatch?.[1]) return errorCodeMatch[1].trim().toUpperCase();
+  const codeMatch = message.match(/"code"\s*:\s*"([^"]+)"/i);
+  if (codeMatch?.[1]) return codeMatch[1].trim().toUpperCase();
+  return null;
+};
+const isFunctionalPairingSuccessCode = (code: string | null) =>
+  code === "PAIRING_ALREADY_ACTIVE" ||
+  code === "INVITE_ALREADY_USED" ||
+  code === "NO_PENDING_INVITE";
 
 const mapInviteTokenReason = (
   reason: string | null | undefined,
@@ -694,8 +709,13 @@ export default function EventDetail() {
     "INVITE_PARTNER" | "LOOKING_FOR_PARTNER"
   >("INVITE_PARTNER");
   const [inviteContact, setInviteContact] = useState("");
-  const [pairingBusy, setPairingBusy] = useState(false);
-  const [pairingActionBusy, setPairingActionBusy] = useState(false);
+  const [createPairingBusy, setCreatePairingBusy] = useState(false);
+  const [joinPairingBusy, setJoinPairingBusy] = useState(false);
+  const [acceptInviteBusy, setAcceptInviteBusy] = useState(false);
+  const [declineInviteBusy, setDeclineInviteBusy] = useState(false);
+  const [payPairingBusy, setPayPairingBusy] = useState(false);
+  const pairingBusy = createPairingBusy || joinPairingBusy;
+  const pairingActionBusy = acceptInviteBusy || declineInviteBusy || payPairingBusy;
   const dismissInFlightRef = useRef(false);
   const scrollOffsetYRef = useRef(0);
   const dragStartedAtTopRef = useRef(false);
@@ -1808,8 +1828,8 @@ export default function EventDetail() {
       );
       return;
     }
-    if (pairingBusy) return;
-    setPairingBusy(true);
+    if (createPairingBusy) return;
+    setCreatePairingBusy(true);
     try {
       const result = await createPairing({
         eventId: data.id,
@@ -1846,6 +1866,14 @@ export default function EventDetail() {
         });
       }
     } catch (err: unknown) {
+      const errorCode = resolvePairingErrorCode(err);
+      if (isFunctionalPairingSuccessCode(errorCode)) {
+        await Promise.all([
+          myPairingsQuery.refetch(),
+          openPairingsQuery.refetch(),
+        ]);
+        return;
+      }
       if (resolveErrorMessage(err).includes("PADEL_ONBOARDING_REQUIRED")) {
         Alert.alert(
           t("events:padel.onboardingRequiredTitle"),
@@ -1859,7 +1887,7 @@ export default function EventDetail() {
         getUserFacingError(err, t("events:padel.pairingCreateFailed")),
       );
     } finally {
-      setPairingBusy(false);
+      setCreatePairingBusy(false);
     }
   };
 
@@ -1869,8 +1897,8 @@ export default function EventDetail() {
       openAuth();
       return;
     }
-    if (pairingBusy) return;
-    setPairingBusy(true);
+    if (joinPairingBusy) return;
+    setJoinPairingBusy(true);
     try {
       const joinResult = await joinOpenPairing(pairingId);
       Alert.alert(
@@ -1889,41 +1917,51 @@ export default function EventDetail() {
         getUserFacingError(err, t("events:padel.joinFailed")),
       );
     } finally {
-      setPairingBusy(false);
+      setJoinPairingBusy(false);
     }
   };
 
   const handleAcceptPairingInvite = async (pairingId: number) => {
     triggerLightHaptic();
-    if (pairingActionBusy) return;
-    setPairingActionBusy(true);
+    if (acceptInviteBusy) return;
+    setAcceptInviteBusy(true);
     try {
       await acceptInvite(pairingId);
       await myPairingsQuery.refetch();
     } catch (err: unknown) {
+      const errorCode = resolvePairingErrorCode(err);
+      if (isFunctionalPairingSuccessCode(errorCode)) {
+        await myPairingsQuery.refetch();
+        return;
+      }
       Alert.alert(
         t("events:invite.title"),
         getUserFacingError(err, t("events:invite.acceptFailed")),
       );
     } finally {
-      setPairingActionBusy(false);
+      setAcceptInviteBusy(false);
     }
   };
 
   const handleDeclinePairingInvite = async (pairingId: number) => {
     triggerLightHaptic();
-    if (pairingActionBusy) return;
-    setPairingActionBusy(true);
+    if (declineInviteBusy) return;
+    setDeclineInviteBusy(true);
     try {
       await declineInvite(pairingId);
       await myPairingsQuery.refetch();
     } catch (err: unknown) {
+      const errorCode = resolvePairingErrorCode(err);
+      if (isFunctionalPairingSuccessCode(errorCode)) {
+        await myPairingsQuery.refetch();
+        return;
+      }
       Alert.alert(
         t("events:invite.title"),
         getUserFacingError(err, t("events:invite.declineFailed")),
       );
     } finally {
-      setPairingActionBusy(false);
+      setDeclineInviteBusy(false);
     }
   };
 
@@ -1961,7 +1999,8 @@ export default function EventDetail() {
       return;
     }
     const idempotencyKey = buildCheckoutIdempotencyKey();
-    setPairingActionBusy(true);
+    if (payPairingBusy) return;
+    setPayPairingBusy(true);
     try {
       trackEvent("checkout_started", {
         sourceType: "PADEL_REGISTRATION",
@@ -2026,7 +2065,7 @@ export default function EventDetail() {
         getUserFacingError(err, t("events:payment.startFailed")),
       );
     } finally {
-      setPairingActionBusy(false);
+      setPayPairingBusy(false);
     }
   }
   return (

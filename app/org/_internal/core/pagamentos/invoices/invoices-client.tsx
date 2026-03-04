@@ -133,7 +133,7 @@ export default function InvoicesClient({
   const stateCard = (() => {
     if (isLoading) {
       return (
-        <div className="rounded-3xl border border-white/10 bg-white/5 p-6 space-y-4 shadow-[0_18px_60px_rgba(0,0,0,0.55)]">
+        <div className="org-clean-section space-y-4 p-6">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-2xl bg-white/10 animate-pulse" />
             <div className="space-y-2">
@@ -143,15 +143,15 @@ export default function InvoicesClient({
           </div>
           <div className="grid gap-2 md:grid-cols-3">
             {[...Array(3)].map((_, idx) => (
-              <div key={idx} className="h-16 rounded-2xl border border-white/10 bg-white/5 animate-pulse" />
-            ))}
+                <div key={idx} className="h-16 animate-pulse rounded-2xl border border-white/14 bg-white/[0.03]" />
+              ))}
+            </div>
           </div>
-        </div>
       );
     }
     if (!organizationId) {
       return (
-        <div className="rounded-3xl border border-white/12 bg-white/5 p-5 text-sm text-white/75 shadow-[0_18px_50px_rgba(0,0,0,0.55)]">
+        <div className="org-clean-section p-5 text-sm text-white/82">
           A carregar organização...
         </div>
       );
@@ -160,26 +160,26 @@ export default function InvoicesClient({
       const errorCode = data && "error" in data ? data.error : null;
       if (errorCode && ["UNAUTHENTICATED", "FORBIDDEN"].includes(errorCode)) {
         return (
-          <div className="rounded-3xl border border-white/12 bg-white/5 p-5 text-sm text-white/75 shadow-[0_18px_50px_rgba(0,0,0,0.55)]">
+          <div className="org-clean-section p-5 text-sm text-white/82">
             Não tens permissões para ver a faturação desta organização.
           </div>
         );
       }
       if (errorCode && errorCode !== "INTERNAL_ERROR") {
         return (
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-6 text-white/70 shadow-[0_18px_60px_rgba(0,0,0,0.55)]">
+          <div className="org-clean-section p-6 text-white/82">
             Ainda não há faturação para mostrar. Quando houver vendas, vais ver tudo aqui.
           </div>
         );
       }
       return (
-        <div className="rounded-3xl border border-white/15 bg-red-500/10 p-5 text-sm text-white/80 shadow-[0_18px_50px_rgba(0,0,0,0.55)]">
+        <div className="rounded-3xl border border-red-400/45 bg-red-500/12 p-5 text-sm text-white/90">
           <p className="font-semibold text-white">Não foi possível carregar faturação.</p>
-          <p className="text-white/65">Tenta novamente ou ajusta o intervalo.</p>
+          <p className="text-white/78">Tenta novamente ou ajusta o intervalo.</p>
           <button
             type="button"
             onClick={() => mutate()}
-            className={`${CTA_SECONDARY} mt-3 text-[12px]`}
+            className={`${CTA_SECONDARY} mt-3 text-[13px]`}
           >
             Recarregar
           </button>
@@ -188,7 +188,7 @@ export default function InvoicesClient({
     }
     if (items.length === 0) {
       return (
-        <div className="rounded-3xl border border-white/10 bg-white/5 p-6 text-white/70 shadow-[0_18px_60px_rgba(0,0,0,0.55)]">
+        <div className="org-clean-section p-6 text-white/82">
           Sem vendas neste intervalo. Ajusta as datas.
         </div>
       );
@@ -197,17 +197,17 @@ export default function InvoicesClient({
   })();
 
   return (
-    <div className={fullWidth ? "w-full space-y-6 text-white" : "mx-auto max-w-6xl px-4 py-6 space-y-6 text-white"}>
-      <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0d1530]/75 to-[#050912]/90 p-5 shadow-[0_28px_90px_rgba(0,0,0,0.6)] backdrop-blur-3xl">
+    <div className={fullWidth ? "org-clean-page w-full space-y-6" : "org-clean-page mx-auto max-w-6xl space-y-6 px-4 py-6"}>
+      <div className="org-clean-section p-5">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-white/80 shadow-[0_10px_30px_rgba(0,0,0,0.4)]">
+            <div className="org-clean-chip text-[11px] uppercase tracking-[0.2em]">
               Faturação
             </div>
-            <h1 className="text-3xl font-semibold drop-shadow-[0_12px_40px_rgba(0,0,0,0.55)]">Receitas e taxas.</h1>
-            <p className="text-sm text-white/70">Bruto, descontos e líquido. CSV num clique.</p>
+            <h1 className="text-3xl font-semibold text-white">Receitas e taxas.</h1>
+            <p className="text-sm text-white/80">Bruto, descontos e líquido. CSV num clique.</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2 text-[12px]">
+          <div className="flex flex-wrap items-center gap-2 text-[13px]">
             {[
               { key: "7d", label: "7d" },
               { key: "30d", label: "30d" },
@@ -230,8 +230,8 @@ export default function InvoicesClient({
                 }
                 className={`rounded-full px-3 py-1.5 transition ${
                   preset.key !== "all" && from && to
-                    ? "bg-gradient-to-r from-[#FF00C8]/25 via-[#22D3EE]/20 to-[#1646F5]/25 text-white shadow-[0_0_14px_rgba(34,211,238,0.35)]"
-                    : "border border-white/20 text-white/75 hover:bg-white/10"
+                    ? "border border-cyan-300/45 bg-cyan-300/12 text-cyan-100"
+                    : "border border-white/22 text-white/80 hover:bg-white/[0.06]"
                 }`}
               >
                 {preset.label}
@@ -240,12 +240,12 @@ export default function InvoicesClient({
             <OryaDateField
               value={from}
               onChange={(next) => handleDateChange("from", next)}
-              buttonClassName="h-10 rounded-xl bg-black/40 px-3 py-2 text-sm"
+              buttonClassName="org-clean-input h-10 px-3 py-2 text-sm"
             />
             <OryaDateField
               value={to}
               onChange={(next) => handleDateChange("to", next)}
-              buttonClassName="h-10 rounded-xl bg-black/40 px-3 py-2 text-sm"
+              buttonClassName="org-clean-input h-10 px-3 py-2 text-sm"
             />
             <button
               type="button"
@@ -271,7 +271,7 @@ export default function InvoicesClient({
             <SummaryCard label="Bilhetes" value={`${totalTickets}`} tone="slate" helper="Total no intervalo." />
           </div>
 
-          <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/75 to-[#050810]/92 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.6)] overflow-x-auto backdrop-blur-2xl">
+          <div className="overflow-x-auto rounded-3xl border border-white/16 bg-white/[0.03] p-4">
             <table className="min-w-full text-sm text-white/85">
               <thead className="text-left text-[11px] uppercase tracking-[0.18em] text-white/60">
                 <tr className="border-b border-white/10">
@@ -289,7 +289,7 @@ export default function InvoicesClient({
                 {items.map((sale) => {
                   const tickets = sale.lines?.reduce((s, l) => s + l.quantity, 0) ?? 0;
                   return (
-                    <tr key={sale.id} className="hover:bg-white/5 transition">
+                    <tr key={sale.id} className="transition hover:bg-white/[0.04]">
                       <td className="py-3 pr-3">
                         <div className="font-semibold text-white">{sale.event?.title ?? "Evento"}</div>
                         <div className="text-[11px] text-white/60">{sale.event?.slug ?? "—"}</div>
@@ -303,7 +303,7 @@ export default function InvoicesClient({
                       </td>
                       <td className="py-3 pr-3 font-semibold text-white">{formatEuro(sale.netCents / 100)}</td>
                       <td className="py-3 pr-3 text-[11px]">
-                        <span className="rounded-full border border-white/25 bg-white/10 px-2.5 py-0.5 text-white shadow-[0_8px_18px_rgba(0,0,0,0.35)]">
+                        <span className="rounded-full border border-white/24 bg-white/[0.05] px-2.5 py-0.5 text-white">
                           {formatPayoutMode(sale.event?.payoutMode)}
                         </span>
                       </td>
@@ -332,20 +332,20 @@ function SummaryCard({
 }) {
   const toneClass =
     tone === "success"
-      ? "bg-gradient-to-br from-emerald-400/25 via-emerald-500/20 to-teal-500/25 border-emerald-300/45 text-emerald-50"
+      ? "bg-emerald-500/12 border-emerald-300/45 text-emerald-100"
       : tone === "bright"
-        ? "bg-gradient-to-r from-[#FF00C8]/30 via-[#22D3EE]/18 to-[#1646F5]/28 border-white/18 text-white"
+        ? "bg-cyan-500/10 border-cyan-300/45 text-cyan-100"
         : tone === "muted"
-          ? "bg-white/6 text-white/70 border-white/12"
+          ? "bg-white/[0.04] text-white/78 border-white/14"
           : tone === "slate"
-            ? "bg-gradient-to-br from-white/12 via-white/6 to-white/4 text-white/80 border-white/14"
-            : "bg-white/8 text-white border-white/12";
+            ? "bg-white/[0.06] text-white/84 border-white/16"
+            : "bg-white/[0.05] text-white border-white/14";
 
   return (
-    <div className={`rounded-2xl border p-4 shadow-[0_16px_50px_rgba(0,0,0,0.38)] backdrop-blur-2xl ${toneClass}`}>
-      <p className="text-[11px] uppercase tracking-[0.2em] text-white/75">{label}</p>
-      <p className="text-xl font-semibold leading-tight drop-shadow-[0_10px_25px_rgba(0,0,0,0.4)]">{value}</p>
-      {helper && <p className="text-[11px] text-white/60 mt-1">{helper}</p>}
+    <div className={`rounded-2xl border p-4 ${toneClass}`}>
+      <p className="text-[12px] uppercase tracking-[0.16em] text-white/82">{label}</p>
+      <p className="text-xl font-semibold leading-tight">{value}</p>
+      {helper && <p className="mt-1 text-[12px] text-white/70">{helper}</p>}
     </div>
   );
 }

@@ -19,7 +19,7 @@ export type ClubDashboardViewModel = {
 };
 
 const CLUB_TOPBAR_LABEL_BY_TOOL: Record<OrgToolKey, string> = {
-  dashboard: "Dashboard Clube",
+  dashboard: "Dashboard do clube",
   events: "Eventos",
   academy: "Academia",
   bookings: "Academia",
@@ -93,7 +93,7 @@ const CLUB_AREA_BY_DASHBOARD_TOOL_ID: Record<string, ClubDashboardArea> = {
 export function resolveClubDashboardViewModel(toolKey: OrgToolKey): ClubDashboardViewModel {
   return {
     toolKey,
-    label: CLUB_TOPBAR_LABEL_BY_TOOL[toolKey] ?? "Dashboard Clube",
+    label: CLUB_TOPBAR_LABEL_BY_TOOL[toolKey] ?? "Dashboard do clube",
     area: CLUB_AREA_BY_TOOL[toolKey] ?? "Operação",
   };
 }

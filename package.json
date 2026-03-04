@@ -92,6 +92,8 @@
     "gate:readme-refs": "node scripts/v9_readme_route_refs_gate.mjs",
     "audit:event-ticket-integrity": "node scripts/run-ts.cjs scripts/audit_event_ticket_integrity.ts",
     "audit:padel-category-ticket-links": "node scripts/run-ts.cjs scripts/audit_padel_category_ticket_links.ts",
+    "padel:capacity-backfill:dry": "node -r ./scripts/load-env.js scripts/run-ts.cjs scripts/padel_backfill_tournament_capacity.ts",
+    "padel:capacity-backfill:execute": "node -r ./scripts/load-env.js scripts/run-ts.cjs scripts/padel_backfill_tournament_capacity.ts --execute",
     "ssot:p0:sync": "node scripts/sync_ssot_p0_endpoints.mjs",
     "ssot:p0:check": "node scripts/sync_ssot_p0_endpoints.mjs --check",
     "audit:public-events": "node scripts/run-ts.cjs scripts/audit_public_events.ts",

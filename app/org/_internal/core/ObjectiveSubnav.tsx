@@ -168,16 +168,16 @@ export default function ObjectiveSubnav({
   const tabsWrapperClass = cn(
     "inline-flex items-center",
     isTopbar
-      ? "flex-nowrap gap-1 rounded-full border border-white/12 bg-white/5 px-1 py-1 text-[12px] shadow-[0_10px_32px_rgba(0,0,0,0.35)] overflow-visible w-fit max-w-full"
-      : "flex-wrap gap-2 rounded-2xl border border-white/10 bg-white/5 px-2 py-2 text-sm shadow-[0_16px_50px_rgba(0,0,0,0.4)]",
+      ? "flex-nowrap gap-1 rounded-full border border-white/18 bg-white/[0.04] px-1 py-1 text-[12px] overflow-visible w-fit max-w-full"
+      : "flex-wrap gap-2 rounded-2xl border border-white/16 bg-white/[0.04] px-2 py-2 text-sm",
   );
   const tabBaseClass = isTopbar
     ? "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-semibold transition whitespace-nowrap"
     : "inline-flex items-center gap-2 rounded-xl px-3 py-2 font-semibold transition";
   const tabActiveClass = isTopbar
-    ? "bg-white/15 text-white shadow-[0_10px_28px_rgba(34,211,238,0.25)]"
-    : "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(34,211,238,0.45)]";
-  const tabInactiveClass = isTopbar ? "text-white/70 hover:bg-white/10" : "text-white/80 hover:bg-white/10";
+    ? "border border-[#22D3EE]/55 bg-[#22D3EE]/16 text-white"
+    : "border border-[#22D3EE]/50 bg-[#22D3EE]/14 text-white";
+  const tabInactiveClass = isTopbar ? "text-white/82 hover:bg-white/[0.08]" : "text-white/86 hover:bg-white/[0.08]";
   const disableScrollToTop = isTopbar || mode === "dashboard";
 
   const clearCloseTimeout = () => {
@@ -309,7 +309,7 @@ export default function ObjectiveSubnav({
                   ▾
                 </span>
               </Link>
-              <div className="pointer-events-none absolute left-0 top-full z-40 min-w-[200px] rounded-2xl orya-menu-surface p-2 text-[12px] text-white/85 opacity-0 backdrop-blur-2xl transition before:absolute before:-top-2 before:left-0 before:right-0 before:h-2 before:content-[''] group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+              <div className="pointer-events-none absolute left-0 top-full z-40 min-w-[200px] rounded-2xl orya-menu-surface p-2 text-[12px] text-white/88 opacity-0 transition before:absolute before:-top-2 before:left-0 before:right-0 before:h-2 before:content-[''] group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
                 <div className="orya-menu-list">
                   {section.items?.map((item) => {
                     const itemActive = item.id === active;
@@ -449,7 +449,7 @@ export default function ObjectiveSubnav({
           >
             <div
               ref={dropdownRef}
-              className="min-w-[200px] rounded-2xl orya-menu-surface p-2 text-[12px] text-white/85 backdrop-blur-2xl animate-popover"
+              className="min-w-[200px] rounded-2xl orya-menu-surface p-2 text-[12px] text-white/88 animate-popover"
             >
               <div className="orya-menu-list">
                 {openSection.items.map((item) => {
@@ -504,15 +504,15 @@ export default function ObjectiveSubnav({
   return (
     <div
       className={cn(
-        "rounded-3xl border border-white/12 bg-gradient-to-r from-[#0b1226]/80 via-[#101b39]/75 to-[#050811]/90 p-4 shadow-[0_26px_90px_rgba(0,0,0,0.55)] backdrop-blur-2xl",
+        "rounded-3xl border border-white/18 bg-[#141a22] p-4",
         className,
       )}
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.26em] text-white/70 shadow-[0_12px_32px_rgba(0,0,0,0.4)]">
+        <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/[0.05] px-3 py-1 text-[11px] uppercase tracking-[0.26em] text-white/78">
           Objetivo · {OBJECTIVE_LABELS[objective]}
         </div>
-        <div className="text-[11px] text-white/60">{scopedSections.length} secções</div>
+        <div className="text-[11px] text-white/74">{scopedSections.length} secções</div>
       </div>
       <div className="mt-3">{tabs}</div>
     </div>

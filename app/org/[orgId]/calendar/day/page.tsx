@@ -1,21 +1,23 @@
 import { redirect } from "next/navigation";
 import { buildOrgHref, parseOrganizationId } from "@/lib/organizationIdUtils";
 
-type LegacyCalendarDayPageProps = {
-  params: {
+type CalendarDayRedirectPageProps = {
+  params: Promise<{
     orgId?: string;
-  };
-  searchParams?: Record<string, string | string[] | undefined>;
+  }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
-export default function LegacyCalendarDayPage({ params, searchParams }: LegacyCalendarDayPageProps) {
-  const organizationId = parseOrganizationId(params?.orgId ?? null);
+export default async function CalendarDayRedirectPage({ params, searchParams }: CalendarDayRedirectPageProps) {
+  const resolvedParams = await params;
+  const resolvedSearchParams = (await searchParams) ?? {};
+  const organizationId = parseOrganizationId(resolvedParams?.orgId ?? null);
   if (!organizationId) {
     return <div className="p-6 text-sm text-white/70">Organização inválida.</div>;
   }
 
   const query = new URLSearchParams();
-  Object.entries(searchParams ?? {}).forEach(([key, value]) => {
+  Object.entries(resolvedSearchParams).forEach(([key, value]) => {
     if (typeof value === "string") {
       query.set(key, value);
       return;

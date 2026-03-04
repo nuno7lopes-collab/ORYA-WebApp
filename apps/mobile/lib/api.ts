@@ -10,9 +10,17 @@ const SLOW_REQUEST_MS = 1500;
 const OFFLINE_COOLDOWN_MS = 8000;
 const DEV_WARNING_DEDUPE_MS = 15_000;
 const DEV_WARNING_CACHE_MAX = 220;
+const DEV_PUBLIC_FALLBACK_BASE_URL = "https://orya.pt";
+const DEV_PUBLIC_FALLBACK_PATH_PREFIXES = [
+  "/api/public/profile",
+  "/api/public/profile/events",
+  "/api/padel/public/open-pairings",
+];
 let offlineUntil = 0;
 const MOBILE_CLIENT_PLATFORM = "mobile";
 const devWarningCache = new Map<string, number>();
+const mobileEnv = getMobileEnv();
+const API_BASE_URL = mobileEnv.apiBaseUrl;
 
 const resolveMobileAppVersion = () => {
   const fromExpoConfig = Constants.expoConfig?.version;
@@ -50,6 +58,52 @@ const isConnectivityErrorMessage = (message: string) => {
   );
 };
 
+const isPrivateIpv4 = (hostname: string) => {
+  if (hostname.startsWith("10.")) return true;
+  if (hostname.startsWith("192.168.")) return true;
+  if (hostname.startsWith("172.")) {
+    const second = Number(hostname.split(".")[1]);
+    return Number.isFinite(second) && second >= 16 && second <= 31;
+  }
+  return false;
+};
+
+const isLocalHostname = (hostnameRaw: string) => {
+  const hostname = hostnameRaw.trim().toLowerCase();
+  if (!hostname) return false;
+  return (
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "0.0.0.0" ||
+    hostname === "::1" ||
+    isPrivateIpv4(hostname)
+  );
+};
+
+const isLikelyLocalApiBaseUrl = (baseUrl: string) => {
+  try {
+    const parsed = new URL(baseUrl);
+    return isLocalHostname(parsed.hostname);
+  } catch {
+    return false;
+  }
+};
+
+const shouldTryDevPublicFallback = (
+  method: string,
+  path: string,
+  message: string,
+) => {
+  if (!isDev) return false;
+  if (method !== "GET") return false;
+  if (!isLikelyLocalApiBaseUrl(API_BASE_URL)) return false;
+  const normalizedPath = path.trim();
+  if (!DEV_PUBLIC_FALLBACK_PATH_PREFIXES.some((prefix) => normalizedPath.startsWith(prefix))) {
+    return false;
+  }
+  return isTimeoutErrorMessage(message) || isConnectivityErrorMessage(message);
+};
+
 const shouldFailFast = (method: string) =>
   !isDev && method === "GET" && Date.now() < offlineUntil;
 
@@ -64,7 +118,15 @@ const clearOffline = () => {
 };
 
 const baseApi = createApiClient({
-  baseUrl: getMobileEnv().apiBaseUrl,
+  baseUrl: API_BASE_URL,
+  getAccessToken: async () => {
+    const session = await getActiveSession();
+    return session?.access_token ?? null;
+  },
+});
+
+const devPublicFallbackApi = createApiClient({
+  baseUrl: DEV_PUBLIC_FALLBACK_BASE_URL,
   getAccessToken: async () => {
     const session = await getActiveSession();
     return session?.access_token ?? null;
@@ -222,7 +284,7 @@ const requestRawOnce = async <T>(
   const accessToken = session?.access_token ?? null;
   const url = path.startsWith("http")
     ? path
-    : `${getMobileEnv().apiBaseUrl}${path}`;
+    : `${API_BASE_URL}${path}`;
   const headersFromInit =
     init.headers instanceof Headers
       ? Object.fromEntries(init.headers.entries())
@@ -290,6 +352,36 @@ export const api = {
           console.warn(
             `[api] ${method} ${path} failed in ${duration}ms: ${errorMessage}`,
           );
+        }
+      }
+      if (shouldTryDevPublicFallback(method, path, errorMessage)) {
+        try {
+          const fallbackResult = await withTimeout<T>(
+            (signal) =>
+              devPublicFallbackApi.request<T>(path, {
+                ...init,
+                headers: withClientHeaders(init?.headers),
+                signal: init?.signal ?? signal,
+              }),
+            init?.signal,
+          );
+          if (isDev) {
+            const duration = Date.now() - startedAt;
+            const slowTag = duration >= SLOW_REQUEST_MS ? " (slow)" : "";
+            console.info(
+              `[api] ${method} ${path} fallback ${duration}ms${slowTag} via ${DEV_PUBLIC_FALLBACK_BASE_URL}`,
+            );
+          }
+          clearOffline();
+          return fallbackResult;
+        } catch (fallbackErr) {
+          if (isDev) {
+            const duration = Date.now() - startedAt;
+            const fallbackMessage = formatError(fallbackErr);
+            console.warn(
+              `[api] ${method} ${path} fallback failed in ${duration}ms: ${fallbackMessage}`,
+            );
+          }
         }
       }
       if (!isUnauthorizedError(err)) throw err;

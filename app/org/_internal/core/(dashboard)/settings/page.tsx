@@ -10,7 +10,11 @@ import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestruct
 import ProfileHeaderLayout from "@/app/components/profile/ProfileHeaderLayout";
 import { ProfileCoverCropModal } from "@/app/components/forms/ProfileCoverCropModal";
 import { AvatarCropModal } from "@/app/components/forms/AvatarCropModal";
-import { CTA_DANGER, CTA_PRIMARY } from "@/app/org/_internal/core/dashboardUi";
+import {
+  CTA_DANGER_CLEAN,
+  CTA_PRIMARY_CLEAN,
+  CTA_SECONDARY_CLEAN,
+} from "@/app/org/_internal/core/dashboardUi";
 import { Avatar } from "@/components/ui/avatar";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { extractPublicSocialHandle } from "@/lib/publicSocialLinks";
@@ -79,6 +83,9 @@ type OrganizationMeResponse = {
 };
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
+const ORG_CLEAN_INPUT_BASE = "org-clean-input";
+const ORG_CLEAN_LABEL = "org-clean-label";
+const ORG_CLEAN_HELP = "org-clean-help";
 
 type OrganizationSettingsPageProps = {
   embedded?: boolean;
@@ -795,10 +802,11 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
     return (
       <div
         className={cn(
-          embedded ? "text-white" : "w-full py-8 text-white",
+          embedded ? "org-clean-page" : "w-full py-8 org-clean-page",
         )}
+        data-org-ui="clean-v1"
       >
-        <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+        <div className="org-clean-section">
           A validar sessão…
         </div>
       </div>
@@ -809,15 +817,16 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
     return (
       <div
         className={cn(
-          embedded ? "space-y-4 text-white" : "w-full space-y-4 py-8 text-white",
+          embedded ? "space-y-4 org-clean-page" : "w-full space-y-4 py-8 org-clean-page",
         )}
+        data-org-ui="clean-v1"
       >
-        <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-3">
-          <p className="text-white/70">Inicia sessão para definições.</p>
+        <div className="org-clean-section space-y-3">
+          <p className={ORG_CLEAN_HELP}>Inicia sessão para definições.</p>
           <button
             type="button"
             onClick={() => openModal({ mode: "login", redirectTo, showGoogle: true })}
-            className={CTA_PRIMARY}
+            className={CTA_PRIMARY_CLEAN}
           >
             Entrar
           </button>
@@ -830,10 +839,11 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
     return (
       <div
         className={cn(
-          embedded ? "text-white" : "w-full py-8 text-white",
+          embedded ? "org-clean-page" : "w-full py-8 org-clean-page",
         )}
+        data-org-ui="clean-v1"
       >
-        <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+        <div className="org-clean-section">
           Ativa a conta de organização para gerir estas definições.
         </div>
       </div>
@@ -841,16 +851,16 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
   }
 
   const wrapperClass = cn(
-    embedded ? "space-y-6 text-white" : "w-full space-y-6 py-8 text-white",
+    embedded ? "space-y-6 org-clean-page" : "w-full space-y-6 py-8 org-clean-page",
   );
 
   return (
-    <div className={wrapperClass}>
+    <div className={wrapperClass} data-org-ui="clean-v1">
       {isOrganizationSuspended && (
-        <section className="rounded-3xl border border-amber-400/40 bg-amber-500/10 p-4 text-amber-50 shadow-[0_22px_70px_rgba(0,0,0,0.45)]">
-          <p className="text-[11px] uppercase tracking-[0.22em] text-amber-100/80">Organização suspensa</p>
+        <section className="org-clean-section border-amber-400/45 bg-amber-500/14 text-amber-50">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-amber-100/88">Organização suspensa</p>
           <h2 className="mt-2 text-lg font-semibold text-white">Acesso em modo de leitura</h2>
-          <p className="mt-1 text-[13px] text-amber-100/85">
+          <p className="mt-1 text-[14px] text-amber-100/88">
             {suspension?.reactivationWindowOpen
               ? suspensionRemainingDays === 0
                 ? "Último dia para reativar antes da eliminação definitiva."
@@ -858,7 +868,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
               : "A janela de reativação terminou."}
           </p>
           {suspensionDeadlineDate && (
-            <p className="mt-1 text-[12px] text-amber-100/75">
+            <p className="mt-1 text-[13px] text-amber-100/82">
               Prazo de reativação: {suspensionDeadlineDate.toLocaleString()}.
             </p>
           )}
@@ -867,24 +877,24 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
               type="button"
               onClick={handleReactivateOrganization}
               disabled={!canReactivateOrganization || reactivateLoading}
-              className={`${CTA_PRIMARY} disabled:opacity-60`}
+              className={`${CTA_PRIMARY_CLEAN} disabled:opacity-60`}
             >
               {reactivateLoading ? "A reativar…" : "Reativar organização"}
             </button>
-            {reactivateFeedback && <p className="text-[12px] text-amber-100">{reactivateFeedback}</p>}
+            {reactivateFeedback && <p className="text-[13px] text-amber-100">{reactivateFeedback}</p>}
           </div>
         </section>
       )}
 
-      <section className="relative overflow-hidden rounded-3xl border border-white/15 bg-gradient-to-br from-white/10 via-[#0b1226]/80 to-[#050912]/92 p-6 space-y-4 shadow-[0_30px_100px_rgba(0,0,0,0.6)] backdrop-blur-3xl">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      <section className="org-clean-section space-y-4">
+        <div className="org-clean-section-header">
           <div>
-            <h2 className="text-lg font-semibold">Operacional</h2>
-            <p className="text-[12px] text-white/65">Contactos e informação pública.</p>
+            <h2 className="org-clean-title">Operacional</h2>
+            <p className="org-clean-subtitle">Contactos e informação pública.</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="org-clean-actions">
             {canViewSensitive && (
-              <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[12px] ${officialEmailBadgeClass}`}>
+              <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[13px] ${officialEmailBadgeClass}`}>
                 {officialEmailStatusLabel}
               </span>
             )}
@@ -892,31 +902,29 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
               type="button"
               onClick={handleSaveOrg}
               disabled={savingOrg || !canEditOperational}
-              className={`${CTA_PRIMARY} disabled:opacity-60 shadow-[0_10px_30px_rgba(0,0,0,0.45)]`}
+              className={`${CTA_PRIMARY_CLEAN} disabled:opacity-60`}
             >
               {savingOrg ? "A guardar…" : "Guardar contactos"}
             </button>
           </div>
         </div>
-        <div className="h-px w-full bg-gradient-to-r from-white/20 via-white/5 to-transparent" />
+        <div className="org-clean-divider" />
         {canViewSensitive ? (
           <div className="grid gap-4 md:grid-cols-[1.1fr_0.9fr]">
             <div className="space-y-2">
-              <label className="flex items-center gap-2 text-[12px] text-white/70">
+              <label className={`${ORG_CLEAN_LABEL} flex items-center gap-2`}>
                 Email oficial ativo
-                <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-white/55">
+                <span className="org-clean-chip text-[10px] uppercase tracking-[0.12em]">
                   {isOwnerOrCoOwner ? "Dono / Co-dono" : "Apenas Dono / Co-dono"}
                 </span>
               </label>
               <input
                 value={officialEmailNormalized ?? ""}
                 disabled
-                className={`w-full rounded-xl border bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35 ${
-                  "cursor-not-allowed border-white/10 text-white/75"
-                }`}
+                className={`${ORG_CLEAN_INPUT_BASE} cursor-not-allowed border-white/16 text-white/90`}
                 placeholder="Sem email oficial ativo"
               />
-              <label className="pt-1 text-[12px] text-white/70">Novo email oficial</label>
+              <label className={`${ORG_CLEAN_LABEL} pt-1`}>Novo email oficial</label>
               <input
                 value={officialEmail}
                 onChange={(e) => {
@@ -924,39 +932,39 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
                   setOfficialEmailDirty(true);
                 }}
                 disabled={!isOwnerOrCoOwner || officialEmailSaving || isOrganizationSuspended}
-                className={`w-full rounded-xl border bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35 ${
+                className={`${ORG_CLEAN_INPUT_BASE} ${
                   isOwnerOrCoOwner && !isOrganizationSuspended
-                    ? "border-white/20 hover:border-white/35 focus:border-[#22D3EE] focus:ring-1 focus:ring-[#22D3EE]/40"
-                    : "cursor-not-allowed border-white/10 text-white/60"
+                    ? ""
+                    : "cursor-not-allowed border-white/12 text-white/70"
                 }`}
                 placeholder="equipa@organização.pt"
               />
               {!hasPendingOfficialEmail && !hasOfficialEmailInput && (
-                <p className="text-[11px] text-white/55">
+                <p className={ORG_CLEAN_HELP}>
                   Sem alterações pendentes. Introduz um novo email para iniciar a alteração.
                 </p>
               )}
               {!hasPendingOfficialEmail && hasOfficialEmailInput && isOfficialEmailInputSameAsActive && (
-                <p className="text-[11px] text-white/55">
+                <p className={ORG_CLEAN_HELP}>
                   O email introduzido já é o email oficial ativo.
                 </p>
               )}
               {hasPendingOfficialEmail && (
-                <div className="rounded-xl border border-amber-300/35 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
+                <div className="rounded-xl border border-amber-300/40 bg-amber-500/12 px-3 py-2 text-[13px] text-amber-100">
                   Alteração pendente para: <span className="font-semibold">{pendingOfficialEmailNormalized}</span>
                 </div>
               )}
             </div>
-            <div className="space-y-2 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-white/3 to-transparent p-4 text-[12px] text-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+            <div className="space-y-2 rounded-xl border border-white/20 bg-white/[0.02] p-4 text-[13px] text-white/84">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">Estado</span>
+                <span className="text-[10px] uppercase tracking-[0.16em] text-white/70">Estado</span>
                 <span className={`rounded-full border px-2 py-0.5 text-[10px] ${officialEmailBadgeClass}`}>
                   {officialEmailStatusLabel}
                 </span>
               </div>
               <p>Email oficial para faturação, payouts e alertas operacionais.</p>
               {hasPendingOfficialEmail && pendingOfficialEmailExpiresAtDate && (
-                <p className="text-[11px] text-amber-200">
+                <p className="text-[13px] text-amber-200">
                   Validade do pedido pendente até {pendingOfficialEmailExpiresAtDate.toLocaleString()}.
                 </p>
               )}
@@ -966,7 +974,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
                     type="button"
                     onClick={handleOfficialEmailUpdate}
                     disabled={officialEmailActionDisabled}
-                    className={`${CTA_PRIMARY} disabled:opacity-60 shadow-[0_10px_30px_rgba(0,0,0,0.45)]`}
+                    className={`${CTA_PRIMARY_CLEAN} disabled:opacity-60`}
                   >
                     {officialEmailSaving ? "A enviar…" : officialEmailActionLabel}
                   </button>
@@ -976,27 +984,27 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
                     type="button"
                     onClick={handleCancelOfficialEmailPending}
                     disabled={!isOwnerOrCoOwner || officialEmailSaving || isOrganizationSuspended}
-                    className="inline-flex items-center rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white hover:border-white/35 disabled:opacity-60"
+                    className={`${CTA_SECONDARY_CLEAN} disabled:opacity-60`}
                   >
                     Cancelar pendente
                   </button>
                 )}
               </div>
-              {officialEmailMessage && <p className="text-[11px] text-white">{officialEmailMessage}</p>}
+              {officialEmailMessage && <p className={ORG_CLEAN_HELP}>{officialEmailMessage}</p>}
               {!isOfficialEmailVerified && !officialEmailNormalized && (
-                <p className="text-[11px] text-amber-200">Sem email oficial verificado.</p>
+                <p className="text-[13px] text-amber-200">Sem email oficial verificado.</p>
               )}
             </div>
           </div>
         ) : (
-          <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[12px] text-white/70">
+          <div className="rounded-xl border border-white/18 bg-white/[0.02] px-4 py-3 text-[13px] text-white/82">
             Email oficial e faturação apenas disponível para Dono e Co-dono.
           </div>
         )}
-        <div className="h-px w-full bg-gradient-to-r from-white/15 via-white/5 to-transparent" />
+        <div className="org-clean-divider" />
         <div className="grid gap-3 md:grid-cols-2">
           <div className="space-y-1">
-            <label className="text-[12px] text-white/70">Email de suporte da loja (opcional)</label>
+            <label className={ORG_CLEAN_LABEL}>Email de suporte da loja (opcional)</label>
             <input
               value={supportEmail}
               onChange={(e) => {
@@ -1004,13 +1012,13 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
                 setOrgFormDirty(true);
               }}
               type="email"
-              className="w-full rounded-xl border border-white/15 bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35 hover:border-white/30 focus:border-[#22D3EE] focus:ring-1 focus:ring-[#22D3EE]/40"
+              className={ORG_CLEAN_INPUT_BASE}
               placeholder="suporte@organizacao.pt"
               disabled={!canEditOperational}
             />
           </div>
           <div className="space-y-1">
-            <label className="text-[12px] text-white/70">Telefone de suporte da loja (opcional)</label>
+            <label className={ORG_CLEAN_LABEL}>Telefone de suporte da loja (opcional)</label>
             <input
               value={supportPhone}
               onChange={(e) => {
@@ -1026,20 +1034,20 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
               inputMode="tel"
               pattern="\\+?\\d{6,15}"
               maxLength={18}
-              className={`w-full rounded-xl border bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35 ${
+              className={`${ORG_CLEAN_INPUT_BASE} ${
                 supportPhoneError
-                  ? "border-red-400/60 focus:border-red-300/80 focus:ring-1 focus:ring-red-300/40"
-                  : "border-white/15 hover:border-white/30 focus:border-[#22D3EE] focus:ring-1 focus:ring-[#22D3EE]/40"
+                  ? "border-red-300/70 focus-visible:border-red-300"
+                  : ""
               }`}
               placeholder="+351912345678"
               disabled={!canEditOperational}
             />
-            {supportPhoneError && <p className="text-[11px] text-red-300">{supportPhoneError}</p>}
+            {supportPhoneError && <p className="text-[13px] text-red-300">{supportPhoneError}</p>}
           </div>
         </div>
         <div className="grid gap-3 md:grid-cols-2">
           <div className="space-y-1">
-            <label className="text-[12px] text-white/70">Telefone (opcional)</label>
+            <label className={ORG_CLEAN_LABEL}>Telefone (opcional)</label>
             <input
               value={contactPhone}
               onChange={(e) => {
@@ -1055,15 +1063,15 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
               inputMode="tel"
               pattern="\\+?\\d{6,15}"
               maxLength={18}
-              className={`w-full rounded-xl border bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35 ${
+              className={`${ORG_CLEAN_INPUT_BASE} ${
                 phoneError
-                  ? "border-red-400/60 focus:border-red-300/80 focus:ring-1 focus:ring-red-300/40"
-                  : "border-white/15 hover:border-white/30 focus:border-[#22D3EE] focus:ring-1 focus:ring-[#22D3EE]/40"
+                  ? "border-red-300/70 focus-visible:border-red-300"
+                  : ""
               }`}
               placeholder="+351912345678"
               disabled={!canEditOperational}
             />
-            {phoneError && <p className="text-[11px] text-red-300">{phoneError}</p>}
+            {phoneError && <p className="text-[13px] text-red-300">{phoneError}</p>}
           </div>
           <div className="space-y-1">
             <AddressCombobox
@@ -1084,7 +1092,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
               enableRecents
               enableGeolocationCta
             />
-            <label className="mt-1 flex items-center gap-2 text-[12px] text-white/70">
+            <label className={`${ORG_CLEAN_LABEL} mt-1 flex items-center gap-2`}>
               <input
                 type="checkbox"
                 checked={showAddressPublicly}
@@ -1099,42 +1107,42 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
             </label>
           </div>
         </div>
-        {orgMessage && <p className="text-[12px] text-white/70">{orgMessage}</p>}
+        {orgMessage && <p className={ORG_CLEAN_HELP}>{orgMessage}</p>}
       </section>
 
-      <section className="rounded-3xl border border-white/15 bg-gradient-to-br from-white/10 via-[#0b1226]/80 to-[#050912]/92 p-5 shadow-[0_30px_100px_rgba(0,0,0,0.6)] backdrop-blur-3xl">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      <section className="org-clean-section">
+        <div className="org-clean-section-header">
           <div>
-            <h2 className="text-lg font-semibold">Políticas operacionais</h2>
-            <p className="text-[12px] text-white/65">
+            <h2 className="org-clean-title">Políticas operacionais</h2>
+            <p className="org-clean-subtitle">
               A política de reservas de campos foi movida para a área de Políticas.
             </p>
           </div>
-          <a href={policiesHref} className={CTA_PRIMARY}>
+          <a href={policiesHref} className={CTA_PRIMARY_CLEAN}>
             Abrir políticas
           </a>
         </div>
       </section>
 
-      <section className="relative overflow-hidden rounded-3xl border border-white/15 bg-gradient-to-br from-white/10 via-[#0b1226]/80 to-[#050912]/92 p-6 space-y-4 shadow-[0_30px_100px_rgba(0,0,0,0.6)] backdrop-blur-3xl">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      <section className="org-clean-section space-y-4">
+        <div className="org-clean-section-header">
           <div>
-            <h2 className="text-lg font-semibold">Perfil público</h2>
-            <p className="text-[12px] text-white/65">Edita diretamente no preview e publica quando estiver pronto.</p>
+            <h2 className="org-clean-title">Perfil público</h2>
+            <p className="org-clean-subtitle">Edita diretamente no preview e publica quando estiver pronto.</p>
           </div>
           <button
             type="button"
             onClick={handleSavePublicProfile}
             disabled={savingPublicProfile || !canEditPublicProfile}
-            className={`${CTA_PRIMARY} disabled:opacity-60 shadow-[0_10px_30px_rgba(0,0,0,0.45)]`}
+            className={`${CTA_PRIMARY_CLEAN} disabled:opacity-60`}
           >
             {savingPublicProfile ? "A guardar…" : "Guardar perfil público"}
           </button>
         </div>
 
-        <div className="h-px w-full bg-gradient-to-r from-white/20 via-white/5 to-transparent" />
+        <div className="org-clean-divider" />
 
-        <div className="overflow-hidden rounded-2xl border border-white/12 bg-white/[0.04] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+        <div className="overflow-hidden rounded-2xl border border-white/20 bg-white/[0.02]">
           <ProfileHeaderLayout
             coverUrl={publicPreviewCoverDisplay}
             onCoverClick={
@@ -1160,12 +1168,12 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
                       setAvatarActionsOpen(false);
                     }}
                     disabled={!canEditPublicBranding}
-                    className="rounded-full border border-white/20 bg-black/55 px-3 py-1 text-[11px] font-semibold text-white/85 shadow-[0_10px_26px_rgba(0,0,0,0.35)] hover:bg-black/65 disabled:opacity-60"
+                    className={`${CTA_SECONDARY_CLEAN} px-3 py-1 text-[12px] font-semibold disabled:opacity-60`}
                   >
                     {hasCoverImage ? "Editar capa" : "Adicionar capa"}
                   </button>
                   {coverActionsOpen && (
-                    <div className="absolute right-0 top-[calc(100%+8px)] z-30 w-44 rounded-2xl border border-white/20 bg-[rgba(8,10,18,0.95)] p-1.5 text-sm text-white shadow-[0_24px_70px_rgba(0,0,0,0.62)] backdrop-blur-2xl">
+                    <div className="absolute right-0 top-[calc(100%+8px)] z-30 w-44 rounded-2xl border border-white/20 bg-[rgba(11,15,23,0.98)] p-1.5 text-sm text-white">
                       <button
                         type="button"
                         onClick={() => {
@@ -1210,7 +1218,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
                   className={cn(
                     "relative inline-flex rounded-full",
                     canEditPublicBranding
-                      ? "cursor-pointer transition-all hover:shadow-[0_0_24px_rgba(34,211,238,0.34)]"
+                      ? "cursor-pointer transition-colors"
                       : "cursor-default",
                   )}
                 >
@@ -1227,7 +1235,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
                   )}
                 </button>
                 {avatarActionsOpen && canEditPublicBranding && (
-                  <div className="absolute left-1/2 top-[calc(100%+10px)] z-30 w-44 -translate-x-1/2 rounded-2xl border border-white/20 bg-[rgba(8,10,18,0.95)] p-1.5 text-sm text-white shadow-[0_24px_70px_rgba(0,0,0,0.62)] backdrop-blur-2xl">
+                  <div className="absolute left-1/2 top-[calc(100%+10px)] z-30 w-44 -translate-x-1/2 rounded-2xl border border-white/20 bg-[rgba(11,15,23,0.98)] p-1.5 text-sm text-white">
                     <button
                       type="button"
                       onClick={() => {
@@ -1261,7 +1269,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
                 <input
                   value={publicNameDraft}
                   onChange={(event) => setPublicNameDraft(event.target.value)}
-                  className="w-full rounded-xl border border-white/15 bg-black/45 px-3 py-2 text-[20px] font-semibold tracking-tight text-white outline-none transition-colors focus:border-[#22D3EE] focus:ring-1 focus:ring-[#22D3EE]/40"
+                  className={`${ORG_CLEAN_INPUT_BASE} text-[20px] font-semibold tracking-tight`}
                   placeholder="Nome público"
                   maxLength={80}
                 />
@@ -1270,20 +1278,20 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
               )
             }
             metaSlot={
-              <div className="flex flex-wrap items-center gap-2 text-[12px] text-white/80">
+              <div className="flex flex-wrap items-center gap-2 text-[13px] text-white/88">
                 {isPublicIdentityEditing && canEditPublicUsername ? (
-                  <div className="flex items-center rounded-full border border-white/20 bg-black/45 px-3 py-1">
-                    <span className="pr-1 text-white/60">@</span>
+                  <div className="flex items-center rounded-full border border-white/20 bg-white/[0.02] px-3 py-1">
+                    <span className="pr-1 text-white/78">@</span>
                     <input
                       value={publicUsernameDraft}
                       onChange={(event) => setPublicUsernameDraft(event.target.value.replace(/^@+/, ""))}
-                      className="w-[200px] bg-transparent text-sm text-white outline-none placeholder:text-white/35"
+                      className="w-[200px] bg-transparent text-sm text-white outline-none placeholder:text-white/70"
                       placeholder="username"
                       maxLength={24}
                     />
                   </div>
                 ) : (
-                  <span className="rounded-full border border-white/15 bg-white/6 px-3 py-1 font-semibold text-white">
+                  <span className="rounded-full border border-white/20 bg-white/[0.04] px-3 py-1 font-semibold text-white">
                     @{publicPreviewUsername}
                   </span>
                 )}
@@ -1291,7 +1299,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
                   <button
                     type="button"
                     onClick={startPublicIdentityEdit}
-                    className="rounded-full border border-white/20 bg-white/8 px-3 py-1 text-[11px] font-semibold text-white/80 hover:bg-white/14"
+                    className={`${CTA_SECONDARY_CLEAN} px-3 py-1 text-[12px]`}
                   >
                     Editar
                   </button>
@@ -1306,10 +1314,10 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
                     onChange={(event) => setPublicDescriptionDraft(event.target.value.slice(0, 280))}
                     disabled={!canEditPublicProfile}
                     className={cn(
-                      "min-h-[90px] w-full rounded-xl border bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35",
+                      `min-h-[90px] w-full ${ORG_CLEAN_INPUT_BASE}`,
                       canEditPublicProfile
-                        ? "border-white/15 hover:border-white/30 focus:border-[#22D3EE] focus:ring-1 focus:ring-[#22D3EE]/40"
-                        : "cursor-not-allowed border-white/10 text-white/60",
+                        ? ""
+                        : "cursor-not-allowed border-white/12 text-white/72",
                     )}
                     placeholder="Descrição pública da organização."
                   />
@@ -1317,22 +1325,22 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
                     <button
                       type="button"
                       onClick={applyPublicIdentityEdit}
-                      className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-black shadow"
+                      className={`${CTA_PRIMARY_CLEAN} px-3 py-1 text-[12px]`}
                     >
                       Guardar edição
                     </button>
                     <button
                       type="button"
                       onClick={cancelPublicIdentityEdit}
-                      className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80"
+                      className={`${CTA_SECONDARY_CLEAN} px-3 py-1 text-[12px]`}
                     >
                       Cancelar
                     </button>
-                    <span className="text-[11px] text-white/55">{publicDescriptionDraft.length}/280</span>
+                    <span className={ORG_CLEAN_HELP}>{publicDescriptionDraft.length}/280</span>
                   </div>
                 </div>
               ) : (
-                <p className="max-w-xl whitespace-pre-line text-sm leading-relaxed text-white/85">{publicPreviewBio}</p>
+                <p className="max-w-xl whitespace-pre-line text-sm leading-relaxed text-white/90">{publicPreviewBio}</p>
               )
             }
           />
@@ -1367,7 +1375,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
 
         <div className="grid gap-3 md:grid-cols-2">
           <label className="space-y-1">
-            <span className="text-[12px] text-white/70">Website</span>
+            <span className={ORG_CLEAN_LABEL}>Website</span>
             <input
               value={publicWebsiteInput}
               onChange={(e) => {
@@ -1375,18 +1383,18 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
                 setPublicProfileDirty(true);
               }}
               disabled={!canEditPublicProfile}
-              className={`w-full rounded-xl border bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35 ${
+              className={`${ORG_CLEAN_INPUT_BASE} ${
                 canEditPublicProfile
-                  ? "border-white/15 hover:border-white/30 focus:border-[#22D3EE] focus:ring-1 focus:ring-[#22D3EE]/40"
-                  : "cursor-not-allowed border-white/10 text-white/60"
+                  ? ""
+                  : "cursor-not-allowed border-white/12 text-white/72"
               }`}
               placeholder="https://..."
             />
           </label>
           <label className="space-y-1">
-            <span className="text-[12px] text-white/70">Instagram</span>
-            <div className="flex items-center rounded-xl border border-white/15 bg-black/45 px-3 py-2">
-              <span className="pr-2 text-[11px] text-white/50">https://www.instagram.com/</span>
+            <span className={ORG_CLEAN_LABEL}>Instagram</span>
+            <div className="flex items-center rounded-xl border border-white/20 bg-white/[0.02] px-3 py-2">
+              <span className="pr-2 text-[13px] text-white/80">https://www.instagram.com/</span>
               <input
                 value={publicInstagramHandle}
                 onChange={(e) => {
@@ -1394,8 +1402,8 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
                   setPublicProfileDirty(true);
                 }}
                 disabled={!canEditPublicProfile}
-                className={`w-full bg-transparent text-sm outline-none placeholder:text-white/35 ${
-                  canEditPublicProfile ? "text-white" : "cursor-not-allowed text-white/60"
+                className={`w-full bg-transparent text-sm outline-none placeholder:text-white/70 ${
+                  canEditPublicProfile ? "text-white" : "cursor-not-allowed text-white/72"
                 }`}
                 placeholder="username"
               />
@@ -1405,9 +1413,9 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
 
         <div className="grid gap-3 md:grid-cols-2">
           <label className="space-y-1">
-            <span className="text-[12px] text-white/70">YouTube</span>
-            <div className="flex items-center rounded-xl border border-white/15 bg-black/45 px-3 py-2">
-              <span className="pr-2 text-[11px] text-white/50">https://www.youtube.com/</span>
+            <span className={ORG_CLEAN_LABEL}>YouTube</span>
+            <div className="flex items-center rounded-xl border border-white/20 bg-white/[0.02] px-3 py-2">
+              <span className="pr-2 text-[13px] text-white/80">https://www.youtube.com/</span>
               <input
                 value={publicYoutubeHandle}
                 onChange={(e) => {
@@ -1415,17 +1423,17 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
                   setPublicProfileDirty(true);
                 }}
                 disabled={!canEditPublicProfile}
-                className={`w-full bg-transparent text-sm outline-none placeholder:text-white/35 ${
-                  canEditPublicProfile ? "text-white" : "cursor-not-allowed text-white/60"
+                className={`w-full bg-transparent text-sm outline-none placeholder:text-white/70 ${
+                  canEditPublicProfile ? "text-white" : "cursor-not-allowed text-white/72"
                 }`}
                 placeholder="@canal"
               />
             </div>
           </label>
           <label className="space-y-1">
-            <span className="text-[12px] text-white/70">TikTok</span>
-            <div className="flex items-center rounded-xl border border-white/15 bg-black/45 px-3 py-2">
-              <span className="pr-2 text-[11px] text-white/50">https://www.tiktok.com/@</span>
+            <span className={ORG_CLEAN_LABEL}>TikTok</span>
+            <div className="flex items-center rounded-xl border border-white/20 bg-white/[0.02] px-3 py-2">
+              <span className="pr-2 text-[13px] text-white/80">https://www.tiktok.com/@</span>
               <input
                 value={publicTiktokHandle}
                 onChange={(e) => {
@@ -1433,8 +1441,8 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
                   setPublicProfileDirty(true);
                 }}
                 disabled={!canEditPublicProfile}
-                className={`w-full bg-transparent text-sm outline-none placeholder:text-white/35 ${
-                  canEditPublicProfile ? "text-white" : "cursor-not-allowed text-white/60"
+                className={`w-full bg-transparent text-sm outline-none placeholder:text-white/70 ${
+                  canEditPublicProfile ? "text-white" : "cursor-not-allowed text-white/72"
                 }`}
                 placeholder="username"
               />
@@ -1442,10 +1450,10 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
           </label>
         </div>
 
-        <p className="text-[11px] text-white/55">
+        <p className={ORG_CLEAN_HELP}>
           Dono/Co-dono: edição completa. Admin: bio e links sociais/website. Equipa: leitura.
         </p>
-        {publicProfileMessage && <p className="text-[12px] text-white/70">{publicProfileMessage}</p>}
+        {publicProfileMessage && <p className={ORG_CLEAN_HELP}>{publicProfileMessage}</p>}
       </section>
 
       <AvatarCropModal
@@ -1463,18 +1471,18 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
       />
 
       {isOwner && (
-        <section className="relative overflow-hidden rounded-3xl border border-red-400/40 bg-gradient-to-br from-red-500/15 via-[#2a0c0f]/85 to-black/90 p-5 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.65)]">
+        <section className="org-clean-section space-y-3 border-red-400/45 bg-red-500/12">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-lg font-semibold text-red-100">Zona de perigo</h2>
-              <p className="text-[12px] text-red-100/80">
+              <p className="text-[13px] text-red-100/88">
                 Suspender, reativar e apagar são ações exclusivas do Dono.
               </p>
             </div>
           </div>
           {!isOrganizationSuspended ? (
             <div className="space-y-3">
-              <div className="rounded-2xl border border-amber-300/35 bg-amber-500/10 p-3 text-[12px] text-amber-100">
+              <div className="rounded-xl border border-amber-300/45 bg-amber-500/14 p-3 text-[13px] text-amber-100">
                 Suspender bloqueia a operação diária e abre uma janela de 30 dias para reativação.
               </div>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -1482,16 +1490,16 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
                   type="button"
                   onClick={() => setSuspendDialogOpen(true)}
                   disabled={suspendLoading || !canSuspendOrganization}
-                  className={`${CTA_DANGER} w-full justify-center disabled:opacity-60 sm:w-auto`}
+                  className={`${CTA_DANGER_CLEAN} w-full justify-center disabled:opacity-60 sm:w-auto`}
                 >
                   {suspendLoading ? "A suspender…" : "Suspender organização"}
                 </button>
-                {suspendFeedback && <p className="text-[12px] text-white/70">{suspendFeedback}</p>}
+                {suspendFeedback && <p className={ORG_CLEAN_HELP}>{suspendFeedback}</p>}
               </div>
             </div>
           ) : (
             <div className="space-y-3">
-              <div className="rounded-2xl border border-emerald-300/30 bg-emerald-500/10 p-3 text-[12px] text-emerald-100">
+              <div className="rounded-xl border border-emerald-300/45 bg-emerald-500/14 p-3 text-[13px] text-emerald-100">
                 Organização suspensa. A reativação repõe acesso operacional imediato.
                 {suspensionDeadlineDate ? ` Prazo limite: ${suspensionDeadlineDate.toLocaleString()}.` : ""}
               </div>
@@ -1499,17 +1507,17 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
                 type="button"
                 onClick={handleReactivateOrganization}
                 disabled={reactivateLoading || !canReactivateOrganization}
-                className={`${CTA_PRIMARY} w-full justify-center disabled:opacity-60 sm:w-auto`}
+                className={`${CTA_PRIMARY_CLEAN} w-full justify-center disabled:opacity-60 sm:w-auto`}
               >
                 {reactivateLoading ? "A reativar…" : "Reativar organização"}
               </button>
               {reactivateFeedback && (
-                <p className="text-[12px] text-white/70">
+                <p className={ORG_CLEAN_HELP}>
                   {reactivateFeedback}
                 </p>
               )}
               {!canReactivateOrganization && (
-                <p className="text-[12px] text-white/70">
+                <p className={ORG_CLEAN_HELP}>
                   A janela de reativação terminou.
                 </p>
               )}
@@ -1517,26 +1525,26 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
           )}
 
           {isOrganizationSuspended && (
-            <div className="rounded-2xl border border-red-400/30 bg-black/25 p-4 space-y-3">
-              <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-red-100/90">
+            <div className="rounded-xl border border-red-400/35 bg-red-500/[0.08] p-4 space-y-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-red-100/90">
                 Eliminação definitiva
               </p>
               {!canDeleteOrganization ? (
-                <p className="text-[12px] text-white/70">
+                <p className={ORG_CLEAN_HELP}>
                   Disponível apenas após o fecho da janela de reativação.
                 </p>
               ) : (
-                <p className="text-[12px] text-white/70">
+                <p className={ORG_CLEAN_HELP}>
                   Esta ação remove permanentemente a organização.
                 </p>
               )}
               <div className="grid gap-3 md:grid-cols-[1.2fr_0.8fr] md:items-end">
                 <div className="space-y-1">
-                  <label className="text-[12px] text-white/80">Escreve APAGAR para confirmar</label>
+                  <label className={ORG_CLEAN_LABEL}>Escreve APAGAR para confirmar</label>
                   <input
                     value={dangerConfirm}
                     onChange={(e) => setDangerConfirm(e.target.value)}
-                    className="w-full rounded-lg border border-red-400/40 bg-black/40 px-3 py-2 text-sm outline-none focus:border-red-200"
+                    className={`${ORG_CLEAN_INPUT_BASE} border-red-300/70 focus-visible:border-red-300`}
                     placeholder="APAGAR"
                   />
                 </div>
@@ -1545,14 +1553,14 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
                     type="button"
                     onClick={() => setDangerDialogOpen(true)}
                     disabled={!dangerReady || dangerLoading || !canDeleteOrganization}
-                    className={`${CTA_DANGER} w-full justify-center disabled:opacity-60 md:w-auto`}
+                    className={`${CTA_DANGER_CLEAN} w-full justify-center disabled:opacity-60 md:w-auto`}
                   >
                     {dangerLoading ? "A apagar…" : "Apagar organização"}
                   </button>
                 </div>
               </div>
               {dangerFeedback && (
-                <p className="text-[12px] text-white/70">{dangerFeedback}</p>
+                <p className={ORG_CLEAN_HELP}>{dangerFeedback}</p>
               )}
             </div>
           )}

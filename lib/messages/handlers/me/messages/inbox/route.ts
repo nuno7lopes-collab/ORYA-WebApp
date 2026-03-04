@@ -36,18 +36,6 @@ type ConversationMember = {
   };
 };
 
-type EventRow = {
-  id: number;
-  slug: string | null;
-  title: string | null;
-  startsAt: Date | null;
-  endsAt: Date | null;
-  coverImageUrl: string | null;
-  addressId: string | null;
-  addressRef: { formattedAddress: string | null; canonical: unknown } | null;
-  status: string;
-};
-
 function resolveUserLabel(user: ConversationMember["user"]) {
   return user.fullName?.trim() || (user.username ? `@${user.username}` : "Utilizador");
 }
@@ -164,13 +152,15 @@ async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
+    const compact = req.nextUrl.searchParams.get("compact") === "1";
 
-    const identityIds = await getUserIdentityIds(user.id);
-    const ownerClauses = buildEntitlementOwnerClauses({
-      userId: user.id,
-      identityIds,
-      email: user.email ?? null,
-    });
+    const ownerClauses = compact
+      ? []
+      : buildEntitlementOwnerClauses({
+          userId: user.id,
+          identityIds: await getUserIdentityIds(user.id),
+          email: user.email ?? null,
+        });
 
     const membershipsPromise = prisma.chatConversationMember.findMany({
       where: {
@@ -204,7 +194,12 @@ async function _GET(req: NextRequest) {
               },
             },
             members: {
-              where: ACTIVE_MEMBER_FILTER,
+              where: compact
+                ? {
+                    ...ACTIVE_MEMBER_FILTER,
+                    userId: { not: user.id },
+                  }
+                : ACTIVE_MEMBER_FILTER,
               select: {
                 userId: true,
                 displayAs: true,
@@ -216,196 +211,196 @@ async function _GET(req: NextRequest) {
         },
       },
       orderBy: { conversation: { lastMessageAt: "desc" } },
+      take: compact ? 80 : undefined,
     });
 
-    const entitlementIds = ownerClauses.length
-      ? (
-          await prisma.entitlement.findMany({
+    const eventItems = compact
+      ? ([] as Array<Record<string, unknown>>)
+      : await (async () => {
+          const entitlementIds = ownerClauses.length
+            ? (
+                await prisma.entitlement.findMany({
+                  where: {
+                    status: "ACTIVE",
+                    OR: ownerClauses,
+                    checkins: { some: { resultCode: { in: ["OK", "ALREADY_USED"] } } },
+                  },
+                  select: { id: true },
+                })
+              ).map((row) => row.id)
+            : [];
+
+          const grants = await prisma.chatAccessGrant.findMany({
             where: {
-              status: "ACTIVE",
-              OR: ownerClauses,
-              checkins: { some: { resultCode: { in: ["OK", "ALREADY_USED"] } } },
+              kind: "EVENT_INVITE",
+              status: { in: ["PENDING", "ACCEPTED", "AUTO_ACCEPTED"] },
+              OR: [
+                { targetUserId: user.id },
+                entitlementIds.length ? { entitlementId: { in: entitlementIds } } : undefined,
+              ].filter(Boolean) as Prisma.ChatAccessGrantWhereInput[],
             },
-            select: { id: true },
-          })
-        ).map((row) => row.id)
-      : [];
+            orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
+            select: {
+              id: true,
+              eventId: true,
+              status: true,
+              threadId: true,
+              conversationId: true,
+              expiresAt: true,
+            },
+          });
 
-    const grants = await prisma.chatAccessGrant.findMany({
-      where: {
-        kind: "EVENT_INVITE",
-        status: { in: ["PENDING", "ACCEPTED", "AUTO_ACCEPTED"] },
-        OR: [
-          { targetUserId: user.id },
-          entitlementIds.length ? { entitlementId: { in: entitlementIds } } : undefined,
-        ].filter(Boolean) as Prisma.ChatAccessGrantWhereInput[],
-      },
-      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
-      select: {
-        id: true,
-        eventId: true,
-        status: true,
-        threadId: true,
-        conversationId: true,
-        expiresAt: true,
-      },
-    });
+          const grantByEvent = new Map<number, (typeof grants)[number]>();
+          for (const grant of grants) {
+            if (!grant.eventId) continue;
+            if (!grantByEvent.has(grant.eventId)) {
+              grantByEvent.set(grant.eventId, grant);
+            }
+          }
 
-    const grantByEvent = new Map<number, (typeof grants)[number]>();
-    for (const grant of grants) {
-      if (!grant.eventId) continue;
-      if (!grantByEvent.has(grant.eventId)) {
-        grantByEvent.set(grant.eventId, grant);
-      }
-    }
+          const eventIds = Array.from(grantByEvent.keys());
+          if (eventIds.length === 0) return [] as Array<Record<string, unknown>>;
 
-    const eventIds = Array.from(grantByEvent.keys());
-
-    const eventConversations = eventIds.length
-      ? await prisma.chatConversation.findMany({
-          where: {
-            OR: [
-              { contextType: "EVENT", contextId: { in: eventIds.map((id) => String(id)) } },
-              {
-                id: {
-                  in: grants
-                    .map((grant) => grant.conversationId)
-                    .filter((id): id is string => typeof id === "string"),
+          const eventConversations = await prisma.chatConversation.findMany({
+            where: {
+              OR: [
+                { contextType: "EVENT", contextId: { in: eventIds.map((id) => String(id)) } },
+                {
+                  id: {
+                    in: grants
+                      .map((grant) => grant.conversationId)
+                      .filter((id): id is string => typeof id === "string"),
+                  },
+                },
+              ],
+            },
+            select: {
+              id: true,
+              contextId: true,
+              openAt: true,
+              readOnlyAt: true,
+              closeAt: true,
+              lastMessageAt: true,
+              lastMessage: {
+                select: {
+                  id: true,
+                  body: true,
+                  createdAt: true,
+                  deletedAt: true,
                 },
               },
-            ],
-          },
-          select: {
-            id: true,
-            contextId: true,
-            openAt: true,
-            readOnlyAt: true,
-            closeAt: true,
-            lastMessageAt: true,
-            lastMessage: {
-              select: {
-                id: true,
-                body: true,
-                createdAt: true,
-                deletedAt: true,
-              },
             },
-          },
-        })
-      : [];
+          });
 
-    const eventConversationByEventId = new Map<number, (typeof eventConversations)[number]>();
-    const eventConversationById = new Map<string, (typeof eventConversations)[number]>();
-    for (const conversation of eventConversations) {
-      const eventId = Number(conversation.contextId ?? "");
-      if (Number.isFinite(eventId) && !eventConversationByEventId.has(eventId)) {
-        eventConversationByEventId.set(eventId, conversation);
-      }
-      eventConversationById.set(conversation.id, conversation);
-    }
+          const eventConversationByEventId = new Map<number, (typeof eventConversations)[number]>();
+          const eventConversationById = new Map<string, (typeof eventConversations)[number]>();
+          for (const conversation of eventConversations) {
+            const eventId = Number(conversation.contextId ?? "");
+            if (Number.isFinite(eventId) && !eventConversationByEventId.has(eventId)) {
+              eventConversationByEventId.set(eventId, conversation);
+            }
+            eventConversationById.set(conversation.id, conversation);
+          }
 
-    const eventRows = eventIds.length
-      ? await prisma.event.findMany({
-          where: { id: { in: eventIds }, isDeleted: false },
-          select: {
-            id: true,
-            slug: true,
-            title: true,
-            startsAt: true,
-            endsAt: true,
-            coverImageUrl: true,
-            addressId: true,
-            addressRef: { select: { formattedAddress: true, canonical: true } },
-            status: true,
-          },
-        })
-      : ([] as EventRow[]);
+          const eventRows = await prisma.event.findMany({
+            where: { id: { in: eventIds }, isDeleted: false },
+            select: {
+              id: true,
+              slug: true,
+              title: true,
+              startsAt: true,
+              endsAt: true,
+              coverImageUrl: true,
+              addressId: true,
+              addressRef: { select: { formattedAddress: true, canonical: true } },
+              status: true,
+            },
+          });
+          const eventMap = new Map(eventRows.map((event) => [event.id, event] as const));
 
-    const eventMap = new Map(eventRows.map((event) => [event.id, event] as const));
+          const eventConversationIds = Array.from(
+            new Set(
+              [...eventConversationByEventId.values(), ...eventConversationById.values()]
+                .map((conversation) => conversation.id)
+                .filter(Boolean),
+            ),
+          );
 
-    const eventConversationIds = Array.from(
-      new Set(
-        [...eventConversationByEventId.values(), ...eventConversationById.values()]
-          .map((conversation) => conversation.id)
-          .filter(Boolean),
-      ),
-    );
+          const eventMutes = eventConversationIds.length
+            ? await prisma.chatConversationMember.findMany({
+                where: {
+                  userId: user.id,
+                  conversationId: { in: eventConversationIds },
+                  ...ACTIVE_MEMBER_FILTER,
+                },
+                select: {
+                  conversationId: true,
+                  mutedUntil: true,
+                },
+              })
+            : [];
+          const eventMuteMap = new Map(
+            eventMutes.map((row) => [row.conversationId, row.mutedUntil ? row.mutedUntil.toISOString() : null]),
+          );
 
-    const eventMutes = eventConversationIds.length
-      ? await prisma.chatConversationMember.findMany({
-          where: {
-            userId: user.id,
-            conversationId: { in: eventConversationIds },
-            ...ACTIVE_MEMBER_FILTER,
-          },
-          select: {
-            conversationId: true,
-            mutedUntil: true,
-          },
-        })
-      : [];
+          return eventIds
+            .map((eventId) => {
+              const event = eventMap.get(eventId);
+              if (!event) return null;
 
-    const eventMuteMap = new Map(
-      eventMutes.map((row) => [row.conversationId, row.mutedUntil ? row.mutedUntil.toISOString() : null]),
-    );
+              const grant = grantByEvent.get(eventId);
+              if (!grant) return null;
 
-    const eventItems = eventIds
-      .map((eventId) => {
-        const event = eventMap.get(eventId);
-        if (!event) return null;
+              const conversation =
+                (grant.conversationId ? eventConversationById.get(grant.conversationId) : null) ??
+                eventConversationByEventId.get(eventId) ??
+                null;
 
-        const grant = grantByEvent.get(eventId);
-        if (!grant) return null;
+              const lastMessage = conversation?.lastMessage ?? null;
+              const lastBody = lastMessage?.deletedAt ? null : lastMessage?.body;
+              const lastMessageAt =
+                (conversation?.lastMessageAt ?? lastMessage?.createdAt ?? event.startsAt ?? null)?.toISOString() ??
+                null;
 
-        const conversation =
-          (grant.conversationId ? eventConversationById.get(grant.conversationId) : null) ??
-          eventConversationByEventId.get(eventId) ??
-          null;
-
-        const lastMessage = conversation?.lastMessage ?? null;
-        const lastBody = lastMessage?.deletedAt ? null : lastMessage?.body;
-        const lastMessageAt =
-          (conversation?.lastMessageAt ?? lastMessage?.createdAt ?? event.startsAt ?? null)?.toISOString() ??
-          null;
-
-        return {
-          id: `event:${grant.id}`,
-          kind: "EVENT" as const,
-          conversationId: grant.conversationId ?? conversation?.id ?? null,
-          threadId: grant.threadId ?? conversation?.id ?? null,
-          status: resolveEventStatus({
-            startsAt: event.startsAt,
-            endsAt: event.endsAt,
-            openAt: conversation?.openAt ?? null,
-            readOnlyAt: conversation?.readOnlyAt ?? null,
-            closeAt: conversation?.closeAt ?? null,
-          }),
-          title: event.title,
-          subtitle: event.addressRef?.formattedAddress ?? null,
-          imageUrl: event.coverImageUrl ?? null,
-          lastMessageAt,
-          lastMessage: lastMessage
-            ? {
-                id: lastMessage.id,
-                body: lastBody,
-                createdAt: lastMessage.createdAt.toISOString(),
-              }
-            : null,
-          unreadCount: 0,
-          mutedUntil: conversation ? eventMuteMap.get(conversation.id) ?? null : null,
-          event: {
-            id: event.id,
-            slug: event.slug,
-            startsAt: event.startsAt ? event.startsAt.toISOString() : null,
-            endsAt: event.endsAt ? event.endsAt.toISOString() : null,
-          },
-        };
-      })
-      .filter(Boolean) as Array<Record<string, unknown>>;
+              return {
+                id: `event:${grant.id}`,
+                kind: "EVENT" as const,
+                conversationId: grant.conversationId ?? conversation?.id ?? null,
+                threadId: grant.threadId ?? conversation?.id ?? null,
+                status: resolveEventStatus({
+                  startsAt: event.startsAt,
+                  endsAt: event.endsAt,
+                  openAt: conversation?.openAt ?? null,
+                  readOnlyAt: conversation?.readOnlyAt ?? null,
+                  closeAt: conversation?.closeAt ?? null,
+                }),
+                title: event.title,
+                subtitle: event.addressRef?.formattedAddress ?? null,
+                imageUrl: event.coverImageUrl ?? null,
+                lastMessageAt,
+                lastMessage: lastMessage
+                  ? {
+                      id: lastMessage.id,
+                      body: lastBody,
+                      createdAt: lastMessage.createdAt.toISOString(),
+                    }
+                  : null,
+                unreadCount: 0,
+                mutedUntil: conversation ? eventMuteMap.get(conversation.id) ?? null : null,
+                event: {
+                  id: event.id,
+                  slug: event.slug,
+                  startsAt: event.startsAt ? event.startsAt.toISOString() : null,
+                  endsAt: event.endsAt ? event.endsAt.toISOString() : null,
+                },
+              };
+            })
+            .filter(Boolean) as Array<Record<string, unknown>>;
+        })();
 
     const memberships = await membershipsPromise;
 
-    const conversationIds = memberships.map((entry) => entry.conversation.id);
+    const conversationIds = memberships.map((entry) => entry.conversation.id).slice(0, compact ? 60 : undefined);
     const unreadRows =
       conversationIds.length > 0
         ? await prisma.$queryRaw<{ conversation_id: string; unread_count: number }[]>(Prisma.sql`

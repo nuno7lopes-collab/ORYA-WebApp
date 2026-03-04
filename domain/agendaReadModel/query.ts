@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { SourceType } from "@prisma/client";
+import { BookingStatus, SourceType } from "@prisma/client";
 import { buildAgendaOverlapFilter } from "@/domain/agendaReadModel/overlap";
 
 export type AgendaItem = {
@@ -17,6 +17,78 @@ export type AgendaItem = {
   endsAt: Date;
   status: string;
 };
+
+type AgendaQueryCacheEntry = {
+  expiresAt: number;
+  items: AgendaItem[];
+};
+
+const AGENDA_QUERY_CACHE_TTL_MS = 5_000;
+const AGENDA_QUERY_CACHE_MAX_ENTRIES = 200;
+const AGENDA_QUERY_CACHE_ENABLED = process.env.NODE_ENV !== "test";
+const agendaQueryCache = new Map<string, AgendaQueryCacheEntry>();
+
+function normalizeIdList(values: number[] | undefined) {
+  if (!values || values.length === 0) return [];
+  return [...new Set(values)].sort((a, b) => a - b);
+}
+
+function cloneAgendaItems(items: AgendaItem[]) {
+  return items.map((item) => ({
+    ...item,
+    startsAt: new Date(item.startsAt),
+    endsAt: new Date(item.endsAt),
+  }));
+}
+
+function buildAgendaCacheKey(params: {
+  organizationId: number;
+  from: Date;
+  to: Date;
+  padelClubId: number | null;
+  courtId: number | null;
+  sourceTypes: SourceType[];
+  scopeMode: "OR" | "AND";
+  scopeFilter: { courtIds?: number[]; resourceIds?: number[]; professionalIds?: number[] } | null;
+}) {
+  const normalizedSourceTypes = [...params.sourceTypes].sort();
+  const normalizedScope = {
+    courtIds: normalizeIdList(params.scopeFilter?.courtIds),
+    resourceIds: normalizeIdList(params.scopeFilter?.resourceIds),
+    professionalIds: normalizeIdList(params.scopeFilter?.professionalIds),
+  };
+  return JSON.stringify({
+    organizationId: params.organizationId,
+    from: params.from.toISOString(),
+    to: params.to.toISOString(),
+    padelClubId: params.padelClubId,
+    courtId: params.courtId,
+    sourceTypes: normalizedSourceTypes,
+    scopeMode: params.scopeMode,
+    scopeFilter: normalizedScope,
+  });
+}
+
+function getCachedAgendaItems(cacheKey: string) {
+  const cached = agendaQueryCache.get(cacheKey);
+  if (!cached) return null;
+  if (Date.now() > cached.expiresAt) {
+    agendaQueryCache.delete(cacheKey);
+    return null;
+  }
+  return cloneAgendaItems(cached.items);
+}
+
+function setCachedAgendaItems(cacheKey: string, items: AgendaItem[]) {
+  if (agendaQueryCache.size >= AGENDA_QUERY_CACHE_MAX_ENTRIES) {
+    const oldestKey = agendaQueryCache.keys().next().value;
+    if (oldestKey) agendaQueryCache.delete(oldestKey);
+  }
+  agendaQueryCache.set(cacheKey, {
+    expiresAt: Date.now() + AGENDA_QUERY_CACHE_TTL_MS,
+    items: cloneAgendaItems(items),
+  });
+}
 
 export async function getAgendaItemsForOrganization(params: {
   organizationId: number;
@@ -42,6 +114,23 @@ export async function getAgendaItemsForOrganization(params: {
     scopeFilter = null,
     scopeMode = "OR",
   } = params;
+
+  const cacheKey = AGENDA_QUERY_CACHE_ENABLED
+    ? buildAgendaCacheKey({
+        organizationId,
+        from,
+        to,
+        padelClubId,
+        courtId,
+        sourceTypes,
+        scopeMode,
+        scopeFilter,
+      })
+    : null;
+  if (cacheKey) {
+    const cached = getCachedAgendaItems(cacheKey);
+    if (cached) return cached;
+  }
 
   const now = new Date();
   const rangeFilter = buildAgendaOverlapFilter({ from, to });
@@ -107,6 +196,7 @@ export async function getAgendaItemsForOrganization(params: {
                 ? { OR: scopeOr }
                 : {}),
           },
+          orderBy: [{ startsAt: "asc" }, { sourceId: "asc" }],
           select: {
             title: true,
             startsAt: true,
@@ -128,8 +218,19 @@ export async function getAgendaItemsForOrganization(params: {
             startsAt: { gte: fromBuffer, lte: to },
             ...(courtId ? { courtId } : {}),
             ...(padelClubId ? { court: { padelClubId } } : {}),
+            NOT: {
+              AND: [
+                {
+                  status: {
+                    in: [BookingStatus.PENDING, BookingStatus.PENDING_CONFIRMATION],
+                  },
+                },
+                { startsAt: { lt: now } },
+              ],
+            },
             ...bookingScopeWhere,
           },
+          orderBy: [{ startsAt: "asc" }, { id: "asc" }],
           select: {
             id: true,
             startsAt: true,
@@ -156,6 +257,7 @@ export async function getAgendaItemsForOrganization(params: {
             ...(padelClubId ? { court: { padelClubId } } : {}),
             ...classScopeWhere,
           },
+          orderBy: [{ startsAt: "asc" }, { id: "asc" }],
           select: {
             id: true,
             startsAt: true,
@@ -264,9 +366,13 @@ export async function getAgendaItemsForOrganization(params: {
     );
   });
 
-  return [...byKey.values()].sort((a, b) => {
+  const items = [...byKey.values()].sort((a, b) => {
     const diff = a.startsAt.getTime() - b.startsAt.getTime();
     if (diff !== 0) return diff;
     return a.endsAt.getTime() - b.endsAt.getTime();
   });
+  if (cacheKey) {
+    setCachedAgendaItems(cacheKey, items);
+  }
+  return items;
 }

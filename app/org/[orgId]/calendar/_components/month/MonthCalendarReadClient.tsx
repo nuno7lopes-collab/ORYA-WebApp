@@ -8,7 +8,7 @@ import { buildOrgHref } from "@/lib/organizationIdUtils";
 import { OryaDateField } from "@/components/ui/datetime";
 import { CalendarCommandBar } from "../CalendarCommandBar";
 import type { CalendarView } from "../ViewSwitcher";
-import { CALENDAR_TIMEZONE_OPTIONS, normalizeCalendarTimezone } from "../timezones";
+import { normalizeCalendarTimezone } from "../timezones";
 import { summarizeAgendaItemsByStatus } from "../statusSummary";
 import { resolveEventToneClass } from "../eventTones";
 import {
@@ -31,6 +31,12 @@ const ALL_KIND_FILTER_OPTIONS = [
   { value: "EVENT", label: "Evento" },
   { value: "TOURNAMENT", label: "Torneio" },
 ] as const;
+const AGENDA_SWR_OPTIONS = {
+  revalidateOnFocus: false,
+  revalidateOnReconnect: false,
+  dedupingInterval: 15_000,
+  keepPreviousData: true,
+} as const;
 
 const WEEKDAY_LABELS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
 
@@ -77,18 +83,13 @@ export default function MonthCalendarReadClient() {
   );
   const [quickPanelOpen, setQuickPanelOpen] = useState(false);
 
-  const replaceState = (input: { nextDate?: Date; nextTimezone?: string; nextView?: "day" | "week" | "month" }) => {
+  const replaceState = (input: { nextDate?: Date; nextView?: "day" | "week" | "month" }) => {
     if (!Number.isFinite(organizationId) || organizationId <= 0) return;
     const nextParams = new URLSearchParams(searchParams.toString());
-    const nextTimezone = normalizeCalendarTimezone(input.nextTimezone ?? timezone);
-    nextParams.set("tz", nextTimezone);
-    const nextDate =
-      input.nextDate ??
-      (input.nextTimezone
-        ? buildZonedDate(getMonthDateParts(selectedDate, timezone), nextTimezone, 12, 0)
-        : selectedDate);
-    nextParams.set("date", formatDateParam(nextDate, nextTimezone));
+    const nextDate = input.nextDate ?? selectedDate;
+    nextParams.set("date", formatDateParam(nextDate, timezone));
     nextParams.set("view", input.nextView ?? "month");
+    nextParams.delete("tz");
     nextParams.delete("scopeMode");
     const destination = buildOrgHref(organizationId, "/calendar");
     const serialized = nextParams.toString();
@@ -112,7 +113,7 @@ export default function MonthCalendarReadClient() {
           to: rangeTo.toISOString(),
         }).toString()}`
       : null;
-  const { data, error, isLoading } = useSWR<AgendaResponse>(agendaUrl, fetchJson);
+  const { data, error, isLoading } = useSWR<AgendaResponse>(agendaUrl, fetchJson, AGENDA_SWR_OPTIONS);
   const availableKindOptions = useMemo(() => {
     if (!data?.capabilities) return ALL_KIND_FILTER_OPTIONS;
     return ALL_KIND_FILTER_OPTIONS.filter((option) => {
@@ -163,7 +164,7 @@ export default function MonthCalendarReadClient() {
   }
 
   return (
-    <div className="space-y-3 p-3 md:p-4">
+    <div className="flex min-h-[calc(100dvh-88px)] flex-col gap-2 p-2 md:p-3">
       <CalendarCommandBar
         view="month"
         onViewChange={setView}
@@ -192,23 +193,6 @@ export default function MonthCalendarReadClient() {
             buttonClassName="rounded-full px-3 py-1 text-xs"
           />
         }
-        timezoneControl={
-          <label className="inline-flex h-9 items-center gap-2 rounded-full border border-white/20 bg-black/35 px-3 text-xs text-white/80">
-            <span className="text-[10px] uppercase tracking-[0.14em] text-white/55">Fuso</span>
-            <select
-              value={timezone}
-              onChange={(event) => replaceState({ nextTimezone: event.target.value })}
-              className="bg-transparent text-xs text-white/90 outline-none"
-              aria-label="Selecionar fuso horário"
-            >
-              {CALENDAR_TIMEZONE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value} className="bg-slate-900 text-white">
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        }
         filterControl={
           <button
             type="button"
@@ -226,7 +210,7 @@ export default function MonthCalendarReadClient() {
       />
 
       {quickPanelOpen ? (
-        <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-3">
+        <section className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[11px] uppercase tracking-[0.14em] text-white/55">Tipo</span>
             {availableKindOptions.map((option) => {
@@ -265,8 +249,8 @@ export default function MonthCalendarReadClient() {
         </p>
       ) : null}
 
-      <section className="rounded-2xl border border-white/10 bg-[rgba(6,10,20,0.9)] p-3 shadow-[0_24px_64px_rgba(0,0,0,0.45)]">
-        <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px]">
+      <section className="flex min-h-0 flex-1 flex-col rounded-xl border border-white/10 bg-[rgba(6,10,20,0.9)] p-2">
+        <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px]">
           <span className="rounded-full border border-white/20 bg-white/5 px-2 py-1 text-white/80">
             {statusSummary.total} {statusSummary.total === 1 ? "ocupação" : "ocupações"}
           </span>
@@ -295,7 +279,7 @@ export default function MonthCalendarReadClient() {
           ))}
         </div>
 
-        <div className="mt-2 space-y-2">
+        <div className="orya-scrollbar-hide mt-2 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
           {monthWindow.rows.map((row, rowIndex) => {
             const rowStart = addDays(monthWindow.gridStart, rowIndex * 7, timezone);
             return (

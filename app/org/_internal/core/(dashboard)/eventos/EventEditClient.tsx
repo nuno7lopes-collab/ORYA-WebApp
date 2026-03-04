@@ -1637,8 +1637,8 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
       <AppleMapsLoader />
       <div className="space-y-6">
         {confirmId && (
-          <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur">
-            <div className="w-full max-w-sm rounded-2xl border border-white/15 bg-black/90 p-5 shadow-[0_20px_60px_rgba(0,0,0,0.85)] space-y-3">
+          <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 ">
+            <div className="w-full max-w-sm rounded-2xl border border-white/15 bg-black/90 p-5  space-y-3">
               <h3 className="text-lg font-semibold">Terminar venda {ticketLabelArticle} {ticketLabel}?</h3>
               <p className="text-sm text-white/70">
                 Esta ação é definitiva para este tipo de {ticketLabel}. Escreve{" "}
@@ -1718,7 +1718,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
           <div className="space-y-3">
             <div className="relative h-1 rounded-full bg-white/10">
               <div
-                className="absolute left-0 top-0 h-1 rounded-full bg-gradient-to-r from-[#FF00C8] via-[#22D3EE] to-[#1646F5]"
+                className="absolute left-0 top-0 h-1 rounded-full    "
                 style={{ width: `${progress}%` }}
               />
             </div>
@@ -1743,7 +1743,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
                     <div
                       className={`mb-2 flex h-9 w-9 items-center justify-center rounded-full border ${
                         state === "active"
-                          ? "border-white bg-white text-black shadow-[0_0_0_6px_rgba(255,255,255,0.08)]"
+                          ? "border-white bg-white text-black "
                           : state === "done"
                             ? "border-emerald-300/70 bg-emerald-400/20 text-emerald-100"
                             : "border-white/30 text-white/70"

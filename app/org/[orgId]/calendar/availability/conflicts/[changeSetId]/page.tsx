@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { buildOrgHref, parseOrganizationId } from "@/lib/organizationIdUtils";
 
-type LegacyCalendarAvailabilityConflictsPageProps = {
+type CalendarAvailabilityConflictsRedirectPageProps = {
   params: {
     orgId?: string;
     changeSetId?: string;
@@ -9,10 +9,10 @@ type LegacyCalendarAvailabilityConflictsPageProps = {
   searchParams?: Record<string, string | string[] | undefined>;
 };
 
-export default function LegacyCalendarAvailabilityConflictsPage({
+export default function CalendarAvailabilityConflictsRedirectPage({
   params,
   searchParams,
-}: LegacyCalendarAvailabilityConflictsPageProps) {
+}: CalendarAvailabilityConflictsRedirectPageProps) {
   const organizationId = parseOrganizationId(params?.orgId ?? null);
   const changeSetId = parseOrganizationId(params?.changeSetId ?? null);
   if (!organizationId || !changeSetId) {

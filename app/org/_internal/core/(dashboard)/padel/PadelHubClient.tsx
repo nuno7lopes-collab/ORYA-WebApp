@@ -796,7 +796,7 @@ const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 const SkeletonBlock = ({ className = "" }: { className?: string }) => (
   <div
-    className={`animate-pulse rounded-2xl border border-white/10 bg-gradient-to-br from-white/10 via-[#0b1124]/50 to-[#050810]/70 shadow-[0_20px_60px_rgba(0,0,0,0.4)] backdrop-blur-2xl ${className}`}
+    className={`animate-pulse rounded-2xl border border-white/10   /50 /70   ${className}`}
   />
 );
 
@@ -6741,11 +6741,11 @@ export default function PadelHubClient({
   }, [commandActions, commandQuery]);
 
   return (
-    <div className="space-y-5 rounded-3xl border border-white/12 bg-gradient-to-br from-[#0b1226]/80 via-[#101b39]/70 to-[#050810]/90 px-4 py-6 shadow-[0_30px_110px_rgba(0,0,0,0.6)] backdrop-blur-3xl md:px-6">
+    <div className="space-y-5 rounded-3xl border border-white/12  /80 /70 /90 px-4 py-6   md:px-6">
       {switchingTab && <PadelTabSkeleton />}
 
       {!switchingTab && activeTab === "tournaments" && (
-        <div className="space-y-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)] transition-all duration-250 ease-out opacity-100 translate-y-0">
+        <div className="space-y-4 rounded-2xl border border-white/12   /60 /85 p-4  transition-all duration-250 ease-out opacity-100 translate-y-0">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="space-y-1">
               <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Operação de torneios</p>
@@ -6831,7 +6831,7 @@ export default function PadelHubClient({
       )}
 
       {!switchingTab && activeTab === "calendar" && (
-        <div className="space-y-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)] transition-all duration-250 ease-out opacity-100 translate-y-0">
+        <div className="space-y-4 rounded-2xl border border-white/12   /60 /85 p-4  transition-all duration-250 ease-out opacity-100 translate-y-0">
           <CalendarControls
             eventId={eventId}
             onEventChange={setPadelEventId}
@@ -7232,7 +7232,7 @@ export default function PadelHubClient({
       )}
 
       {!switchingTab && activeTab === "categories" && (
-        <div className="space-y-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)] transition-all duration-250 ease-out opacity-100 translate-y-0">
+        <div className="space-y-4 rounded-2xl border border-white/12   /60 /85 p-4  transition-all duration-250 ease-out opacity-100 translate-y-0">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Categorias</p>
@@ -7249,13 +7249,13 @@ export default function PadelHubClient({
           )}
 
           {categories.length === 0 ? (
-            <div className="rounded-2xl border border-white/15 bg-white/5 p-6 text-white shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
+            <div className="rounded-2xl border border-white/15 bg-white/5 p-6 text-white ">
               <p className="text-lg font-semibold">Sem categorias.</p>
               <p className="text-sm text-white/70">Cria categorias base.</p>
             </div>
           ) : (
             <>
-              <div className="rounded-2xl border border-white/12 bg-white/5 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
+              <div className="rounded-2xl border border-white/12 bg-white/5 p-4 ">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Categorias base</p>
@@ -7343,7 +7343,7 @@ export default function PadelHubClient({
                     return (
                       <div
                         key={`padel-cat-${cat.id}`}
-                        className={`rounded-2xl border p-4 shadow-[0_16px_50px_rgba(0,0,0,0.45)] ${
+                        className={`rounded-2xl border p-4  ${
                           draft.isActive
                             ? "border-emerald-400/30 bg-emerald-500/5"
                             : "border-red-500/40 bg-red-500/8"
@@ -7473,7 +7473,7 @@ export default function PadelHubClient({
             </>
           )}
 
-          <div className="rounded-2xl border border-white/12 bg-white/5 p-4 space-y-3 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
+          <div className="rounded-2xl border border-white/12 bg-white/5 p-4 space-y-3 ">
             <div>
               <p className="text-sm font-semibold text-white">Criação rápida</p>
               <p className="text-[11px] text-white/60">Escolhe género e nível; criamos automaticamente.</p>
@@ -7524,7 +7524,7 @@ export default function PadelHubClient({
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white/12 bg-white/5 p-4 space-y-3 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
+          <div className="rounded-2xl border border-white/12 bg-white/5 p-4 space-y-3 ">
             <div>
               <p className="text-sm font-semibold text-white">Nova categoria</p>
               <p className="text-[11px] text-white/60">Cria o nível em falta.</p>
@@ -7604,7 +7604,7 @@ export default function PadelHubClient({
       )}
 
       {!switchingTab && activeTab === "players" && (
-        <div className="space-y-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)] transition-all duration-250 ease-out opacity-100 translate-y-0">
+        <div className="space-y-4 rounded-2xl border border-white/12   /60 /85 p-4  transition-all duration-250 ease-out opacity-100 translate-y-0">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Jogadores</p>
@@ -7770,13 +7770,13 @@ export default function PadelHubClient({
       )}
 
       {!switchingTab && activeTab === "partnerships" && (
-        <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)] transition-all duration-250 ease-out opacity-100 translate-y-0">
+        <div className="rounded-2xl border border-white/12   /60 /85 p-4  transition-all duration-250 ease-out opacity-100 translate-y-0">
           <PartnershipsPageClient organizationId={organizationId} embedded />
         </div>
       )}
 
       {!switchingTab && activeTab === "teams" && (
-        <div className="space-y-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)] transition-all duration-250 ease-out opacity-100 translate-y-0">
+        <div className="space-y-4 rounded-2xl border border-white/12   /60 /85 p-4  transition-all duration-250 ease-out opacity-100 translate-y-0">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Equipas & Interclubes</p>
@@ -7784,7 +7784,7 @@ export default function PadelHubClient({
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white/12 bg-white/5 p-4 space-y-3 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
+          <div className="rounded-2xl border border-white/12 bg-white/5 p-4 space-y-3 ">
             <div>
               <p className="text-sm font-semibold text-white">Registar equipa no torneio</p>
               <p className="text-[11px] text-white/60">Liga interclubes: associa equipa a um torneio.</p>
@@ -7850,7 +7850,7 @@ export default function PadelHubClient({
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white/12 bg-white/5 p-4 space-y-3 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
+          <div className="rounded-2xl border border-white/12 bg-white/5 p-4 space-y-3 ">
             <div>
               <p className="text-sm font-semibold text-white">Nova equipa</p>
               <p className="text-[11px] text-white/60">Associa a um clube ou categoria.</p>
@@ -7908,7 +7908,7 @@ export default function PadelHubClient({
           </div>
 
           {teams.length === 0 ? (
-            <div className="rounded-2xl border border-white/15 bg-white/5 p-6 text-white shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
+            <div className="rounded-2xl border border-white/15 bg-white/5 p-6 text-white ">
               <p className="text-lg font-semibold">Sem equipas.</p>
               <p className="text-sm text-white/70">Cria a primeira equipa para começar a liga.</p>
             </div>
@@ -7917,7 +7917,7 @@ export default function PadelHubClient({
               {teams.map((team) => (
                 <div
                   key={team.id}
-                  className="rounded-2xl border border-white/12 bg-white/5 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.45)]"
+                  className="rounded-2xl border border-white/12 bg-white/5 p-4 "
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div>
@@ -7943,7 +7943,7 @@ export default function PadelHubClient({
       )}
 
       {!switchingTab && activeTab === "coaches" && (
-        <div className="space-y-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)] transition-all duration-250 ease-out opacity-100 translate-y-0">
+        <div className="space-y-4 rounded-2xl border border-white/12   /60 /85 p-4  transition-all duration-250 ease-out opacity-100 translate-y-0">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Treinadores</p>
@@ -7974,7 +7974,7 @@ export default function PadelHubClient({
           )}
 
           {!coachErrorLabel && (
-            <div className="rounded-2xl border border-white/12 bg-white/5 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
+            <div className="rounded-2xl border border-white/12 bg-white/5 p-4 ">
               <p className="text-sm font-semibold text-white">Adicionar treinador da equipa</p>
               <p className="mt-1 text-[11px] text-white/60">
                 Ao associar, o treinador fica imediatamente operacional no fluxo de aulas e Reservas.
@@ -8014,7 +8014,7 @@ export default function PadelHubClient({
           )}
 
           {!coachesLoading && !coachErrorLabel && coaches.length === 0 && (
-            <div className="rounded-2xl border border-white/15 bg-white/5 p-6 text-white shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
+            <div className="rounded-2xl border border-white/15 bg-white/5 p-6 text-white ">
               <p className="text-lg font-semibold">Sem treinadores.</p>
               <p className="text-sm text-white/70">Adiciona um membro da equipa para começar.</p>
             </div>
@@ -8027,7 +8027,7 @@ export default function PadelHubClient({
                 return (
                   <div
                     key={coach.userId}
-                    className="rounded-2xl border border-white/12 bg-white/5 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.45)]"
+                    className="rounded-2xl border border-white/12 bg-white/5 p-4 "
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-3">
@@ -8111,7 +8111,7 @@ export default function PadelHubClient({
           )}
 
           {(coachError || coachMessage) && (
-            <div className="rounded-2xl border border-white/12 bg-white/5 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
+            <div className="rounded-2xl border border-white/12 bg-white/5 p-4 ">
               <p className={`text-[12px] ${coachError ? "text-rose-200" : "text-emerald-200"}`}>
                 {coachError || coachMessage}
               </p>
@@ -8121,7 +8121,7 @@ export default function PadelHubClient({
       )}
 
       {!switchingTab && activeTab === "lessons" && (
-        <div className="space-y-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 text-sm text-white/75 shadow-[0_18px_60px_rgba(0,0,0,0.5)] transition-all duration-250 ease-out opacity-100 translate-y-0">
+        <div className="space-y-4 rounded-2xl border border-white/12   /60 /85 p-4 text-sm text-white/75  transition-all duration-250 ease-out opacity-100 translate-y-0">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Aulas</p>
@@ -8159,7 +8159,7 @@ export default function PadelHubClient({
           )}
 
           {!servicesLoading && !lessonsErrorLabel && lessonServices.length === 0 && (
-            <div className="rounded-2xl border border-white/15 bg-white/5 p-6 text-white shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
+            <div className="rounded-2xl border border-white/15 bg-white/5 p-6 text-white ">
               <p className="text-lg font-semibold">Sem aulas.</p>
               <p className="text-sm text-white/70">Cria o primeiro serviço de aula.</p>
             </div>
@@ -8173,7 +8173,7 @@ export default function PadelHubClient({
                   <Link
                     key={service.id}
                     href={organizationId ? buildOrgHref(organizationId, `/bookings/${service.id}`) : buildOrgHubHref("/organizations")}
-                    className="rounded-2xl border border-white/12 bg-white/5 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.45)] transition hover:border-white/30"
+                    className="rounded-2xl border border-white/12 bg-white/5 p-4  transition hover:border-white/30"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div>
@@ -8206,7 +8206,7 @@ export default function PadelHubClient({
           )}
 
           {!lessonsErrorLabel && (
-            <div className="rounded-2xl border border-white/12 bg-white/5 p-4 space-y-3 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
+            <div className="rounded-2xl border border-white/12 bg-white/5 p-4 space-y-3 ">
               <div>
                 <p className="text-sm font-semibold text-white">Nova aula</p>
                 <p className="text-[11px] text-white/60">Cria serviço CLASS e série recorrente com sessões.</p>
@@ -8360,7 +8360,7 @@ export default function PadelHubClient({
               if (event.target === event.currentTarget) setClubModalOpen(false);
             }}
           >
-            <div className="w-full max-w-xl rounded-2xl border border-white/10 bg-[#0c142b] p-6 shadow-[0_30px_80px_rgba(0,0,0,0.55)]">
+            <div className="w-full max-w-xl rounded-2xl border border-white/10 bg-[#0c142b] p-6 ">
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">

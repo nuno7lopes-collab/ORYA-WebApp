@@ -2,6 +2,7 @@ import { PublicEventCard } from "@orya/shared";
 import { api, unwrapApiResponse } from "../../lib/api";
 import {
   AgendaItem,
+  ProfilePadelCard,
   ProfileAgendaStats,
   ProfileSummary,
   PublicOrganizationAgendaItem,
@@ -193,7 +194,7 @@ export const fetchProfileAgenda = async (
   const now = new Date();
   const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const response = await api.requestWithAccessToken<unknown>(
-    `/api/me/agenda?month=${month}`,
+    `/api/me/agenda?month=${month}&compact=1`,
     accessToken,
   );
   const payload = unwrapApiResponse<AgendaPayload>(response);
@@ -203,6 +204,16 @@ export const fetchProfileAgenda = async (
     items,
     stats: toAgendaStats(items),
   };
+};
+
+export const fetchProfilePadelCard = async (
+  accessToken?: string | null,
+): Promise<ProfilePadelCard> => {
+  const response = await api.requestWithAccessToken<unknown>(
+    "/api/me/padel/profile-card",
+    accessToken,
+  );
+  return unwrapApiResponse<ProfilePadelCard>(response);
 };
 
 export const fetchPublicProfile = async (

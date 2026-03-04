@@ -16,11 +16,13 @@ import { Image } from "expo-image";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { tokens } from "@orya/shared";
 import { useNavigation } from "@react-navigation/native";
+import { useQueryClient } from "@tanstack/react-query";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { GlassPill } from "../../components/liquid/GlassPill";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { useWalletDetail } from "../../features/wallet/hooks";
+import { refreshWalletDetailQr } from "../../features/wallet/api";
 import { ApiError } from "../../lib/api";
 import { getMobileEnv } from "../../lib/env";
 import { safeBack, safePush } from "../../lib/navigation";
@@ -92,6 +94,13 @@ const formatMoney = (cents: number | null | undefined, currency?: string | null)
   return `${amount.toFixed(0)} ${currency?.toUpperCase() || "EUR"}`;
 };
 
+const formatCountdown = (ms: number) => {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+};
+
 const statusLabel = (value: string, consumedAt?: string | null) => {
   if (consumedAt) return "Usado";
   const normalized = value.toUpperCase();
@@ -157,6 +166,7 @@ const pairingLifecycleLabel = (value?: string | null): string | null => {
 export default function WalletDetailScreen() {
   const router = useRouter();
   const navigation = useNavigation();
+  const queryClient = useQueryClient();
   const { session } = useAuth();
   const accessToken = session?.access_token ?? null;
   const params = useLocalSearchParams<{ entitlementId?: string | string[] }>();
@@ -172,6 +182,9 @@ export default function WalletDetailScreen() {
   const fade = useRef(new Animated.Value(0)).current;
   const translate = useRef(new Animated.Value(12)).current;
   const [downloadingPass, setDownloadingPass] = useState(false);
+  const [refreshingQr, setRefreshingQr] = useState(false);
+  const [qrImageFailed, setQrImageFailed] = useState(false);
+  const [qrCountdownLabel, setQrCountdownLabel] = useState<string | null>(null);
 
   useEffect(() => {
     if (!data) return;
@@ -190,10 +203,19 @@ export default function WalletDetailScreen() {
   }, [data, fade, translate]);
 
   const baseUrl = getMobileEnv().apiBaseUrl.replace(/\/$/, "");
+  const canShowQr = Boolean(data?.actions?.canShowQr && !data?.consumedAt);
+  const qrExpiresAtMs = useMemo(() => {
+    if (!data?.qrExpiresAt) return null;
+    const parsed = new Date(data.qrExpiresAt).getTime();
+    return Number.isFinite(parsed) ? parsed : null;
+  }, [data?.qrExpiresAt]);
+  const qrExpired = Boolean(qrExpiresAtMs && qrExpiresAtMs <= Date.now());
   const qrUrl =
-    data?.qrToken && !data?.consumedAt
+    canShowQr && data?.qrToken
       ? `${baseUrl}/api/qr/${encodeURIComponent(data.qrToken)}?theme=dark`
       : null;
+  const qrNeedsRecovery = Boolean(canShowQr && (!data?.qrToken || qrExpired || qrImageFailed));
+  const qrRefreshInFlight = isFetching || refreshingQr;
   const passUrl = data?.passUrl ?? null;
   const shareUrl = data?.event?.slug ? `${baseUrl}/eventos/${data.event.slug}` : null;
   const eventId = data?.event?.id ?? null;
@@ -217,7 +239,7 @@ export default function WalletDetailScreen() {
   const qrFallbackLabel = (() => {
     if (!data) return null;
     if (data.consumedAt) return "Este bilhete já foi usado.";
-    if (data.actions?.canShowQr) return null;
+    if (canShowQr) return null;
     if (!data.snapshot.startAt) return null;
     const start = new Date(data.snapshot.startAt);
     if (Number.isNaN(start.getTime())) return null;
@@ -225,6 +247,43 @@ export default function WalletDetailScreen() {
     const windowLabel = formatShortDate(windowStart.toISOString());
     return windowLabel ? `O QR fica disponível a partir de ${windowLabel}.` : null;
   })();
+
+  useEffect(() => {
+    setQrImageFailed(false);
+  }, [qrUrl]);
+
+  useEffect(() => {
+    if (!canShowQr || !qrExpiresAtMs) {
+      setQrCountdownLabel(null);
+      return;
+    }
+    const tick = () => {
+      const remaining = qrExpiresAtMs - Date.now();
+      if (remaining <= 0) {
+        setQrCountdownLabel("Expirado");
+        return;
+      }
+      setQrCountdownLabel(formatCountdown(remaining));
+    };
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [canShowQr, qrExpiresAtMs]);
+
+  const handleRefreshQr = useCallback(async () => {
+    if (!entitlementId) return;
+    setRefreshingQr(true);
+    try {
+      const refreshed = await refreshWalletDetailQr(entitlementId);
+      setQrImageFailed(false);
+      queryClient.setQueryData(["wallet", "detail", entitlementId], refreshed);
+    } catch (err: unknown) {
+      Alert.alert("QR", getUserFacingError(err, "Não foi possível atualizar o QR."));
+    } finally {
+      setRefreshingQr(false);
+    }
+  }, [entitlementId, queryClient]);
+
   const handleBack = () => {
     safeBack(router, navigation, "/tickets");
   };
@@ -430,7 +489,7 @@ export default function WalletDetailScreen() {
                 </View>
               </GlassCard>
 
-              {qrUrl ? (
+              {qrUrl && !qrExpired && !qrImageFailed ? (
                 <GlassCard intensity={58} className="mb-4">
                   <View className="items-center gap-3">
                     <Text className="text-white text-sm font-semibold">QR de entrada</Text>
@@ -441,22 +500,51 @@ export default function WalletDetailScreen() {
                         contentFit="cover"
                         cachePolicy="memory-disk"
                         transition={120}
+                        onError={() => setQrImageFailed(true)}
                       />
                     </View>
                     <Text className="text-white/65 text-xs text-center">
-                      O QR vale por 1 hora. Se expirar, toca em Atualizar.
+                      {qrCountdownLabel && qrCountdownLabel !== "Expirado"
+                        ? `Expira em ${qrCountdownLabel}.`
+                        : "QR pronto para check-in."}
                     </Text>
                     <Pressable
-                      onPress={() => refetch()}
-                      disabled={isFetching}
+                      onPress={handleRefreshQr}
+                      disabled={qrRefreshInFlight}
                       className="rounded-full border border-white/15 bg-white/10 px-4 py-2"
                       style={{ minHeight: tokens.layout.touchTarget }}
                       accessibilityRole="button"
                       accessibilityLabel="Atualizar QR"
-                      accessibilityState={{ disabled: isFetching }}
+                      accessibilityState={{ disabled: qrRefreshInFlight }}
                     >
                       <Text className="text-white text-xs font-semibold">
-                        {isFetching ? "A atualizar..." : "Atualizar QR"}
+                        {qrRefreshInFlight ? "A atualizar..." : "Atualizar QR"}
+                      </Text>
+                    </Pressable>
+                  </View>
+                </GlassCard>
+              ) : qrNeedsRecovery ? (
+                <GlassCard intensity={58} className="mb-4">
+                  <View className="items-center gap-3">
+                    <Text className="text-white text-sm font-semibold">QR de entrada</Text>
+                    <View className="rounded-xl border border-amber-200/30 bg-amber-100/10 px-4 py-3">
+                      <Text className="text-amber-100 text-sm text-center">
+                        {qrExpired
+                          ? "QR expirado. Atualiza para gerar um novo código."
+                          : "QR inválido. Atualiza para gerar um novo código."}
+                      </Text>
+                    </View>
+                    <Pressable
+                      onPress={handleRefreshQr}
+                      disabled={qrRefreshInFlight}
+                      className="rounded-full border border-white/15 bg-white/10 px-4 py-2"
+                      style={{ minHeight: tokens.layout.touchTarget }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Atualizar QR"
+                      accessibilityState={{ disabled: qrRefreshInFlight }}
+                    >
+                      <Text className="text-white text-xs font-semibold">
+                        {qrRefreshInFlight ? "A atualizar..." : "Atualizar QR"}
                       </Text>
                     </Pressable>
                   </View>

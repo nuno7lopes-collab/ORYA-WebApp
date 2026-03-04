@@ -82,7 +82,7 @@ export default function AulasScreen() {
           </Pressable>
         }
         showNotifications
-        showMessages
+        showMessages={false}
       />
       <ScrollView
         contentContainerStyle={{ paddingTop: topPadding, paddingBottom: 24, paddingHorizontal: 20, gap: 10 }}

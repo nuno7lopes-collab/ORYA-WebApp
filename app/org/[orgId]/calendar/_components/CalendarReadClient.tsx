@@ -22,9 +22,11 @@ export default function CalendarReadClient() {
   const view = useMemo(() => normalizeView(searchParams.get("view")), [searchParams]);
   useEffect(() => {
     if (!Number.isFinite(organizationId) || organizationId <= 0) return;
-    if (searchParams.get("view") === view) return;
+    const hasTimezoneParam = searchParams.has("tz");
+    if (searchParams.get("view") === view && !hasTimezoneParam) return;
     const nextParams = new URLSearchParams(searchParams.toString());
     nextParams.set("view", view);
+    nextParams.delete("tz");
     const destination = buildOrgHref(organizationId, "/calendar");
     const serialized = nextParams.toString();
     router.replace(serialized ? `${destination}?${serialized}` : destination, { scroll: false });

@@ -52,7 +52,7 @@ export const WalletEntitlementCard = memo(function WalletEntitlementCard({ item 
   const title = item.snapshot.title ?? typeLabel(item.type);
   const venue = item.snapshot.venueName ?? null;
   const dateLabel = formatDate(item.snapshot.startAt);
-  const canShowQr = Boolean(item.actions?.canShowQr && item.qrToken && !item.consumedAt);
+  const canShowQr = Boolean(item.actions?.canShowQr && !item.consumedAt);
   const passAvailable = Platform.OS === "ios" && Boolean(item.passAvailable);
   const status = statusLabel(item.status, item.consumedAt);
   const normalizedStatus = item.status?.toUpperCase?.() ?? "";

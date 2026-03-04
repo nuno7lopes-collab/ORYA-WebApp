@@ -113,6 +113,18 @@ beforeEach(async () => {
         groupLabel: "A",
         score: {},
         participants: [],
+        pairingA: {
+          slots: [
+            { playerProfileId: 1001, playerProfile: { email: "a1@example.com" } },
+            { playerProfileId: 1002, playerProfile: { email: "a2@example.com" } },
+          ],
+        },
+        pairingB: {
+          slots: [
+            { playerProfileId: 2001, playerProfile: { email: "b1@example.com" } },
+            { playerProfileId: 2002, playerProfile: { email: "b2@example.com" } },
+          ],
+        },
       },
     ])
     .mockResolvedValueOnce([]);
@@ -248,6 +260,33 @@ describe("POST /api/padel/calendar/auto-schedule class-session conflicts", () =>
     expect(skippedByMatch[0]?.reason).toBe("CLASS_SESSION_CONFLICT");
     expect(skippedByMatch[0]?.blockedByType).toBe("CLASS_SESSION");
     expect(prisma.padelScheduleRun.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("usa fallback de pairings para sideA/sideB quando participants está vazio", async () => {
+    prisma.classSession.findMany.mockResolvedValue([]);
+    prisma.booking.findMany.mockResolvedValue([]);
+
+    const req = new NextRequest("http://localhost/api/padel/calendar/auto-schedule", {
+      method: "POST",
+      body: JSON.stringify({
+        eventId: 44,
+        dryRun: true,
+        executionMode: "SYNC",
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+    const payload = (body.result ?? body.data ?? body) as Record<string, any>;
+    const plannerArg = computeSchedulerV2Plan.mock.calls.at(-1)?.[0];
+    const firstUnscheduled = plannerArg?.unscheduledMatches?.[0];
+
+    expect(res.status).toBe(200);
+    expect(payload.ok ?? body.ok).toBe(true);
+    expect(firstUnscheduled?.sideAProfileIds).toEqual([1001, 1002]);
+    expect(firstUnscheduled?.sideBProfileIds).toEqual([2001, 2002]);
+    expect(firstUnscheduled?.sideAEmails).toEqual(["a1@example.com", "a2@example.com"]);
+    expect(firstUnscheduled?.sideBEmails).toEqual(["b1@example.com", "b2@example.com"]);
   });
 
   it("em ALLOW_PARTIAL devolve 200 com skippedByMatch BOOKING_CONFLICT", async () => {

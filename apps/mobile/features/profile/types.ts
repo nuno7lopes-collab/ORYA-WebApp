@@ -17,6 +17,30 @@ export type ProfileSummary = {
   onboardingDone: boolean;
 };
 
+export type ProfilePadelCard = {
+  profile: {
+    fullName: string | null;
+    username: string | null;
+    avatarUrl: string | null;
+    coverUrl: string | null;
+    bio: string | null;
+    visibility: "PUBLIC" | "PRIVATE" | "FOLLOWERS";
+    gender: string | null;
+    padelPreferredSide: string | null;
+    padelLevel: string | null;
+  };
+  social: {
+    friendsCount: number;
+  };
+  ranking: {
+    hasOfficialRanking: boolean;
+    visualValue: string | null;
+    source: "OFFICIAL" | "DECLARED_LEVEL";
+    declaredLevel: string | null;
+    updatedAt: string | null;
+  };
+};
+
 export type AgendaItem = {
   id: string;
   type: "EVENTO" | "JOGO" | "INSCRICAO" | "RESERVA";

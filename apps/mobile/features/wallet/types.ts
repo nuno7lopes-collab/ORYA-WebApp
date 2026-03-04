@@ -47,6 +47,7 @@ export type WalletDetail = {
   passAvailable?: boolean;
   passUrl?: string | null;
   qrToken?: string | null;
+  qrExpiresAt?: string | null;
   event?: {
     id: number;
     slug: string;

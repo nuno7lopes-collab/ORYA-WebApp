@@ -1,6 +1,12 @@
 "use client";
-
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import { createPortal } from "react-dom";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -17,12 +23,22 @@ import {
   parseEventCoverToken,
 } from "@/lib/eventCover";
 import { resolveMemberModuleAccess } from "@/lib/organizationRbac";
-import type { OrganizationMemberRole, OrganizationRolePack, Prisma } from "@prisma/client";
-import { parseOrganizationTools, resolvePrimaryModule } from "@/lib/organizationCategories";
+import type {
+  OrganizationMemberRole,
+  OrganizationRolePack,
+  Prisma,
+} from "@prisma/client";
+import {
+  parseOrganizationTools,
+  resolvePrimaryModule,
+} from "@/lib/organizationCategories";
 import { AppleMapsLoader } from "@/app/components/maps/AppleMapsLoader";
 import { AppleLocationMapPreview } from "@/app/components/maps/AppleLocationMapPreview";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
-import { appendOrganizationIdToHref, parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
+import {
+  appendOrganizationIdToHref,
+  parseOrganizationIdFromPathname,
+} from "@/lib/organizationIdUtils";
 import type { GeoDetailsItem } from "@/lib/geo/types";
 import { INTEREST_OPTIONS, type InterestId } from "@/lib/interests";
 import { FilterChip } from "@/app/components/mobile/MobileFilters";
@@ -30,7 +46,6 @@ import InterestIcon from "@/app/components/interests/InterestIcon";
 import { AddressCombobox } from "@/components/ui/address-combobox";
 import { OryaDateTimeField } from "@/components/ui/datetime";
 import { PADEL_FORMAT_OPTIONS_PT } from "@/domain/padel/formatPresentation";
-
 type TicketTypeRow = {
   name: string;
   price: string;
@@ -38,9 +53,7 @@ type TicketTypeRow = {
   publicAccess?: boolean;
   padelCategoryId?: number | null;
 };
-
 const DRAFT_KEY = "orya-organization-new-event-draft";
-
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 type FieldKey =
   | "title"
@@ -51,7 +64,6 @@ type FieldKey =
   | "resources"
   | "tickets"
   | "padel";
-
 type PadelClubSummary = {
   id: number;
   name: string;
@@ -96,7 +108,12 @@ type PadelCategorySummary = {
   minLevel?: string | null;
   maxLevel?: string | null;
 };
-type PadelRuleSetSummary = { id: number; name: string; season?: string | null; year?: number | null };
+type PadelRuleSetSummary = {
+  id: number;
+  name: string;
+  season?: string | null;
+  year?: number | null;
+};
 type PadelCategoriesResponse = { ok: boolean; items?: PadelCategorySummary[] };
 type PadelRuleSetsResponse = { ok: boolean; items?: PadelRuleSetSummary[] };
 type PadelCategoryConfig = { capacityTeams: string; format: string | null };
@@ -110,9 +127,18 @@ type PadelPublicClub = {
   courtsCount?: number | null;
   organizationName?: string | null;
   organizationUsername?: string | null;
-  courts?: Array<{ id: number; name: string; indoor: boolean; surface: string | null }>;
+  courts?: Array<{
+    id: number;
+    name: string;
+    indoor: boolean;
+    surface: string | null;
+  }>;
 };
-type PadelPublicClubsResponse = { ok: boolean; items?: PadelPublicClub[]; error?: string };
+type PadelPublicClubsResponse = {
+  ok: boolean;
+  items?: PadelPublicClub[];
+  error?: string;
+};
 type ReservasResourceItem = {
   id: number;
   label?: string | null;
@@ -123,21 +149,22 @@ type ReservasProfessionalItem = {
   name?: string | null;
   isActive?: boolean;
 };
-
 const normalizeIntegerInput = (value: string) => {
   const match = value.trim().match(/^\d+/);
   return match ? match[0] : "";
 };
-
 const toggleSelectionId = (current: number[], id: number, enabled: boolean) => {
   if (enabled) {
     return Array.from(new Set([...current, id])).sort((a, b) => a - b);
   }
   return current.filter((value) => value !== id);
 };
-
-const pickCanonicalField = (canonical: Prisma.JsonValue | null | undefined, keys: string[]) => {
-  if (!canonical || typeof canonical !== "object" || Array.isArray(canonical)) return null;
+const pickCanonicalField = (
+  canonical: Prisma.JsonValue | null | undefined,
+  keys: string[],
+) => {
+  if (!canonical || typeof canonical !== "object" || Array.isArray(canonical))
+    return null;
   const record = canonical as Record<string, unknown>;
   for (const key of keys) {
     const value = record[key];
@@ -145,62 +172,77 @@ const pickCanonicalField = (canonical: Prisma.JsonValue | null | undefined, keys
   }
   return null;
 };
-
-const resolvePadelClubLocation = (club: PadelClubSummary | PadelPublicClub | null) => {
+const resolvePadelClubLocation = (
+  club: PadelClubSummary | PadelPublicClub | null,
+) => {
   if (!club) return { formatted: "", city: "" };
   const addressRef = "addressRef" in club ? club.addressRef : null;
   const canonical = addressRef?.canonical ?? null;
-  const cityFromCanonical = pickCanonicalField(canonical, ["city", "addressLine2", "locality", "region", "state"]);
-  const addressLine1 = pickCanonicalField(canonical, ["addressLine1", "street", "road"]);
+  const cityFromCanonical = pickCanonicalField(canonical, [
+    "city",
+    "addressLine2",
+    "locality",
+    "region",
+    "state",
+  ]);
+  const addressLine1 = pickCanonicalField(canonical, [
+    "addressLine1",
+    "street",
+    "road",
+  ]);
   const city = cityFromCanonical ?? club.city ?? "";
   const formatted =
     addressRef?.formattedAddress ||
     club.address ||
-    [addressLine1, city].filter(Boolean).join(", ");
+    [addressLine1, city].filter(Boolean).join(",");
   return { formatted, city: city || "" };
 };
-
-const formatPadelClubLocationLabel = (club: PadelClubSummary | PadelPublicClub | null) => {
+const formatPadelClubLocationLabel = (
+  club: PadelClubSummary | PadelPublicClub | null,
+) => {
   if (!club) return "";
   const addressRef = "addressRef" in club ? club.addressRef : null;
   const canonical = addressRef?.canonical ?? null;
-  const city = pickCanonicalField(canonical, ["city", "addressLine2", "locality", "region", "state"]) ?? club.city;
+  const city =
+    pickCanonicalField(canonical, [
+      "city",
+      "addressLine2",
+      "locality",
+      "region",
+      "state",
+    ]) ?? club.city;
   const formatted = addressRef?.formattedAddress ?? club.address ?? "";
-  return [city, formatted].filter(Boolean).join(" · ");
+  return [city, formatted].filter(Boolean).join(" ·");
 };
-
 const formatInputDate = (date: Date) => {
   const pad = (n: number) => n.toString().padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 };
-
 const formatInputTime = (date: Date) => {
   const pad = (n: number) => n.toString().padStart(2, "0");
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 };
-
 const roundToNextHour = (base: Date) => {
   const next = new Date(base);
-  const hasMinutes = next.getMinutes() > 0 || next.getSeconds() > 0 || next.getMilliseconds() > 0;
+  const hasMinutes =
+    next.getMinutes() > 0 ||
+    next.getSeconds() > 0 ||
+    next.getMilliseconds() > 0;
   next.setMinutes(0, 0, 0);
   if (hasMinutes) next.setHours(next.getHours() + 1);
   return next;
 };
-
-const MODAL_OVERLAY_CLASS = "fixed inset-0 bg-black/75 backdrop-blur-sm";
+const MODAL_OVERLAY_CLASS = "fixed inset-0 bg-black/75";
 const MODAL_SHELL_CLASS = "fixed inset-0 z-[var(--z-modal)]";
 const MODAL_CONTENT_WRAP_CLASS =
   "relative z-10 flex h-full w-full items-start justify-center overflow-y-auto overscroll-contain px-4 py-6 sm:py-10";
 const MODAL_PANEL_CLASS =
-  "rounded-[28px] border border-white/15 bg-[rgba(10,12,18,0.85)] backdrop-blur-2xl shadow-[0_26px_80px_rgba(0,0,0,0.6)]";
-const MODAL_HEADER_CLASS = "flex items-center justify-between gap-3 border-b border-white/10 px-5 py-4";
+  "rounded-[28px] border border-white/15 bg-[rgba(10,12,18,0.85)]";
+const MODAL_HEADER_CLASS =
+  "flex items-center justify-between gap-3 border-b border-white/10 px-5 py-4";
 const MAX_ITEMS_UI = 1111;
 const COVER_PAGE_SIZE = 40;
-
-type NewOrganizationEventPageProps = {
-  forcePreset?: "padel" | "default";
-};
-
+type NewOrganizationEventPageProps = { forcePreset?: "padel" | "default" };
 export function NewOrganizationEventPage({
   forcePreset,
 }: NewOrganizationEventPageProps = {}) {
@@ -210,10 +252,14 @@ export function NewOrganizationEventPage({
   const { user, profile, isLoading: isUserLoading } = useUser();
   const { openModal } = useAuthModal();
   const organizationIdParam = searchParams?.get("organizationId") ?? null;
-  const organizationIdQuery = organizationIdParam ? Number(organizationIdParam) : null;
+  const organizationIdQuery = organizationIdParam
+    ? Number(organizationIdParam)
+    : null;
   const organizationIdFromPath = parseOrganizationIdFromPathname(pathname);
   const organizationId =
-    organizationIdQuery && Number.isFinite(organizationIdQuery) ? organizationIdQuery : organizationIdFromPath;
+    organizationIdQuery && Number.isFinite(organizationIdQuery)
+      ? organizationIdQuery
+      : organizationIdFromPath;
   const orgMeUrl =
     organizationId && Number.isFinite(organizationId)
       ? `/api/org/${organizationId}/me`
@@ -238,24 +284,26 @@ export function NewOrganizationEventPage({
     paymentsStatus?: string;
     paymentsMode?: "PLATFORM" | "CONNECT";
     profileStatus?: string;
-  }>(
-    orgMeUrl,
-    fetcher,
-    { revalidateOnFocus: false }
-  );
+  }>(orgMeUrl, fetcher, { revalidateOnFocus: false });
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [startsAt, setStartsAt] = useState("");
   const [endsAt, setEndsAt] = useState("");
   const [interestTags, setInterestTags] = useState<InterestId[]>([]);
   const [locationQuery, setLocationQuery] = useState("");
-  const [locationAddressId, setLocationAddressId] = useState<string | null>(null);
-  const [locationFormattedAddress, setLocationFormattedAddress] = useState<string | null>(null);
+  const [locationAddressId, setLocationAddressId] = useState<string | null>(
+    null,
+  );
+  const [locationFormattedAddress, setLocationFormattedAddress] = useState<
+    string | null
+  >(null);
   const [locationLat, setLocationLat] = useState<number | null>(null);
   const [locationLng, setLocationLng] = useState<number | null>(null);
   const [consumesResources, setConsumesResources] = useState(false);
   const [selectedResourceIds, setSelectedResourceIds] = useState<number[]>([]);
-  const [selectedProfessionalIds, setSelectedProfessionalIds] = useState<number[]>([]);
+  const [selectedProfessionalIds, setSelectedProfessionalIds] = useState<
+    number[]
+  >([]);
   const [ticketTypes, setTicketTypes] = useState<TicketTypeRow[]>([]);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [uploadingCover, setUploadingCover] = useState(false);
@@ -270,33 +318,51 @@ export function NewOrganizationEventPage({
   const [padelEligibility, setPadelEligibility] = useState("OPEN");
   const [padelRuleSetId, setPadelRuleSetId] = useState<number | null>(null);
   const [padelCategoryIds, setPadelCategoryIds] = useState<number[]>([]);
-  const [padelDefaultCategoryId, setPadelDefaultCategoryId] = useState<number | null>(null);
-  const [padelCategoryConfigs, setPadelCategoryConfigs] = useState<Record<number, PadelCategoryConfig>>({});
+  const [padelDefaultCategoryId, setPadelDefaultCategoryId] = useState<
+    number | null
+  >(null);
+  const [padelCategoryConfigs, setPadelCategoryConfigs] = useState<
+    Record<number, PadelCategoryConfig>
+  >({});
   const [padelWaitlistEnabled, setPadelWaitlistEnabled] = useState(false);
-  const [padelRegistrationStartsAt, setPadelRegistrationStartsAt] = useState("");
+  const [padelRegistrationStartsAt, setPadelRegistrationStartsAt] =
+    useState("");
   const [padelRegistrationEndsAt, setPadelRegistrationEndsAt] = useState("");
-  const [padelAllowSecondCategory, setPadelAllowSecondCategory] = useState(true);
+  const [padelAllowSecondCategory, setPadelAllowSecondCategory] =
+    useState(true);
   const [padelMaxEntriesTotal, setPadelMaxEntriesTotal] = useState("");
   const [padelAdvancedOpen, setPadelAdvancedOpen] = useState(false);
   const [padelRulesOpen, setPadelRulesOpen] = useState(false);
   const [coverSearch, setCoverSearch] = useState("");
-  const [coverCategory, setCoverCategory] =
-    useState<"SUGESTOES" | "ALL" | "EVENTOS" | "PADEL" | "RESERVAS" | "GERAL">("SUGESTOES");
+  const [coverCategory, setCoverCategory] = useState<
+    "SUGESTOES" | "ALL" | "EVENTOS" | "PADEL" | "RESERVAS" | "GERAL"
+  >("SUGESTOES");
   const [coverPage, setCoverPage] = useState(1);
   const [isGratisEvent, setIsFreeEvent] = useState(false);
   const [freeTicketName, setFreeTicketName] = useState("Inscrição");
   const [freeTicketPublicAccess, setFreeTicketPublicAccess] = useState(true);
   const [freeCapacity, setFreeCapacity] = useState("");
-  const [selectedPadelClubId, setSelectedPadelClubId] = useState<number | null>(null);
-  const [selectedPadelCourtIds, setSelectedPadelCourtIds] = useState<number[]>([]);
-  const [selectedPadelStaffIds, setSelectedPadelStaffIds] = useState<number[]>([]);
+  const [selectedPadelClubId, setSelectedPadelClubId] = useState<number | null>(
+    null,
+  );
+  const [selectedPadelCourtIds, setSelectedPadelCourtIds] = useState<number[]>(
+    [],
+  );
+  const [selectedPadelStaffIds, setSelectedPadelStaffIds] = useState<number[]>(
+    [],
+  );
   const [padelClubMode, setPadelClubMode] = useState<"OWN" | "PARTNER">("OWN");
-  const [padelClubSource, setPadelClubSource] = useState<"ORG" | "DIRECTORY">("ORG");
+  const [padelClubSource, setPadelClubSource] = useState<"ORG" | "DIRECTORY">(
+    "ORG",
+  );
   const [padelClubSourceTouched, setPadelClubSourceTouched] = useState(false);
   const [padelDirectoryQuery, setPadelDirectoryQuery] = useState("");
-  const [padelDirectoryError, setPadelDirectoryError] = useState<string | null>(null);
-  const [creatingPartnerClubId, setCreatingPartnerClubId] = useState<number | null>(null);
-
+  const [padelDirectoryError, setPadelDirectoryError] = useState<string | null>(
+    null,
+  );
+  const [creatingPartnerClubId, setCreatingPartnerClubId] = useState<
+    number | null
+  >(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showLoadingHint, setShowLoadingHint] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -304,13 +370,21 @@ export function NewOrganizationEventPage({
   const [validationAlert, setValidationAlert] = useState<string | null>(null);
   const [backendAlert, setBackendAlert] = useState<string | null>(null);
   const [draftLoaded, setDraftLoaded] = useState(false);
-  const [fieldErrors, setFieldErrors] = useState<Partial<Record<FieldKey, string>>>({});
-  const [errorSummary, setErrorSummary] = useState<{ field: FieldKey; message: string }[]>([]);
-  const [pendingFocusField, setPendingFocusField] = useState<FieldKey | null>(null);
-  const [creationSuccess, setCreationSuccess] = useState<{ eventId?: number; slug?: string } | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<
+    Partial<Record<FieldKey, string>>
+  >({});
+  const [errorSummary, setErrorSummary] = useState<
+    { field: FieldKey; message: string }[]
+  >([]);
+  const [pendingFocusField, setPendingFocusField] = useState<FieldKey | null>(
+    null,
+  );
+  const [creationSuccess, setCreationSuccess] = useState<{
+    eventId?: number;
+    slug?: string;
+  } | null>(null);
   const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
   const isPadelPreset = selectedPreset === "padel" || forcePreset === "padel";
-
   const ctaAlertRef = useRef<HTMLDivElement | null>(null);
   const errorSummaryRef = useRef<HTMLDivElement | null>(null);
   const titleRef = useRef<HTMLInputElement | null>(null);
@@ -328,18 +402,17 @@ export function NewOrganizationEventPage({
   const coverModalRef = useRef<HTMLDivElement | null>(null);
   const ticketsModalRef = useRef<HTMLDivElement | null>(null);
   const modalOverflowRef = useRef<{ body: string; html: string } | null>(null);
-
   useEffect(() => {
     setPortalRoot(document.body);
   }, []);
-
   useEffect(() => {
     if (isPadelPreset && showTicketsModal) {
       setShowTicketsModal(false);
     }
   }, [isPadelPreset, showTicketsModal]);
-
-  const roles = Array.isArray(profile?.roles) ? (profile?.roles as string[]) : [];
+  const roles = Array.isArray(profile?.roles)
+    ? (profile?.roles as string[])
+    : [];
   const membershipRole = organizationStatus?.membershipRole ?? null;
   const membershipRolePack = organizationStatus?.membershipRolePack ?? null;
   const moduleAccess = useMemo(
@@ -364,8 +437,10 @@ export function NewOrganizationEventPage({
     organizationStatus?.organization?.primaryModule ?? null,
     normalizedTools,
   );
-  const hasEventosModule = normalizedTools.includes("EVENTOS") || primaryModule === "EVENTOS";
-  const hasTorneiosModule = normalizedTools.includes("TORNEIOS") || primaryModule === "TORNEIOS";
+  const hasEventosModule =
+    normalizedTools.includes("EVENTOS") || primaryModule === "EVENTOS";
+  const hasTorneiosModule =
+    normalizedTools.includes("TORNEIOS") || primaryModule === "TORNEIOS";
   const canSwitchPreset = !forcePreset && hasEventosModule && hasTorneiosModule;
   const isPadelPaid = isPadelPreset && !isGratisEvent;
   const isTicketsModalOpen = showTicketsModal && !isPadelPreset;
@@ -382,21 +457,28 @@ export function NewOrganizationEventPage({
   const ticketLabelIndefinite = isPadelPreset ? "uma" : "um";
   const freeTicketPlaceholder = isPadelPreset ? "Inscrição" : "Entrada";
   const freeTicketLabel = isPadelPreset ? "Inscrição grátis" : "Entrada grátis";
-  const detailBasePath = isPadelPreset ? "/org/padel/tournaments" : "/org/events";
+  const detailBasePath = isPadelPreset
+    ? "/org/padel/tournaments"
+    : "/org/events";
   const isPadelWizard = forcePreset === "padel";
-  const wizardTitle = isPadelWizard ? "Criar torneio de padel" : `Criar novo ${primaryLabel}`;
+  const wizardTitle = isPadelWizard
+    ? "Criar torneio de padel"
+    : `Criar novo ${primaryLabel}`;
   const wizardSubtitle = isPadelWizard
     ? "Assistente dedicado para definir clube, campos, categorias, inscrições e regras."
     : null;
   const coverSuggestions = useMemo(
-    () => getEventCoverSuggestionIds({ templateType: templateHint, primaryModule }),
+    () =>
+      getEventCoverSuggestionIds({ templateType: templateHint, primaryModule }),
     [templateHint, primaryModule],
   );
   const suggestedCovers = useMemo(
     () =>
       coverSuggestions
         .map((id) => coverLibrary.find((cover) => cover.id === id))
-        .filter((cover): cover is (typeof coverLibrary)[number] => Boolean(cover)),
+        .filter((cover): cover is (typeof coverLibrary)[number] =>
+          Boolean(cover),
+        ),
     [coverSuggestions, coverLibrary],
   );
   const coverCategoryOptions = [
@@ -421,22 +503,39 @@ export function NewOrganizationEventPage({
     const query = coverSearch.trim().toLowerCase();
     const filtered = coverLibrary.filter((cover) => {
       if (coverCategory === "SUGESTOES") return false;
-      if (coverCategory !== "ALL" && cover.category !== coverCategory) return false;
+      if (coverCategory !== "ALL" && cover.category !== coverCategory)
+        return false;
       if (!query) return true;
       const labelMatch = cover.label.toLowerCase().includes(query);
-      const tagMatch = (cover.tags ?? []).some((tag) => tag.toLowerCase().includes(query));
-      const scenarioMatch = cover.scenario?.toLowerCase().includes(query) ?? false;
-      const businessMatch = cover.businessType?.toLowerCase().includes(query) ?? false;
-      const useCaseMatch = (cover.useCase ?? []).some((useCase) => useCase.toLowerCase().includes(query));
-      const categoryMatch = cover.category?.toLowerCase().includes(query) ?? false;
-      return labelMatch || tagMatch || scenarioMatch || businessMatch || useCaseMatch || categoryMatch;
+      const tagMatch = (cover.tags ?? []).some((tag) =>
+        tag.toLowerCase().includes(query),
+      );
+      const scenarioMatch =
+        cover.scenario?.toLowerCase().includes(query) ?? false;
+      const businessMatch =
+        cover.businessType?.toLowerCase().includes(query) ?? false;
+      const useCaseMatch = (cover.useCase ?? []).some((useCase) =>
+        useCase.toLowerCase().includes(query),
+      );
+      const categoryMatch =
+        cover.category?.toLowerCase().includes(query) ?? false;
+      return (
+        labelMatch ||
+        tagMatch ||
+        scenarioMatch ||
+        businessMatch ||
+        useCaseMatch ||
+        categoryMatch
+      );
     });
     return sortCoverList(filtered);
   }, [coverCategory, coverLibrary, coverSearch]);
-  const coverGridItems = coverCategory === "SUGESTOES" ? suggestedCovers : filteredCoverLibrary;
+  const coverGridItems =
+    coverCategory === "SUGESTOES" ? suggestedCovers : filteredCoverLibrary;
   const selectedCoverToken = parseEventCoverToken(coverUrl);
   const selectedCoverLabel = selectedCoverToken
-    ? coverLibrary.find((cover) => cover.id === selectedCoverToken)?.label ?? selectedCoverToken
+    ? (coverLibrary.find((cover) => cover.id === selectedCoverToken)?.label ??
+      selectedCoverToken)
     : null;
   const coverPreviewUrl = coverUrl
     ? getEventCoverUrl(coverUrl, {
@@ -448,29 +547,46 @@ export function NewOrganizationEventPage({
       })
     : null;
   const hasActiveOrganization = Boolean(organizationStatus?.organization?.id);
-  const organizationStatusValue = organizationStatus?.organization?.status ?? null;
-  const organizationInactive = Boolean(organizationStatusValue && organizationStatusValue !== "ACTIVE");
+  const organizationStatusValue =
+    organizationStatus?.organization?.status ?? null;
+  const organizationInactive = Boolean(
+    organizationStatusValue && organizationStatusValue !== "ACTIVE",
+  );
   const canCreateEvents = moduleAccess.EVENTOS === "EDIT";
   const organizationOrgType =
     organizationStatus?.organization?.orgType ??
     (organizationStatus?.paymentsMode === "PLATFORM" ? "PLATFORM" : "EXTERNAL");
   const isPlatformPayout = organizationOrgType === "PLATFORM";
-  const paymentsStatusRaw = isAdmin ? "READY" : organizationStatus?.paymentsStatus ?? "NO_STRIPE";
+  const paymentsStatusRaw = isAdmin
+    ? "READY"
+    : (organizationStatus?.paymentsStatus ?? "NO_STRIPE");
   const paymentsStatus = isPlatformPayout ? "READY" : paymentsStatusRaw;
   const hasPaidTicket = useMemo(
-    () => !isGratisEvent && ticketTypes.some((t) => Number(t.price.replace(",", ".")) > 0),
+    () =>
+      !isGratisEvent &&
+      ticketTypes.some((t) => Number(t.price.replace(",", ".")) > 0),
     [isGratisEvent, ticketTypes],
   );
   const organizationOfficialEmail =
-    (organizationStatus?.organization as { officialEmail?: string | null } | null)?.officialEmail ?? null;
-  const organizationOfficialEmailNormalized = normalizeOfficialEmail(organizationOfficialEmail);
+    (
+      organizationStatus?.organization as {
+        officialEmail?: string | null;
+      } | null
+    )?.officialEmail ?? null;
+  const organizationOfficialEmailNormalized = normalizeOfficialEmail(
+    organizationOfficialEmail,
+  );
   const organizationOfficialEmailVerifiedAt =
-    (organizationStatus?.organization as { officialEmailVerifiedAt?: string | null } | null)?.officialEmailVerifiedAt ??
-    null;
+    (
+      organizationStatus?.organization as {
+        officialEmailVerifiedAt?: string | null;
+      } | null
+    )?.officialEmailVerifiedAt ?? null;
   const organizationOfficialEmailVerified = Boolean(
     organizationOfficialEmailNormalized && organizationOfficialEmailVerifiedAt,
   );
-  const needsOfficialEmailVerification = !isAdmin && !organizationOfficialEmailVerified;
+  const needsOfficialEmailVerification =
+    !isAdmin && !organizationOfficialEmailVerified;
   const stripeNotReady = !isAdmin && paymentsStatus !== "READY";
   const paidTicketsBlocked = stripeNotReady || needsOfficialEmailVerification;
   const paidTicketsBlockedMessage = useMemo(() => {
@@ -479,18 +595,24 @@ export function NewOrganizationEventPage({
     if (stripeNotReady) actions.push("liga o Stripe");
     if (needsOfficialEmailVerification) {
       actions.push(
-        organizationOfficialEmailNormalized ? "verifica o email oficial" : "define e verifica o email oficial",
+        organizationOfficialEmailNormalized
+          ? "verifica o email oficial"
+          : "define e verifica o email oficial",
       );
     }
-    const actionsText = actions.join(" e ");
+    const actionsText = actions.join(" e");
     return `Para vender ${ticketLabelPlural} pagos, ${actionsText}.`;
-  }, [paidTicketsBlocked, stripeNotReady, needsOfficialEmailVerification, organizationOfficialEmail, ticketLabelPlural]);
-
+  }, [
+    paidTicketsBlocked,
+    stripeNotReady,
+    needsOfficialEmailVerification,
+    organizationOfficialEmail,
+    ticketLabelPlural,
+  ]);
   useEffect(() => {
     if (!paidTicketsBlocked) return;
     setIsFreeEvent(true);
   }, [paidTicketsBlocked]);
-
   const accessBlocker = useMemo(() => {
     if (!user) return null;
     if (!organizationStatus) return "A carregar dados da organização…";
@@ -513,26 +635,37 @@ export function NewOrganizationEventPage({
     primaryLabelPlural,
   ]);
   const organizationIdFromStatus = organizationStatus?.organization?.id ?? null;
-
-  const { data: padelClubs } = useSWR<{ ok: boolean; items?: PadelClubSummary[] }>(
-    selectedPreset === "padel" ? "/api/padel/clubs" : null,
-    fetcher,
-    { revalidateOnFocus: false },
-  );
-  const { data: padelDirectoryRes, isLoading: padelDirectoryLoading } = useSWR<PadelPublicClubsResponse>(
-    selectedPreset === "padel" && padelClubSource === "DIRECTORY"
-      ? `/api/padel/public/clubs?limit=8&includeCourts=1&q=${encodeURIComponent(padelDirectoryQuery.trim())}`
+  const { data: padelClubs } = useSWR<{
+    ok: boolean;
+    items?: PadelClubSummary[];
+  }>(selectedPreset === "padel" ? "/api/padel/clubs" : null, fetcher, {
+    revalidateOnFocus: false,
+  });
+  const { data: padelDirectoryRes, isLoading: padelDirectoryLoading } =
+    useSWR<PadelPublicClubsResponse>(
+      selectedPreset === "padel" && padelClubSource === "DIRECTORY"
+        ? `/api/padel/public/clubs?limit=8&includeCourts=1&q=${encodeURIComponent(padelDirectoryQuery.trim())}`
+        : null,
+      fetcher,
+      { revalidateOnFocus: false },
+    );
+  const { data: padelCourts } = useSWR<{
+    ok: boolean;
+    items?: PadelCourtSummary[];
+  }>(
+    selectedPreset === "padel" && selectedPadelClubId
+      ? `/api/padel/clubs/${selectedPadelClubId}/courts`
       : null,
     fetcher,
     { revalidateOnFocus: false },
   );
-  const { data: padelCourts } = useSWR<{ ok: boolean; items?: PadelCourtSummary[] }>(
-    selectedPreset === "padel" && selectedPadelClubId ? `/api/padel/clubs/${selectedPadelClubId}/courts` : null,
-    fetcher,
-    { revalidateOnFocus: false },
-  );
-  const { data: padelStaff } = useSWR<{ ok: boolean; items?: PadelStaffSummary[] }>(
-    selectedPreset === "padel" && selectedPadelClubId ? `/api/padel/clubs/${selectedPadelClubId}/staff` : null,
+  const { data: padelStaff } = useSWR<{
+    ok: boolean;
+    items?: PadelStaffSummary[];
+  }>(
+    selectedPreset === "padel" && selectedPadelClubId
+      ? `/api/padel/clubs/${selectedPadelClubId}/staff`
+      : null,
     fetcher,
     { revalidateOnFocus: false },
   );
@@ -550,21 +683,34 @@ export function NewOrganizationEventPage({
     fetcher,
     { revalidateOnFocus: false },
   );
-  const { data: resourcesData } = useSWR<{ ok?: boolean; items?: ReservasResourceItem[] }>(
-    organizationIdFromStatus ? `/api/org/${organizationIdFromStatus}/reservas/recursos?includeCourts=1` : null,
+  const { data: resourcesData } = useSWR<{
+    ok?: boolean;
+    items?: ReservasResourceItem[];
+  }>(
+    organizationIdFromStatus
+      ? `/api/org/${organizationIdFromStatus}/reservas/recursos?includeCourts=1`
+      : null,
     fetcher,
     { revalidateOnFocus: false },
   );
-  const { data: professionalsData } = useSWR<{ ok?: boolean; items?: ReservasProfessionalItem[] }>(
-    organizationIdFromStatus ? `/api/org/${organizationIdFromStatus}/reservas/profissionais` : null,
+  const { data: professionalsData } = useSWR<{
+    ok?: boolean;
+    items?: ReservasProfessionalItem[];
+  }>(
+    organizationIdFromStatus
+      ? `/api/org/${organizationIdFromStatus}/reservas/profissionais`
+      : null,
     fetcher,
     { revalidateOnFocus: false },
   );
-  const resourceOptions = Array.isArray(resourcesData?.items) ? resourcesData.items.filter((item) => item.isActive !== false) : [];
+  const resourceOptions = Array.isArray(resourcesData?.items)
+    ? resourcesData.items.filter((item) => item.isActive !== false)
+    : [];
   const professionalOptions = Array.isArray(professionalsData?.items)
     ? professionalsData.items.filter((item) => item.isActive !== false)
     : [];
-  const hasResourceSelectionsAvailable = resourceOptions.length > 0 || professionalOptions.length > 0;
+  const hasResourceSelectionsAvailable =
+    resourceOptions.length > 0 || professionalOptions.length > 0;
   const padelCategoryItems = padelCategories?.items ?? [];
   const padelDirectoryClubs = padelDirectoryRes?.items ?? [];
   const padelClubItems = padelClubs?.items ?? [];
@@ -576,12 +722,12 @@ export function NewOrganizationEventPage({
     () => padelClubItems.filter((club) => club.kind === "PARTNER"),
     [padelClubItems],
   );
-  const orgPadelClubs = padelClubMode === "PARTNER" ? partnerPadelClubs : ownPadelClubs;
+  const orgPadelClubs =
+    padelClubMode === "PARTNER" ? partnerPadelClubs : ownPadelClubs;
   const selectedPadelClub =
     selectedPreset === "padel"
-      ? padelClubs?.items?.find((c) => c.id === selectedPadelClubId) ?? null
+      ? (padelClubs?.items?.find((c) => c.id === selectedPadelClubId) ?? null)
       : null;
-
   useEffect(() => {
     if (draftLoaded) return;
     if (typeof window === "undefined") return;
@@ -630,7 +776,9 @@ export function NewOrganizationEventPage({
           ...row,
           publicAccess: row.publicAccess ?? true,
           totalQuantity: normalizeIntegerInput(
-            typeof row.totalQuantity === "string" ? row.totalQuantity : String(row.totalQuantity ?? ""),
+            typeof row.totalQuantity === "string"
+              ? row.totalQuantity
+              : String(row.totalQuantity ?? ""),
           ),
         })),
       );
@@ -661,7 +809,6 @@ export function NewOrganizationEventPage({
       setDraftLoaded(true);
     }
   }, [draftLoaded, freeTicketPlaceholder]);
-
   useEffect(() => {
     if (!draftLoaded) return;
     if (forcePreset) {
@@ -675,7 +822,6 @@ export function NewOrganizationEventPage({
       setSelectedPreset(nextPreset);
     }
   }, [draftLoaded, forcePreset, hasEventosModule, selectedPreset]);
-
   useEffect(() => {
     if (forcePreset) return;
     if (selectedPreset !== "padel") return;
@@ -683,32 +829,41 @@ export function NewOrganizationEventPage({
       organizationIdFromStatus && Number.isFinite(organizationIdFromStatus)
         ? organizationIdFromStatus
         : organizationId;
-    router.push(appendOrganizationIdToHref("/org/padel/tournaments/create", targetOrgId));
-  }, [forcePreset, organizationId, organizationIdFromStatus, router, selectedPreset]);
-
+    router.push(
+      appendOrganizationIdToHref("/org/padel/tournaments/create", targetOrgId),
+    );
+  }, [
+    forcePreset,
+    organizationId,
+    organizationIdFromStatus,
+    router,
+    selectedPreset,
+  ]);
   useEffect(() => {
     if (!draftLoaded) return;
     setFreeTicketName((prev) => {
       const normalized = prev?.trim();
-      if (!normalized || normalized === "Inscrição" || normalized === "Entrada") {
+      if (
+        !normalized ||
+        normalized === "Inscrição" ||
+        normalized === "Entrada"
+      ) {
         return freeTicketPlaceholder;
       }
       return prev;
     });
   }, [draftLoaded, freeTicketPlaceholder]);
-
   useEffect(() => {
     if (!draftLoaded || coverUrl || coverLibrary.length === 0) return;
-    const randomCover = coverLibrary[Math.floor(Math.random() * coverLibrary.length)];
+    const randomCover =
+      coverLibrary[Math.floor(Math.random() * coverLibrary.length)];
     if (randomCover?.token) {
       setCoverUrl(randomCover.token);
     }
   }, [coverLibrary, coverUrl, draftLoaded]);
-
   useEffect(() => {
     setCoverPage(1);
   }, [coverCategory, coverSearch]);
-
   useEffect(() => {
     if (!draftLoaded || scheduleInitializedRef.current) return;
     if (startsAt || endsAt) {
@@ -722,7 +877,6 @@ export function NewOrganizationEventPage({
     setEndsAt(`${formatInputDate(end)}T${formatInputTime(end)}`);
     scheduleInitializedRef.current = true;
   }, [draftLoaded, startsAt, endsAt]);
-
   useEffect(() => {
     if (!isGratisEvent) return;
     setTicketTypes([
@@ -733,12 +887,10 @@ export function NewOrganizationEventPage({
       },
     ]);
   }, [isGratisEvent, freeTicketName, freeCapacity, freeTicketPlaceholder]);
-
   useEffect(() => {
     clearErrorsForFields(["tickets"]);
     setStripeAlert(null);
   }, [isGratisEvent]);
-
   useEffect(() => {
     if (selectedPreset === "padel") return;
     setSelectedPadelClubId(null);
@@ -763,35 +915,41 @@ export function NewOrganizationEventPage({
     setPadelAdvancedOpen(false);
     setPadelRulesOpen(false);
   }, [selectedPreset]);
-
   useEffect(() => {
     if (selectedPreset !== "padel") return;
     if (!selectedPadelClubId) {
-      const preferredList = padelClubMode === "PARTNER" ? partnerPadelClubs : ownPadelClubs;
+      const preferredList =
+        padelClubMode === "PARTNER" ? partnerPadelClubs : ownPadelClubs;
       if (preferredList.length > 0) {
-        const firstActive = preferredList.find((c) => c.isActive) ?? preferredList[0];
+        const firstActive =
+          preferredList.find((c) => c.isActive) ?? preferredList[0];
         setSelectedPadelClubId(firstActive.id);
       }
     }
-  }, [selectedPreset, selectedPadelClubId, padelClubMode, ownPadelClubs, partnerPadelClubs]);
-
+  }, [
+    selectedPreset,
+    selectedPadelClubId,
+    padelClubMode,
+    ownPadelClubs,
+    partnerPadelClubs,
+  ]);
   useEffect(() => {
     if (padelClubSourceTouched || selectedPreset !== "padel") return;
     const hasOwnClubs = ownPadelClubs.length > 0;
     setPadelClubMode(hasOwnClubs ? "OWN" : "PARTNER");
     setPadelClubSource(hasOwnClubs ? "ORG" : "DIRECTORY");
   }, [padelClubSourceTouched, ownPadelClubs.length, selectedPreset]);
-
   useEffect(() => {
     if (!padelCourts?.items) return;
     if (padelCourts.items.length === 0) {
       if (selectedPadelCourtIds.length > 0) setSelectedPadelCourtIds([]);
       return;
     }
-    const activeCourts = padelCourts.items.filter((c) => c.isActive).map((c) => c.id);
+    const activeCourts = padelCourts.items
+      .filter((c) => c.isActive)
+      .map((c) => c.id);
     if (activeCourts.length > 0) setSelectedPadelCourtIds(activeCourts);
   }, [padelCourts]);
-
   useEffect(() => {
     if (!selectedPadelClub) return;
     if (selectedPadelClub.kind === "PARTNER" && padelClubMode !== "PARTNER") {
@@ -801,17 +959,17 @@ export function NewOrganizationEventPage({
       setPadelClubMode("OWN");
     }
   }, [selectedPadelClub?.id, selectedPadelClub?.kind, padelClubMode]);
-
   useEffect(() => {
     if (!padelStaff?.items) return;
     if (padelStaff.items.length === 0) {
       if (selectedPadelStaffIds.length > 0) setSelectedPadelStaffIds([]);
       return;
     }
-    const inherited = padelStaff.items.filter((s) => s.inheritToEvents).map((s) => s.id);
+    const inherited = padelStaff.items
+      .filter((s) => s.inheritToEvents)
+      .map((s) => s.id);
     if (inherited.length > 0) setSelectedPadelStaffIds(inherited);
   }, [padelStaff]);
-
   useEffect(() => {
     if (selectedPreset !== "padel") return;
     const items = padelCategories?.items ?? [];
@@ -821,8 +979,11 @@ export function NewOrganizationEventPage({
       return;
     }
     if (padelCategoryIds.length > 0) return;
-    const defaults = organizationStatus?.organization?.padelDefaults?.favoriteCategories ?? [];
-    const allowedDefaults = defaults.filter((id) => items.some((c) => c.id === id));
+    const defaults =
+      organizationStatus?.organization?.padelDefaults?.favoriteCategories ?? [];
+    const allowedDefaults = defaults.filter((id) =>
+      items.some((c) => c.id === id),
+    );
     if (allowedDefaults.length > 0) {
       setPadelCategoryIds(allowedDefaults);
       return;
@@ -837,18 +998,19 @@ export function NewOrganizationEventPage({
     padelDefaultCategoryId,
     organizationStatus?.organization?.padelDefaults?.favoriteCategories,
   ]);
-
   useEffect(() => {
     if (selectedPreset !== "padel") return;
     if (padelCategoryIds.length === 0) {
       if (padelDefaultCategoryId !== null) setPadelDefaultCategoryId(null);
       return;
     }
-    if (!padelDefaultCategoryId || !padelCategoryIds.includes(padelDefaultCategoryId)) {
+    if (
+      !padelDefaultCategoryId ||
+      !padelCategoryIds.includes(padelDefaultCategoryId)
+    ) {
       setPadelDefaultCategoryId(padelCategoryIds[0]);
     }
   }, [selectedPreset, padelCategoryIds, padelDefaultCategoryId]);
-
   useEffect(() => {
     if (selectedPreset !== "padel") return;
     setPadelCategoryConfigs((prev) => {
@@ -863,26 +1025,27 @@ export function NewOrganizationEventPage({
       return next;
     });
   }, [selectedPreset, padelCategoryIds]);
-
   const resolvePadelCategoryLabel = (categoryId: number) =>
-    padelCategoryItems.find((cat) => cat.id === categoryId)?.label?.trim() || `Categoria ${categoryId}`;
-
+    padelCategoryItems.find((cat) => cat.id === categoryId)?.label?.trim() ||
+    `Categoria ${categoryId}`;
   const normalizePadelTicketBaseName = (name: string) => {
     const base = name.split("·")[0]?.trim();
     return base || freeTicketPlaceholder;
   };
-
   const getPadelCategoryTag = (categoryId: number) => {
     const cat = padelCategoryItems.find((item) => item.id === categoryId);
     if (!cat) return `CAT${categoryId}`;
     const genderCode =
-      cat.genderRestriction === "MALE" ? "M" : cat.genderRestriction === "FEMALE" ? "F" : "MX";
+      cat.genderRestriction === "MALE"
+        ? "M"
+        : cat.genderRestriction === "FEMALE"
+          ? "F"
+          : "MX";
     const levelSource = cat.minLevel || cat.maxLevel || "";
     const level = levelSource || (cat.label.match(/\d+/)?.[0] ?? "");
     if (level) return `${genderCode}${level}`;
     return cat.label.trim();
   };
-
   const getPadelCategoryDescriptor = (categoryId: number) => {
     const cat = padelCategoryItems.find((item) => item.id === categoryId);
     const tag = getPadelCategoryTag(categoryId);
@@ -903,19 +1066,21 @@ export function NewOrganizationEventPage({
           : cat.maxLevel
             ? `Nível até ${cat.maxLevel}`
             : "";
-    const detail = [genderLabel, levelLabel].filter(Boolean).join(" · ");
+    const detail = [genderLabel, levelLabel].filter(Boolean).join(" ·");
     return { tag, detail };
   };
-
-  const buildPadelTicketNameForCategory = (name: string, categoryId: number | null) => {
+  const buildPadelTicketNameForCategory = (
+    name: string,
+    categoryId: number | null,
+  ) => {
     if (!categoryId) return name.trim();
     const baseName = normalizePadelTicketBaseName(name);
     const tag = getPadelCategoryTag(categoryId);
     return `${baseName} · ${tag}`;
   };
-
   const getPadelTicketTemplate = (rows: TicketTypeRow[]) => {
-    const candidate = rows.find((row) => row.name || row.price || row.totalQuantity) ?? rows[0];
+    const candidate =
+      rows.find((row) => row.name || row.price || row.totalQuantity) ?? rows[0];
     const baseName = normalizePadelTicketBaseName(candidate?.name ?? "");
     return {
       name: baseName,
@@ -924,7 +1089,6 @@ export function NewOrganizationEventPage({
       publicAccess: candidate?.publicAccess ?? true,
     };
   };
-
   useEffect(() => {
     if (!isPadelPaid) return;
     if (padelCategoryIds.length === 0) {
@@ -945,35 +1109,43 @@ export function NewOrganizationEventPage({
         };
       });
     });
-  }, [
-    isPadelPaid,
-    padelCategoryIds,
-    padelCategoryItems,
-  ]);
-
+  }, [isPadelPaid, padelCategoryIds, padelCategoryItems]);
   useEffect(() => {
     if (selectedPreset !== "padel") return;
     if (padelRuleSetId) return;
-    const defaultRuleSetId = organizationStatus?.organization?.padelDefaults?.ruleSetId ?? null;
+    const defaultRuleSetId =
+      organizationStatus?.organization?.padelDefaults?.ruleSetId ?? null;
     if (!defaultRuleSetId) return;
     if (!padelRuleSets?.items?.some((r) => r.id === defaultRuleSetId)) return;
     setPadelRuleSetId(defaultRuleSetId);
-  }, [selectedPreset, padelRuleSetId, padelRuleSets?.items, organizationStatus?.organization?.padelDefaults?.ruleSetId]);
-
+  }, [
+    selectedPreset,
+    padelRuleSetId,
+    padelRuleSets?.items,
+    organizationStatus?.organization?.padelDefaults?.ruleSetId,
+  ]);
   useEffect(() => {
     if (selectedPreset !== "padel") return;
     if (!selectedPadelClubId) return;
     const club = padelClubs?.items?.find((c) => c.id === selectedPadelClubId);
     if (!club) return;
     const resolved = resolvePadelClubLocation(club);
-    const composed = resolved.formatted?.trim() || resolved.city?.trim() || club.name || "";
+    const composed =
+      resolved.formatted?.trim() || resolved.city?.trim() || club.name || "";
     setLocationAddressId(club.addressId || null);
     setLocationFormattedAddress(resolved.formatted || null);
-    setLocationLat(typeof club.addressRef?.latitude === "number" ? club.addressRef?.latitude ?? null : null);
-    setLocationLng(typeof club.addressRef?.longitude === "number" ? club.addressRef?.longitude ?? null : null);
+    setLocationLat(
+      typeof club.addressRef?.latitude === "number"
+        ? (club.addressRef?.latitude ?? null)
+        : null,
+    );
+    setLocationLng(
+      typeof club.addressRef?.longitude === "number"
+        ? (club.addressRef?.longitude ?? null)
+        : null,
+    );
     setLocationQuery(composed || "");
   }, [selectedPreset, selectedPadelClubId, padelClubs?.items]);
-
   const applyGeoDetails = (details: GeoDetailsItem | null) => {
     if (!details) {
       setLocationFormattedAddress(null);
@@ -984,7 +1156,10 @@ export function NewOrganizationEventPage({
     const resolvedLabel = details.formattedAddress || details.name || null;
     setLocationFormattedAddress(resolvedLabel);
     setLocationAddressId(details.addressId ?? null);
-    if (Number.isFinite(details.lat ?? NaN) && Number.isFinite(details.lng ?? NaN)) {
+    if (
+      Number.isFinite(details.lat ?? NaN) &&
+      Number.isFinite(details.lng ?? NaN)
+    ) {
       setLocationLat(details.lat);
       setLocationLng(details.lng);
     } else {
@@ -993,15 +1168,16 @@ export function NewOrganizationEventPage({
     }
     if (resolvedLabel) setLocationQuery(resolvedLabel);
   };
-
   const baseInputClasses =
-    "w-full rounded-xl border border-white/12 bg-black/25 px-4 py-3 text-sm text-white/90 placeholder:text-white/45 outline-none transition backdrop-blur-sm focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)] focus:ring-offset-0 focus:ring-offset-transparent";
+    "w-full rounded-xl border border-white/12 bg-black/25 px-4 py-3 text-sm text-white/90 placeholder:text-white/45 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)] focus:ring-offset-0 focus:ring-offset-transparent";
   const errorInputClasses =
     "border-[rgba(255,0,200,0.45)] focus:border-[rgba(255,0,200,0.6)] focus:ring-[rgba(255,0,200,0.4)]";
-  const inputClass = (errored?: boolean) => `${baseInputClasses} ${errored ? errorInputClasses : ""}`;
+  const inputClass = (errored?: boolean) =>
+    `${baseInputClasses} ${errored ? errorInputClasses : ""}`;
   const labelClass =
     "text-[10px] font-semibold uppercase tracking-[0.14em] text-white/55 flex items-center gap-1";
-  const errorTextClass = "flex items-center gap-2 text-[12px] font-semibold text-pink-200 min-h-[18px]";
+  const errorTextClass =
+    "flex items-center gap-2 text-[12px] font-semibold text-pink-200 min-h-[18px]";
   const padelFormatOptions = PADEL_FORMAT_OPTIONS_PT;
   const normalizeRegistrationValue = (value: string) => {
     if (!value) return null;
@@ -1009,11 +1185,15 @@ export function NewOrganizationEventPage({
     if (Number.isNaN(parsed.getTime())) return null;
     return parsed.toISOString();
   };
-  const dateOrderWarning = startsAt && endsAt && new Date(endsAt).getTime() <= new Date(startsAt).getTime();
-
+  const dateOrderWarning =
+    startsAt &&
+    endsAt &&
+    new Date(endsAt).getTime() <= new Date(startsAt).getTime();
   const selectPartnerClubFromDirectory = async (club: PadelPublicClub) => {
     if (!organizationIdFromStatus) {
-      setPadelDirectoryError("Seleciona uma organização antes de escolher o clube.");
+      setPadelDirectoryError(
+        "Seleciona uma organização antes de escolher o clube.",
+      );
       return;
     }
     const existingPartner = partnerPadelClubs.find(
@@ -1027,7 +1207,6 @@ export function NewOrganizationEventPage({
       );
       return;
     }
-
     setPadelDirectoryError(null);
     setCreatingPartnerClubId(club.id);
     try {
@@ -1036,12 +1215,19 @@ export function NewOrganizationEventPage({
       setPadelClubSourceTouched(true);
       setSelectedPadelClubId(existingPartner.id);
       clearErrorsForFields(["padel"]);
-      const courtsRes = await fetch(`/api/padel/clubs/${existingPartner.id}/courts`);
+      const courtsRes = await fetch(
+        `/api/padel/clubs/${existingPartner.id}/courts`,
+      );
       const courtsJson = await courtsRes.json().catch(() => null);
       const activeCourtIds = Array.isArray(courtsJson?.items)
         ? courtsJson.items
-            .filter((court: { id?: unknown; isActive?: boolean }) => court?.isActive !== false)
-            .map((court: { id?: unknown }) => (typeof court.id === "number" ? court.id : Number(court.id)))
+            .filter(
+              (court: { id?: unknown; isActive?: boolean }) =>
+                court?.isActive !== false,
+            )
+            .map((court: { id?: unknown }) =>
+              typeof court.id === "number" ? court.id : Number(court.id),
+            )
             .filter((id: number) => Number.isFinite(id))
         : [];
       if (activeCourtIds.length > 0) {
@@ -1051,46 +1237,52 @@ export function NewOrganizationEventPage({
       setCreatingPartnerClubId(null);
     }
   };
-
   const padelExtrasContent =
     selectedPreset === "padel" ? (
       <div className="space-y-4">
+        {" "}
         <div className="grid gap-4 md:grid-cols-[1.2fr_1fr]">
+          {" "}
           <div className="space-y-3 rounded-2xl border border-white/12 bg-white/5 p-4">
+            {" "}
             <div className="flex items-center justify-between">
-              <label className={`${labelClass} m-0`}>Clube</label>
+              {" "}
+              <label className={`${labelClass} m-0`}>Clube</label>{" "}
               <span className="rounded-full border border-white/15 bg-white/5 px-2 py-1 text-[11px] text-white/65">
-                Campos: {padelCourts?.items?.filter((c) => c.isActive).length ?? "—"} · Sel.: {selectedPadelCourtIds.length || "—"}
-              </span>
-            </div>
-              <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[12px]">
-                {[
-                  { key: "ORG" as const, label: "Meus clubes" },
-                  { key: "DIRECTORY" as const, label: "Parceiros" },
-                ].map((opt) => (
+                {" "}
+                Campos:{" "}
+                {padelCourts?.items?.filter((c) => c.isActive).length ?? "—"} ·
+                Sel.: {selectedPadelCourtIds.length || "—"}{" "}
+              </span>{" "}
+            </div>{" "}
+            <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[12px]">
+              {" "}
+              {[
+                { key: "ORG" as const, label: "Meus clubes" },
+                { key: "DIRECTORY" as const, label: "Parceiros" },
+              ].map((opt) => (
                 <button
                   key={opt.key}
                   type="button"
                   onClick={() => {
-                    setPadelClubMode(opt.key === "DIRECTORY" ? "PARTNER" : "OWN");
+                    setPadelClubMode(
+                      opt.key === "DIRECTORY" ? "PARTNER" : "OWN",
+                    );
                     setPadelClubSource(opt.key);
                     setPadelClubSourceTouched(true);
                     setPadelDirectoryError(null);
                     clearErrorsForFields(["padel"]);
                   }}
-                  className={`rounded-full px-3 py-1 transition ${
-                    padelClubSource === opt.key
-                      ? "bg-white text-black font-semibold shadow"
-                      : "text-white/70 hover:bg-white/10"
-                  }`}
+                  className={`rounded-full px-3 py-1 transition ${padelClubSource === opt.key ? "bg-white text-black font-semibold shadow" : "text-white/70 hover:bg-white/10"}`}
                 >
-                  {opt.label}
+                  {" "}
+                  {opt.label}{" "}
                 </button>
-              ))}
-            </div>
-
+              ))}{" "}
+            </div>{" "}
             {padelClubSource === "ORG" ? (
               <>
+                {" "}
                 <select
                   className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
                   value={selectedPadelClubId ?? ""}
@@ -1099,19 +1291,28 @@ export function NewOrganizationEventPage({
                     clearErrorsForFields(["padel"]);
                   }}
                 >
-                  <option value="">Clube</option>
+                  {" "}
+                  <option value="">Clube</option>{" "}
                   {orgPadelClubs
                     .filter((c) => c.isActive)
                     .map((club) => (
                       <option key={club.id} value={club.id}>
-                        {club.name} {resolvePadelClubLocation(club).city ? `— ${resolvePadelClubLocation(club).city}` : ""}
+                        {" "}
+                        {club.name}{" "}
+                        {resolvePadelClubLocation(club).city
+                          ? `— ${resolvePadelClubLocation(club).city}`
+                          : ""}{" "}
                       </option>
-                    ))}
-                </select>
+                    ))}{" "}
+                </select>{" "}
                 {orgPadelClubs.length === 0 && (
                   <div ref={padelCategoriesRef} className="space-y-2">
-                    <p className="text-[12px] text-white/60">Sem clubes na tua organização.</p>
+                    {" "}
+                    <p className="text-[12px] text-white/60">
+                      Sem clubes na tua organização.
+                    </p>{" "}
                     <div className="flex flex-wrap gap-2">
+                      {" "}
                       <button
                         type="button"
                         onClick={() => {
@@ -1123,8 +1324,9 @@ export function NewOrganizationEventPage({
                         }}
                         className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:border-white/40"
                       >
-                        Procurar no diretório
-                      </button>
+                        {" "}
+                        Procurar no diretório{" "}
+                      </button>{" "}
                       <Link
                         href={appendOrganizationIdToHref(
                           "/org/padel/clubs?section=padel-club&padel=clubs",
@@ -1132,29 +1334,41 @@ export function NewOrganizationEventPage({
                         )}
                         className="rounded-full border border-white/15 px-3 py-1 text-[11px] text-white/70 hover:border-white/30"
                       >
-                        Criar clube rápido
-                      </Link>
-                    </div>
+                        {" "}
+                        Criar clube rápido{" "}
+                      </Link>{" "}
+                    </div>{" "}
                   </div>
-                )}
+                )}{" "}
               </>
             ) : (
               <div className="space-y-2">
+                {" "}
                 {partnerPadelClubs.length > 0 && (
                   <div className="space-y-2 rounded-xl border border-white/12 bg-black/35 p-3">
-                    <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Parceiros já adicionados</p>
+                    {" "}
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">
+                      Parceiros já adicionados
+                    </p>{" "}
                     <div className="space-y-2">
+                      {" "}
                       {partnerPadelClubs.map((club) => (
                         <div
                           key={`partner-${club.id}`}
                           className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-[12px]"
                         >
+                          {" "}
                           <div>
-                            <p className="font-semibold text-white">{club.name}</p>
+                            {" "}
+                            <p className="font-semibold text-white">
+                              {club.name}
+                            </p>{" "}
                             <p className="text-white/60">
-                              {formatPadelClubLocationLabel(club) || "Local por definir"}
-                            </p>
-                          </div>
+                              {" "}
+                              {formatPadelClubLocationLabel(club) ||
+                                "Local por definir"}{" "}
+                            </p>{" "}
+                          </div>{" "}
                           <button
                             type="button"
                             onClick={() => {
@@ -1166,28 +1380,36 @@ export function NewOrganizationEventPage({
                             }}
                             className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:border-white/40"
                           >
-                            Selecionar
-                          </button>
+                            {" "}
+                            Selecionar{" "}
+                          </button>{" "}
                         </div>
-                      ))}
-                    </div>
+                      ))}{" "}
+                    </div>{" "}
                   </div>
-                )}
+                )}{" "}
                 <input
                   value={padelDirectoryQuery}
                   onChange={(e) => setPadelDirectoryQuery(e.target.value)}
                   placeholder="Pesquisar clube, cidade, organização"
                   className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
-                />
+                />{" "}
                 {padelDirectoryError && (
-                  <p className="text-[12px] text-rose-200">{padelDirectoryError}</p>
-                )}
+                  <p className="text-[12px] text-rose-200">
+                    {padelDirectoryError}
+                  </p>
+                )}{" "}
                 {padelDirectoryLoading ? (
-                  <p className="text-[12px] text-white/60">A procurar clubes...</p>
+                  <p className="text-[12px] text-white/60">
+                    A procurar clubes...
+                  </p>
                 ) : padelDirectoryClubs.length === 0 ? (
-                  <p className="text-[12px] text-white/60">Sem resultados no diretório.</p>
+                  <p className="text-[12px] text-white/60">
+                    Sem resultados no diretório.
+                  </p>
                 ) : (
                   <div className="space-y-2">
+                    {" "}
                     {padelDirectoryClubs.map((club) => {
                       const isBusy = creatingPartnerClubId === club.id;
                       return (
@@ -1195,38 +1417,52 @@ export function NewOrganizationEventPage({
                           key={`dir-${club.id}`}
                           className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/12 bg-black/30 px-3 py-2 text-sm"
                         >
+                          {" "}
                           <div>
-                            <p className="font-semibold text-white">{club.name}</p>
+                            {" "}
+                            <p className="font-semibold text-white">
+                              {club.name}
+                            </p>{" "}
                             <p className="text-[11px] text-white/60">
-                              {formatPadelClubLocationLabel(club) || "Local por definir"}
-                            </p>
+                              {" "}
+                              {formatPadelClubLocationLabel(club) ||
+                                "Local por definir"}{" "}
+                            </p>{" "}
                             {club.organizationName && (
-                              <p className="text-[10px] text-white/45">{club.organizationName}</p>
-                            )}
-                          </div>
+                              <p className="text-[10px] text-white/45">
+                                {club.organizationName}
+                              </p>
+                            )}{" "}
+                          </div>{" "}
                           <button
                             type="button"
                             disabled={isBusy}
                             onClick={() => selectPartnerClubFromDirectory(club)}
                             className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:border-white/40 disabled:opacity-60"
                           >
-                            {isBusy ? "A selecionar..." : "Selecionar parceiro"}
-                          </button>
+                            {" "}
+                            {isBusy
+                              ? "A selecionar..."
+                              : "Selecionar parceiro"}{" "}
+                          </button>{" "}
                         </div>
                       );
-                    })}
+                    })}{" "}
                   </div>
-                )}
+                )}{" "}
               </div>
-            )}
-          </div>
-
+            )}{" "}
+          </div>{" "}
           <div className="space-y-2">
-            <label className={labelClass}>Campos</label>
+            {" "}
+            <label className={labelClass}>Campos</label>{" "}
             <div className="rounded-2xl border border-white/12 bg-white/[0.04] p-3 max-h-56 overflow-auto space-y-2">
+              {" "}
               {!selectedPadelClubId && (
-                <p className="text-[12px] text-white/60">Seleciona um clube para carregar campos.</p>
-              )}
+                <p className="text-[12px] text-white/60">
+                  Seleciona um clube para carregar campos.
+                </p>
+              )}{" "}
               {selectedPadelClubId &&
                 (padelCourts?.items || [])
                   .filter((c) => c.isActive)
@@ -1235,95 +1471,107 @@ export function NewOrganizationEventPage({
                     return (
                       <label
                         key={ct.id}
-                        className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-[12px] ${
-                          checked
-                            ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-50"
-                            : "border-white/15 bg-black/30 text-white/80"
-                        } transition hover:border-[var(--orya-cyan)]/50`}
+                        className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-[12px] ${checked ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-50" : "border-white/15 bg-black/30 text-white/80"} transition hover:border-[var(--orya-cyan)]/50`}
                       >
+                        {" "}
                         <input
                           type="checkbox"
                           checked={checked}
                           onChange={(e) => {
                             clearErrorsForFields(["padel"]);
                             setSelectedPadelCourtIds((prev) =>
-                              e.target.checked ? [...prev, ct.id] : prev.filter((id) => id !== ct.id),
+                              e.target.checked
+                                ? [...prev, ct.id]
+                                : prev.filter((id) => id !== ct.id),
                             );
                           }}
                           className="accent-white"
-                        />
-                        <span>{ct.name}</span>
-                        <span className="text-[10px] text-white/50">#{ct.displayOrder}</span>
+                        />{" "}
+                        <span>{ct.name}</span>{" "}
+                        <span className="text-[10px] text-white/50">
+                          #{ct.displayOrder}
+                        </span>{" "}
                       </label>
                     );
-                  })}
+                  })}{" "}
               {selectedPadelClubId && !padelCourts?.items?.length && (
                 <p className="text-[12px] text-white/60">Sem campos.</p>
-              )}
-              {selectedPadelCourtIds.length === 0 && (padelCourts?.items?.length || 0) > 0 && (
-                <p className="text-[11px] text-red-200">Seleciona 1 campo.</p>
-              )}
-            </div>
-          </div>
-        </div>
-
+              )}{" "}
+              {selectedPadelCourtIds.length === 0 &&
+                (padelCourts?.items?.length || 0) > 0 && (
+                  <p className="text-[11px] text-red-200">Seleciona 1 campo.</p>
+                )}{" "}
+            </div>{" "}
+          </div>{" "}
+        </div>{" "}
         <div className="space-y-2">
-          <label className={labelClass}>Equipa</label>
+          {" "}
+          <label className={labelClass}>Equipa</label>{" "}
           {padelClubMode === "PARTNER" && (
-            <p className="text-[11px] text-amber-200">Obrigatório para clubes parceiros.</p>
-          )}
+            <p className="text-[11px] text-amber-200">
+              Obrigatório para clubes parceiros.
+            </p>
+          )}{" "}
           <div className="rounded-2xl border border-white/12 bg-white/[0.04] p-3 max-h-48 overflow-auto space-y-2">
+            {" "}
             {!selectedPadelClubId && (
-              <p className="text-[12px] text-white/60">Seleciona um clube para carregar equipa.</p>
-            )}
+              <p className="text-[12px] text-white/60">
+                Seleciona um clube para carregar equipa.
+              </p>
+            )}{" "}
             {selectedPadelClubId &&
               (padelStaff?.items || []).map((member) => {
                 const checked = selectedPadelStaffIds.includes(member.id);
                 return (
                   <label
                     key={member.id}
-                    className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-[12px] ${
-                      checked ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-50" : "border-white/15 bg-black/30 text-white/80"
-                    } transition hover:border-[var(--orya-cyan)]/50`}
+                    className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-[12px] ${checked ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-50" : "border-white/15 bg-black/30 text-white/80"} transition hover:border-[var(--orya-cyan)]/50`}
                   >
+                    {" "}
                     <input
                       type="checkbox"
                       checked={checked}
                       onChange={(e) => {
                         clearErrorsForFields(["padel"]);
                         setSelectedPadelStaffIds((prev) =>
-                          e.target.checked ? [...prev, member.id] : prev.filter((id) => id !== member.id),
+                          e.target.checked
+                            ? [...prev, member.id]
+                            : prev.filter((id) => id !== member.id),
                         );
                       }}
                       className="accent-white"
-                    />
-                    <span>{member.fullName || member.email || member.username || "Equipa"}</span>
-                    {member.inheritToEvents && <span className="text-[10px] text-emerald-300">auto</span>}
+                    />{" "}
+                    <span>
+                      {member.fullName ||
+                        member.email ||
+                        member.username ||
+                        "Equipa"}
+                    </span>{" "}
+                    {member.inheritToEvents && (
+                      <span className="text-[10px] text-emerald-300">auto</span>
+                    )}{" "}
                   </label>
                 );
-              })}
+              })}{" "}
             {selectedPadelClubId && !padelStaff?.items?.length && (
               <p className="text-[12px] text-white/60">Sem equipa.</p>
-            )}
-          </div>
-        </div>
+            )}{" "}
+          </div>{" "}
+        </div>{" "}
       </div>
     ) : null;
-
   const scrollToPadelTarget = (ref: RefObject<HTMLElement | null>) => {
     const target = ref.current ?? padelSectionRef.current;
     if (target) {
       target.scrollIntoView({ behavior: "smooth", block: "center" });
     }
   };
-
   const openPadelOperation = () => {
     setPadelAdvancedOpen(true);
     setTimeout(() => {
       scrollToPadelTarget(padelOperationRef);
     }, 80);
   };
-
   const handlePadelClubModeChange = (mode: "OWN" | "PARTNER") => {
     clearErrorsForFields(["padel"]);
     setPadelClubMode(mode);
@@ -1336,14 +1584,9 @@ export function NewOrganizationEventPage({
     setPadelDirectoryError(null);
     setPadelAdvancedOpen(true);
   };
-
   const handleRequireLogin = () => {
-    openModal({
-      mode: "login",
-      redirectTo: `${detailBasePath}/novo`,
-    });
+    openModal({ mode: "login", redirectTo: `${detailBasePath}/novo` });
   };
-
   const handleAddTicketType = () => {
     clearErrorsForFields(["tickets"]);
     setStripeAlert(null);
@@ -1351,7 +1594,9 @@ export function NewOrganizationEventPage({
       return;
     }
     const padelCategoryId =
-      selectedPreset === "padel" && padelCategoryIds.length === 1 ? padelCategoryIds[0] : null;
+      selectedPreset === "padel" && padelCategoryIds.length === 1
+        ? padelCategoryIds[0]
+        : null;
     setTicketTypes((prev) => [
       ...prev,
       {
@@ -1363,48 +1608,58 @@ export function NewOrganizationEventPage({
       },
     ]);
   };
-
   const handleRemoveTicketType = (index: number) => {
     clearErrorsForFields(["tickets"]);
     setStripeAlert(null);
     if (isPadelPaid) return;
     setTicketTypes((prev) => prev.filter((_, i) => i !== index));
   };
-
-  const handleTicketChange = (index: number, field: keyof TicketTypeRow, value: string) => {
-    const nextValue = field === "totalQuantity" ? normalizeIntegerInput(value) : value;
+  const handleTicketChange = (
+    index: number,
+    field: keyof TicketTypeRow,
+    value: string,
+  ) => {
+    const nextValue =
+      field === "totalQuantity" ? normalizeIntegerInput(value) : value;
     setTicketTypes((prev) =>
       prev.map((row, i) => {
         if (i !== index) return row;
         if (field !== "name" || !isPadelPaid) {
           return { ...row, [field]: nextValue };
         }
-        const name = buildPadelTicketNameForCategory(String(nextValue), row.padelCategoryId ?? null);
+        const name = buildPadelTicketNameForCategory(
+          String(nextValue),
+          row.padelCategoryId ?? null,
+        );
         return { ...row, name };
       }),
     );
     clearErrorsForFields(["tickets"]);
     setStripeAlert(null);
   };
-
   const handleTicketCategoryChange = (index: number, value: string) => {
     if (isPadelPaid) return;
     const parsed = value ? Number(value) : null;
     const nextValue = Number.isFinite(parsed) ? parsed : null;
-    setTicketTypes((prev) => prev.map((row, i) => (i === index ? { ...row, padelCategoryId: nextValue } : row)));
+    setTicketTypes((prev) =>
+      prev.map((row, i) =>
+        i === index ? { ...row, padelCategoryId: nextValue } : row,
+      ),
+    );
     clearErrorsForFields(["tickets"]);
   };
-
   const setTicketPublicAccess = (index: number, isPublic: boolean) => {
-    setTicketTypes((prev) => prev.map((row, i) => (i === index ? { ...row, publicAccess: isPublic } : row)));
+    setTicketTypes((prev) =>
+      prev.map((row, i) =>
+        i === index ? { ...row, publicAccess: isPublic } : row,
+      ),
+    );
   };
-
   const handleCoverUpload = (file: File | null) => {
     if (!file) return;
     setCoverCropFile(file);
     setShowCoverCropModal(true);
   };
-
   const uploadCoverFile = async (file: File) => {
     const formData = new FormData();
     formData.append("file", file);
@@ -1415,10 +1670,10 @@ export function NewOrganizationEventPage({
       if (!organizationId) {
         throw new Error("Organização inválida.");
       }
-      const res = await fetch(`/api/upload?scope=event-cover&organizationId=${organizationId}`, {
-        method: "POST",
-        body: formData,
-      });
+      const res = await fetch(
+        `/api/upload?scope=event-cover&organizationId=${organizationId}`,
+        { method: "POST", body: formData },
+      );
       const json = await res.json();
       if (!res.ok || !json?.url) {
         throw new Error(json?.error || "Falha no upload da imagem.");
@@ -1431,51 +1686,51 @@ export function NewOrganizationEventPage({
       setUploadingCover(false);
     }
   };
-
   const handleCoverCropCancel = () => {
     setShowCoverCropModal(false);
     setCoverCropFile(null);
   };
-
   const handleCoverCropConfirm = async (file: File) => {
     setShowCoverCropModal(false);
     setCoverCropFile(null);
     await uploadCoverFile(file);
   };
-
   const shouldSplitFreeTickets =
     isGratisEvent && selectedPreset === "padel" && padelCategoryIds.length > 1;
-
   const parsePositiveInteger = (value: string | null | undefined) => {
     if (!value) return null;
     const parsed = Number(value);
     if (!Number.isFinite(parsed) || parsed <= 0) return null;
     return Math.floor(parsed);
   };
-
   const getPadelTicketCapacityValue = (categoryId: number) => {
-    const row = ticketTypes.find((ticket) => ticket.padelCategoryId === categoryId);
+    const row = ticketTypes.find(
+      (ticket) => ticket.padelCategoryId === categoryId,
+    );
     return row?.totalQuantity ?? "";
   };
-
   const getPadelTicketCapacityNumber = (categoryId: number) =>
     parsePositiveInteger(getPadelTicketCapacityValue(categoryId));
-
   const buildTicketsPayload = () => {
     if (isGratisEvent) {
       const totalQuantityRaw = freeCapacity ? Number(freeCapacity) : null;
       const parsedQuantity =
-        typeof totalQuantityRaw === "number" && Number.isFinite(totalQuantityRaw) && totalQuantityRaw > 0
+        typeof totalQuantityRaw === "number" &&
+        Number.isFinite(totalQuantityRaw) &&
+        totalQuantityRaw > 0
           ? Math.floor(totalQuantityRaw)
           : null;
       const baseName = freeTicketName.trim() || freeTicketPlaceholder;
-
       if (shouldSplitFreeTickets) {
         return padelCategoryIds.map((categoryId) => {
           const config = padelCategoryConfigs[categoryId];
-          const categoryCapacityRaw = config?.capacityTeams ? Number(config.capacityTeams) : null;
+          const categoryCapacityRaw = config?.capacityTeams
+            ? Number(config.capacityTeams)
+            : null;
           const categoryCapacity =
-            typeof categoryCapacityRaw === "number" && Number.isFinite(categoryCapacityRaw) && categoryCapacityRaw > 0
+            typeof categoryCapacityRaw === "number" &&
+            Number.isFinite(categoryCapacityRaw) &&
+            categoryCapacityRaw > 0
               ? Math.floor(categoryCapacityRaw)
               : null;
           return {
@@ -1488,9 +1743,10 @@ export function NewOrganizationEventPage({
           };
         });
       }
-
       const singleCategoryId =
-        selectedPreset === "padel" && padelCategoryIds.length === 1 ? padelCategoryIds[0] : null;
+        selectedPreset === "padel" && padelCategoryIds.length === 1
+          ? padelCategoryIds[0]
+          : null;
       return [
         {
           name: baseName,
@@ -1502,14 +1758,17 @@ export function NewOrganizationEventPage({
         },
       ];
     }
-
     return ticketTypes
       .map((row) => {
         const parsedPrice = Number(row.price.replace(",", "."));
         const price = Number.isFinite(parsedPrice) ? parsedPrice : 0;
-        const totalQuantityRaw = row.totalQuantity ? Number(row.totalQuantity) : null;
+        const totalQuantityRaw = row.totalQuantity
+          ? Number(row.totalQuantity)
+          : null;
         const totalQuantity =
-          typeof totalQuantityRaw === "number" && Number.isFinite(totalQuantityRaw) && totalQuantityRaw > 0
+          typeof totalQuantityRaw === "number" &&
+          Number.isFinite(totalQuantityRaw) &&
+          totalQuantityRaw > 0
             ? Math.floor(totalQuantityRaw)
             : null;
         const resolvedPadelCategoryId =
@@ -1533,7 +1792,6 @@ export function NewOrganizationEventPage({
       })
       .filter((t) => t.name);
   };
-
   const preparedTickets = useMemo(
     () => buildTicketsPayload(),
     [
@@ -1548,13 +1806,14 @@ export function NewOrganizationEventPage({
       padelCategories?.items,
     ],
   );
-
   const ticketsSummary = useMemo(() => {
     if (isPadelPreset && padelCategoryIds.length === 0) {
       return "Sem categorias";
     }
     if (preparedTickets.length === 0) {
-      return isPadelPreset ? "Sem inscrições (1 gratuita)" : "Sem bilhetes (1 gratuito)";
+      return isPadelPreset
+        ? "Sem inscrições (1 gratuita)"
+        : "Sem bilhetes (1 gratuito)";
     }
     if (isGratisEvent) {
       if (shouldSplitFreeTickets) {
@@ -1582,7 +1841,6 @@ export function NewOrganizationEventPage({
     ticketLabel,
     ticketLabelPlural,
   ]);
-
   const hasPublicTickets = useMemo(() => {
     if (isGratisEvent) return freeTicketPublicAccess;
     if (ticketTypes.length === 0) return true;
@@ -1598,18 +1856,19 @@ export function NewOrganizationEventPage({
       ? "Misto"
       : "Convite"
     : "Público";
-
   const descriptionSummary = useMemo(() => {
     const trimmed = description.trim();
     if (!trimmed) return "Descrição";
-    const short = trimmed.length > 120 ? `${trimmed.slice(0, 120)}...` : trimmed;
+    const short =
+      trimmed.length > 120 ? `${trimmed.slice(0, 120)}...` : trimmed;
     return short;
   }, [description]);
   const padelRuleSetItems = padelRuleSets?.items ?? [];
   const padelFormatLabel =
     padelFormatOptions.find((opt) => opt.value === padelFormat)?.label ?? "—";
   const padelRuleSetLabel = padelRuleSetId
-    ? padelRuleSetItems.find((rs) => rs.id === padelRuleSetId)?.name ?? "Personalizado"
+    ? (padelRuleSetItems.find((rs) => rs.id === padelRuleSetId)?.name ??
+      "Personalizado")
     : "Padrão";
   const padelCategoryCountLabel = padelCategoryIds.length
     ? `${padelCategoryIds.length} categoria${padelCategoryIds.length === 1 ? "" : "s"}`
@@ -1619,9 +1878,12 @@ export function NewOrganizationEventPage({
     .filter((id): id is number => typeof id === "number");
   const padelTicketCategorySet = new Set(padelTicketCategoryIds);
   const padelTicketsCovered =
-    padelCategoryIds.length > 0 && padelCategoryIds.every((id) => padelTicketCategorySet.has(id));
-  const padelTicketsUnique = padelTicketCategoryIds.length === padelTicketCategorySet.size;
-  const padelTicketsOk = padelTicketsCovered && (isGratisEvent || padelTicketsUnique);
+    padelCategoryIds.length > 0 &&
+    padelCategoryIds.every((id) => padelTicketCategorySet.has(id));
+  const padelTicketsUnique =
+    padelTicketCategoryIds.length === padelTicketCategorySet.size;
+  const padelTicketsOk =
+    padelTicketsCovered && (isGratisEvent || padelTicketsUnique);
   const padelClubOk = Boolean(selectedPadelClubId);
   const padelCourtsOk = selectedPadelCourtIds.length > 0;
   const padelCategoriesOk = padelCategoryIds.length > 0;
@@ -1657,13 +1919,17 @@ export function NewOrganizationEventPage({
       key: "categories",
       label: "Categorias",
       status: padelCategoriesOk ? "ok" : "missing",
-      detail: padelCategoriesOk ? `${padelCategoryIds.length} escolhida(s).` : "Seleciona pelo menos 1 categoria.",
+      detail: padelCategoriesOk
+        ? `${padelCategoryIds.length} escolhida(s).`
+        : "Seleciona pelo menos 1 categoria.",
     },
     {
       key: "tickets",
       label: ticketLabelPluralCap,
       status: padelTicketsOk ? "ok" : "missing",
-      detail: padelTicketsOk ? ticketsSummary : `Confirma ${ticketLabelPlural} por categoria.`,
+      detail: padelTicketsOk
+        ? ticketsSummary
+        : `Confirma ${ticketLabelPlural} por categoria.`,
     },
     {
       key: "staff",
@@ -1679,41 +1945,73 @@ export function NewOrganizationEventPage({
             : "Opcional (recomendado).",
     },
   ];
-  const padelChecklistRequired = padelChecklist.filter((item) => item.status !== "optional");
-  const padelChecklistComplete = padelChecklistRequired.filter((item) => item.status === "ok").length;
+  const padelChecklistRequired = padelChecklist.filter(
+    (item) => item.status !== "optional",
+  );
+  const padelChecklistComplete = padelChecklistRequired.filter(
+    (item) => item.status === "ok",
+  ).length;
   const padelChecklistTotal = padelChecklistRequired.length;
-  const scheduleError = fieldErrors.startsAt ?? fieldErrors.endsAt ?? (dateOrderWarning ? "Fim antes do início." : null);
+  const scheduleError =
+    fieldErrors.startsAt ??
+    fieldErrors.endsAt ??
+    (dateOrderWarning ? "Fim antes do início." : null);
   const locationError = fieldErrors.location ?? null;
-
   function collectFormErrors() {
     const issues: { field: FieldKey; message: string }[] = [];
     if (!title.trim()) {
       issues.push({ field: "title", message: "Título obrigatório." });
     }
     if (!startsAt) {
-      issues.push({ field: "startsAt", message: "Data/hora de início obrigatória." });
+      issues.push({
+        field: "startsAt",
+        message: "Data/hora de início obrigatória.",
+      });
     }
     if (!endsAt) {
-      issues.push({ field: "endsAt", message: "Data/hora de fim obrigatória." });
+      issues.push({
+        field: "endsAt",
+        message: "Data/hora de fim obrigatória.",
+      });
     }
     if (!locationAddressId) {
-      issues.push({ field: "location", message: "Seleciona uma morada válida da lista de sugestões." });
+      issues.push({
+        field: "location",
+        message: "Seleciona uma morada válida da lista de sugestões.",
+      });
     }
-    if (consumesResources && selectedResourceIds.length === 0 && selectedProfessionalIds.length === 0) {
-      issues.push({ field: "resources", message: "Seleciona pelo menos um recurso ou profissional." });
+    if (
+      consumesResources &&
+      selectedResourceIds.length === 0 &&
+      selectedProfessionalIds.length === 0
+    ) {
+      issues.push({
+        field: "resources",
+        message: "Seleciona pelo menos um recurso ou profissional.",
+      });
     }
-    if (endsAt && startsAt && new Date(endsAt).getTime() <= new Date(startsAt).getTime()) {
-      issues.push({ field: "endsAt", message: "A data/hora de fim tem de ser depois do início." });
+    if (
+      endsAt &&
+      startsAt &&
+      new Date(endsAt).getTime() <= new Date(startsAt).getTime()
+    ) {
+      issues.push({
+        field: "endsAt",
+        message: "A data/hora de fim tem de ser depois do início.",
+      });
     }
-
     const currentTickets = buildTicketsPayload();
-
     if (currentTickets.length > 0) {
       if (!isGratisEvent) {
         const hasNegativePrice = currentTickets.some((t) => t.price < 0);
-        const hasBelowMinimum = currentTickets.some((t) => t.price >= 0 && t.price < 1);
+        const hasBelowMinimum = currentTickets.some(
+          (t) => t.price >= 0 && t.price < 1,
+        );
         if (hasNegativePrice) {
-          issues.push({ field: "tickets", message: "Preço tem de ser positivo." });
+          issues.push({
+            field: "tickets",
+            message: "Preço tem de ser positivo.",
+          });
         }
         if (hasBelowMinimum) {
           issues.push({
@@ -1731,12 +2029,17 @@ export function NewOrganizationEventPage({
         });
       }
     }
-
     if (selectedPreset === "padel") {
       if (!selectedPadelClubId) {
-        issues.push({ field: "padel", message: "Seleciona um clube de padel para o torneio." });
+        issues.push({
+          field: "padel",
+          message: "Seleciona um clube de padel para o torneio.",
+        });
       } else if (selectedPadelCourtIds.length === 0) {
-        issues.push({ field: "padel", message: "Seleciona pelo menos 1 campo para o torneio de padel." });
+        issues.push({
+          field: "padel",
+          message: "Seleciona pelo menos 1 campo para o torneio de padel.",
+        });
       }
       if (
         padelClubMode === "PARTNER" &&
@@ -1744,10 +2047,12 @@ export function NewOrganizationEventPage({
         selectedPadelStaffIds.length === 0 &&
         (padelStaff?.items?.length ?? 0) > 0
       ) {
-        issues.push({ field: "padel", message: "Seleciona equipa local para o clube parceiro." });
+        issues.push({
+          field: "padel",
+          message: "Seleciona equipa local para o clube parceiro.",
+        });
       }
     }
-
     if (selectedPreset === "padel" && padelCategoryIds.length === 0) {
       const message =
         padelCategoryItems.length > 0
@@ -1760,12 +2065,20 @@ export function NewOrganizationEventPage({
         .map((t) => t.padelCategoryId)
         .filter((id): id is number => typeof id === "number");
       const uniqueTicketCategories = new Set(ticketCategoryIds);
-      const missingCategories = padelCategoryIds.filter((id) => !uniqueTicketCategories.has(id));
+      const missingCategories = padelCategoryIds.filter(
+        (id) => !uniqueTicketCategories.has(id),
+      );
       if (missingCategories.length > 0) {
-        issues.push({ field: "tickets", message: `Cria ${ticketLabelIndefinite} ${ticketLabel} por categoria de padel.` });
+        issues.push({
+          field: "tickets",
+          message: `Cria ${ticketLabelIndefinite} ${ticketLabel} por categoria de padel.`,
+        });
       }
       if (ticketCategoryIds.length !== uniqueTicketCategories.size) {
-        issues.push({ field: "tickets", message: `Cada ${ticketLabel} deve apontar para uma categoria diferente.` });
+        issues.push({
+          field: "tickets",
+          message: `Cada ${ticketLabel} deve apontar para uma categoria diferente.`,
+        });
       }
       const missingTag = currentTickets.some((ticket) => {
         if (typeof ticket.padelCategoryId !== "number") return false;
@@ -1779,17 +2092,27 @@ export function NewOrganizationEventPage({
         });
       }
     }
-    if (selectedPreset === "padel" && padelRegistrationStartsAt && padelRegistrationEndsAt) {
+    if (
+      selectedPreset === "padel" &&
+      padelRegistrationStartsAt &&
+      padelRegistrationEndsAt
+    ) {
       const start = new Date(padelRegistrationStartsAt);
       const end = new Date(padelRegistrationEndsAt);
-      if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end.getTime() <= start.getTime()) {
-        issues.push({ field: "padel", message: "A data de fecho das inscrições deve ser depois da abertura." });
+      if (
+        !Number.isNaN(start.getTime()) &&
+        !Number.isNaN(end.getTime()) &&
+        end.getTime() <= start.getTime()
+      ) {
+        issues.push({
+          field: "padel",
+          message:
+            "A data de fecho das inscrições deve ser depois da abertura.",
+        });
       }
     }
-
     return issues;
   }
-
   function clearErrorsForFields(fields: FieldKey[]) {
     setFieldErrors((prev) => {
       const next = { ...prev };
@@ -1798,10 +2121,14 @@ export function NewOrganizationEventPage({
       });
       return next;
     });
-    setErrorSummary((prev) => prev.filter((err) => !fields.includes(err.field)));
+    setErrorSummary((prev) =>
+      prev.filter((err) => !fields.includes(err.field)),
+    );
   }
-
-  function applyErrors(errors: { field: FieldKey; message: string }[], focusSummary = true) {
+  function applyErrors(
+    errors: { field: FieldKey; message: string }[],
+    focusSummary = true,
+  ) {
     if (errors.length === 0) {
       setErrorSummary([]);
     } else {
@@ -1820,95 +2147,112 @@ export function NewOrganizationEventPage({
       }, 40);
     }
   }
-
-
-  const focusField = useCallback((field: FieldKey) => {
-    if (field === "tickets") {
-      if (isPadelPreset) {
-        const target = padelTicketsRef.current ?? padelSectionRef.current;
-        if (target) {
-          target.scrollIntoView({ behavior: "smooth", block: "center" });
+  const focusField = useCallback(
+    (field: FieldKey) => {
+      if (field === "tickets") {
+        if (isPadelPreset) {
+          const target = padelTicketsRef.current ?? padelSectionRef.current;
+          if (target) {
+            target.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+          return;
+        }
+        setShowTicketsModal(true);
+        setPendingFocusField(field);
+        return;
+      }
+      if (field === "padel") {
+        if (padelSectionRef.current) {
+          padelSectionRef.current.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+          });
         }
         return;
       }
-      setShowTicketsModal(true);
-      setPendingFocusField(field);
-      return;
-    }
-    if (field === "padel") {
-      if (padelSectionRef.current) {
-        padelSectionRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (field === "description") {
+        setShowDescriptionModal(true);
+        setPendingFocusField(field);
+        return;
       }
-      return;
-    }
-    if (field === "description") {
-      setShowDescriptionModal(true);
-      setPendingFocusField(field);
-      return;
-    }
-    if (field === "startsAt" || field === "endsAt") {
-      const targetRef = field === "startsAt" ? startsAtFieldRef : endsAtFieldRef;
-      if (targetRef.current) {
-        targetRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (field === "startsAt" || field === "endsAt") {
+        const targetRef =
+          field === "startsAt" ? startsAtFieldRef : endsAtFieldRef;
+        if (targetRef.current) {
+          targetRef.current.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+          });
+          setTimeout(() => {
+            const button = targetRef.current?.querySelector(
+              "button",
+            ) as HTMLButtonElement | null;
+            button?.focus({ preventScroll: true });
+          }, 120);
+        }
+        return;
+      }
+      if (field === "location") {
+        if (locationSectionRef.current) {
+          locationSectionRef.current.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+          });
+        }
         setTimeout(() => {
-          const button = targetRef.current?.querySelector("button") as HTMLButtonElement | null;
-          button?.focus({ preventScroll: true });
+          locationSearchRef.current?.focus({ preventScroll: true });
         }, 120);
+        return;
       }
-      return;
-    }
-    if (field === "location") {
-      if (locationSectionRef.current) {
-        locationSectionRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (field === "resources") {
+        if (resourcesSectionRef.current) {
+          resourcesSectionRef.current.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+          });
+          setTimeout(() => {
+            const focusable = resourcesSectionRef.current?.querySelector(
+              "button,input",
+            ) as HTMLElement | null;
+            focusable?.focus({ preventScroll: true });
+          }, 120);
+        }
+        return;
       }
-      setTimeout(() => {
-        locationSearchRef.current?.focus({ preventScroll: true });
-      }, 120);
-      return;
-    }
-    if (field === "resources") {
-      if (resourcesSectionRef.current) {
-        resourcesSectionRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-        setTimeout(() => {
-          const focusable = resourcesSectionRef.current?.querySelector("button,input") as HTMLElement | null;
-          focusable?.focus({ preventScroll: true });
-        }, 120);
+      if (field === "title") {
+        if (titleRef.current) {
+          titleRef.current.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+          });
+          titleRef.current.focus({ preventScroll: true });
+        }
       }
-      return;
-    }
-    if (field === "title") {
-      if (titleRef.current) {
-        titleRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-        titleRef.current.focus({ preventScroll: true });
-      }
-    }
-  }, [isPadelPreset]);
-
+    },
+    [isPadelPreset],
+  );
   useEffect(() => {
     if (!pendingFocusField) return;
-
     if (pendingFocusField === "tickets" && isTicketsModalOpen) {
-      const focusable = ticketsModalRef.current?.querySelector("input,button,select,textarea") as HTMLElement | null;
+      const focusable = ticketsModalRef.current?.querySelector(
+        "input,button,select,textarea",
+      ) as HTMLElement | null;
       if (focusable) {
         focusable.focus({ preventScroll: true });
       }
       setPendingFocusField(null);
       return;
     }
-
     if (pendingFocusField === "description" && showDescriptionModal) {
-      const focusable = descriptionModalRef.current?.querySelector("textarea,input,button,select") as HTMLElement | null;
+      const focusable = descriptionModalRef.current?.querySelector(
+        "textarea,input,button,select",
+      ) as HTMLElement | null;
       if (focusable) {
         focusable.focus({ preventScroll: true });
       }
       setPendingFocusField(null);
     }
-  }, [
-    pendingFocusField,
-    isTicketsModalOpen,
-    showDescriptionModal,
-  ]);
-
+  }, [pendingFocusField, isTicketsModalOpen, showDescriptionModal]);
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
     if (isSubmitting) {
@@ -1920,13 +2264,11 @@ export function NewOrganizationEventPage({
       if (timer) clearTimeout(timer);
     };
   }, [isSubmitting]);
-
   const isAnyModalOpen =
     isTicketsModalOpen ||
     showDescriptionModal ||
     showCoverModal ||
     showCoverCropModal;
-
   useEffect(() => {
     if (typeof document === "undefined") return undefined;
     const body = document.body;
@@ -1955,39 +2297,40 @@ export function NewOrganizationEventPage({
     }
     return undefined;
   }, [isAnyModalOpen]);
-
   const submitDisabledReason = (() => {
     if (isSubmitting) return `A criar ${primaryLabel}…`;
     if (accessBlocker) return accessBlocker;
     return null;
   })();
-
   useEffect(() => {
     if (title.trim()) clearErrorsForFields(["title"]);
   }, [title]);
-
   useEffect(() => {
     if (startsAt) clearErrorsForFields(["startsAt"]);
   }, [startsAt]);
-
   useEffect(() => {
     if (locationAddressId) {
       clearErrorsForFields(["location"]);
     }
   }, [locationAddressId]);
-
   useEffect(() => {
-    if (!consumesResources || selectedResourceIds.length > 0 || selectedProfessionalIds.length > 0) {
+    if (
+      !consumesResources ||
+      selectedResourceIds.length > 0 ||
+      selectedProfessionalIds.length > 0
+    ) {
       clearErrorsForFields(["resources"]);
     }
   }, [consumesResources, selectedProfessionalIds, selectedResourceIds]);
-
   useEffect(() => {
-    if (endsAt && startsAt && new Date(endsAt).getTime() > new Date(startsAt).getTime()) {
+    if (
+      endsAt &&
+      startsAt &&
+      new Date(endsAt).getTime() > new Date(startsAt).getTime()
+    ) {
       clearErrorsForFields(["endsAt"]);
     }
   }, [endsAt, startsAt]);
-
   const FormAlert = ({
     variant,
     title: alertTitle,
@@ -2009,81 +2352,91 @@ export function NewOrganizationEventPage({
           : "border-emerald-400/40 bg-emerald-500/10 text-emerald-50";
     return (
       <div className={`rounded-md border px-4 py-3 text-sm ${tones}`}>
+        {" "}
         <div className="flex flex-wrap items-center justify-between gap-2">
+          {" "}
           <div className="space-y-1">
-            {alertTitle && <p className="font-semibold">{alertTitle}</p>}
-            <p>{message}</p>
-          </div>
+            {" "}
+            {alertTitle && <p className="font-semibold">{alertTitle}</p>}{" "}
+            <p>{message}</p>{" "}
+          </div>{" "}
           {actionLabel && onAction && (
             <button
               type="button"
               onClick={onAction}
               className="rounded-full border border-white/30 px-3 py-1 text-[11px] font-semibold hover:bg-white/10"
             >
-              {actionLabel}
+              {" "}
+              {actionLabel}{" "}
             </button>
-          )}
-        </div>
+          )}{" "}
+        </div>{" "}
       </div>
     );
   };
-
   const handleSubmit = async () => {
     setStripeAlert(null);
     setValidationAlert(null);
     setBackendAlert(null);
     setErrorMessage(null);
-
     const issues = collectFormErrors();
-    const paidAlert = !isGratisEvent && hasPaidTicket && paidTicketsBlocked ? paidTicketsBlockedMessage : null;
+    const paidAlert =
+      !isGratisEvent && hasPaidTicket && paidTicketsBlocked
+        ? paidTicketsBlockedMessage
+        : null;
     if (issues.length > 0) {
       applyErrors(issues);
-      setValidationAlert(`Revê os campos obrigatórios antes de criar o ${primaryLabel}.`);
+      setValidationAlert(
+        `Revê os campos obrigatórios antes de criar o ${primaryLabel}.`,
+      );
       setErrorMessage(issues[0]?.message ?? null);
       setStripeAlert(paidAlert);
       return;
     }
-
     const preparedTickets = buildTicketsPayload();
-    const scrollTo = (el?: HTMLElement | null) => el?.scrollIntoView({ behavior: "smooth", block: "center" });
-
+    const scrollTo = (el?: HTMLElement | null) =>
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
     if (!user) {
       handleRequireLogin();
       return;
     }
-
     if (!isOrganization) {
-      setErrorMessage("Ainda não és organização. Vai à área de organização para ativares essa função.");
+      setErrorMessage(
+        "Ainda não és organização. Vai à área de organização para ativares essa função.",
+      );
       return;
     }
-
     if (accessBlocker) {
       setErrorMessage(accessBlocker);
       setValidationAlert(accessBlocker);
       return;
     }
-
     const activeOrganizationId = organizationStatus?.organization?.id ?? null;
     if (!activeOrganizationId) {
-      setErrorMessage(`Seleciona uma organização ativa antes de criares ${primaryLabelPlural}.`);
+      setErrorMessage(
+        `Seleciona uma organização ativa antes de criares ${primaryLabelPlural}.`,
+      );
       setValidationAlert("Falta selecionar a organização.");
       return;
     }
-
     setIsSubmitting(true);
-
     try {
       const isPadelFlow = selectedPreset === "padel";
       const templateToSend = isPadelFlow ? "PADEL" : "OTHER";
       const resolvedPadelDefaultCategoryId =
-        padelDefaultCategoryId && padelCategoryIds.includes(padelDefaultCategoryId)
+        padelDefaultCategoryId &&
+        padelCategoryIds.includes(padelDefaultCategoryId)
           ? padelDefaultCategoryId
-          : padelCategoryIds[0] ?? null;
+          : (padelCategoryIds[0] ?? null);
       const padelCategoryConfigsPayload = padelCategoryIds.map((categoryId) => {
         const config = padelCategoryConfigs[categoryId];
-        const capacityFromTickets = isPadelPaid ? getPadelTicketCapacityNumber(categoryId) : null;
+        const capacityFromTickets = isPadelPaid
+          ? getPadelTicketCapacityNumber(categoryId)
+          : null;
         const capacityFromConfig = parsePositiveInteger(config?.capacityTeams);
-        const capacityTeams = isPadelPaid ? capacityFromTickets : capacityFromConfig;
+        const capacityTeams = isPadelPaid
+          ? capacityFromTickets
+          : capacityFromConfig;
         return {
           padelCategoryId: categoryId,
           capacityTeams,
@@ -2092,18 +2445,26 @@ export function NewOrganizationEventPage({
       });
       const hasTicketsPayload = preparedTickets.length > 0;
       const hasInviteRestrictedTickets =
-        hasTicketsPayload && preparedTickets.some((ticket) => ticket.publicAccess === false);
+        hasTicketsPayload &&
+        preparedTickets.some((ticket) => ticket.publicAccess === false);
       const hasPublicTicketsPayload =
-        !hasTicketsPayload || preparedTickets.some((ticket) => ticket.publicAccess !== false);
-      const accessMode = hasInviteRestrictedTickets && !hasPublicTicketsPayload ? "INVITE_ONLY" : "PUBLIC";
+        !hasTicketsPayload ||
+        preparedTickets.some((ticket) => ticket.publicAccess !== false);
+      const accessMode =
+        hasInviteRestrictedTickets && !hasPublicTicketsPayload
+          ? "INVITE_ONLY"
+          : "PUBLIC";
       const accessPolicy = {
         mode: accessMode,
         guestCheckoutAllowed: false,
         inviteTokenAllowed: hasInviteRestrictedTickets,
         inviteIdentityMatch: "BOTH",
-        inviteTokenTtlSeconds: hasInviteRestrictedTickets ? 60 * 60 * 24 * 7 : null,
+        inviteTokenTtlSeconds: hasInviteRestrictedTickets
+          ? 60 * 60 * 24 * 7
+          : null,
         requiresEntitlementForEntry: false,
-        checkinMethods: selectedPreset === "padel" ? ["QR_REGISTRATION"] : ["QR_TICKET"],
+        checkinMethods:
+          selectedPreset === "padel" ? ["QR_REGISTRATION"] : ["QR_TICKET"],
       };
       const resolvedAddressId = locationAddressId;
       if (!resolvedAddressId) {
@@ -2112,7 +2473,9 @@ export function NewOrganizationEventPage({
       }
       const selectedCourtsPayload =
         selectedPadelClubId && padelCourts?.items
-          ? padelCourts.items.filter((court) => selectedPadelCourtIds.includes(court.id))
+          ? padelCourts.items.filter((court) =>
+              selectedPadelCourtIds.includes(court.id),
+            )
           : [];
       const courtsFromClubs = selectedCourtsPayload.map((court) => ({
         id: court.id,
@@ -2132,7 +2495,6 @@ export function NewOrganizationEventPage({
                 role: member.role ?? null,
               }))
           : [];
-
       let res: Response;
       if (isPadelFlow) {
         const ticketPriceByCategory = new Map<number, number>();
@@ -2163,16 +2525,22 @@ export function NewOrganizationEventPage({
             categoryIds: padelCategoryIds,
             categoryConfigs: padelCategoryConfigsPayload.map((config) => ({
               ...config,
-              pricePerPlayer: ticketPriceByCategory.get(config.padelCategoryId) ?? 0,
+              pricePerPlayer:
+                ticketPriceByCategory.get(config.padelCategoryId) ?? 0,
               currency: "EUR",
             })),
             padelV2Enabled: true,
             advancedSettings: {
-              courtsFromClubs: courtsFromClubs.length > 0 ? courtsFromClubs : null,
+              courtsFromClubs:
+                courtsFromClubs.length > 0 ? courtsFromClubs : null,
               staffFromClubs: staffFromClubs.length > 0 ? staffFromClubs : null,
               waitlistEnabled: padelWaitlistEnabled,
-              registrationStartsAt: normalizeRegistrationValue(padelRegistrationStartsAt),
-              registrationEndsAt: normalizeRegistrationValue(padelRegistrationEndsAt),
+              registrationStartsAt: normalizeRegistrationValue(
+                padelRegistrationStartsAt,
+              ),
+              registrationEndsAt: normalizeRegistrationValue(
+                padelRegistrationEndsAt,
+              ),
               allowSecondCategory: padelAllowSecondCategory,
               maxEntriesTotal:
                 padelMaxEntriesTotal && Number(padelMaxEntriesTotal) > 0
@@ -2181,13 +2549,14 @@ export function NewOrganizationEventPage({
             },
           },
         };
-        res = await fetch(`/api/org/${activeOrganizationId}/tournaments/create`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
+        res = await fetch(
+          `/api/org/${activeOrganizationId}/tournaments/create`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(padelPayload),
           },
-          body: JSON.stringify(padelPayload),
-        });
+        );
       } else {
         const payload = {
           title: title.trim(),
@@ -2207,27 +2576,25 @@ export function NewOrganizationEventPage({
         };
         res = await fetch(`/api/org/${activeOrganizationId}/events/create`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
       }
-
       const data = await res.json().catch(() => null);
-      if (data?.errorCode === "PADEL_CREATE_MOVED" && typeof data?.details?.target === "string") {
+      if (
+        data?.errorCode === "PADEL_CREATE_MOVED" &&
+        typeof data?.details?.target === "string"
+      ) {
         router.push(data.details.target);
         return;
       }
-
       if (!res.ok || !data?.ok) {
         const friendly =
           (data?.errorCode ?? data?.error) === "FORBIDDEN"
             ? `Sem permissões para criar ${primaryLabelPlural} nesta organização.`
-            : data?.message ?? data?.error ?? data?.errorCode;
+            : (data?.message ?? data?.error ?? data?.errorCode);
         throw new Error(friendly || `Erro ao criar ${primaryLabel}.`);
       }
-
       const event = data?.data?.event ?? data?.event;
       if (event?.id || event?.slug) {
         if (typeof window !== "undefined") {
@@ -2240,13 +2607,15 @@ export function NewOrganizationEventPage({
     } catch (err) {
       console.error(`Erro ao criar ${primaryLabel} de organização:`, err);
       const message = err instanceof Error ? err.message : null;
-      setBackendAlert(message || `Algo correu mal ao guardar o ${primaryLabel}. Tenta novamente em segundos.`);
+      setBackendAlert(
+        message ||
+          `Algo correu mal ao guardar o ${primaryLabel}. Tenta novamente em segundos.`,
+      );
       scrollTo(ctaAlertRef.current);
     } finally {
       setIsSubmitting(false);
     }
   };
-
   const resetForm = () => {
     setSelectedPreset(null);
     setShowTicketsModal(false);
@@ -2291,58 +2660,71 @@ export function NewOrganizationEventPage({
       window.localStorage.removeItem(DRAFT_KEY);
     }
   };
-
   if (isUserLoading) {
     return (
       <div className="w-full py-8">
-        <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 text-white/70 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-          A carregar a tua conta…
-        </div>
+        {" "}
+        <div className="rounded-3xl border border-white/12 bg-white/[0.04] p-5 text-white/70">
+          {" "}
+          A carregar a tua conta…{" "}
+        </div>{" "}
       </div>
     );
   }
-
   if (!user) {
     return (
       <div className="w-full py-8">
-        <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 text-white shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-3">
-          <h1 className="text-2xl font-semibold">{wizardTitle}</h1>
-          {wizardSubtitle && <p className="text-sm text-white/70">{wizardSubtitle}</p>}
-          <p className="text-white/70">Inicia sessão para criar {primaryLabelPlural}.</p>
+        {" "}
+        <div className="rounded-3xl border border-white/12 bg-white/[0.04] p-6 text-white space-y-3">
+          {" "}
+          <h1 className="text-2xl font-semibold">{wizardTitle}</h1>{" "}
+          {wizardSubtitle && (
+            <p className="text-sm text-white/70">{wizardSubtitle}</p>
+          )}{" "}
+          <p className="text-white/70">
+            Inicia sessão para criar {primaryLabelPlural}.
+          </p>{" "}
           <button
             type="button"
             onClick={handleRequireLogin}
             className={CTA_PRIMARY}
           >
-            Entrar
-          </button>
-        </div>
+            {" "}
+            Entrar{" "}
+          </button>{" "}
+        </div>{" "}
       </div>
     );
   }
-
   if (!isOrganization) {
     return (
       <div className="w-full py-8">
-        <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 text-white shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-3">
-          <h1 className="text-2xl font-semibold">{wizardTitle}</h1>
-          {wizardSubtitle && <p className="text-sm text-white/70">{wizardSubtitle}</p>}
-          <p className="text-white/70">Ativa o perfil para criar {primaryLabelPlural}.</p>
-          <Link
-            href="/org"
-            className={CTA_PRIMARY}
-          >
-            Ir para organização
-          </Link>
-        </div>
+        {" "}
+        <div className="rounded-3xl border border-white/12 bg-white/[0.04] p-6 text-white space-y-3">
+          {" "}
+          <h1 className="text-2xl font-semibold">{wizardTitle}</h1>{" "}
+          {wizardSubtitle && (
+            <p className="text-sm text-white/70">{wizardSubtitle}</p>
+          )}{" "}
+          <p className="text-white/70">
+            Ativa o perfil para criar {primaryLabelPlural}.
+          </p>{" "}
+          <Link href="/org" className={CTA_PRIMARY}>
+            {" "}
+            Ir para organização{" "}
+          </Link>{" "}
+        </div>{" "}
       </div>
     );
   }
-
   const renderCoverPanel = () => {
     const isSuggestions = coverCategory === "SUGESTOES";
-    const activeCategory = coverCategoryOptions.find((option) => option.value === coverCategory);
-    const categoryTitle = isSuggestions ? "Destaque" : activeCategory?.label ?? "Biblioteca";
+    const activeCategory = coverCategoryOptions.find(
+      (option) => option.value === coverCategory,
+    );
+    const categoryTitle = isSuggestions
+      ? "Destaque"
+      : (activeCategory?.label ?? "Biblioteca");
     const searchPlaceholder = "Procurar mais fotos";
     const searchValue = coverSearch.trim();
     const hasSearch = searchValue.length > 0;
@@ -2351,22 +2733,34 @@ export function NewOrganizationEventPage({
       : hasSearch
         ? `Resultados: ${searchValue}`
         : categoryTitle;
-    const activeCollectionCovers = isSuggestions ? suggestedCovers : coverGridItems;
+    const activeCollectionCovers = isSuggestions
+      ? suggestedCovers
+      : coverGridItems;
     const totalAvailable = activeCollectionCovers.length;
-    const limitedCollectionCovers = activeCollectionCovers.slice(0, MAX_ITEMS_UI);
+    const limitedCollectionCovers = activeCollectionCovers.slice(
+      0,
+      MAX_ITEMS_UI,
+    );
     const coverCount = limitedCollectionCovers.length;
     const pageLimit = Math.min(coverPage * COVER_PAGE_SIZE, coverCount);
     const pagedCovers = limitedCollectionCovers.slice(0, pageLimit);
     const hasOverflow = totalAvailable > MAX_ITEMS_UI;
-    const showCapNotice = !isSuggestions && !hasSearch && coverCategory === "ALL" && hasOverflow;
+    const showCapNotice =
+      !isSuggestions && !hasSearch && coverCategory === "ALL" && hasOverflow;
     const hasMoreCovers = coverCount > pagedCovers.length;
     const featuredCover = activeCollectionCovers[0] ?? null;
-    const featuredCoverUrl = featuredCover?.url ?? featuredCover?.thumbUrl ?? null;
+    const featuredCoverUrl =
+      featuredCover?.url ?? featuredCover?.thumbUrl ?? null;
     const featuredTitle = hasSearch ? titleLabel : categoryTitle;
     const featuredPreviewCovers = activeCollectionCovers.slice(0, 3);
-    const emptyMessage = isSuggestions ? "Sem sugestões." : hasSearch ? "Sem resultados." : "Sem imagens.";
+    const emptyMessage = isSuggestions
+      ? "Sem sugestões."
+      : hasSearch
+        ? "Sem resultados."
+        : "Sem imagens.";
     const renderCoverGrid = (covers: typeof coverGridItems) => (
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        {" "}
         {covers.map((cover) => {
           const isSelected = selectedCoverToken === cover.id;
           return (
@@ -2375,48 +2769,59 @@ export function NewOrganizationEventPage({
               type="button"
               onClick={() => setCoverUrl(cover.token)}
               aria-pressed={isSelected}
-              className={`group relative overflow-hidden rounded-xl border bg-white/[0.03] p-1 text-left transition ${
-                isSelected
-                  ? "border-emerald-300/70 bg-emerald-500/12 shadow-[0_18px_45px_rgba(16,185,129,0.25)]"
-                  : "border-white/10 hover:border-white/35 hover:bg-white/[0.08]"
-              }`}
+              className={`group relative overflow-hidden rounded-xl border bg-white/[0.03] p-1 text-left transition ${isSelected ? "border-emerald-300/70 bg-emerald-500/12" : "border-white/10 hover:border-white/35 hover:bg-white/[0.08]"}`}
             >
+              {" "}
               <div className="relative aspect-square w-full overflow-hidden rounded-lg">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
+                {" "}
+                {/* eslint-disable-next-line @next/next/no-img-element */}{" "}
                 <img
                   src={cover.thumbUrl ?? cover.url}
                   alt={cover.label}
                   loading="lazy"
-                  className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent opacity-0 transition group-hover:opacity-100" />
+                  className="h-full w-full object-cover transition-transform duration-300"
+                />{" "}
+                <div className="absolute inset-0 bg-white/[0.04] opacity-0 transition group-hover:opacity-100" />{" "}
                 <span className="absolute left-2 bottom-2 max-w-[140px] truncate rounded-full bg-black/55 px-2 py-0.5 text-[10px] text-white/80 opacity-0 transition group-hover:opacity-100">
-                  {cover.label}
-                </span>
+                  {" "}
+                  {cover.label}{" "}
+                </span>{" "}
                 {isSelected && (
-                  <span className="absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-300 text-black shadow-[0_10px_22px_rgba(16,185,129,0.35)]">
-                    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" aria-hidden>
+                  <span className="absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-300 text-black">
+                    {" "}
+                    <svg
+                      viewBox="0 0 16 16"
+                      className="h-3.5 w-3.5"
+                      aria-hidden
+                    >
+                      {" "}
                       <path
                         fill="currentColor"
                         d="M6.4 11.2 3.2 8l1.1-1.1 2.1 2.1 5-5L12.5 5l-6.1 6.2Z"
-                      />
-                    </svg>
+                      />{" "}
+                    </svg>{" "}
                   </span>
-                )}
-              </div>
+                )}{" "}
+              </div>{" "}
             </button>
           );
-        })}
+        })}{" "}
       </div>
     );
-
     return (
       <div className="flex h-full min-h-0 flex-col gap-5 animate-fade-slide">
+        {" "}
         <div className="grid min-h-0 h-full flex-1 grid-rows-[minmax(0,1fr)] gap-6 md:grid-cols-[220px_minmax(0,1fr)]">
+          {" "}
           <div className="hidden md:block">
-            <div className="rounded-2xl border border-white/10 bg-[#0a0f18]/90 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sticky top-3">
-              <p className="text-[10px] uppercase tracking-[0.24em] text-white/50">Coleções</p>
+            {" "}
+            <div className="rounded-2xl border border-white/10 bg-[#0a0f18]/90 p-3 sticky top-3">
+              {" "}
+              <p className="text-[10px] uppercase tracking-[0.24em] text-white/50">
+                Coleções
+              </p>{" "}
               <div className="mt-2 max-h-[60vh] space-y-1.5 overflow-y-auto pr-1">
+                {" "}
                 {coverCategoryOptions.map((option) => {
                   const isActive = coverCategory === option.value;
                   return (
@@ -2427,29 +2832,26 @@ export function NewOrganizationEventPage({
                         setCoverCategory(option.value);
                         if (option.value === "SUGESTOES") setCoverSearch("");
                       }}
-                      className={`group flex w-full items-center justify-between rounded-xl px-3 py-2 text-[12px] transition ${
-                        isActive
-                          ? "bg-white/12 text-white"
-                          : "text-white/60 hover:bg-white/5 hover:text-white"
-                      }`}
+                      className={`group flex w-full items-center justify-between rounded-xl px-3 py-2 text-[12px] transition ${isActive ? "bg-white/12 text-white" : "text-white/60 hover:bg-white/5 hover:text-white"}`}
                     >
+                      {" "}
                       <span className="flex items-center gap-2">
+                        {" "}
                         <span
-                          className={`h-1.5 w-1.5 rounded-full ${
-                            isActive ? "bg-[var(--orya-cyan)]" : "bg-white/30 group-hover:bg-white/60"
-                          }`}
-                        />
-                        {option.label}
-                      </span>
+                          className={`h-1.5 w-1.5 rounded-full ${isActive ? "bg-[var(--orya-cyan)]" : "bg-white/30 group-hover:bg-white/60"}`}
+                        />{" "}
+                        {option.label}{" "}
+                      </span>{" "}
                     </button>
                   );
-                })}
-              </div>
-            </div>
-          </div>
-
+                })}{" "}
+              </div>{" "}
+            </div>{" "}
+          </div>{" "}
           <div className="min-h-0 h-full min-w-0 space-y-5 overflow-y-auto overscroll-contain pr-1">
+            {" "}
             <div className="flex gap-2 overflow-x-auto pb-1 md:hidden">
+              {" "}
               {coverCategoryOptions.map((option) => {
                 const isActive = coverCategory === option.value;
                 return (
@@ -2460,39 +2862,39 @@ export function NewOrganizationEventPage({
                       setCoverCategory(option.value);
                       if (option.value === "SUGESTOES") setCoverSearch("");
                     }}
-                    className={`whitespace-nowrap rounded-full border px-3 py-1.5 text-[11px] transition ${
-                      isActive
-                        ? "border-white/45 bg-white/20 text-white"
-                        : "border-white/10 text-white/60 hover:border-white/30 hover:bg-white/10"
-                    }`}
+                    className={`whitespace-nowrap rounded-full border px-3 py-1.5 text-[11px] transition ${isActive ? "border-white/45 bg-white/20 text-white" : "border-white/10 text-white/60 hover:border-white/30 hover:bg-white/10"}`}
                   >
-                    {option.label}
+                    {" "}
+                    {option.label}{" "}
                   </button>
                 );
-              })}
-            </div>
-            <div className="rounded-3xl border border-white/10 bg-[#0a0f18]/90 p-5 shadow-[0_22px_70px_rgba(0,0,0,0.55)]">
+              })}{" "}
+            </div>{" "}
+            <div className="rounded-3xl border border-white/10 bg-[#0a0f18]/90 p-5">
+              {" "}
               <div className="flex flex-wrap items-center justify-between gap-3">
+                {" "}
                 <div className="space-y-1">
-                  <p className="text-[10px] uppercase tracking-[0.32em] text-white/55">Escolher imagem</p>
+                  {" "}
+                  <p className="text-[10px] uppercase tracking-[0.32em] text-white/55">
+                    Escolher imagem
+                  </p>{" "}
                   <p className="text-[12px] text-white/70">
-                    Arraste ou clique. Proporção 1:1.
-                  </p>
-                </div>
+                    {" "}
+                    Arraste ou clique. Proporção 1:1.{" "}
+                  </p>{" "}
+                </div>{" "}
                 {selectedCoverLabel && (
                   <span className="rounded-full border border-emerald-400/40 bg-emerald-500/12 px-3 py-1 text-[11px] text-emerald-100">
-                    Selecionada: {selectedCoverLabel}
+                    {" "}
+                    Selecionada: {selectedCoverLabel}{" "}
                   </span>
-                )}
-              </div>
-
+                )}{" "}
+              </div>{" "}
               <div className="mt-4 space-y-3">
+                {" "}
                 <label
-                  className={`group relative flex min-h-[96px] w-full flex-col items-center justify-center gap-1 rounded-2xl border border-dashed px-4 py-3 text-center transition ${
-                    coverDragActive
-                      ? "border-[var(--orya-cyan)] bg-[rgba(34,211,238,0.12)] shadow-[0_0_0_1px_rgba(34,211,238,0.4)]"
-                      : "border-white/20 bg-black/30 hover:border-white/35 hover:bg-black/40"
-                  }`}
+                  className={`group relative flex min-h-[96px] w-full flex-col items-center justify-center gap-1 rounded-2xl border border-dashed px-4 py-3 text-center transition ${coverDragActive ? "border-[var(--orya-cyan)] bg-[rgba(34,211,238,0.12)]" : "border-white/20 bg-black/30 hover:border-white/35 hover:bg-black/40"}`}
                   onDragEnter={(event) => {
                     event.preventDefault();
                     setCoverDragActive(true);
@@ -2502,7 +2904,9 @@ export function NewOrganizationEventPage({
                     setCoverDragActive(true);
                   }}
                   onDragLeave={(event) => {
-                    if (!event.currentTarget.contains(event.relatedTarget as Node)) {
+                    if (
+                      !event.currentTarget.contains(event.relatedTarget as Node)
+                    ) {
                       setCoverDragActive(false);
                     }
                   }}
@@ -2513,6 +2917,7 @@ export function NewOrganizationEventPage({
                     handleCoverUpload(file);
                   }}
                 >
+                  {" "}
                   <input
                     type="file"
                     accept="image/*"
@@ -2521,29 +2926,37 @@ export function NewOrganizationEventPage({
                     }}
                     className="absolute inset-0 cursor-pointer opacity-0"
                     aria-label="Carregar imagem de capa"
-                  />
+                  />{" "}
                   {uploadingCover ? (
                     <div className="flex items-center gap-2 text-[12px] font-semibold text-white">
-                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-transparent" />
-                      A carregar...
+                      {" "}
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-transparent" />{" "}
+                      A carregar...{" "}
                     </div>
                   ) : (
                     <>
-                      <p className="text-sm font-semibold text-white">Arraste ou clique</p>
-                      <p className="text-[11px] text-white/55">PNG/JPG/WebP · 1:1</p>
+                      {" "}
+                      <p className="text-sm font-semibold text-white">
+                        Arraste ou clique
+                      </p>{" "}
+                      <p className="text-[11px] text-white/55">
+                        PNG/JPG/WebP · 1:1
+                      </p>{" "}
                     </>
-                  )}
-                </label>
-
+                  )}{" "}
+                </label>{" "}
                 <div className="relative">
+                  {" "}
                   <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/55">
+                    {" "}
                     <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden>
+                      {" "}
                       <path
                         fill="currentColor"
                         d="M12 7A5 5 0 1 1 2 7a5 5 0 0 1 10 0m-.965 5.096a6.5 6.5 0 1 1 1.06-1.06l2.935 2.934a.75.75 0 1 1-1.06 1.06z"
-                      />
-                    </svg>
-                  </span>
+                      />{" "}
+                    </svg>{" "}
+                  </span>{" "}
                   <input
                     value={coverSearch}
                     onChange={(e) => setCoverSearch(e.target.value)}
@@ -2552,7 +2965,7 @@ export function NewOrganizationEventPage({
                     }}
                     placeholder={searchPlaceholder}
                     className="w-full rounded-2xl border border-white/15 bg-black/40 px-10 py-3 text-[13px] text-white/95 placeholder:text-white/45 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
-                  />
+                  />{" "}
                   {coverSearch && (
                     <button
                       type="button"
@@ -2560,112 +2973,131 @@ export function NewOrganizationEventPage({
                       aria-label="Limpar pesquisa"
                       className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full border border-white/15 bg-white/10 p-1 text-white/70 transition hover:border-white/30 hover:bg-white/15"
                     >
-                      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" aria-hidden>
+                      {" "}
+                      <svg
+                        viewBox="0 0 16 16"
+                        className="h-3.5 w-3.5"
+                        aria-hidden
+                      >
+                        {" "}
                         <path
                           fill="currentColor"
                           d="M8 15.5a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15M5.53 4.47a.75.75 0 1 0-1.06 1.06L6.94 8l-2.47 2.47a.749.749 0 1 0 1.06 1.06L8 9.06l2.47 2.47a.75.75 0 1 0 1.06-1.06L9.06 8l2.47-2.47a.75.75 0 1 0-1.06-1.06L8 6.94z"
-                        />
-                      </svg>
+                        />{" "}
+                      </svg>{" "}
                     </button>
-                  )}
-                </div>
-              </div>
-            </div>
-
+                  )}{" "}
+                </div>{" "}
+              </div>{" "}
+            </div>{" "}
             <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-[#0b0f18]/90">
+              {" "}
               <div className="absolute inset-0">
+                {" "}
                 {featuredCoverUrl ? (
                   <div
                     className="absolute inset-0 bg-cover bg-center"
                     style={{ backgroundImage: `url(${featuredCoverUrl})` }}
                   />
                 ) : (
-                  <div className="absolute inset-0 bg-gradient-to-br from-[#1a2133] via-[#0b1222] to-[#050810]" />
-                )}
-                <div className="absolute inset-0 bg-gradient-to-r from-black/65 via-black/35 to-black/20" />
-                <div className="absolute inset-0 bg-gradient-to-b from-black/25 via-black/20 to-black/70" />
-              </div>
-
+                  <div className="absolute inset-0 bg-white/[0.04]" />
+                )}{" "}
+                <div className="absolute inset-0 bg-white/[0.04]" />{" "}
+                <div className="absolute inset-0 bg-white/[0.04]" />{" "}
+              </div>{" "}
               <div className="relative z-10 p-5 sm:p-6">
+                {" "}
                 <div className="flex flex-wrap items-center justify-between gap-3">
+                  {" "}
                   <div>
-                    <p className="text-[10px] uppercase tracking-[0.24em] text-white/60">Coleção</p>
-                    <p className="text-lg font-semibold text-white">{featuredTitle}</p>
-                    <p className="text-[12px] text-white/70">{coverCount} imagens</p>
-                  </div>
-                </div>
-
+                    {" "}
+                    <p className="text-[10px] uppercase tracking-[0.24em] text-white/60">
+                      Coleção
+                    </p>{" "}
+                    <p className="text-lg font-semibold text-white">
+                      {featuredTitle}
+                    </p>{" "}
+                    <p className="text-[12px] text-white/70">
+                      {coverCount} imagens
+                    </p>{" "}
+                  </div>{" "}
+                </div>{" "}
                 {featuredPreviewCovers.length > 0 && (
                   <div className="mt-4 flex items-center gap-2">
+                    {" "}
                     {featuredPreviewCovers.map((cover) => (
                       <div
                         key={`featured-${cover.id}`}
-                        className="h-14 w-14 overflow-hidden rounded-xl border border-white/15 bg-white/5 shadow-[0_10px_24px_rgba(0,0,0,0.35)]"
+                        className="h-14 w-14 overflow-hidden rounded-xl border border-white/15 bg-white/5"
                       >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        {" "}
+                        {/* eslint-disable-next-line @next/next/no-img-element */}{" "}
                         <img
                           src={cover.thumbUrl ?? cover.url}
                           alt={cover.label}
                           loading="lazy"
                           className="h-full w-full object-cover"
-                        />
+                        />{" "}
                       </div>
-                    ))}
+                    ))}{" "}
                   </div>
-                )}
-              </div>
-            </div>
-
+                )}{" "}
+              </div>{" "}
+            </div>{" "}
             <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] uppercase tracking-[0.18em] text-white/45">
-              <span>Galeria</span>
-              <span>{coverCount} imagens</span>
-            </div>
+              {" "}
+              <span>Galeria</span> <span>{coverCount} imagens</span>{" "}
+            </div>{" "}
             <p className="text-[11px] text-white/50">
-              A mostrar {coverCount === 0 ? 0 : 1}–{pageLimit} de {coverCount}
-              {showCapNotice ? " (filtra para ver mais relevante)" : ""}
-            </p>
-
+              {" "}
+              A mostrar {coverCount === 0 ? 0 : 1}–{pageLimit} de {coverCount}{" "}
+              {showCapNotice ? " (filtra para ver mais relevante)" : ""}{" "}
+            </p>{" "}
             {coverCount === 0 ? (
               <div className="rounded-xl border border-white/12 bg-white/[0.06] p-4 text-[12px] text-white/65">
-                {emptyMessage}
+                {" "}
+                {emptyMessage}{" "}
               </div>
             ) : (
               <>
-                {renderCoverGrid(pagedCovers)}
+                {" "}
+                {renderCoverGrid(pagedCovers)}{" "}
                 {hasMoreCovers && (
                   <div className="flex justify-center pt-2">
+                    {" "}
                     <button
                       type="button"
                       onClick={() => setCoverPage((prev) => prev + 1)}
                       className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-[11px] font-semibold text-white/80 transition hover:border-white/40 hover:bg-white/10"
                     >
-                      Mostrar mais
-                    </button>
+                      {" "}
+                      Mostrar mais{" "}
+                    </button>{" "}
                   </div>
-                )}
+                )}{" "}
               </>
-            )}
-          </div>
-        </div>
+            )}{" "}
+          </div>{" "}
+        </div>{" "}
       </div>
     );
   };
-
   const renderDescriptionPanel = () => (
     <div className="space-y-4 animate-fade-slide">
+      {" "}
       <div className="rounded-2xl border border-white/12 bg-white/5 p-4 space-y-2">
-        <label className={labelClass}>Descrição</label>
+        {" "}
+        <label className={labelClass}>Descrição</label>{" "}
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           rows={6}
           className={inputClass(false)}
           placeholder={`Descrição do ${primaryLabel}`}
-        />
-      </div>
+        />{" "}
+      </div>{" "}
     </div>
   );
-
   const applyPadelFormatToAll = () => {
     if (padelCategoryIds.length === 0) return;
     setPadelCategoryConfigs((prev) => {
@@ -2679,11 +3111,12 @@ export function NewOrganizationEventPage({
       return next;
     });
   };
-
   const applyPadelCapacityToAll = () => {
     if (padelCategoryIds.length === 0) return;
     const firstId = padelCategoryIds[0];
-    const capacity = firstId ? padelCategoryConfigs[firstId]?.capacityTeams ?? "" : "";
+    const capacity = firstId
+      ? (padelCategoryConfigs[firstId]?.capacityTeams ?? "")
+      : "";
     if (!capacity) return;
     setPadelCategoryConfigs((prev) => {
       const next = { ...prev };
@@ -2696,7 +3129,6 @@ export function NewOrganizationEventPage({
       return next;
     });
   };
-
   const applyPadelTicketPriceToAll = () => {
     setTicketTypes((prev) => {
       if (prev.length === 0) return prev;
@@ -2705,7 +3137,6 @@ export function NewOrganizationEventPage({
       return prev.map((row) => ({ ...row, price: basePrice }));
     });
   };
-
   const applyPadelTicketCapacityToAll = () => {
     setTicketTypes((prev) => {
       if (prev.length === 0) return prev;
@@ -2714,11 +3145,12 @@ export function NewOrganizationEventPage({
       return prev.map((row) => ({ ...row, totalQuantity: baseCapacity }));
     });
   };
-
   const applyPadelTicketNameToAll = () => {
     setTicketTypes((prev) => {
       if (prev.length === 0) return prev;
-      const baseName = normalizePadelTicketBaseName(prev[0].name || freeTicketPlaceholder);
+      const baseName = normalizePadelTicketBaseName(
+        prev[0].name || freeTicketPlaceholder,
+      );
       return prev.map((row) => {
         if (typeof row.padelCategoryId !== "number") return row;
         return {
@@ -2728,20 +3160,23 @@ export function NewOrganizationEventPage({
       });
     });
   };
-
   const renderLocationPanel = () => {
-    const selectedLabel = locationFormattedAddress || locationQuery || "Local selecionado";
-
+    const selectedLabel =
+      locationFormattedAddress || locationQuery || "Local selecionado";
     return (
       <div className="space-y-4 animate-fade-slide">
+        {" "}
         <div className="rounded-2xl border border-white/12 bg-white/5 p-4 space-y-3">
+          {" "}
           <div className="space-y-1">
-            <label className={labelClass}>Local / Morada</label>
+            {" "}
+            <label className={labelClass}>Local / Morada</label>{" "}
             <p className="text-[11px] text-white/60">
-              Escreve pelo menos 2 caracteres e escolhe uma sugestão. O evento requer uma morada válida.
-            </p>
-          </div>
-
+              {" "}
+              Escreve pelo menos 2 caracteres e escolhe uma sugestão. O evento
+              requer uma morada válida.{" "}
+            </p>{" "}
+          </div>{" "}
           <AddressCombobox
             label="Local / Morada"
             value={locationQuery}
@@ -2752,377 +3187,489 @@ export function NewOrganizationEventPage({
             inputRef={locationSearchRef}
             inputClassName={inputClass(Boolean(fieldErrors.location))}
             placeholder="Procura uma morada, rua, cidade ou espaço"
-          />
-
+          />{" "}
           {(locationAddressId || locationFormattedAddress) && (
             <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/75">
-              <p className="font-semibold text-white">{selectedLabel}</p>
-              <p className="text-[11px] text-white/55">Morada selecionada.</p>
+              {" "}
+              <p className="font-semibold text-white">{selectedLabel}</p>{" "}
+              <p className="text-[11px] text-white/55">
+                Morada selecionada.
+              </p>{" "}
             </div>
-          )}
-
-          {typeof locationLat === "number" && typeof locationLng === "number" && (
-            <AppleLocationMapPreview lat={locationLat} lng={locationLng} label={selectedLabel} />
-          )}
-
+          )}{" "}
+          {typeof locationLat === "number" &&
+            typeof locationLng === "number" && (
+              <AppleLocationMapPreview
+                lat={locationLat}
+                lng={locationLng}
+                label={selectedLabel}
+              />
+            )}{" "}
           {locationError && (
             <p className={errorTextClass}>
-              <span aria-hidden>⚠️</span>
-              {locationError}
+              {" "}
+              <span aria-hidden>⚠️</span> {locationError}{" "}
             </p>
-          )}
-        </div>
+          )}{" "}
+        </div>{" "}
       </div>
     );
   };
-
   const renderTicketsPanel = () => (
     <div className="space-y-5 animate-fade-slide">
+      {" "}
       <div className="flex flex-col gap-3 rounded-2xl border border-white/12 bg-white/5 p-4">
+        {" "}
         <div className="flex flex-wrap items-center justify-between gap-3">
+          {" "}
           <div>
-            <p className={labelClass}>Modelo</p>
-            <p className="text-[11px] text-white/60">Pago ou grátis</p>
-          </div>
+            {" "}
+            <p className={labelClass}>Modelo</p>{" "}
+            <p className="text-[11px] text-white/60">Pago ou grátis</p>{" "}
+          </div>{" "}
           <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[13px]">
+            {" "}
             <button
               type="button"
               onClick={() => setIsFreeEvent(false)}
               disabled={paidTicketsBlocked}
-              title={paidTicketsBlockedMessage ?? `Ativa o Stripe e o email oficial para vender ${ticketLabelPlural} pagos.`}
-              className={`rounded-full px-3 py-1 font-semibold transition ${
-                !isGratisEvent && !paidTicketsBlocked ? "bg-white text-black shadow" : "text-white/70"
-              } ${paidTicketsBlocked ? "cursor-not-allowed opacity-50" : ""}`}
+              title={
+                paidTicketsBlockedMessage ??
+                `Ativa o Stripe e o email oficial para vender ${ticketLabelPlural} pagos.`
+              }
+              className={`rounded-full px-3 py-1 font-semibold transition ${!isGratisEvent && !paidTicketsBlocked ? "bg-white text-black shadow" : "text-white/70"} ${paidTicketsBlocked ? "cursor-not-allowed opacity-50" : ""}`}
             >
-              {primaryLabelTitle} pago
-            </button>
+              {" "}
+              {primaryLabelTitle} pago{" "}
+            </button>{" "}
             <button
               type="button"
               onClick={() => setIsFreeEvent(true)}
-              className={`rounded-full px-3 py-1 font-semibold transition ${
-                isGratisEvent ? "bg-white text-black shadow" : "text-white/70"
-              }`}
+              className={`rounded-full px-3 py-1 font-semibold transition ${isGratisEvent ? "bg-white text-black shadow" : "text-white/70"}`}
             >
-              {primaryLabelTitle} grátis
-            </button>
-          </div>
-        </div>
+              {" "}
+              {primaryLabelTitle} grátis{" "}
+            </button>{" "}
+          </div>{" "}
+        </div>{" "}
         {isPadelPreset && (
           <p className="text-[11px] text-white/55">
-            Pago: 1 {ticketLabel} por categoria. Grátis: capacidade definida nas categorias.
+            {" "}
+            Pago: 1 {ticketLabel} por categoria. Grátis: capacidade definida nas
+            categorias.{" "}
           </p>
-        )}
+        )}{" "}
         {paidTicketsBlocked && (
           <div className="rounded-xl border border-amber-400/40 bg-amber-400/10 p-3 text-[12px] text-amber-50 space-y-2">
+            {" "}
             <div className="flex flex-wrap items-center justify-between gap-3">
+              {" "}
               <div className="space-y-1">
-                <p className="text-sm font-semibold">Pagamentos</p>
+                {" "}
+                <p className="text-sm font-semibold">Pagamentos</p>{" "}
                 <p className="text-amber-50/85">
-                  {paidTicketsBlockedMessage ?? "Ativa o Stripe e valida o email oficial."}
-                </p>
-              </div>
+                  {" "}
+                  {paidTicketsBlockedMessage ??
+                    "Ativa o Stripe e valida o email oficial."}{" "}
+                </p>{" "}
+              </div>{" "}
               <div className="flex flex-wrap gap-2">
+                {" "}
                 {stripeNotReady && (
                   <button
                     type="button"
                     onClick={() =>
-                      router.push(appendOrganizationIdToHref("/org/finance", organizationId))
+                      router.push(
+                        appendOrganizationIdToHref(
+                          "/org/finance",
+                          organizationId,
+                        ),
+                      )
                     }
                     className={`${CTA_PRIMARY} px-3 py-1 text-[11px]`}
                   >
-                    Ligar Stripe
+                    {" "}
+                    Ligar Stripe{" "}
                   </button>
-                )}
+                )}{" "}
                 {needsOfficialEmailVerification && (
                   <button
                     type="button"
-                    onClick={() => router.push(appendOrganizationIdToHref("/org/settings", organizationId))}
+                    onClick={() =>
+                      router.push(
+                        appendOrganizationIdToHref(
+                          "/org/settings",
+                          organizationId,
+                        ),
+                      )
+                    }
                     className={`${CTA_PRIMARY} px-3 py-1 text-[11px]`}
                   >
-                    {organizationOfficialEmail ? "Verificar email oficial" : "Definir email oficial"}
+                    {" "}
+                    {organizationOfficialEmail
+                      ? "Verificar email oficial"
+                      : "Definir email oficial"}{" "}
                   </button>
-                )}
-              </div>
-            </div>
-            <p className="text-[11px] text-amber-50/70">Agora: grátis.</p>
+                )}{" "}
+              </div>{" "}
+            </div>{" "}
+            <p className="text-[11px] text-amber-50/70">Agora: grátis.</p>{" "}
           </div>
-        )}
+        )}{" "}
         {ticketTypes.length === 0 && !isGratisEvent && (
           <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/70">
+            {" "}
             {isPadelPaid
               ? "Seleciona categorias."
               : isPadelPreset
                 ? "Sem inscrições, criamos 1 gratuita."
-                : "Sem bilhetes, criamos 1 gratuito."}
+                : "Sem bilhetes, criamos 1 gratuito."}{" "}
           </div>
-        )}
+        )}{" "}
         {fieldErrors.tickets && (
           <p className={errorTextClass}>
-            <span aria-hidden>⚠️</span>
-            {fieldErrors.tickets}
+            {" "}
+            <span aria-hidden>⚠️</span> {fieldErrors.tickets}{" "}
           </p>
-        )}
-      </div>
-
+        )}{" "}
+      </div>{" "}
       {isGratisEvent ? (
         <div className="space-y-3 rounded-2xl border border-white/12 bg-white/5 p-4">
+          {" "}
           <div className="flex items-center justify-between">
-            <p className={labelClass}>{freeTicketLabel}</p>
+            {" "}
+            <p className={labelClass}>{freeTicketLabel}</p>{" "}
             <span className="rounded-full border border-emerald-300/40 bg-emerald-400/10 px-3 py-1 text-[12px] text-emerald-50">
-              Grátis
-            </span>
-          </div>
+              {" "}
+              Grátis{" "}
+            </span>{" "}
+          </div>{" "}
           <div className="grid gap-3 md:grid-cols-2">
+            {" "}
             <div className="space-y-1">
-              <label className={labelClass}>Nome</label>
+              {" "}
+              <label className={labelClass}>Nome</label>{" "}
               <input
                 type="text"
                 value={freeTicketName}
                 onChange={(e) => setFreeTicketName(e.target.value)}
                 className={inputClass(false)}
                 placeholder={freeTicketPlaceholder}
-              />
-            </div>
+              />{" "}
+            </div>{" "}
             <div className="space-y-1">
-              <label className={labelClass}>Capacidade</label>
+              {" "}
+              <label className={labelClass}>Capacidade</label>{" "}
               <input
                 type="number"
                 min={0}
                 step="1"
                 inputMode="numeric"
                 value={freeCapacity}
-                onChange={(e) => setFreeCapacity(normalizeIntegerInput(e.target.value))}
+                onChange={(e) =>
+                  setFreeCapacity(normalizeIntegerInput(e.target.value))
+                }
                 className={inputClass(false)}
                 placeholder="Ex.: 64"
-              />
-            </div>
+              />{" "}
+            </div>{" "}
             <div className="space-y-1 md:col-span-2">
-              <label className={labelClass}>Visibilidade</label>
+              {" "}
+              <label className={labelClass}>Visibilidade</label>{" "}
               <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[12px]">
+                {" "}
                 <button
                   type="button"
                   onClick={() => setFreeTicketPublicAccess(true)}
-                  className={`rounded-full px-3 py-1 font-semibold transition ${
-                    freeTicketPublicAccess ? "bg-white text-black shadow" : "text-white/70"
-                  }`}
+                  className={`rounded-full px-3 py-1 font-semibold transition ${freeTicketPublicAccess ? "bg-white text-black shadow" : "text-white/70"}`}
                 >
-                  Público
-                </button>
+                  {" "}
+                  Público{" "}
+                </button>{" "}
                 <button
                   type="button"
                   onClick={() => setFreeTicketPublicAccess(false)}
-                  className={`rounded-full px-3 py-1 font-semibold transition ${
-                    !freeTicketPublicAccess ? "bg-white text-black shadow" : "text-white/70"
-                  }`}
+                  className={`rounded-full px-3 py-1 font-semibold transition ${!freeTicketPublicAccess ? "bg-white text-black shadow" : "text-white/70"}`}
                 >
-                  Por convite
-                </button>
-              </div>
+                  {" "}
+                  Por convite{" "}
+                </button>{" "}
+              </div>{" "}
               {!freeTicketPublicAccess && (
-                <p className="text-[11px] text-white/55">Convites são adicionados depois.</p>
-              )}
-            </div>
-          </div>
+                <p className="text-[11px] text-white/55">
+                  Convites são adicionados depois.
+                </p>
+              )}{" "}
+            </div>{" "}
+          </div>{" "}
           {shouldSplitFreeTickets && (
             <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/70">
-              Criamos {ticketLabelIndefinite} {ticketLabel} {isPadelPreset ? "gratuita" : "gratuito"} por categoria.
+              {" "}
+              Criamos {ticketLabelIndefinite} {ticketLabel}{" "}
+              {isPadelPreset ? "gratuita" : "gratuito"} por categoria.{" "}
             </div>
-          )}
+          )}{" "}
         </div>
       ) : (
         <div className="space-y-4 rounded-2xl border border-white/12 bg-white/5 p-4">
+          {" "}
           <div className="flex flex-wrap items-center justify-between gap-2">
+            {" "}
             <h2 className={labelClass}>
-              {isPadelPaid ? `${ticketLabelPluralCap} por categoria` : ticketLabelPluralCap}
-            </h2>
+              {" "}
+              {isPadelPaid
+                ? `${ticketLabelPluralCap} por categoria`
+                : ticketLabelPluralCap}{" "}
+            </h2>{" "}
             {!isPadelPaid && (
               <button
                 type="button"
                 onClick={handleAddTicketType}
                 className={`${CTA_PRIMARY} px-3 py-1 text-[13px]`}
               >
-                + Adicionar {ticketLabel}
+                {" "}
+                + Adicionar {ticketLabel}{" "}
               </button>
-            )}
-          </div>
-          {isPadelPaid && <p className="text-[12px] text-white/70">1 por categoria. Ajusta preço e capacidade.</p>}
+            )}{" "}
+          </div>{" "}
+          {isPadelPaid && (
+            <p className="text-[12px] text-white/70">
+              1 por categoria. Ajusta preço e capacidade.
+            </p>
+          )}{" "}
           {isPadelPaid && ticketTypes.length > 1 && (
             <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/70">
+              {" "}
               <button
                 type="button"
                 onClick={applyPadelTicketPriceToAll}
                 className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/70 transition hover:border-white/30 hover:bg-white/10"
               >
-                Replicar preço
-              </button>
+                {" "}
+                Replicar preço{" "}
+              </button>{" "}
               <button
                 type="button"
                 onClick={applyPadelTicketCapacityToAll}
                 className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/70 transition hover:border-white/30 hover:bg-white/10"
               >
-                Replicar capacidade
-              </button>
+                {" "}
+                Replicar capacidade{" "}
+              </button>{" "}
               <button
                 type="button"
                 onClick={applyPadelTicketNameToAll}
                 className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/70 transition hover:border-white/30 hover:bg-white/10"
               >
-                Replicar nome base
-              </button>
+                {" "}
+                Replicar nome base{" "}
+              </button>{" "}
             </div>
-          )}
-
+          )}{" "}
           <div className="grid gap-3">
+            {" "}
             {ticketTypes.map((row, idx) => {
-              const categoryId = typeof row.padelCategoryId === "number" ? row.padelCategoryId : null;
-              const categoryLabel = categoryId ? resolvePadelCategoryLabel(categoryId) : null;
-              const categoryTag = categoryId ? getPadelCategoryTag(categoryId) : null;
+              const categoryId =
+                typeof row.padelCategoryId === "number"
+                  ? row.padelCategoryId
+                  : null;
+              const categoryLabel = categoryId
+                ? resolvePadelCategoryLabel(categoryId)
+                : null;
+              const categoryTag = categoryId
+                ? getPadelCategoryTag(categoryId)
+                : null;
               return (
                 <div
                   key={idx}
                   className="space-y-3 rounded-xl border border-white/12 bg-white/5 p-3 animate-step-pop"
                 >
+                  {" "}
                   <div className="flex items-center justify-between">
+                    {" "}
                     <span className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.12em] text-white/75">
-                      <span aria-hidden className="text-[#22D3EE]">🎟️</span>
+                      {" "}
+                      <span aria-hidden className="text-[#22D3EE]">
+                        🎟️
+                      </span>{" "}
                       {isPadelPaid && categoryLabel ? (
                         <>
-                          <span>{categoryLabel}</span>
+                          {" "}
+                          <span>{categoryLabel}</span>{" "}
                           {categoryTag && (
                             <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-white/70">
-                              {categoryTag}
+                              {" "}
+                              {categoryTag}{" "}
                             </span>
-                          )}
+                          )}{" "}
                         </>
                       ) : (
                         `${ticketLabelCap} ${idx + 1}`
-                      )}
-                    </span>
+                      )}{" "}
+                    </span>{" "}
                     {!isPadelPaid && ticketTypes.length > 1 && (
                       <button
                         type="button"
                         onClick={() => handleRemoveTicketType(idx)}
                         className="text-[11px] text-white/60 hover:text-white/90"
                       >
-                        Remover
+                        {" "}
+                        Remover{" "}
                       </button>
-                    )}
-                  </div>
+                    )}{" "}
+                  </div>{" "}
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    {" "}
                     <div className="space-y-1 flex-1">
+                      {" "}
                       <label className={labelClass}>
-                        Nome {ticketLabelArticle} {ticketLabel} <span aria-hidden>*</span>
-                      </label>
+                        {" "}
+                        Nome {ticketLabelArticle} {ticketLabel}{" "}
+                        <span aria-hidden>*</span>{" "}
+                      </label>{" "}
                       <input
                         type="text"
                         value={row.name}
-                        onChange={(e) => handleTicketChange(idx, "name", e.target.value)}
+                        onChange={(e) =>
+                          handleTicketChange(idx, "name", e.target.value)
+                        }
                         className={inputClass(false)}
                         placeholder="Early bird, Geral, VIP"
-                      />
-                    </div>
-                  </div>
-
+                      />{" "}
+                    </div>{" "}
+                  </div>{" "}
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    {" "}
                     <div className="space-y-1">
+                      {" "}
                       <label className={labelClass}>
-                        Preço (€) <span aria-hidden>*</span>
-                      </label>
+                        {" "}
+                        Preço (€) <span aria-hidden>*</span>{" "}
+                      </label>{" "}
                       <input
                         type="number"
                         min={isGratisEvent ? 0 : 1}
                         step="0.01"
                         value={row.price}
-                        onChange={(e) => handleTicketChange(idx, "price", e.target.value)}
+                        onChange={(e) =>
+                          handleTicketChange(idx, "price", e.target.value)
+                        }
                         className={inputClass(false)}
                         placeholder="Ex.: 12.50"
-                      />
-                    </div>
+                      />{" "}
+                    </div>{" "}
                     <div className="space-y-1">
-                      <label className={labelClass}>Capacidade (opcional)</label>
+                      {" "}
+                      <label className={labelClass}>
+                        Capacidade (opcional)
+                      </label>{" "}
                       <input
                         type="number"
                         min={0}
                         step="1"
                         inputMode="numeric"
                         value={row.totalQuantity}
-                        onChange={(e) => handleTicketChange(idx, "totalQuantity", e.target.value)}
+                        onChange={(e) =>
+                          handleTicketChange(
+                            idx,
+                            "totalQuantity",
+                            e.target.value,
+                          )
+                        }
                         className={inputClass(false)}
                         placeholder="Ex.: 100"
-                      />
-                    </div>
-                  </div>
-                  {selectedPreset === "padel" && padelCategoryIds.length > 0 && !isPadelPaid && (
-                    <div className="space-y-1">
-                      <label className={labelClass}>Categoria de Padel</label>
-                      <select
-                        value={row.padelCategoryId ?? ""}
-                        onChange={(e) => handleTicketCategoryChange(idx, e.target.value)}
-                        className={inputClass(false)}
-                      >
-                        {padelCategoryIds.length > 1 && <option value="">Categoria</option>}
-                        {padelCategoryIds.map((id) => {
-                          const cat = padelCategoryItems.find((item) => item.id === id);
-                          return (
-                            <option key={`padel-ticket-cat-${id}`} value={id}>
-                              {cat?.label || `Categoria ${id}`}
-                            </option>
-                          );
-                        })}
-                      </select>
-                      {padelCategoryIds.length > 1 && !row.padelCategoryId && (
-                        <p className="text-[11px] text-amber-200">Seleciona categoria.</p>
-                      )}
-                    </div>
-                  )}
-
+                      />{" "}
+                    </div>{" "}
+                  </div>{" "}
+                  {selectedPreset === "padel" &&
+                    padelCategoryIds.length > 0 &&
+                    !isPadelPaid && (
+                      <div className="space-y-1">
+                        {" "}
+                        <label className={labelClass}>
+                          Categoria de Padel
+                        </label>{" "}
+                        <select
+                          value={row.padelCategoryId ?? ""}
+                          onChange={(e) =>
+                            handleTicketCategoryChange(idx, e.target.value)
+                          }
+                          className={inputClass(false)}
+                        >
+                          {" "}
+                          {padelCategoryIds.length > 1 && (
+                            <option value="">Categoria</option>
+                          )}{" "}
+                          {padelCategoryIds.map((id) => {
+                            const cat = padelCategoryItems.find(
+                              (item) => item.id === id,
+                            );
+                            return (
+                              <option key={`padel-ticket-cat-${id}`} value={id}>
+                                {" "}
+                                {cat?.label || `Categoria ${id}`}{" "}
+                              </option>
+                            );
+                          })}{" "}
+                        </select>{" "}
+                        {padelCategoryIds.length > 1 &&
+                          !row.padelCategoryId && (
+                            <p className="text-[11px] text-amber-200">
+                              Seleciona categoria.
+                            </p>
+                          )}{" "}
+                      </div>
+                    )}{" "}
                   <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/75">
-                    <span className="text-[11px] uppercase tracking-[0.18em] text-white/60">Visibilidade</span>
+                    {" "}
+                    <span className="text-[11px] uppercase tracking-[0.18em] text-white/60">
+                      Visibilidade
+                    </span>{" "}
                     <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[11px]">
+                      {" "}
                       <button
                         type="button"
                         onClick={() => setTicketPublicAccess(idx, true)}
-                        className={`rounded-full px-3 py-1 font-semibold transition ${
-                          row.publicAccess !== false ? "bg-white text-black shadow" : "text-white/70"
-                        }`}
+                        className={`rounded-full px-3 py-1 font-semibold transition ${row.publicAccess !== false ? "bg-white text-black shadow" : "text-white/70"}`}
                       >
-                        Público
-                      </button>
+                        {" "}
+                        Público{" "}
+                      </button>{" "}
                       <button
                         type="button"
                         onClick={() => setTicketPublicAccess(idx, false)}
-                        className={`rounded-full px-3 py-1 font-semibold transition ${
-                          row.publicAccess === false ? "bg-white text-black shadow" : "text-white/70"
-                        }`}
+                        className={`rounded-full px-3 py-1 font-semibold transition ${row.publicAccess === false ? "bg-white text-black shadow" : "text-white/70"}`}
                       >
-                        Por convite
-                      </button>
-                    </div>
-                  </div>
+                        {" "}
+                        Por convite{" "}
+                      </button>{" "}
+                    </div>{" "}
+                  </div>{" "}
                 </div>
               );
-            })}
-          </div>
+            })}{" "}
+          </div>{" "}
         </div>
-      )}
-
+      )}{" "}
       {hasInviteRestrictedTickets && (
         <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/70">
-          {ticketLabelPluralCap} por convite exigem convites adicionados depois de criares o {primaryLabel}.
+          {" "}
+          {ticketLabelPluralCap} por convite exigem convites adicionados depois
+          de criares o {primaryLabel}.{" "}
         </div>
-      )}
+      )}{" "}
     </div>
   );
-
   const ticketsModal =
     isTicketsModalOpen && portalRoot
       ? createPortal(
           <div className={MODAL_SHELL_CLASS}>
+            {" "}
             <div
               className={MODAL_OVERLAY_CLASS}
               onClick={() => setShowTicketsModal(false)}
               aria-hidden
-            />
+            />{" "}
             <div
               className={MODAL_CONTENT_WRAP_CLASS}
               onMouseDown={(event) => {
@@ -3131,44 +3678,57 @@ export function NewOrganizationEventPage({
                 }
               }}
             >
+              {" "}
               <div
                 className={`flex w-full max-w-4xl max-h-[calc(100vh-6rem)] flex-col ${MODAL_PANEL_CLASS}`}
                 role="dialog"
                 aria-modal="true"
                 aria-label={ticketLabelPluralCap}
               >
+                {" "}
                 <div className={MODAL_HEADER_CLASS}>
+                  {" "}
                   <div>
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">{ticketLabelPluralCap}</p>
-                    <p className="text-sm font-semibold text-white">Preço & capacidade</p>
-                  </div>
+                    {" "}
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">
+                      {ticketLabelPluralCap}
+                    </p>{" "}
+                    <p className="text-sm font-semibold text-white">
+                      Preço & capacidade
+                    </p>{" "}
+                  </div>{" "}
                   <button
                     type="button"
                     onClick={() => setShowTicketsModal(false)}
                     className={`${CTA_PRIMARY} px-3 py-1 text-[12px]`}
                   >
-                    Concluir
-                  </button>
-                </div>
-                <div ref={ticketsModalRef} className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-4">
-                  {renderTicketsPanel()}
-                </div>
-              </div>
-            </div>
+                    {" "}
+                    Concluir{" "}
+                  </button>{" "}
+                </div>{" "}
+                <div
+                  ref={ticketsModalRef}
+                  className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-4"
+                >
+                  {" "}
+                  {renderTicketsPanel()}{" "}
+                </div>{" "}
+              </div>{" "}
+            </div>{" "}
           </div>,
           portalRoot,
         )
       : null;
-
   const descriptionModal =
     showDescriptionModal && portalRoot
       ? createPortal(
           <div className={MODAL_SHELL_CLASS}>
+            {" "}
             <div
               className={MODAL_OVERLAY_CLASS}
               onClick={() => setShowDescriptionModal(false)}
               aria-hidden
-            />
+            />{" "}
             <div
               className={MODAL_CONTENT_WRAP_CLASS}
               onMouseDown={(event) => {
@@ -3177,44 +3737,57 @@ export function NewOrganizationEventPage({
                 }
               }}
             >
+              {" "}
               <div
                 className={`flex w-full max-w-2xl max-h-[calc(100vh-6rem)] flex-col ${MODAL_PANEL_CLASS}`}
                 role="dialog"
                 aria-modal="true"
                 aria-label="Descrição"
               >
+                {" "}
                 <div className={MODAL_HEADER_CLASS}>
+                  {" "}
                   <div>
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Descrição</p>
-                    <p className="text-sm font-semibold text-white">Detalhes</p>
-                  </div>
+                    {" "}
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">
+                      Descrição
+                    </p>{" "}
+                    <p className="text-sm font-semibold text-white">
+                      Detalhes
+                    </p>{" "}
+                  </div>{" "}
                   <button
                     type="button"
                     onClick={() => setShowDescriptionModal(false)}
                     className={`${CTA_PRIMARY} px-3 py-1 text-[12px]`}
                   >
-                    Concluir
-                  </button>
-                </div>
-                <div ref={descriptionModalRef} className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-4">
-                  {renderDescriptionPanel()}
-                </div>
-              </div>
-            </div>
+                    {" "}
+                    Concluir{" "}
+                  </button>{" "}
+                </div>{" "}
+                <div
+                  ref={descriptionModalRef}
+                  className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-4"
+                >
+                  {" "}
+                  {renderDescriptionPanel()}{" "}
+                </div>{" "}
+              </div>{" "}
+            </div>{" "}
           </div>,
           portalRoot,
         )
       : null;
-
   const coverModal =
     showCoverModal && portalRoot
       ? createPortal(
           <div className={MODAL_SHELL_CLASS}>
+            {" "}
             <div
               className={MODAL_OVERLAY_CLASS}
               onClick={() => setShowCoverModal(false)}
               aria-hidden
-            />
+            />{" "}
             <div
               className={MODAL_CONTENT_WRAP_CLASS}
               onMouseDown={(event) => {
@@ -3223,75 +3796,94 @@ export function NewOrganizationEventPage({
                 }
               }}
             >
+              {" "}
               <div
                 className={`flex w-full max-w-[980px] h-[720px] max-h-[calc(100vh-6rem)] flex-col ${MODAL_PANEL_CLASS} border-white/20 bg-[rgba(14,20,30,0.78)]`}
                 role="dialog"
                 aria-modal="true"
                 aria-label="Biblioteca de capas"
               >
+                {" "}
                 <div className={`${MODAL_HEADER_CLASS} flex-wrap`}>
+                  {" "}
                   <div className="flex items-center gap-3">
+                    {" "}
                     <div className="flex h-9 w-9 items-center justify-center rounded-full border border-white/12 bg-white/5 text-white/70">
+                      {" "}
                       <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden>
+                        {" "}
                         <path
                           fill="currentColor"
                           d="M2.5 4A1.5 1.5 0 0 1 4 2.5h8A1.5 1.5 0 0 1 13.5 4v8A1.5 1.5 0 0 1 12 13.5H4A1.5 1.5 0 0 1 2.5 12V4Zm1.5-.5a.5.5 0 0 0-.5.5v6.5l2.55-2.55a1 1 0 0 1 1.41 0L11 11.5V4a.5.5 0 0 0-.5-.5H4Zm7.44 8.08-3.09-3.1-2.86 2.87h4.45c.59 0 1.14.08 1.5.23Z"
-                        />
-                      </svg>
-                    </div>
+                        />{" "}
+                      </svg>{" "}
+                    </div>{" "}
                     <div>
-                      <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Biblioteca</p>
-                      <p className="text-sm font-semibold text-white">Escolher capa</p>
-                    </div>
-                  </div>
+                      {" "}
+                      <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">
+                        Biblioteca
+                      </p>{" "}
+                      <p className="text-sm font-semibold text-white">
+                        Escolher capa
+                      </p>{" "}
+                    </div>{" "}
+                  </div>{" "}
                   <div className="flex items-center gap-2">
+                    {" "}
                     {selectedCoverLabel && (
                       <span className="hidden sm:inline-flex rounded-full border border-white/15 bg-white/5 px-2 py-1 text-[11px] text-white/70">
-                        Selecionada: {selectedCoverLabel}
+                        {" "}
+                        Selecionada: {selectedCoverLabel}{" "}
                       </span>
-                    )}
+                    )}{" "}
                     <button
                       type="button"
                       onClick={() => setShowCoverModal(false)}
                       className={`${CTA_PRIMARY} px-3 py-1 text-[12px]`}
                     >
-                      Concluir
-                    </button>
+                      {" "}
+                      Concluir{" "}
+                    </button>{" "}
                     <button
                       type="button"
                       onClick={() => setShowCoverModal(false)}
                       aria-label="Fechar"
                       className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/70 transition hover:border-white/30 hover:bg-white/10"
                     >
+                      {" "}
                       <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden>
+                        {" "}
                         <path
                           fill="currentColor"
                           d="m3.582 2.52 4.42 4.418L12.42 2.52a.75.75 0 0 1 1.06 1.06L9.064 8l4.419 4.42a.75.75 0 1 1-1.061 1.06L8 9.06l-4.419 4.42a.75.75 0 0 1-1.06-1.06L6.94 8 2.52 3.58a.75.75 0 0 1 1.061-1.06Z"
-                        />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
+                        />{" "}
+                      </svg>{" "}
+                    </button>{" "}
+                  </div>{" "}
+                </div>{" "}
                 <div
                   ref={coverModalRef}
                   className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-4"
                 >
-                  {renderCoverPanel()}
-                </div>
-              </div>
-            </div>
+                  {" "}
+                  {renderCoverPanel()}{" "}
+                </div>{" "}
+              </div>{" "}
+            </div>{" "}
           </div>,
           portalRoot,
         )
       : null;
-
   return (
     <>
-      <AppleMapsLoader />
+      {" "}
+      <AppleMapsLoader />{" "}
       <div className="pointer-events-none fixed inset-0 -z-10" aria-hidden>
-        <div className="absolute inset-0 bg-[#05070f]" />
+        {" "}
+        <div className="absolute inset-0 bg-[#05070f]" />{" "}
         {coverPreviewUrl ? (
           <>
+            {" "}
             <div
               className="absolute inset-0 opacity-85"
               style={{
@@ -3301,14 +3893,14 @@ export function NewOrganizationEventPage({
                 filter: "blur(46px) saturate(1.15) brightness(0.85)",
                 transform: "scale(1.08)",
               }}
-            />
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_12%,rgba(255,255,255,0.16),transparent_55%)]" />
-            <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-black/55 to-black/85" />
+            />{" "}
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_12%,rgba(255,255,255,0.16),transparent_55%)]" />{" "}
+            <div className="absolute inset-0 bg-white/[0.04]" />{" "}
           </>
         ) : (
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_12%,rgba(255,255,255,0.12),transparent_55%)]" />
-        )}
-      </div>
+        )}{" "}
+      </div>{" "}
       <form
         noValidate
         onSubmit={(e) => {
@@ -3317,925 +3909,1232 @@ export function NewOrganizationEventPage({
         }}
         className="relative z-10 w-full space-y-6 py-6 text-white"
       >
-        <div className="relative w-full rounded-[22px] border border-white/8 bg-white/[0.04] p-5 space-y-5 backdrop-blur-lg sm:p-6">
+        {" "}
+        <div className="relative w-full rounded-[22px] border border-white/8 bg-white/[0.04] p-5 space-y-5 sm:p-6">
+          {" "}
           <div className="space-y-6">
-          {errorSummary.length > 0 && (
-            <div
-              ref={errorSummaryRef}
-              tabIndex={-1}
-              className="rounded-xl border border-amber-400/40 bg-amber-500/10 p-3 text-sm text-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-200/70"
-              aria-live="assertive"
-            >
-              <div className="flex items-center gap-2 font-semibold">
-                <span aria-hidden>⚠️</span>
-                <span>Revê estes campos antes de criar</span>
+            {" "}
+            {errorSummary.length > 0 && (
+              <div
+                ref={errorSummaryRef}
+                tabIndex={-1}
+                className="rounded-xl border border-amber-400/40 bg-amber-500/10 p-3 text-sm text-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-200/70"
+                aria-live="assertive"
+              >
+                {" "}
+                <div className="flex items-center gap-2 font-semibold">
+                  {" "}
+                  <span aria-hidden>⚠️</span>{" "}
+                  <span>Revê estes campos antes de criar</span>{" "}
+                </div>{" "}
+                <ul className="mt-2 space-y-1 text-[13px]">
+                  {" "}
+                  {errorSummary.map((err) => (
+                    <li key={`${err.field}-${err.message}`}>
+                      {" "}
+                      <button
+                        type="button"
+                        onClick={() => focusField(err.field)}
+                        className="inline-flex items-center gap-2 text-left font-semibold text-white underline decoration-pink-200 underline-offset-4 hover:text-pink-50"
+                      >
+                        {" "}
+                        <span aria-hidden>↘</span>{" "}
+                        <span>{err.message}</span>{" "}
+                      </button>{" "}
+                    </li>
+                  ))}{" "}
+                </ul>{" "}
               </div>
-              <ul className="mt-2 space-y-1 text-[13px]">
-                {errorSummary.map((err) => (
-                  <li key={`${err.field}-${err.message}`}>
-                    <button
-                      type="button"
-                      onClick={() => focusField(err.field)}
-                      className="inline-flex items-center gap-2 text-left font-semibold text-white underline decoration-pink-200 underline-offset-4 hover:text-pink-50"
-                    >
-                      <span aria-hidden>↘</span>
-                      <span>{err.message}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {isPadelWizard && (
-            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-[0_18px_60px_rgba(0,0,0,0.35)]">
-              <div className="text-[10px] uppercase tracking-[0.28em] text-white/50">Assistente Padel</div>
-              <h1 className="mt-2 text-2xl font-semibold">{wizardTitle}</h1>
-              {wizardSubtitle && <p className="mt-2 text-sm text-white/70">{wizardSubtitle}</p>}
-            </div>
-          )}
-
-          <section className={styles.eventCreateGrid}>
-            <div className="flex w-full flex-col items-start gap-3 max-[650px]:items-center">
-              <span className="text-[10px] uppercase tracking-[0.32em] text-white/45">Capa</span>
-              <button
-                type="button"
-                onClick={() => {
-                  setCoverCategory("SUGESTOES");
-                  setShowCoverModal(true);
-                }}
-                className={`relative ${styles.eventCover} overflow-hidden rounded-[16px] border border-white/12 bg-black/25 shadow-[0_10px_24px_rgba(0,0,0,0.3)] transition hover:border-white/25`}
-              >
-                {coverPreviewUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={coverPreviewUrl} alt={`Capa do ${primaryLabel}`} className="h-full w-full object-cover" />
-                ) : (
-                  <div className="absolute inset-0 bg-gradient-to-br from-[#0f111b] via-[#0a0b14] to-[#1f1a2d]" />
-                )}
-                {!coverPreviewUrl && (
-                  <span className="absolute inset-0 flex items-center justify-center text-[12px] text-white/70">
-                    Escolher capa
-                  </span>
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setCoverCategory("SUGESTOES");
-                  setShowCoverModal(true);
-                }}
-                className="text-left text-[11px] text-white/60 transition hover:text-white"
-              >
-                Abrir biblioteca de capas
-              </button>
-            </div>
-
-            <div className="min-w-0 space-y-4">
-              {canSwitchPreset && (
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className={labelClass}>Tipo</p>
-                    <p className="text-[11px] text-white/60">Evento clássico ou torneio Padel.</p>
-                  </div>
-                  <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[12px]">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedPreset("default")}
-                      className={`rounded-full px-3 py-1 font-semibold transition ${
-                        selectedPreset === "default" ? "bg-white text-black shadow" : "text-white/70"
-                      }`}
-                    >
-                      Evento
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        router.push(appendOrganizationIdToHref("/org/padel/tournaments/create", organizationId))
-                      }
-                      className={`rounded-full px-3 py-1 font-semibold transition ${
-                        selectedPreset === "padel" ? "bg-white text-black shadow" : "text-white/70"
-                      }`}
-                    >
-                      Torneio
-                    </button>
-                  </div>
-                </div>
-              )}
-              <div className="flex flex-wrap items-center justify-between gap-2">
+            )}{" "}
+            {isPadelWizard && (
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                {" "}
+                <div className="text-[10px] uppercase tracking-[0.28em] text-white/50">
+                  Assistente Padel
+                </div>{" "}
+                <h1 className="mt-2 text-2xl font-semibold">{wizardTitle}</h1>{" "}
+                {wizardSubtitle && (
+                  <p className="mt-2 text-sm text-white/70">{wizardSubtitle}</p>
+                )}{" "}
+              </div>
+            )}{" "}
+            <section className={styles.eventCreateGrid}>
+              {" "}
+              <div className="flex w-full flex-col items-start gap-3 max-[650px]:items-center">
+                {" "}
+                <span className="text-[10px] uppercase tracking-[0.32em] text-white/45">
+                  Capa
+                </span>{" "}
                 <button
                   type="button"
-                  className="rounded-full border border-white/12 bg-black/30 px-3 py-1 text-[10px] font-medium text-white/75"
+                  onClick={() => {
+                    setCoverCategory("SUGESTOES");
+                    setShowCoverModal(true);
+                  }}
+                  className={`relative ${styles.eventCover} overflow-hidden rounded-[16px] border border-white/12 bg-black/25 transition hover:border-white/25`}
                 >
-                  Calendário
-                </button>
-                <span className="rounded-full border border-white/12 bg-black/30 px-3 py-1 text-[10px] font-medium text-white/80">
-                  Acesso: {accessSummary}
-                </span>
-              </div>
-
-              <div className="space-y-2">
-                <label className="sr-only">
-                  Título <span aria-hidden>*</span>
-                </label>
-                <input
-                  type="text"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  ref={titleRef}
-                  aria-invalid={Boolean(fieldErrors.title)}
-                  className={`${inputClass(Boolean(fieldErrors.title))} px-3 py-2 text-[22px] font-semibold leading-tight tracking-tight md:text-[28px]`}
-                  placeholder={`Nome do ${primaryLabel}`}
-                />
-                {fieldErrors.title && (
-                  <p className={errorTextClass}>
-                    <span aria-hidden>⚠️</span>
-                    {fieldErrors.title}
-                  </p>
-                )}
-              </div>
-
-              <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 space-y-2">
-                <div ref={startsAtFieldRef} className="space-y-1">
-                  <p className="text-[11px] text-white/70">Início</p>
-                  <OryaDateTimeField
-                    value={startsAt}
-                    onChange={setStartsAt}
-                    className="w-full"
-                    dateButtonClassName="h-9 flex-1 rounded-xl text-[11px]"
-                    timeButtonClassName="h-9 rounded-xl text-[11px]"
-                  />
-                </div>
-                <div ref={endsAtFieldRef} className="space-y-1">
-                  <p className="text-[11px] text-white/70">Fim</p>
-                  <OryaDateTimeField
-                    value={endsAt}
-                    onChange={setEndsAt}
-                    minDateTime={startsAt || undefined}
-                    className="w-full"
-                    dateButtonClassName="h-9 flex-1 rounded-xl text-[11px]"
-                    timeButtonClassName="h-9 rounded-xl text-[11px]"
-                  />
-                </div>
-                {scheduleError && <p className="text-[10px] text-pink-200">{scheduleError}</p>}
-              </div>
-
-              <div className="grid gap-2">
-                <div ref={locationSectionRef}>
-                  {renderLocationPanel()}
-                </div>
-                <div
-                  ref={resourcesSectionRef}
-                  className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3 space-y-3"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="space-y-1">
-                      <p className={labelClass}>Bloqueio de recursos</p>
-                      <p className="text-[11px] text-white/60">
-                        Ativa para bloquear profissionais/recursos no calendário quando o evento for publicado.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setConsumesResources((prev) => !prev)}
-                      disabled={!hasResourceSelectionsAvailable}
-                      className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${
-                        consumesResources
-                          ? "border-emerald-300/60 bg-emerald-500/20 text-emerald-50"
-                          : "border-white/20 bg-black/20 text-white/75"
-                      } disabled:opacity-50`}
-                    >
-                      {consumesResources ? "Ativo" : "Inativo"}
-                    </button>
-                  </div>
-
-                  {!hasResourceSelectionsAvailable ? (
-                    <p className="text-[11px] text-white/60">
-                      Não existem recursos/profissionais ativos para seleção.
-                    </p>
-                  ) : consumesResources ? (
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="space-y-2">
-                        <p className="text-[11px] uppercase tracking-wide text-white/60">Profissionais</p>
-                        <div className="max-h-32 space-y-2 overflow-auto pr-1">
-                          {professionalOptions.map((professional) => {
-                            const checked = selectedProfessionalIds.includes(professional.id);
-                            return (
-                              <label
-                                key={`new-pro-${professional.id}`}
-                                className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-[12px] text-white/80"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={(e) =>
-                                    setSelectedProfessionalIds((prev) =>
-                                      toggleSelectionId(prev, professional.id, e.target.checked),
-                                    )
-                                  }
-                                  className="h-4 w-4 rounded border-white/30 bg-black/20"
-                                />
-                                <span>{professional.name || `Profissional #${professional.id}`}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <p className="text-[11px] uppercase tracking-wide text-white/60">Recursos</p>
-                        <div className="max-h-32 space-y-2 overflow-auto pr-1">
-                          {resourceOptions.map((resource) => {
-                            const checked = selectedResourceIds.includes(resource.id);
-                            return (
-                              <label
-                                key={`new-res-${resource.id}`}
-                                className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-[12px] text-white/80"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={(e) =>
-                                    setSelectedResourceIds((prev) =>
-                                      toggleSelectionId(prev, resource.id, e.target.checked),
-                                    )
-                                  }
-                                  className="h-4 w-4 rounded border-white/30 bg-black/20"
-                                />
-                                <span>{resource.label || `Recurso #${resource.id}`}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {fieldErrors.resources && (
-                    <p className={errorTextClass}>
-                      <span aria-hidden>⚠️</span>
-                      {fieldErrors.resources}
-                    </p>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowDescriptionModal(true)}
-                  className="group flex w-full items-start gap-4 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-left transition hover:border-white/25 hover:bg-white/8"
-                >
-                  <div className="space-y-1">
-                    <p className="text-[12px] text-white/80">Descrição</p>
-                    <p className="text-[11px] text-white/55">{descriptionSummary}</p>
-                  </div>
-                </button>
-              </div>
-
-              <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3">
-                <p className="text-[12px] text-white/80">Interesses do evento</p>
-                <p className="text-[11px] text-white/55">Ajuda o ranking e personalização.</p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {INTEREST_OPTIONS.map((interest) => {
-                    const active = interestTags.includes(interest.id);
-                    return (
-                      <FilterChip
-                        key={interest.id}
-                        label={interest.label}
-                        icon={<InterestIcon id={interest.id} className="h-3 w-3" />}
-                        active={active}
-                        onClick={() => {
-                          setInterestTags((prev) => {
-                            if (prev.includes(interest.id)) {
-                              return prev.filter((item) => item !== interest.id);
-                            }
-                            return [...prev, interest.id];
-                          });
-                        }}
-                      />
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <p className={labelClass}>Opções do {primaryLabel}</p>
-                <div className="rounded-xl border border-white/10 bg-white/[0.03] divide-y divide-white/8">
-                  {isPadelPreset ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (padelSectionRef.current) {
-                          padelSectionRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-                        }
-                      }}
-                      className="group flex w-full items-center justify-between gap-4 px-3 py-3 text-left transition hover:bg-white/6"
-                    >
-                      <div className="space-y-1">
-                        <p className={labelClass}>Categorias & {ticketLabelPlural}</p>
-                        <p className="text-[12px] text-white/75">{ticketsSummary}</p>
-                        {paidTicketsBlocked && !isGratisEvent && (
-                          <p className="text-[11px] text-amber-200/90">Stripe + email oficial.</p>
-                        )}
-                      </div>
-                      <span className="text-[12px] text-white/60 group-hover:text-white/85">Ver</span>
-                    </button>
+                  {" "}
+                  {coverPreviewUrl ? (
+                    <img
+                      src={coverPreviewUrl}
+                      alt={`Capa do ${primaryLabel}`}
+                      className="h-full w-full object-cover"
+                    />
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => setShowTicketsModal(true)}
-                      className="group flex w-full items-center justify-between gap-4 px-3 py-3 text-left transition hover:bg-white/6"
-                    >
-                      <div className="space-y-1">
-                        <p className={labelClass}>{ticketLabelPluralCap}</p>
-                        <p className="text-[12px] text-white/75">{ticketsSummary}</p>
-                        {paidTicketsBlocked && !isGratisEvent && (
-                          <p className="text-[11px] text-amber-200/90">Stripe + email oficial.</p>
-                        )}
-                      </div>
-                      <span className="text-[12px] text-white/60 group-hover:text-white/85">Abrir</span>
-                    </button>
-                  )}
-
-                </div>
-              </div>
-
-              {selectedPreset === "padel" && (
-                <section
-                  ref={padelSectionRef}
-                  className="space-y-4 rounded-2xl border border-white/12 bg-white/5 p-5"
+                    <div className="absolute inset-0 bg-white/[0.04]" />
+                  )}{" "}
+                  {!coverPreviewUrl && (
+                    <span className="absolute inset-0 flex items-center justify-center text-[12px] text-white/70">
+                      {" "}
+                      Escolher capa{" "}
+                    </span>
+                  )}{" "}
+                </button>{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCoverCategory("SUGESTOES");
+                    setShowCoverModal(true);
+                  }}
+                  className="text-left text-[11px] text-white/60 transition hover:text-white"
                 >
+                  {" "}
+                  Abrir biblioteca de capas{" "}
+                </button>{" "}
+              </div>{" "}
+              <div className="min-w-0 space-y-4">
+                {" "}
+                {canSwitchPreset && (
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="space-y-1">
-                      <p className="text-[11px] uppercase tracking-[0.3em] text-white/55">Padel</p>
-                      <p className="text-[12px] text-white/70">Configuração</p>
-                    </div>
-                    <Link
-                      href={appendOrganizationIdToHref("/org/padel/clubs?section=padel-club", organizationId)}
-                      className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[12px] font-semibold text-white hover:border-white/30 hover:bg-white/15"
-                    >
-                      Hub
-                    </Link>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2 text-[11px] text-white/70">
-                    <span className="rounded-full border border-white/15 bg-white/[0.08] px-2 py-1">
-                      Formato: {padelFormatLabel}
-                    </span>
-                    <span className="rounded-full border border-white/15 bg-white/[0.08] px-2 py-1">
-                      {padelCategoryCountLabel}
-                    </span>
-                    <span className="rounded-full border border-white/15 bg-white/[0.08] px-2 py-1">
-                      RuleSet: {padelRuleSetLabel}
-                    </span>
-                  </div>
-
-                  <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
-                    <div className="space-y-3 rounded-2xl border border-white/12 bg-white/5 p-4">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className={labelClass}>Tipo de clube</p>
-                        <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/65">
-                          {padelClubMode === "PARTNER" ? "Parceiro" : "Próprio"}
-                        </span>
-                      </div>
-                      <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[12px]">
-                        {[
-                          { key: "OWN" as const, label: "Tenho clube" },
-                          { key: "PARTNER" as const, label: "Clube parceiro" },
-                        ].map((opt) => (
-                          <button
-                            key={opt.key}
-                            type="button"
-                            onClick={() => handlePadelClubModeChange(opt.key)}
-                            className={`rounded-full px-3 py-1 transition ${
-                              padelClubMode === opt.key
-                                ? "bg-white text-black font-semibold shadow"
-                                : "text-white/70 hover:bg-white/10"
-                            }`}
-                          >
-                            {opt.label}
-                          </button>
-                        ))}
-                      </div>
+                    {" "}
+                    <div>
+                      {" "}
+                      <p className={labelClass}>Tipo</p>{" "}
                       <p className="text-[11px] text-white/60">
-                        {padelClubMode === "PARTNER"
-                          ? "Usa um clube de terceiros. Procura no diretório e confirma a equipa local."
-                          : "Usa um clube da tua organização para gerir campos e equipa."}
-                      </p>
-                      {padelClubMode === "PARTNER" && (
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              clearErrorsForFields(["padel"]);
-                              setPadelClubSource("DIRECTORY");
-                              setPadelClubSourceTouched(true);
-                              setPadelDirectoryError(null);
-                              openPadelOperation();
-                            }}
-                            className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:border-white/40"
-                          >
-                            Abrir diretório
-                          </button>
-                          <Link
-                            href={appendOrganizationIdToHref(
-                              "/org/padel/clubs?section=padel-club&padel=clubs",
+                        Evento clássico ou torneio Padel.
+                      </p>{" "}
+                    </div>{" "}
+                    <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[12px]">
+                      {" "}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPreset("default")}
+                        className={`rounded-full px-3 py-1 font-semibold transition ${selectedPreset === "default" ? "bg-white text-black shadow" : "text-white/70"}`}
+                      >
+                        {" "}
+                        Evento{" "}
+                      </button>{" "}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          router.push(
+                            appendOrganizationIdToHref(
+                              "/org/padel/tournaments/create",
                               organizationId,
-                            )}
-                            className="rounded-full border border-white/15 px-3 py-1 text-[11px] text-white/70 hover:border-white/30"
-                          >
-                            Criar clube rápido
-                          </Link>
-                        </div>
-                      )}
-                      {padelClubMode === "OWN" && !padelClubs?.items?.length && (
-                        <div className="rounded-xl border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-50">
-                          <p className="font-semibold">Sem clubes ativos</p>
-                          <p className="text-amber-50/80">Adiciona um clube ou muda para clube parceiro.</p>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="space-y-3 rounded-2xl border border-white/12 bg-white/5 p-4">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className={labelClass}>Checklist</p>
-                        <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/65">
-                          {padelChecklistComplete}/{padelChecklistTotal}
-                        </span>
-                      </div>
-                      <div className="space-y-2">
-                        {padelChecklist.map((item) => {
-                          const statusLabel =
-                            item.status === "ok" ? "OK" : item.status === "optional" ? "Opcional" : "Em falta";
-                          const statusClass =
-                            item.status === "ok"
-                              ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-50"
-                              : item.status === "optional"
-                                ? "border-white/15 bg-white/5 text-white/65"
-                                : "border-amber-400/40 bg-amber-500/10 text-amber-50";
-                          return (
-                            <div
-                              key={item.key}
-                              className="flex items-start justify-between gap-3 rounded-xl border border-white/10 bg-black/30 px-3 py-2"
-                            >
-                              <div>
-                                <p className="text-[12px] font-semibold text-white">{item.label}</p>
-                                <p className="text-[11px] text-white/60">{item.detail}</p>
-                              </div>
-                              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusClass}`}>
-                                {statusLabel}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <div className="flex flex-wrap gap-2 pt-1">
-                        <button
-                          type="button"
-                          onClick={() => scrollToPadelTarget(padelCategoriesRef)}
-                          className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/70 hover:border-white/30"
-                        >
-                          Categorias
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => scrollToPadelTarget(padelTicketsRef)}
-                          className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/70 hover:border-white/30"
-                        >
-                          Inscrições
-                        </button>
-                        <button
-                          type="button"
-                          onClick={openPadelOperation}
-                          className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/70 hover:border-white/30"
-                        >
-                          Operação
-                        </button>
-                      </div>
-                    </div>
+                            ),
+                          )
+                        }
+                        className={`rounded-full px-3 py-1 font-semibold transition ${selectedPreset === "padel" ? "bg-white text-black shadow" : "text-white/70"}`}
+                      >
+                        {" "}
+                        Torneio{" "}
+                      </button>{" "}
+                    </div>{" "}
                   </div>
-
-                  <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
-                    <div className="space-y-3">
-                      <div className="space-y-2">
-                        <p className={labelClass}>Formato</p>
-                        <div className="flex flex-wrap gap-2">
-                          {padelFormatOptions.map((opt) => (
-                            <button
-                              key={opt.value}
-                              type="button"
-                              onClick={() => setPadelFormat(opt.value)}
-                              className={`rounded-full border px-3 py-1 text-[12px] font-semibold transition ${
-                                padelFormat === opt.value
-                                  ? "border-[var(--orya-cyan)] bg-[rgba(34,211,238,0.16)] text-white"
-                                  : "border-white/20 bg-black/30 text-white/70 hover:border-white/35"
-                              }`}
-                            >
-                              {opt.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-3">
-                      <div className="space-y-2">
-                        <label className={labelClass}>RuleSet</label>
-                        <select
-                          className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
-                          value={padelRuleSetId ?? ""}
-                          onChange={(e) => setPadelRuleSetId(Number(e.target.value) || null)}
-                        >
-                          <option value="">Padrão</option>
-                          {padelRuleSetItems.map((rs) => (
-                            <option key={rs.id} value={rs.id}>
-                              {rs.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <p className={labelClass}>Categorias</p>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {padelCategoryIds.length > 1 && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={applyPadelFormatToAll}
-                              className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/70 transition hover:border-white/30 hover:bg-white/10"
-                            >
-                              Aplicar formato do torneio
-                            </button>
-                            {!isPadelPaid && (
-                              <button
-                                type="button"
-                                onClick={applyPadelCapacityToAll}
-                                disabled={!padelCategoryConfigs[padelCategoryIds[0]]?.capacityTeams}
-                                className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/70 transition hover:border-white/30 hover:bg-white/10 disabled:opacity-50"
-                              >
-                                Replicar capacidade
-                              </button>
-                            )}
-                          </>
-                        )}
-                        {padelCategoryIds.length > 0 && (
-                          <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[11px] text-white/65">
-                            {padelCategoryIds.length}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    {isPadelPaid && (
-                      <p className="text-[11px] text-white/55">
-                        Capacidade e preço são definidos nas {ticketLabelPlural} por categoria.
+                )}{" "}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  {" "}
+                  <button
+                    type="button"
+                    className="rounded-full border border-white/12 bg-black/30 px-3 py-1 text-[10px] font-medium text-white/75"
+                  >
+                    {" "}
+                    Calendário{" "}
+                  </button>{" "}
+                  <span className="rounded-full border border-white/12 bg-black/30 px-3 py-1 text-[10px] font-medium text-white/80">
+                    {" "}
+                    Acesso: {accessSummary}{" "}
+                  </span>{" "}
+                </div>{" "}
+                <div className="space-y-2">
+                  {" "}
+                  <label className="sr-only">
+                    {" "}
+                    Título <span aria-hidden>*</span>{" "}
+                  </label>{" "}
+                  <input
+                    type="text"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    ref={titleRef}
+                    aria-invalid={Boolean(fieldErrors.title)}
+                    className={`${inputClass(Boolean(fieldErrors.title))} px-3 py-2 text-[22px] font-semibold leading-tight tracking-tight md:text-[28px]`}
+                    placeholder={`Nome do ${primaryLabel}`}
+                  />{" "}
+                  {fieldErrors.title && (
+                    <p className={errorTextClass}>
+                      {" "}
+                      <span aria-hidden>⚠️</span> {fieldErrors.title}{" "}
+                    </p>
+                  )}{" "}
+                </div>{" "}
+                <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 space-y-2">
+                  {" "}
+                  <div ref={startsAtFieldRef} className="space-y-1">
+                    {" "}
+                    <p className="text-[11px] text-white/70">Início</p>{" "}
+                    <OryaDateTimeField
+                      value={startsAt}
+                      onChange={setStartsAt}
+                      className="w-full"
+                      dateButtonClassName="h-9 flex-1 rounded-xl text-[11px]"
+                      timeButtonClassName="h-9 rounded-xl text-[11px]"
+                    />{" "}
+                  </div>{" "}
+                  <div ref={endsAtFieldRef} className="space-y-1">
+                    {" "}
+                    <p className="text-[11px] text-white/70">Fim</p>{" "}
+                    <OryaDateTimeField
+                      value={endsAt}
+                      onChange={setEndsAt}
+                      minDateTime={startsAt || undefined}
+                      className="w-full"
+                      dateButtonClassName="h-9 flex-1 rounded-xl text-[11px]"
+                      timeButtonClassName="h-9 rounded-xl text-[11px]"
+                    />{" "}
+                  </div>{" "}
+                  {scheduleError && (
+                    <p className="text-[10px] text-pink-200">{scheduleError}</p>
+                  )}{" "}
+                </div>{" "}
+                <div className="grid gap-2">
+                  {" "}
+                  <div ref={locationSectionRef}>
+                    {" "}
+                    {renderLocationPanel()}{" "}
+                  </div>{" "}
+                  <div
+                    ref={resourcesSectionRef}
+                    className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3 space-y-3"
+                  >
+                    {" "}
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      {" "}
+                      <div className="space-y-1">
+                        {" "}
+                        <p className={labelClass}>Bloqueio de recursos</p>{" "}
+                        <p className="text-[11px] text-white/60">
+                          {" "}
+                          Ativa para bloquear profissionais/recursos no
+                          calendário quando o evento for publicado.{" "}
+                        </p>{" "}
+                      </div>{" "}
+                      <button
+                        type="button"
+                        onClick={() => setConsumesResources((prev) => !prev)}
+                        disabled={!hasResourceSelectionsAvailable}
+                        className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${consumesResources ? "border-emerald-300/60 bg-emerald-500/20 text-emerald-50" : "border-white/20 bg-black/20 text-white/75"} disabled:opacity-50`}
+                      >
+                        {" "}
+                        {consumesResources ? "Ativo" : "Inativo"}{" "}
+                      </button>{" "}
+                    </div>{" "}
+                    {!hasResourceSelectionsAvailable ? (
+                      <p className="text-[11px] text-white/60">
+                        {" "}
+                        Não existem recursos/profissionais ativos para
+                        seleção.{" "}
                       </p>
-                    )}
-                    <div className="rounded-2xl border border-white/12 bg-white/5 p-3">
-                      {padelCategoryItems.length > 0 ? (
-                        <div className="flex flex-wrap gap-2">
-                          {padelCategoryItems.map((cat) => {
-                            const selected = padelCategoryIds.includes(cat.id);
-                            const descriptor = getPadelCategoryDescriptor(cat.id);
-                            const chipTitle = [descriptor.tag, descriptor.detail].filter(Boolean).join(" · ");
-                            return (
-                              <button
-                                key={cat.id}
-                                type="button"
-                                title={chipTitle || cat.label}
-                                onClick={() => {
-                                  clearErrorsForFields(["padel"]);
-                                  setPadelCategoryIds((prev) =>
-                                    prev.includes(cat.id) ? prev.filter((id) => id !== cat.id) : [...prev, cat.id],
-                                  );
-                                }}
-                                className={`rounded-full border px-3 py-1 text-[12px] font-semibold transition ${
-                                  selected
-                                    ? "border-emerald-400/60 bg-emerald-500/15 text-emerald-50"
-                                    : "border-white/20 bg-black/30 text-white/70 hover:border-white/35"
-                                }`}
-                              >
-                                {cat.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <p className="text-[12px] text-white/60">Sem categorias</p>
-                      )}
-                    </div>
-                    {padelCategoryIds.length > 0 && (
-                      <div className="rounded-2xl border border-white/12 bg-white/5">
-                        <div className="hidden grid-cols-[1.2fr_0.9fr_0.7fr] gap-2 border-b border-white/10 px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-white/45 sm:grid">
-                          <span>Categoria</span>
-                          <span>Formato</span>
-                          <span>{isPadelPaid ? `Capacidade (${ticketLabelPlural})` : "Capacidade"}</span>
-                        </div>
-                        <div className="divide-y divide-white/10">
-                          {padelCategoryIds.map((categoryId) => {
-                            const cat = padelCategoryItems.find((c) => c.id === categoryId);
-                            if (!cat) return null;
-                            const config = padelCategoryConfigs[categoryId];
-                            const descriptor = getPadelCategoryDescriptor(categoryId);
+                    ) : consumesResources ? (
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {" "}
+                        <div className="space-y-2">
+                          {" "}
+                          <p className="text-[11px] uppercase tracking-wide text-white/60">
+                            Profissionais
+                          </p>{" "}
+                          <div className="max-h-32 space-y-2 overflow-auto pr-1">
+                            {" "}
+                            {professionalOptions.map((professional) => {
+                              const checked = selectedProfessionalIds.includes(
+                                professional.id,
+                              );
+                              return (
+                                <label
+                                  key={`new-pro-${professional.id}`}
+                                  className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-[12px] text-white/80"
+                                >
+                                  {" "}
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={(e) =>
+                                      setSelectedProfessionalIds((prev) =>
+                                        toggleSelectionId(
+                                          prev,
+                                          professional.id,
+                                          e.target.checked,
+                                        ),
+                                      )
+                                    }
+                                    className="h-4 w-4 rounded border-white/30 bg-black/20"
+                                  />{" "}
+                                  <span>
+                                    {professional.name ||
+                                      `Profissional #${professional.id}`}
+                                  </span>{" "}
+                                </label>
+                              );
+                            })}{" "}
+                          </div>{" "}
+                        </div>{" "}
+                        <div className="space-y-2">
+                          {" "}
+                          <p className="text-[11px] uppercase tracking-wide text-white/60">
+                            Recursos
+                          </p>{" "}
+                          <div className="max-h-32 space-y-2 overflow-auto pr-1">
+                            {" "}
+                            {resourceOptions.map((resource) => {
+                              const checked = selectedResourceIds.includes(
+                                resource.id,
+                              );
+                              return (
+                                <label
+                                  key={`new-res-${resource.id}`}
+                                  className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-[12px] text-white/80"
+                                >
+                                  {" "}
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={(e) =>
+                                      setSelectedResourceIds((prev) =>
+                                        toggleSelectionId(
+                                          prev,
+                                          resource.id,
+                                          e.target.checked,
+                                        ),
+                                      )
+                                    }
+                                    className="h-4 w-4 rounded border-white/30 bg-black/20"
+                                  />{" "}
+                                  <span>
+                                    {resource.label ||
+                                      `Recurso #${resource.id}`}
+                                  </span>{" "}
+                                </label>
+                              );
+                            })}{" "}
+                          </div>{" "}
+                        </div>{" "}
+                      </div>
+                    ) : null}{" "}
+                    {fieldErrors.resources && (
+                      <p className={errorTextClass}>
+                        {" "}
+                        <span aria-hidden>⚠️</span> {fieldErrors.resources}{" "}
+                      </p>
+                    )}{" "}
+                  </div>{" "}
+                  <button
+                    type="button"
+                    onClick={() => setShowDescriptionModal(true)}
+                    className="group flex w-full items-start gap-4 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-left transition hover:border-white/25 hover:bg-white/8"
+                  >
+                    {" "}
+                    <div className="space-y-1">
+                      {" "}
+                      <p className="text-[12px] text-white/80">
+                        Descrição
+                      </p>{" "}
+                      <p className="text-[11px] text-white/55">
+                        {descriptionSummary}
+                      </p>{" "}
+                    </div>{" "}
+                  </button>{" "}
+                </div>{" "}
+                <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3">
+                  {" "}
+                  <p className="text-[12px] text-white/80">
+                    Interesses do evento
+                  </p>{" "}
+                  <p className="text-[11px] text-white/55">
+                    Ajuda o ranking e personalização.
+                  </p>{" "}
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {" "}
+                    {INTEREST_OPTIONS.map((interest) => {
+                      const active = interestTags.includes(interest.id);
+                      return (
+                        <FilterChip
+                          key={interest.id}
+                          label={interest.label}
+                          icon={
+                            <InterestIcon
+                              id={interest.id}
+                              className="h-3 w-3"
+                            />
+                          }
+                          active={active}
+                          onClick={() => {
+                            setInterestTags((prev) => {
+                              if (prev.includes(interest.id)) {
+                                return prev.filter(
+                                  (item) => item !== interest.id,
+                                );
+                              }
+                              return [...prev, interest.id];
+                            });
+                          }}
+                        />
+                      );
+                    })}{" "}
+                  </div>{" "}
+                </div>{" "}
+                <div className="space-y-1.5">
+                  {" "}
+                  <p className={labelClass}>Opções do {primaryLabel}</p>{" "}
+                  <div className="rounded-xl border border-white/10 bg-white/[0.03] divide-y divide-white/8">
+                    {" "}
+                    {isPadelPreset ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (padelSectionRef.current) {
+                            padelSectionRef.current.scrollIntoView({
+                              behavior: "smooth",
+                              block: "center",
+                            });
+                          }
+                        }}
+                        className="group flex w-full items-center justify-between gap-4 px-3 py-3 text-left transition hover:bg-white/6"
+                      >
+                        {" "}
+                        <div className="space-y-1">
+                          {" "}
+                          <p className={labelClass}>
+                            Categorias & {ticketLabelPlural}
+                          </p>{" "}
+                          <p className="text-[12px] text-white/75">
+                            {ticketsSummary}
+                          </p>{" "}
+                          {paidTicketsBlocked && !isGratisEvent && (
+                            <p className="text-[11px] text-amber-200/90">
+                              Stripe + email oficial.
+                            </p>
+                          )}{" "}
+                        </div>{" "}
+                        <span className="text-[12px] text-white/60 group-hover:text-white/85">
+                          Ver
+                        </span>{" "}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setShowTicketsModal(true)}
+                        className="group flex w-full items-center justify-between gap-4 px-3 py-3 text-left transition hover:bg-white/6"
+                      >
+                        {" "}
+                        <div className="space-y-1">
+                          {" "}
+                          <p className={labelClass}>
+                            {ticketLabelPluralCap}
+                          </p>{" "}
+                          <p className="text-[12px] text-white/75">
+                            {ticketsSummary}
+                          </p>{" "}
+                          {paidTicketsBlocked && !isGratisEvent && (
+                            <p className="text-[11px] text-amber-200/90">
+                              Stripe + email oficial.
+                            </p>
+                          )}{" "}
+                        </div>{" "}
+                        <span className="text-[12px] text-white/60 group-hover:text-white/85">
+                          Abrir
+                        </span>{" "}
+                      </button>
+                    )}{" "}
+                  </div>{" "}
+                </div>{" "}
+                {selectedPreset === "padel" && (
+                  <section
+                    ref={padelSectionRef}
+                    className="space-y-4 rounded-2xl border border-white/12 bg-white/5 p-5"
+                  >
+                    {" "}
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      {" "}
+                      <div className="space-y-1">
+                        {" "}
+                        <p className="text-[11px] uppercase tracking-[0.3em] text-white/55">
+                          Padel
+                        </p>{" "}
+                        <p className="text-[12px] text-white/70">
+                          Configuração
+                        </p>{" "}
+                      </div>{" "}
+                      <Link
+                        href={appendOrganizationIdToHref(
+                          "/org/padel/clubs?section=padel-club",
+                          organizationId,
+                        )}
+                        className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[12px] font-semibold text-white hover:border-white/30 hover:bg-white/15"
+                      >
+                        {" "}
+                        Hub{" "}
+                      </Link>{" "}
+                    </div>{" "}
+                    <div className="flex flex-wrap gap-2 text-[11px] text-white/70">
+                      {" "}
+                      <span className="rounded-full border border-white/15 bg-white/[0.08] px-2 py-1">
+                        {" "}
+                        Formato: {padelFormatLabel}{" "}
+                      </span>{" "}
+                      <span className="rounded-full border border-white/15 bg-white/[0.08] px-2 py-1">
+                        {" "}
+                        {padelCategoryCountLabel}{" "}
+                      </span>{" "}
+                      <span className="rounded-full border border-white/15 bg-white/[0.08] px-2 py-1">
+                        {" "}
+                        RuleSet: {padelRuleSetLabel}{" "}
+                      </span>{" "}
+                    </div>{" "}
+                    <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
+                      {" "}
+                      <div className="space-y-3 rounded-2xl border border-white/12 bg-white/5 p-4">
+                        {" "}
+                        <div className="flex items-center justify-between gap-2">
+                          {" "}
+                          <p className={labelClass}>Tipo de clube</p>{" "}
+                          <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/65">
+                            {" "}
+                            {padelClubMode === "PARTNER"
+                              ? "Parceiro"
+                              : "Próprio"}{" "}
+                          </span>{" "}
+                        </div>{" "}
+                        <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[12px]">
+                          {" "}
+                          {[
+                            { key: "OWN" as const, label: "Tenho clube" },
+                            {
+                              key: "PARTNER" as const,
+                              label: "Clube parceiro",
+                            },
+                          ].map((opt) => (
+                            <button
+                              key={opt.key}
+                              type="button"
+                              onClick={() => handlePadelClubModeChange(opt.key)}
+                              className={`rounded-full px-3 py-1 transition ${padelClubMode === opt.key ? "bg-white text-black font-semibold shadow" : "text-white/70 hover:bg-white/10"}`}
+                            >
+                              {" "}
+                              {opt.label}{" "}
+                            </button>
+                          ))}{" "}
+                        </div>{" "}
+                        <p className="text-[11px] text-white/60">
+                          {" "}
+                          {padelClubMode === "PARTNER"
+                            ? "Usa um clube de terceiros. Procura no diretório e confirma a equipa local."
+                            : "Usa um clube da tua organização para gerir campos e equipa."}{" "}
+                        </p>{" "}
+                        {padelClubMode === "PARTNER" && (
+                          <div className="flex flex-wrap gap-2">
+                            {" "}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                clearErrorsForFields(["padel"]);
+                                setPadelClubSource("DIRECTORY");
+                                setPadelClubSourceTouched(true);
+                                setPadelDirectoryError(null);
+                                openPadelOperation();
+                              }}
+                              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:border-white/40"
+                            >
+                              {" "}
+                              Abrir diretório{" "}
+                            </button>{" "}
+                            <Link
+                              href={appendOrganizationIdToHref(
+                                "/org/padel/clubs?section=padel-club&padel=clubs",
+                                organizationId,
+                              )}
+                              className="rounded-full border border-white/15 px-3 py-1 text-[11px] text-white/70 hover:border-white/30"
+                            >
+                              {" "}
+                              Criar clube rápido{" "}
+                            </Link>{" "}
+                          </div>
+                        )}{" "}
+                        {padelClubMode === "OWN" &&
+                          !padelClubs?.items?.length && (
+                            <div className="rounded-xl border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-50">
+                              {" "}
+                              <p className="font-semibold">
+                                Sem clubes ativos
+                              </p>{" "}
+                              <p className="text-amber-50/80">
+                                Adiciona um clube ou muda para clube parceiro.
+                              </p>{" "}
+                            </div>
+                          )}{" "}
+                      </div>{" "}
+                      <div className="space-y-3 rounded-2xl border border-white/12 bg-white/5 p-4">
+                        {" "}
+                        <div className="flex items-center justify-between gap-2">
+                          {" "}
+                          <p className={labelClass}>Checklist</p>{" "}
+                          <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/65">
+                            {" "}
+                            {padelChecklistComplete}/{padelChecklistTotal}{" "}
+                          </span>{" "}
+                        </div>{" "}
+                        <div className="space-y-2">
+                          {" "}
+                          {padelChecklist.map((item) => {
+                            const statusLabel =
+                              item.status === "ok"
+                                ? "OK"
+                                : item.status === "optional"
+                                  ? "Opcional"
+                                  : "Em falta";
+                            const statusClass =
+                              item.status === "ok"
+                                ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-50"
+                                : item.status === "optional"
+                                  ? "border-white/15 bg-white/5 text-white/65"
+                                  : "border-amber-400/40 bg-amber-500/10 text-amber-50";
                             return (
                               <div
-                                key={categoryId}
-                                className="grid gap-2 px-4 py-3 sm:grid-cols-[1.2fr_0.9fr_0.7fr] sm:items-center"
+                                key={item.key}
+                                className="flex items-start justify-between gap-3 rounded-xl border border-white/10 bg-black/30 px-3 py-2"
                               >
-                                <div className="space-y-0.5">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <span className="text-[12px] font-semibold text-white">{cat.label}</span>
-                                    <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-white/70">
-                                      {descriptor.tag}
-                                    </span>
-                                  </div>
-                                  {descriptor.detail && (
-                                    <div className="text-[11px] text-white/55">{descriptor.detail}</div>
-                                  )}
-                                </div>
-                                <div className="space-y-1">
-                                  <span className="text-[10px] uppercase tracking-[0.16em] text-white/45 sm:hidden">
-                                    Formato
-                                  </span>
-                                  <select
-                                    className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-[12px] text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
-                                    value={config?.format ?? ""}
-                                    onChange={(e) =>
-                                      setPadelCategoryConfigs((prev) => ({
-                                        ...prev,
-                                        [categoryId]: {
-                                          capacityTeams: prev[categoryId]?.capacityTeams ?? "",
-                                          format: e.target.value || null,
-                                        },
-                                      }))
-                                    }
-                                  >
-                                    <option value="">Formato (torneio)</option>
-                                    {padelFormatOptions.map((opt) => (
-                                      <option key={`cat-format-${categoryId}-${opt.value}`} value={opt.value}>
-                                        {opt.label}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
-                                <div className="space-y-1">
-                                  <span className="text-[10px] uppercase tracking-[0.16em] text-white/45 sm:hidden">
-                                    {isPadelPaid ? `Capacidade (${ticketLabelPlural})` : "Capacidade"}
-                                  </span>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    step="1"
-                                    inputMode="numeric"
-                                    placeholder="Capacidade"
-                                    value={
-                                      isPadelPaid ? getPadelTicketCapacityValue(categoryId) : config?.capacityTeams ?? ""
-                                    }
-                                    onChange={(e) => {
-                                      if (isPadelPaid) return;
-                                      setPadelCategoryConfigs((prev) => ({
-                                        ...prev,
-                                        [categoryId]: {
-                                          capacityTeams: normalizeIntegerInput(e.target.value),
-                                          format: prev[categoryId]?.format ?? null,
-                                        },
-                                      }));
-                                    }}
-                                    disabled={isPadelPaid}
-                                    className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-[12px] text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)] disabled:opacity-65"
-                                  />
-                                </div>
+                                {" "}
+                                <div>
+                                  {" "}
+                                  <p className="text-[12px] font-semibold text-white">
+                                    {item.label}
+                                  </p>{" "}
+                                  <p className="text-[11px] text-white/60">
+                                    {item.detail}
+                                  </p>{" "}
+                                </div>{" "}
+                                <span
+                                  className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusClass}`}
+                                >
+                                  {" "}
+                                  {statusLabel}{" "}
+                                </span>{" "}
                               </div>
                             );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                    {fieldErrors.padel && <p className="text-[11px] text-pink-200">{fieldErrors.padel}</p>}
-                  </div>
-
-                  <div ref={padelTicketsRef} className="space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="space-y-1">
-                        <p className={labelClass}>{ticketLabelPluralCap}</p>
-                        <p className="text-[12px] text-white/70">
-                          {padelCategoryIds.length === 0 ? ticketsSummary : `${ticketsSummary} · ${accessSummary}`}
+                          })}{" "}
+                        </div>{" "}
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          {" "}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              scrollToPadelTarget(padelCategoriesRef)
+                            }
+                            className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/70 hover:border-white/30"
+                          >
+                            {" "}
+                            Categorias{" "}
+                          </button>{" "}
+                          <button
+                            type="button"
+                            onClick={() => scrollToPadelTarget(padelTicketsRef)}
+                            className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/70 hover:border-white/30"
+                          >
+                            {" "}
+                            Inscrições{" "}
+                          </button>{" "}
+                          <button
+                            type="button"
+                            onClick={openPadelOperation}
+                            className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/70 hover:border-white/30"
+                          >
+                            {" "}
+                            Operação{" "}
+                          </button>{" "}
+                        </div>{" "}
+                      </div>{" "}
+                    </div>{" "}
+                    <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+                      {" "}
+                      <div className="space-y-3">
+                        {" "}
+                        <div className="space-y-2">
+                          {" "}
+                          <p className={labelClass}>Formato</p>{" "}
+                          <div className="flex flex-wrap gap-2">
+                            {" "}
+                            {padelFormatOptions.map((opt) => (
+                              <button
+                                key={opt.value}
+                                type="button"
+                                onClick={() => setPadelFormat(opt.value)}
+                                className={`rounded-full border px-3 py-1 text-[12px] font-semibold transition ${padelFormat === opt.value ? "border-[var(--orya-cyan)] bg-[rgba(34,211,238,0.16)] text-white" : "border-white/20 bg-black/30 text-white/70 hover:border-white/35"}`}
+                              >
+                                {" "}
+                                {opt.label}{" "}
+                              </button>
+                            ))}{" "}
+                          </div>{" "}
+                        </div>{" "}
+                      </div>{" "}
+                      <div className="space-y-3">
+                        {" "}
+                        <div className="space-y-2">
+                          {" "}
+                          <label className={labelClass}>RuleSet</label>{" "}
+                          <select
+                            className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
+                            value={padelRuleSetId ?? ""}
+                            onChange={(e) =>
+                              setPadelRuleSetId(Number(e.target.value) || null)
+                            }
+                          >
+                            {" "}
+                            <option value="">Padrão</option>{" "}
+                            {padelRuleSetItems.map((rs) => (
+                              <option key={rs.id} value={rs.id}>
+                                {" "}
+                                {rs.name}{" "}
+                              </option>
+                            ))}{" "}
+                          </select>{" "}
+                        </div>{" "}
+                      </div>{" "}
+                    </div>{" "}
+                    <div className="space-y-2">
+                      {" "}
+                      <div className="flex items-center justify-between">
+                        {" "}
+                        <p className={labelClass}>Categorias</p>{" "}
+                        <div className="flex flex-wrap items-center gap-2">
+                          {" "}
+                          {padelCategoryIds.length > 1 && (
+                            <>
+                              {" "}
+                              <button
+                                type="button"
+                                onClick={applyPadelFormatToAll}
+                                className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/70 transition hover:border-white/30 hover:bg-white/10"
+                              >
+                                {" "}
+                                Aplicar formato do torneio{" "}
+                              </button>{" "}
+                              {!isPadelPaid && (
+                                <button
+                                  type="button"
+                                  onClick={applyPadelCapacityToAll}
+                                  disabled={
+                                    !padelCategoryConfigs[padelCategoryIds[0]]
+                                      ?.capacityTeams
+                                  }
+                                  className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/70 transition hover:border-white/30 hover:bg-white/10 disabled:opacity-50"
+                                >
+                                  {" "}
+                                  Replicar capacidade{" "}
+                                </button>
+                              )}{" "}
+                            </>
+                          )}{" "}
+                          {padelCategoryIds.length > 0 && (
+                            <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[11px] text-white/65">
+                              {" "}
+                              {padelCategoryIds.length}{" "}
+                            </span>
+                          )}{" "}
+                        </div>{" "}
+                      </div>{" "}
+                      {isPadelPaid && (
+                        <p className="text-[11px] text-white/55">
+                          {" "}
+                          Capacidade e preço são definidos nas{" "}
+                          {ticketLabelPlural} por categoria.{" "}
                         </p>
-                      </div>
-                    </div>
-                    {renderTicketsPanel()}
-                  </div>
-
-                  <div ref={padelOperationRef} className="rounded-2xl border border-white/12 bg-white/5">
-                    <button
-                      type="button"
-                      onClick={() => setPadelRulesOpen((prev) => !prev)}
-                      className="flex w-full items-center justify-between gap-4 px-4 py-4 text-left transition hover:bg-white/8"
+                      )}{" "}
+                      <div className="rounded-2xl border border-white/12 bg-white/5 p-3">
+                        {" "}
+                        {padelCategoryItems.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {" "}
+                            {padelCategoryItems.map((cat) => {
+                              const selected = padelCategoryIds.includes(
+                                cat.id,
+                              );
+                              const descriptor = getPadelCategoryDescriptor(
+                                cat.id,
+                              );
+                              const chipTitle = [
+                                descriptor.tag,
+                                descriptor.detail,
+                              ]
+                                .filter(Boolean)
+                                .join(" ·");
+                              return (
+                                <button
+                                  key={cat.id}
+                                  type="button"
+                                  title={chipTitle || cat.label}
+                                  onClick={() => {
+                                    clearErrorsForFields(["padel"]);
+                                    setPadelCategoryIds((prev) =>
+                                      prev.includes(cat.id)
+                                        ? prev.filter((id) => id !== cat.id)
+                                        : [...prev, cat.id],
+                                    );
+                                  }}
+                                  className={`rounded-full border px-3 py-1 text-[12px] font-semibold transition ${selected ? "border-emerald-400/60 bg-emerald-500/15 text-emerald-50" : "border-white/20 bg-black/30 text-white/70 hover:border-white/35"}`}
+                                >
+                                  {" "}
+                                  {cat.label}{" "}
+                                </button>
+                              );
+                            })}{" "}
+                          </div>
+                        ) : (
+                          <p className="text-[12px] text-white/60">
+                            Sem categorias
+                          </p>
+                        )}{" "}
+                      </div>{" "}
+                      {padelCategoryIds.length > 0 && (
+                        <div className="rounded-2xl border border-white/12 bg-white/5">
+                          {" "}
+                          <div className="hidden grid-cols-[1.2fr_0.9fr_0.7fr] gap-2 border-b border-white/10 px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-white/45 sm:grid">
+                            {" "}
+                            <span>Categoria</span> <span>Formato</span>{" "}
+                            <span>
+                              {isPadelPaid
+                                ? `Capacidade (${ticketLabelPlural})`
+                                : "Capacidade"}
+                            </span>{" "}
+                          </div>{" "}
+                          <div className="divide-y divide-white/10">
+                            {" "}
+                            {padelCategoryIds.map((categoryId) => {
+                              const cat = padelCategoryItems.find(
+                                (c) => c.id === categoryId,
+                              );
+                              if (!cat) return null;
+                              const config = padelCategoryConfigs[categoryId];
+                              const descriptor =
+                                getPadelCategoryDescriptor(categoryId);
+                              return (
+                                <div
+                                  key={categoryId}
+                                  className="grid gap-2 px-4 py-3 sm:grid-cols-[1.2fr_0.9fr_0.7fr] sm:items-center"
+                                >
+                                  {" "}
+                                  <div className="space-y-0.5">
+                                    {" "}
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      {" "}
+                                      <span className="text-[12px] font-semibold text-white">
+                                        {cat.label}
+                                      </span>{" "}
+                                      <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-white/70">
+                                        {" "}
+                                        {descriptor.tag}{" "}
+                                      </span>{" "}
+                                    </div>{" "}
+                                    {descriptor.detail && (
+                                      <div className="text-[11px] text-white/55">
+                                        {descriptor.detail}
+                                      </div>
+                                    )}{" "}
+                                  </div>{" "}
+                                  <div className="space-y-1">
+                                    {" "}
+                                    <span className="text-[10px] uppercase tracking-[0.16em] text-white/45 sm:hidden">
+                                      {" "}
+                                      Formato{" "}
+                                    </span>{" "}
+                                    <select
+                                      className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-[12px] text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
+                                      value={config?.format ?? ""}
+                                      onChange={(e) =>
+                                        setPadelCategoryConfigs((prev) => ({
+                                          ...prev,
+                                          [categoryId]: {
+                                            capacityTeams:
+                                              prev[categoryId]?.capacityTeams ??
+                                              "",
+                                            format: e.target.value || null,
+                                          },
+                                        }))
+                                      }
+                                    >
+                                      {" "}
+                                      <option value="">
+                                        Formato (torneio)
+                                      </option>{" "}
+                                      {padelFormatOptions.map((opt) => (
+                                        <option
+                                          key={`cat-format-${categoryId}-${opt.value}`}
+                                          value={opt.value}
+                                        >
+                                          {" "}
+                                          {opt.label}{" "}
+                                        </option>
+                                      ))}{" "}
+                                    </select>{" "}
+                                  </div>{" "}
+                                  <div className="space-y-1">
+                                    {" "}
+                                    <span className="text-[10px] uppercase tracking-[0.16em] text-white/45 sm:hidden">
+                                      {" "}
+                                      {isPadelPaid
+                                        ? `Capacidade (${ticketLabelPlural})`
+                                        : "Capacidade"}{" "}
+                                    </span>{" "}
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      step="1"
+                                      inputMode="numeric"
+                                      placeholder="Capacidade"
+                                      value={
+                                        isPadelPaid
+                                          ? getPadelTicketCapacityValue(
+                                              categoryId,
+                                            )
+                                          : (config?.capacityTeams ?? "")
+                                      }
+                                      onChange={(e) => {
+                                        if (isPadelPaid) return;
+                                        setPadelCategoryConfigs((prev) => ({
+                                          ...prev,
+                                          [categoryId]: {
+                                            capacityTeams:
+                                              normalizeIntegerInput(
+                                                e.target.value,
+                                              ),
+                                            format:
+                                              prev[categoryId]?.format ?? null,
+                                          },
+                                        }));
+                                      }}
+                                      disabled={isPadelPaid}
+                                      className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-[12px] text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)] disabled:opacity-65"
+                                    />{" "}
+                                  </div>{" "}
+                                </div>
+                              );
+                            })}{" "}
+                          </div>{" "}
+                        </div>
+                      )}{" "}
+                      {fieldErrors.padel && (
+                        <p className="text-[11px] text-pink-200">
+                          {fieldErrors.padel}
+                        </p>
+                      )}{" "}
+                    </div>{" "}
+                    <div ref={padelTicketsRef} className="space-y-3">
+                      {" "}
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        {" "}
+                        <div className="space-y-1">
+                          {" "}
+                          <p className={labelClass}>
+                            {ticketLabelPluralCap}
+                          </p>{" "}
+                          <p className="text-[12px] text-white/70">
+                            {" "}
+                            {padelCategoryIds.length === 0
+                              ? ticketsSummary
+                              : `${ticketsSummary} · ${accessSummary}`}{" "}
+                          </p>{" "}
+                        </div>{" "}
+                      </div>{" "}
+                      {renderTicketsPanel()}{" "}
+                    </div>{" "}
+                    <div
+                      ref={padelOperationRef}
+                      className="rounded-2xl border border-white/12 bg-white/5"
                     >
-                      <div className="space-y-1">
-                        <p className={labelClass}>Inscrições</p>
-                        <p className="text-sm text-white/80">
-                          Split fixo 24h · Total {padelMaxEntriesTotal || "—"}
-                        </p>
-                      </div>
-                      <span className="text-[12px] text-white/60">
-                        {padelRulesOpen ? "Fechar" : "Editar"}
-                      </span>
-                    </button>
-                    {padelRulesOpen && (
-                      <div className="space-y-3 px-4 pb-4">
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <div className="rounded-lg border border-white/15 bg-black/30 px-3 py-2">
-                            <p className="text-[11px] text-white/70">Split</p>
-                            <p className="mt-1 text-[12px] text-white/90">Fixo em 24h antes do inicio</p>
-                          </div>
-                          <label className="text-[11px] text-white/70">
-                            Total
-                            <input
-                              type="number"
-                              min={0}
-                              step="1"
-                              inputMode="numeric"
-                              value={padelMaxEntriesTotal}
-                              onChange={(e) => setPadelMaxEntriesTotal(normalizeIntegerInput(e.target.value))}
-                              className="mt-1 w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-[12px] text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
-                            />
-                          </label>
-                          <label className="text-[11px] text-white/70">
-                            Abertura
-                            <OryaDateTimeField
-                              value={padelRegistrationStartsAt}
-                              onChange={setPadelRegistrationStartsAt}
-                              className="mt-1 w-full"
-                              dateButtonClassName="h-10 flex-1 rounded-xl"
-                              timeButtonClassName="h-10 rounded-xl"
-                            />
-                          </label>
-                          <label className="text-[11px] text-white/70">
-                            Fecho
-                            <OryaDateTimeField
-                              value={padelRegistrationEndsAt}
-                              onChange={setPadelRegistrationEndsAt}
-                              minDateTime={padelRegistrationStartsAt || undefined}
-                              className="mt-1 w-full"
-                              dateButtonClassName="h-10 flex-1 rounded-xl"
-                              timeButtonClassName="h-10 rounded-xl"
-                            />
-                          </label>
+                      {" "}
+                      <button
+                        type="button"
+                        onClick={() => setPadelRulesOpen((prev) => !prev)}
+                        className="flex w-full items-center justify-between gap-4 px-4 py-4 text-left transition hover:bg-white/8"
+                      >
+                        {" "}
+                        <div className="space-y-1">
+                          {" "}
+                          <p className={labelClass}>Inscrições</p>{" "}
+                          <p className="text-sm text-white/80">
+                            {" "}
+                            Split fixo 24h · Total{" "}
+                            {padelMaxEntriesTotal || "—"}{" "}
+                          </p>{" "}
+                        </div>{" "}
+                        <span className="text-[12px] text-white/60">
+                          {" "}
+                          {padelRulesOpen ? "Fechar" : "Editar"}{" "}
+                        </span>{" "}
+                      </button>{" "}
+                      {padelRulesOpen && (
+                        <div className="space-y-3 px-4 pb-4">
+                          {" "}
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            {" "}
+                            <div className="rounded-lg border border-white/15 bg-black/30 px-3 py-2">
+                              {" "}
+                              <p className="text-[11px] text-white/70">
+                                Split
+                              </p>{" "}
+                              <p className="mt-1 text-[12px] text-white/90">
+                                Fixo em 24h antes do inicio
+                              </p>{" "}
+                            </div>{" "}
+                            <label className="text-[11px] text-white/70">
+                              {" "}
+                              Total{" "}
+                              <input
+                                type="number"
+                                min={0}
+                                step="1"
+                                inputMode="numeric"
+                                value={padelMaxEntriesTotal}
+                                onChange={(e) =>
+                                  setPadelMaxEntriesTotal(
+                                    normalizeIntegerInput(e.target.value),
+                                  )
+                                }
+                                className="mt-1 w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-[12px] text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
+                              />{" "}
+                            </label>{" "}
+                            <label className="text-[11px] text-white/70">
+                              {" "}
+                              Abertura{" "}
+                              <OryaDateTimeField
+                                value={padelRegistrationStartsAt}
+                                onChange={setPadelRegistrationStartsAt}
+                                className="mt-1 w-full"
+                                dateButtonClassName="h-10 flex-1 rounded-xl"
+                                timeButtonClassName="h-10 rounded-xl"
+                              />{" "}
+                            </label>{" "}
+                            <label className="text-[11px] text-white/70">
+                              {" "}
+                              Fecho{" "}
+                              <OryaDateTimeField
+                                value={padelRegistrationEndsAt}
+                                onChange={setPadelRegistrationEndsAt}
+                                minDateTime={
+                                  padelRegistrationStartsAt || undefined
+                                }
+                                className="mt-1 w-full"
+                                dateButtonClassName="h-10 flex-1 rounded-xl"
+                                timeButtonClassName="h-10 rounded-xl"
+                              />{" "}
+                            </label>{" "}
+                          </div>{" "}
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            {" "}
+                            <div className="flex items-center justify-between gap-2 rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-[12px] text-white/80">
+                              {" "}
+                              <span>Espera</span>{" "}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setPadelWaitlistEnabled((prev) => !prev)
+                                }
+                                className={`rounded-full px-3 py-1 text-[11px] font-semibold ${padelWaitlistEnabled ? "bg-white text-black" : "border border-white/20 text-white/80"}`}
+                              >
+                                {" "}
+                                {padelWaitlistEnabled
+                                  ? "Ativa"
+                                  : "Inativa"}{" "}
+                              </button>{" "}
+                            </div>{" "}
+                            <div className="flex items-center justify-between gap-2 rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-[12px] text-white/80">
+                              {" "}
+                              <span>Por jogador</span>{" "}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setPadelAllowSecondCategory((prev) => !prev)
+                                }
+                                className={`rounded-full px-3 py-1 text-[11px] font-semibold ${padelAllowSecondCategory ? "bg-white text-black" : "border border-white/20 text-white/80"}`}
+                              >
+                                {" "}
+                                {padelAllowSecondCategory
+                                  ? "2 categorias"
+                                  : "1 categoria"}{" "}
+                              </button>{" "}
+                            </div>{" "}
+                          </div>{" "}
+                          <p className="text-[11px] text-white/50">
+                            Vazio = sem limite.
+                          </p>{" "}
                         </div>
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <div className="flex items-center justify-between gap-2 rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-[12px] text-white/80">
-                            <span>Espera</span>
-                            <button
-                              type="button"
-                              onClick={() => setPadelWaitlistEnabled((prev) => !prev)}
-                              className={`rounded-full px-3 py-1 text-[11px] font-semibold ${
-                                padelWaitlistEnabled ? "bg-white text-black" : "border border-white/20 text-white/80"
-                              }`}
-                            >
-                              {padelWaitlistEnabled ? "Ativa" : "Inativa"}
-                            </button>
-                          </div>
-                          <div className="flex items-center justify-between gap-2 rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-[12px] text-white/80">
-                            <span>Por jogador</span>
-                            <button
-                              type="button"
-                              onClick={() => setPadelAllowSecondCategory((prev) => !prev)}
-                              className={`rounded-full px-3 py-1 text-[11px] font-semibold ${
-                                padelAllowSecondCategory ? "bg-white text-black" : "border border-white/20 text-white/80"
-                              }`}
-                            >
-                              {padelAllowSecondCategory ? "2 categorias" : "1 categoria"}
-                            </button>
-                          </div>
-                        </div>
-                        <p className="text-[11px] text-white/50">Vazio = sem limite.</p>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="rounded-2xl border border-white/12 bg-white/5">
-                    <button
-                      type="button"
-                      onClick={() => setPadelAdvancedOpen((prev) => !prev)}
-                      className="flex w-full items-center justify-between gap-4 px-4 py-4 text-left transition hover:bg-white/8"
-                    >
-                      <div className="space-y-1">
-                        <p className={labelClass}>Operação</p>
-                        <p className="text-sm text-white/80">
-                          Clube: {selectedPadelClub?.name ?? "—"} · Campos: {selectedPadelCourtIds.length || "—"}
-                        </p>
-                        <p className="text-[11px] text-white/60">Equipa: {selectedPadelStaffIds.length || "—"}</p>
-                      </div>
-                      <span className="text-[12px] text-white/60">
-                        {padelAdvancedOpen ? "Fechar" : "Editar"}
-                      </span>
-                    </button>
-                    {padelAdvancedOpen && <div className="px-4 pb-4">{padelExtrasContent}</div>}
-                  </div>
-                </section>
-              )}
-            </div>
-          </section>
-
-          <div className="flex flex-col items-center gap-2 pt-2">
-            <p className="text-[11px] text-white/60">Obrigatório: título, data e morada válida.</p>
-            {submitDisabledReason && (
-              <p className="text-[10px] text-white/45">{submitDisabledReason}</p>
-            )}
-            <div className="flex w-full max-w-[420px]">
+                      )}{" "}
+                    </div>{" "}
+                    <div className="rounded-2xl border border-white/12 bg-white/5">
+                      {" "}
+                      <button
+                        type="button"
+                        onClick={() => setPadelAdvancedOpen((prev) => !prev)}
+                        className="flex w-full items-center justify-between gap-4 px-4 py-4 text-left transition hover:bg-white/8"
+                      >
+                        {" "}
+                        <div className="space-y-1">
+                          {" "}
+                          <p className={labelClass}>Operação</p>{" "}
+                          <p className="text-sm text-white/80">
+                            {" "}
+                            Clube: {selectedPadelClub?.name ?? "—"} · Campos:{" "}
+                            {selectedPadelCourtIds.length || "—"}{" "}
+                          </p>{" "}
+                          <p className="text-[11px] text-white/60">
+                            Equipa: {selectedPadelStaffIds.length || "—"}
+                          </p>{" "}
+                        </div>{" "}
+                        <span className="text-[12px] text-white/60">
+                          {" "}
+                          {padelAdvancedOpen ? "Fechar" : "Editar"}{" "}
+                        </span>{" "}
+                      </button>{" "}
+                      {padelAdvancedOpen && (
+                        <div className="px-4 pb-4">{padelExtrasContent}</div>
+                      )}{" "}
+                    </div>{" "}
+                  </section>
+                )}{" "}
+              </div>{" "}
+            </section>{" "}
+            <div className="flex flex-col items-center gap-2 pt-2">
+              {" "}
+              <p className="text-[11px] text-white/60">
+                Obrigatório: título, data e morada válida.
+              </p>{" "}
+              {submitDisabledReason && (
+                <p className="text-[10px] text-white/45">
+                  {submitDisabledReason}
+                </p>
+              )}{" "}
+              <div className="flex w-full max-w-[420px]">
+                {" "}
+                <button
+                  type="submit"
+                  disabled={Boolean(submitDisabledReason)}
+                  className={`${CTA_PRIMARY} flex-1 disabled:opacity-60`}
+                  title={submitDisabledReason ?? ""}
+                >
+                  {" "}
+                  {isSubmitting
+                    ? `A criar ${primaryLabel}...`
+                    : `Criar ${primaryLabel}`}{" "}
+                </button>{" "}
+              </div>{" "}
+            </div>{" "}
+            <div ref={ctaAlertRef} className="space-y-3">
+              {" "}
+              {stripeAlert && (
+                <FormAlert
+                  variant={hasPaidTicket ? "error" : "warning"}
+                  title="Conclui os passos para vender"
+                  message={stripeAlert}
+                  actionLabel="Abrir Finanças e transferências"
+                  onAction={() =>
+                    router.push(
+                      appendOrganizationIdToHref(
+                        "/org/finance",
+                        organizationId,
+                      ),
+                    )
+                  }
+                />
+              )}{" "}
+              {validationAlert && (
+                <FormAlert variant="warning" message={validationAlert} />
+              )}{" "}
+              {errorMessage && (
+                <FormAlert variant="error" message={errorMessage} />
+              )}{" "}
+              {backendAlert && (
+                <FormAlert
+                  variant="error"
+                  title={`Algo correu mal ao guardar o ${primaryLabel}`}
+                  message={backendAlert}
+                />
+              )}{" "}
+            </div>{" "}
+            {ticketsModal} {descriptionModal} {coverModal}{" "}
+          </div>{" "}
+        </div>{" "}
+        {creationSuccess && (
+          <div className="fixed bottom-6 right-6 z-[var(--z-popover)] w-[320px] max-w-full rounded-2xl border border-emerald-400/50 bg-emerald-500/15 p-4 text-emerald-50">
+            {" "}
+            <div className="flex items-start justify-between gap-2">
+              {" "}
+              <div>
+                {" "}
+                <p className="text-sm font-semibold">
+                  {primaryLabelTitle} criado
+                </p>{" "}
+                <p className="text-[13px] text-emerald-50/85">
+                  Escolhe o próximo passo ou cria outro.
+                </p>{" "}
+              </div>{" "}
               <button
-                type="submit"
-                disabled={Boolean(submitDisabledReason)}
-                className={`${CTA_PRIMARY} flex-1 disabled:opacity-60`}
-                title={submitDisabledReason ?? ""}
+                type="button"
+                onClick={() => setCreationSuccess(null)}
+                className="text-[12px] text-emerald-50/80 hover:text-white"
+                aria-label="Fechar alerta de criação"
               >
-                {isSubmitting ? `A criar ${primaryLabel}...` : `Criar ${primaryLabel}`}
-              </button>
-            </div>
-          </div>
-
-          <div ref={ctaAlertRef} className="space-y-3">
-            {stripeAlert && (
-              <FormAlert
-                variant={hasPaidTicket ? "error" : "warning"}
-                title="Conclui os passos para vender"
-                message={stripeAlert}
-                actionLabel="Abrir Finanças e transferências"
-                onAction={() =>
-                  router.push(appendOrganizationIdToHref("/org/finance", organizationId))
-                }
-              />
-            )}
-            {validationAlert && <FormAlert variant="warning" message={validationAlert} />}
-            {errorMessage && <FormAlert variant="error" message={errorMessage} />}
-            {backendAlert && (
-              <FormAlert
-                variant="error"
-                title={`Algo correu mal ao guardar o ${primaryLabel}`}
-                message={backendAlert}
-              />
-            )}
-          </div>
-
-        {ticketsModal}
-        {descriptionModal}
-        {coverModal}
-      </div>
-    </div>
-
-    {creationSuccess && (
-        <div className="fixed bottom-6 right-6 z-[var(--z-popover)] w-[320px] max-w-full rounded-2xl border border-emerald-400/50 bg-emerald-500/15 p-4 shadow-[0_18px_45px_rgba(0,0,0,0.55)] text-emerald-50">
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <p className="text-sm font-semibold">{primaryLabelTitle} criado</p>
-              <p className="text-[13px] text-emerald-50/85">Escolhe o próximo passo ou cria outro.</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setCreationSuccess(null)}
-              className="text-[12px] text-emerald-50/80 hover:text-white"
-              aria-label="Fechar alerta de criação"
-            >
-              ✕
-            </button>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2 text-[12px]">
-            {creationSuccess.slug && (
-              <Link
-                href={`/eventos/${creationSuccess.slug}`}
-                className="rounded-full border border-emerald-200/60 bg-emerald-500/15 px-3 py-1 font-semibold text-white hover:bg-emerald-500/25"
+                {" "}
+                ✕{" "}
+              </button>{" "}
+            </div>{" "}
+            <div className="mt-3 flex flex-wrap gap-2 text-[12px]">
+              {" "}
+              {creationSuccess.slug && (
+                <Link
+                  href={`/eventos/${creationSuccess.slug}`}
+                  className="rounded-full border border-emerald-200/60 bg-emerald-500/15 px-3 py-1 font-semibold text-white hover:bg-emerald-500/25"
+                >
+                  {" "}
+                  Ver página pública{" "}
+                </Link>
+              )}{" "}
+              {creationSuccess.eventId && (
+                <Link
+                  href={`${detailBasePath}/${creationSuccess.eventId}`}
+                  className="rounded-full border border-emerald-200/60 bg-emerald-500/15 px-3 py-1 font-semibold text-white hover:bg-emerald-500/25"
+                >
+                  {" "}
+                  Editar {primaryLabel}{" "}
+                </Link>
+              )}{" "}
+              <button
+                type="button"
+                onClick={resetForm}
+                className="rounded-full border border-white/25 px-3 py-1 font-semibold text-white hover:bg-white/10"
               >
-                Ver página pública
-              </Link>
-            )}
-            {creationSuccess.eventId && (
-              <Link
-                href={`${detailBasePath}/${creationSuccess.eventId}`}
-                className="rounded-full border border-emerald-200/60 bg-emerald-500/15 px-3 py-1 font-semibold text-white hover:bg-emerald-500/25"
-              >
-                Editar {primaryLabel}
-              </Link>
-            )}
-            <button
-              type="button"
-              onClick={resetForm}
-              className="rounded-full border border-white/25 px-3 py-1 font-semibold text-white hover:bg-white/10"
-            >
-              Criar outro
-            </button>
+                {" "}
+                Criar outro{" "}
+              </button>{" "}
+            </div>{" "}
           </div>
-        </div>
-      )}
-
-      <EventCoverCropModal
-        open={showCoverCropModal}
-        file={coverCropFile}
-        onCancel={handleCoverCropCancel}
-        onConfirm={handleCoverCropConfirm}
-      />
-      </form>
+        )}{" "}
+        <EventCoverCropModal
+          open={showCoverCropModal}
+          file={coverCropFile}
+          onCancel={handleCoverCropCancel}
+          onConfirm={handleCoverCropConfirm}
+        />{" "}
+      </form>{" "}
     </>
   );
 }
-
 export default NewOrganizationEventPage;

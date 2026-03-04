@@ -329,24 +329,25 @@ export default function OrganizationDashboardShell({
   return (
     <div
       data-org-dashboard-shell
+      data-org-ui="clean-v1"
       style={
         {
           "--org-topbar-height": "0px",
-          "--org-sidebar-bg": "#191b20",
-          "--org-content-bg": "#0f1115",
-          "--org-shell-border": "rgba(255,255,255,0.07)",
-          "--org-hover": "rgba(255,255,255,0.06)",
-          "--org-hover-soft": "rgba(255,255,255,0.04)",
-          "--org-active-bg": "rgba(255,255,255,0.1)",
-          "--org-text-muted": "rgba(255,255,255,0.74)",
-          "--org-text-strong": "rgba(255,255,255,0.94)",
-          "--org-active": "rgba(255,255,255,0.94)",
-          "--orya-menu-bg": "linear-gradient(180deg, rgba(18,18,20,0.98), rgba(12,12,14,0.98))",
-          "--orya-menu-bg-solid": "rgba(14,14,16,0.98)",
-          "--orya-menu-border": "rgba(255,255,255,0.14)",
-          "--orya-menu-hover": "rgba(255,255,255,0.08)",
-          "--orya-menu-divider": "rgba(255,255,255,0.12)",
-          "--orya-menu-shadow": "0 22px 64px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,255,255,0.04)",
+          "--org-sidebar-bg": "#121820",
+          "--org-content-bg": "#0d1219",
+          "--org-shell-border": "rgba(255,255,255,0.12)",
+          "--org-hover": "rgba(255,255,255,0.08)",
+          "--org-hover-soft": "rgba(255,255,255,0.05)",
+          "--org-active-bg": "rgba(255,255,255,0.14)",
+          "--org-text-muted": "rgba(255,255,255,0.82)",
+          "--org-text-strong": "rgba(255,255,255,0.97)",
+          "--org-active": "rgba(255,255,255,0.98)",
+          "--orya-menu-bg": "none",
+          "--orya-menu-bg-solid": "rgba(16,21,28,0.98)",
+          "--orya-menu-border": "rgba(255,255,255,0.2)",
+          "--orya-menu-hover": "rgba(255,255,255,0.11)",
+          "--orya-menu-divider": "rgba(255,255,255,0.16)",
+          "--orya-menu-shadow": "none",
         } as CSSProperties
       }
       className="org-shell-root flex h-[100dvh] min-h-0 w-full min-w-0 overflow-hidden bg-[var(--org-content-bg)] text-white"
@@ -387,7 +388,7 @@ export default function OrganizationDashboardShell({
           <button
             type="button"
             onClick={() => setIsSidebarCollapsed(false)}
-            className="fixed left-3 top-3 z-[70] hidden h-8 w-8 items-center justify-center rounded-md border border-[var(--org-shell-border)] bg-[var(--org-sidebar-bg)] text-white/84 shadow-[0_10px_28px_rgba(0,0,0,0.45)] transition-colors hover:bg-[var(--org-hover)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 lg:flex"
+            className="fixed left-3 top-3 z-[70] hidden h-8 w-8 items-center justify-center rounded-md border border-[var(--org-shell-border)] bg-[var(--org-sidebar-bg)] text-white/90 transition-colors hover:bg-[var(--org-hover)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 lg:flex"
             aria-label="Mostrar barra lateral"
             title="Mostrar barra lateral"
           >
@@ -398,7 +399,7 @@ export default function OrganizationDashboardShell({
         {emailGateToast ? (
           <div
             className={cn(
-              "fixed right-4 top-4 z-[60] rounded-2xl border px-4 py-3 text-[12px] shadow-[0_16px_50px_rgba(0,0,0,0.45)] backdrop-blur-2xl",
+              "fixed right-4 top-4 z-[60] rounded-2xl border px-4 py-3 text-[12px]",
               emailGateToast.tone === "success"
                 ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-50"
                 : "border-rose-400/40 bg-rose-500/15 text-rose-100",
@@ -416,7 +417,7 @@ export default function OrganizationDashboardShell({
             )}
             data-org-scroll
           >
-            <div className="sticky top-0 z-40 border-b border-[var(--org-shell-border)] bg-[var(--org-content-bg)]/95 px-4 py-2 backdrop-blur lg:hidden">
+            <div className="sticky top-0 z-40 border-b border-[var(--org-shell-border)] bg-[var(--org-content-bg)]/95 px-4 py-2 lg:hidden">
               <div className="flex items-center justify-between gap-2">
                 <button
                   type="button"
@@ -438,11 +439,11 @@ export default function OrganizationDashboardShell({
               )}
             >
               {isSuspended ? (
-                <div className="mb-4 rounded-2xl border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-50">
+                <div className="mb-4 rounded-2xl border border-amber-400/45 bg-amber-500/12 px-4 py-3 text-sm text-amber-50">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="space-y-1">
                       <p className="font-semibold">Organização suspensa.</p>
-                      <p className="text-[12px] text-amber-100/80">
+                      <p className="text-[13px] text-amber-100/88">
                         Apenas leitura. Se precisares de ajuda,{" "}
                         {platformOfficialEmail ? (
                           <>
@@ -465,33 +466,33 @@ export default function OrganizationDashboardShell({
                         type="button"
                         onClick={handleReactivateSuspendedOrg}
                         disabled={suspensionActionLoading}
-                        className="inline-flex items-center rounded-full border border-amber-200/60 bg-amber-200/15 px-4 py-2 text-[12px] font-semibold text-amber-50 hover:bg-amber-200/25 disabled:opacity-60"
+                        className="inline-flex items-center rounded-full border border-amber-200/65 bg-amber-200/20 px-4 py-2 text-[13px] font-semibold text-amber-50 hover:bg-amber-200/28 disabled:opacity-60"
                       >
                         {suspensionActionLoading ? "A reativar…" : "Reativar organização"}
                       </button>
                     ) : null}
                   </div>
                   {suspensionActionMessage ? (
-                    <p className="mt-2 text-[12px] text-amber-100">{suspensionActionMessage}</p>
+                    <p className="mt-2 text-[13px] text-amber-100">{suspensionActionMessage}</p>
                   ) : null}
                 </div>
               ) : null}
 
               {showEmailGate ? (
-                <div className="rounded-3xl border border-amber-400/40 bg-amber-500/10 p-6 text-amber-50 shadow-[0_24px_70px_rgba(0,0,0,0.5)]">
-                  <p className="text-[11px] uppercase tracking-[0.22em] text-amber-100/80">Email oficial obrigatório</p>
+                <div className="rounded-3xl border border-amber-400/45 bg-amber-500/12 p-6 text-amber-50">
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-amber-100/88">Email oficial obrigatório</p>
                   <h2 className="mt-3 text-xl font-semibold">Confirma o email da organização</h2>
-                  <p className="mt-2 text-sm text-amber-100/80">
+                  <p className="mt-2 text-sm text-amber-100/88">
                     Para desbloquear pagamentos, convites e checkout, precisamos confirmar o email oficial.
                     Enviamos um link de verificação para a caixa de entrada da organização.
                   </p>
                   {emailVerification?.email && (
-                    <p className="mt-2 text-[12px] text-amber-100/70">Email atual: {emailVerification.email}</p>
+                    <p className="mt-2 text-[13px] text-amber-100/86">Email atual: {emailVerification.email}</p>
                   )}
                   <div className="mt-5 flex flex-wrap items-center gap-3">
                     <Link
                       href={settingsHref}
-                      className="inline-flex items-center rounded-full border border-amber-200/60 bg-amber-200/15 px-4 py-2 text-[12px] font-semibold text-amber-50 shadow-[0_10px_26px_rgba(245,158,11,0.25)] hover:bg-amber-200/25"
+                      className="inline-flex items-center rounded-full border border-amber-200/65 bg-amber-200/20 px-4 py-2 text-[13px] font-semibold text-amber-50 hover:bg-amber-200/28"
                     >
                       Ir para definições
                     </Link>
@@ -499,7 +500,7 @@ export default function OrganizationDashboardShell({
                   <button
                     type="button"
                     onClick={handleEmailVerificationInfo}
-                    className="mt-3 text-[12px] text-amber-100/80 hover:text-amber-100"
+                    className="mt-3 text-[13px] text-amber-100/86 hover:text-amber-100"
                   >
                     Precisas de ajuda? Confirma a caixa de entrada e o spam.
                   </button>

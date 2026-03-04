@@ -4,7 +4,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated } from "@/lib/security";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
-import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
+import { getMemberPermissionOverrides } from "@/lib/organizationMemberAccess";
 import { OrganizationMemberRole, OrganizationModule, OrganizationRolePack, SourceType } from "@prisma/client";
 import { getAgendaItemsForOrganization } from "@/domain/agendaReadModel/query";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -13,6 +13,7 @@ import { resolveReservasScopesForMember, resolveCoachProfessionalIds, intersectI
 import { getOrganizationActiveModules } from "@/lib/organizationModules";
 import { resolveOrganizationOperationalMode } from "@/lib/organizationOperationalMode";
 import { getOrganizationReservasOperationalState } from "@/lib/reservas/operationalState";
+import { hasModuleAccess, resolveMemberModuleAccess } from "@/lib/organizationRbac";
 
 async function _GET(req: NextRequest) {
   const url = new URL(req.url);
@@ -59,41 +60,25 @@ async function _GET(req: NextRequest) {
     tools: activeModules,
   });
 
-  const reservasAccess = await ensureMemberModuleAccess({
-    organizationId: organization.id,
-    userId: user.id,
+  const [permissionOverrides, reservasOperationalState] = await Promise.all([
+    getMemberPermissionOverrides(organization.id, user.id, prisma),
+    getOrganizationReservasOperationalState({
+      organizationId: organization.id,
+      tx: prisma,
+    }),
+  ]);
+  const moduleAccess = resolveMemberModuleAccess({
     role: membership.role,
     rolePack: membership.rolePack,
-    moduleKey: OrganizationModule.RESERVAS,
-    required: "VIEW",
+    overrides: permissionOverrides,
   });
-
-  const tournamentsAccess = await ensureMemberModuleAccess({
-    organizationId: organization.id,
-    userId: user.id,
-    role: membership.role,
-    rolePack: membership.rolePack,
-    moduleKey: OrganizationModule.TORNEIOS,
-    required: "VIEW",
-  });
-  const eventsAccess = await ensureMemberModuleAccess({
-    organizationId: organization.id,
-    userId: user.id,
-    role: membership.role,
-    rolePack: membership.rolePack,
-    moduleKey: OrganizationModule.EVENTOS,
-    required: "VIEW",
-  });
-
+  const hasCapability = (moduleKey: OrganizationModule) =>
+    activeModules.includes(moduleKey) && hasModuleAccess(moduleAccess, moduleKey, "VIEW");
   const capabilities = {
-    reservas: reservasAccess.ok,
-    eventos: eventsAccess.ok,
-    torneios: tournamentsAccess.ok,
+    reservas: hasCapability(OrganizationModule.RESERVAS),
+    eventos: hasCapability(OrganizationModule.EVENTOS),
+    torneios: hasCapability(OrganizationModule.TORNEIOS),
   };
-  const reservasOperationalState = await getOrganizationReservasOperationalState({
-    organizationId: organization.id,
-    tx: prisma,
-  });
   const reservasOperational = {
     acceptsNewBookings: reservasOperationalState.acceptNewBookings,
   };

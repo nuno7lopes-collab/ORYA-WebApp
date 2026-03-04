@@ -16,6 +16,8 @@ describe("objective nav hard-cut routes", () => {
     const hrefs = sections.flatMap((section) => [section.href, ...(section.items?.map((item) => item.href) ?? [])]);
 
     expect(hrefs.some((href) => href.includes("/bookings/services"))).toBe(false);
+    expect(hrefs).toContain("/org/academy/classes");
+    expect(hrefs).not.toContain("/org/academy");
     expect(hrefs).toContain("/org/bookings");
   });
 });

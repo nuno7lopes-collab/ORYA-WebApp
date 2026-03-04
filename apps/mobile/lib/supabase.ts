@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, processLock } from "@supabase/supabase-js";
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 import { getMobileEnv } from "./env";
@@ -97,6 +97,8 @@ export const supabase = createClient(supabaseUrl ?? "", supabaseAnonKey ?? "", {
     persistSession: true,
     // Refresh manual para evitar corridas de token no cliente mobile.
     autoRefreshToken: false,
+    // Evita refresh concorrente (mesmo token) no runtime React Native.
+    lock: processLock,
     detectSessionInUrl: false,
     flowType: "pkce",
   },

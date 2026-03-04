@@ -21,6 +21,7 @@ type CliOptions = {
   strategy: ScheduleStrategy;
   startFromNow: boolean;
   pollTimeoutMs: number;
+  bypassHardBlockGenerate: boolean;
 };
 
 type SupabaseClients = {
@@ -194,6 +195,7 @@ export function parseGenerateScheduleArgs(argv: string[]): CliOptions {
     strategy: strategyRaw as ScheduleStrategy,
     startFromNow: flags.has("--start-from-now"),
     pollTimeoutMs: parsePositiveInt(flags.get("--poll-timeout-ms") as string | undefined, 90_000),
+    bypassHardBlockGenerate: !flags.has("--no-hardblock-bypass"),
   };
 }
 
@@ -407,6 +409,35 @@ async function getMatchCounts(eventId: number) {
   return { total, pendingUnscheduled, scheduledAny };
 }
 
+async function disableHardBlockGenerate(eventId: number) {
+  const config = await prisma.padelTournamentConfig.findUnique({
+    where: { eventId },
+    select: { advancedSettings: true },
+  });
+  if (!config) return false;
+  const advanced =
+    config.advancedSettings && typeof config.advancedSettings === "object"
+      ? (config.advancedSettings as Record<string, unknown>)
+      : {};
+  const capacityPolicy =
+    advanced.capacityPolicy && typeof advanced.capacityPolicy === "object"
+      ? ({ ...(advanced.capacityPolicy as Record<string, unknown>) } as Record<string, unknown>)
+      : {};
+  if (capacityPolicy.hardBlockGenerate === false) return false;
+  capacityPolicy.hardBlockGenerate = false;
+
+  await prisma.padelTournamentConfig.update({
+    where: { eventId },
+    data: {
+      advancedSettings: {
+        ...advanced,
+        capacityPolicy,
+      } as any,
+    },
+  });
+  return true;
+}
+
 async function waitForRunDone(params: {
   baseUrl: string;
   bearer: string;
@@ -486,6 +517,7 @@ async function main() {
       strategy: options.strategy,
       startFromNow: options.startFromNow,
       pollTimeoutMs: options.pollTimeoutMs,
+      bypassHardBlockGenerate: options.bypassHardBlockGenerate,
     },
     totals: {
       eventsTarget: events.length,
@@ -569,6 +601,48 @@ async function main() {
             stage: typeof result.stage === "string" ? result.stage : null,
           });
         } catch (error) {
+          if (
+            options.bypassHardBlockGenerate &&
+            error instanceof ApiError &&
+            error.code === "GENERATION_PLAN_INFEASIBLE"
+          ) {
+            const bypassed = await disableHardBlockGenerate(event.id);
+            if (bypassed) {
+              try {
+                const retried = await postJson<Record<string, unknown>>({
+                  baseUrl: options.baseUrl,
+                  path: "/api/padel/matches/generate",
+                  bearer: adminBearer,
+                  body,
+                });
+                report.totals.generatedCallsOk += 1;
+                summary.generatedByCategory.push({
+                  categoryId: category.categoryId,
+                  label: category.label,
+                  status: "ok",
+                  stage: typeof retried.stage === "string" ? retried.stage : null,
+                });
+                continue;
+              } catch (retryError) {
+                report.totals.generatedCallsFailed += 1;
+                const retryMessage =
+                  retryError instanceof ApiError
+                    ? `${retryError.status}:${retryError.code}`
+                    : retryError instanceof Error
+                      ? retryError.message
+                      : String(retryError);
+                summary.generatedByCategory.push({
+                  categoryId: category.categoryId,
+                  label: category.label,
+                  status: "error",
+                  error: `${retryMessage} (after_hardblock_bypass)`,
+                });
+                summary.errors.push(`GENERATE:${category.categoryId}:${retryMessage}:after_hardblock_bypass`);
+                continue;
+              }
+            }
+          }
+
           report.totals.generatedCallsFailed += 1;
           const message =
             error instanceof ApiError
@@ -583,6 +657,60 @@ async function main() {
             error: message,
           });
           summary.errors.push(`GENERATE:${category.categoryId}:${message}`);
+        }
+      }
+
+      if (format === "NON_STOP") {
+        const needPairingsFailures = summary.generatedByCategory.filter(
+          (entry) => entry.status === "error" && typeof entry.error === "string" && entry.error.includes("NEED_PAIRINGS"),
+        );
+        const hasCategoryGenerationOk = summary.generatedByCategory.some((entry) => entry.status === "ok");
+        if (needPairingsFailures.length > 0 && !hasCategoryGenerationOk) {
+          const globalBody: Record<string, unknown> = {
+            eventId: event.id,
+            format,
+            existingPolicy: options.generateExistingPolicy,
+          };
+          if (options.generateExistingPolicy === "replace") {
+            globalBody.confirmReplaceExisting = true;
+          }
+          try {
+            const globalResult = await postJson<Record<string, unknown>>({
+              baseUrl: options.baseUrl,
+              path: "/api/padel/matches/generate",
+              bearer: adminBearer,
+              body: globalBody,
+            });
+            report.totals.generatedCallsOk += 1;
+            report.totals.generatedCallsFailed = Math.max(
+              0,
+              report.totals.generatedCallsFailed - needPairingsFailures.length,
+            );
+            summary.generatedByCategory = summary.generatedByCategory.map((entry) => {
+              if (
+                entry.status === "error" &&
+                typeof entry.error === "string" &&
+                entry.error.includes("NEED_PAIRINGS")
+              ) {
+                return {
+                  categoryId: entry.categoryId,
+                  label: entry.label,
+                  status: "ok" as const,
+                  stage: `GLOBAL_FALLBACK:${typeof globalResult.stage === "string" ? globalResult.stage : "OK"}`,
+                };
+              }
+              return entry;
+            });
+            summary.errors = summary.errors.filter((entry) => !entry.includes("NEED_PAIRINGS"));
+          } catch (globalError) {
+            const globalMessage =
+              globalError instanceof ApiError
+                ? `${globalError.status}:${globalError.code}`
+                : globalError instanceof Error
+                  ? globalError.message
+                  : String(globalError);
+            summary.errors.push(`GENERATE_GLOBAL_NON_STOP:${globalMessage}`);
+          }
         }
       }
 
@@ -696,4 +824,3 @@ if (shouldRunAsCli()) {
       await prisma?.$disconnect?.().catch(() => {});
     });
 }
-

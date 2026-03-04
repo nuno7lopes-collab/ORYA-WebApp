@@ -421,9 +421,9 @@ export default function PromoCodesClient() {
     "w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder:text-white/35 outline-none transition focus:border-white/40 focus:ring-2 focus:ring-white/10";
   const labelBase = "space-y-1 text-sm text-white/80";
   const helperText = "text-[11px] text-white/55";
-  const sectionCard = "rounded-2xl border border-white/10 bg-white/5 p-4 shadow-[0_10px_34px_rgba(0,0,0,0.28)]";
+  const sectionCard = "rounded-2xl border border-white/10 bg-white/5 p-4 ";
   const typeToggleBase = "flex-1 rounded-lg px-3 py-2 text-[12px] font-semibold transition";
-  const typeToggleActive = "bg-white/20 text-white shadow-[0_10px_24px_rgba(0,0,0,0.35)]";
+  const typeToggleActive = "bg-white/20 text-white ";
   const typeToggleInactive = "text-white/60 hover:text-white hover:bg-white/5";
 
   const applySuggestion = (code: string, type: "PERCENTAGE" | "FIXED", value: string) => {
@@ -432,7 +432,7 @@ export default function PromoCodesClient() {
 
   return (
     <section className={cn("w-full py-8 space-y-6 text-white")}>
-      <header className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-1">
+      <header className="rounded-3xl border border-white/12   /70 /90 p-5   space-y-1">
         <p className="text-[11px] uppercase tracking-[0.3em] text-white/70">Promoções</p>
         <h1 className="text-2xl font-semibold">Códigos promocionais</h1>
         <p className="text-sm text-white/70">
@@ -569,7 +569,7 @@ export default function PromoCodesClient() {
                       const el = document?.getElementById("promo-form");
                       el?.scrollIntoView({ behavior: "smooth", block: "start" });
                     }}
-                    className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black shadow hover:scale-[1.01]"
+                    className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black shadow "
                   >
                     Criar primeiro código
                   </button>
@@ -711,7 +711,7 @@ export default function PromoCodesClient() {
         {canManagePromos && (
           <div
             id="promo-form"
-            className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.45)] space-y-5"
+            className="rounded-2xl border border-white/10   /70 /90 p-5  space-y-5"
           >
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="space-y-1">
@@ -985,7 +985,7 @@ export default function PromoCodesClient() {
               </div>
 
               <div
-                className={`rounded-2xl border p-4 shadow-[0_10px_34px_rgba(0,0,0,0.28)] ${
+                className={`rounded-2xl border p-4  ${
                   form.active ? "border-emerald-400/40 bg-emerald-500/10" : "border-white/10 bg-white/5"
                 }`}
               >
@@ -1064,7 +1064,7 @@ export default function PromoCodesClient() {
       )}
 
       {detailId !== null && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 px-4 py-6 backdrop-blur-sm">
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 px-4 py-6 ">
           <div className="mx-auto w-full max-w-3xl rounded-2xl border border-white/15 bg-neutral-900 p-5 shadow-2xl">
             <div className="flex items-start justify-between gap-4">
               <div>

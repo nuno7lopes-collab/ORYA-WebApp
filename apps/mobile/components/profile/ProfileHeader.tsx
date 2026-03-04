@@ -11,6 +11,14 @@ type Counts = {
   events: number;
 };
 
+type HeaderMetric = {
+  key: string;
+  value: string | number;
+  label: string;
+  onPress?: () => void;
+  accessibilityLabel?: string;
+};
+
 type Props = {
   isUser: boolean;
   coverUrl?: string | null;
@@ -18,7 +26,8 @@ type Props = {
   displayName?: string | null;
   username?: string | null;
   bio?: string | null;
-  counts: Counts;
+  counts?: Counts;
+  metrics?: HeaderMetric[];
   onCoverPress?: () => void;
   onAvatarPress?: () => void;
   onFollowersPress?: () => void;
@@ -37,6 +46,7 @@ export function ProfileHeader({
   username,
   bio,
   counts,
+  metrics,
   onCoverPress,
   onAvatarPress,
   onFollowersPress,
@@ -53,6 +63,30 @@ export function ProfileHeader({
   const followersA11yLabel = isUser ? "Ver amigos" : "Ver seguidores";
   const followingLabel = isUser ? "Clubes" : "A seguir";
   const followingA11yLabel = isUser ? "Ver clubes seguidos" : "Ver a seguir";
+  const resolvedMetrics: HeaderMetric[] =
+    metrics && metrics.length > 0
+      ? metrics
+      : [
+          {
+            key: "followers",
+            value: counts?.followers ?? 0,
+            label: followersLabel,
+            onPress: onFollowersPress,
+            accessibilityLabel: followersA11yLabel,
+          },
+          {
+            key: "following",
+            value: counts?.following ?? 0,
+            label: followingLabel,
+            onPress: onFollowingPress,
+            accessibilityLabel: followingA11yLabel,
+          },
+          {
+            key: "events",
+            value: counts?.events ?? 0,
+            label: "Eventos",
+          },
+        ];
 
   return (
     <View className="gap-5">
@@ -178,32 +212,28 @@ export function ProfileHeader({
       </View>
 
       <View className="flex-row justify-center gap-8">
-        <Pressable
-          onPress={onFollowersPress}
-          disabled={!onFollowersPress}
-          accessibilityRole={onFollowersPress ? "button" : "text"}
-          accessibilityLabel={followersA11yLabel}
-          accessibilityState={{ disabled: !onFollowersPress }}
-          className="items-center"
-        >
-          <Text className="text-white text-base font-semibold">{counts.followers}</Text>
-          <Text className="text-white/60 text-xs">{followersLabel}</Text>
-        </Pressable>
-        <Pressable
-          onPress={onFollowingPress}
-          disabled={!onFollowingPress}
-          accessibilityRole={onFollowingPress ? "button" : "text"}
-          accessibilityLabel={followingA11yLabel}
-          accessibilityState={{ disabled: !onFollowingPress }}
-          className="items-center"
-        >
-          <Text className="text-white text-base font-semibold">{counts.following}</Text>
-          <Text className="text-white/60 text-xs">{followingLabel}</Text>
-        </Pressable>
-        <View className="items-center">
-          <Text className="text-white text-base font-semibold">{counts.events}</Text>
-          <Text className="text-white/60 text-xs">Eventos</Text>
-        </View>
+        {resolvedMetrics.map((metric) => {
+          if (metric.onPress) {
+            return (
+              <Pressable
+                key={metric.key}
+                onPress={metric.onPress}
+                accessibilityRole="button"
+                accessibilityLabel={metric.accessibilityLabel ?? metric.label}
+                className="items-center"
+              >
+                <Text className="text-white text-base font-semibold">{metric.value}</Text>
+                <Text className="text-white/60 text-xs">{metric.label}</Text>
+              </Pressable>
+            );
+          }
+          return (
+            <View key={metric.key} className="items-center">
+              <Text className="text-white text-base font-semibold">{metric.value}</Text>
+              <Text className="text-white/60 text-xs">{metric.label}</Text>
+            </View>
+          );
+        })}
       </View>
     </View>
   );

@@ -58,6 +58,29 @@ describe("getActiveSession", () => {
     expect(result).toBeNull();
   });
 
+  it("serializa getSession concorrente para evitar refresh implícito duplicado", async () => {
+    let resolveGetSession:
+      | ((value: { data: { session: SessionLike | null }; error?: null }) => void)
+      | null = null;
+    const pendingGetSession = new Promise<{
+      data: { session: SessionLike | null };
+      error?: null;
+    }>((resolve) => {
+      resolveGetSession = resolve;
+    });
+    mockGetSession.mockReturnValue(pendingGetSession);
+
+    const first = getActiveSession({ refreshIfNearExpiry: false });
+    const second = getActiveSession({ refreshIfNearExpiry: false });
+
+    expect(mockGetSession).toHaveBeenCalledTimes(1);
+
+    resolveGetSession?.({ data: { session: null }, error: null });
+
+    await expect(first).resolves.toBeNull();
+    await expect(second).resolves.toBeNull();
+  });
+
   it("devolve sessão atual sem refresh quando TTL ainda é suficiente", async () => {
     const current = buildSession(Math.floor((fixedNow + 5 * 60_000) / 1000));
     mockGetSession.mockResolvedValue({ data: { session: current } });

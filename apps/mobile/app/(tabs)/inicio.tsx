@@ -46,7 +46,7 @@ export default function InicioScreen() {
         title="Início"
         titleAlign="center"
         showNotifications
-        showMessages
+        showMessages={false}
       />
       <ScrollView
         contentContainerStyle={{

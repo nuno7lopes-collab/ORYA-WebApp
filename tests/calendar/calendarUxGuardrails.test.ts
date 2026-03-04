@@ -9,9 +9,10 @@ function readLocal(pathname: string) {
 const NATIVE_DATE_INPUT_RE = /type=["'](?:date|time|datetime-local)["']/;
 
 describe("calendar ux guardrails", () => {
-  it("keeps week/day calendar free from legacy mode and zoom toggles", () => {
+  it("keeps week/day calendar free from old mode and zoom toggles", () => {
     const weekClient = readLocal("app/org/[orgId]/calendar/_components/WeekCalendarReadClient.tsx");
     const dayClient = readLocal("app/org/[orgId]/calendar/_components/day/DayCalendarReadClient.tsx");
+    const monthClient = readLocal("app/org/[orgId]/calendar/_components/month/MonthCalendarReadClient.tsx");
 
     expect(weekClient).not.toContain("Modo A");
     expect(weekClient).not.toContain("Modo B");
@@ -20,39 +21,41 @@ describe("calendar ux guardrails", () => {
     expect(dayClient).not.toContain("Modo B");
     expect(dayClient).not.toContain("ZOOM");
     expect(weekClient).toContain("CalendarCommandBar");
-    expect(dayClient).toContain("CalendarCommandBar");
+    expect(dayClient).toContain("WeekCalendarReadClient");
+    expect(dayClient).toContain('mode="day"');
     expect(weekClient).not.toContain("Calendário operacional");
     expect(dayClient).not.toContain("Calendário operacional");
+    expect(weekClient).not.toContain("Fuso");
+    expect(dayClient).not.toContain("Fuso");
+    expect(monthClient).not.toContain("Fuso");
+    expect(weekClient).not.toContain("Agenda em grelha");
   });
 
   it("keeps general calendar communication visible without fallback copy antiga", () => {
-    const dayHeader = readLocal("app/org/[orgId]/calendar/_components/day/CalendarHeader.tsx");
     const weekClient = readLocal("app/org/[orgId]/calendar/_components/WeekCalendarReadClient.tsx");
     const dayClient = readLocal("app/org/[orgId]/calendar/_components/day/DayCalendarReadClient.tsx");
 
-    expect(dayHeader).toContain("Geral");
     expect(weekClient).not.toContain("Default quando não configurado: 2ª–6ª, 08:00-17:00");
     expect(weekClient).not.toContain("Escrita operacional continua em <strong>Bookings</strong>");
     expect(weekClient).toContain("buildCalendarOperationalGuidance");
-    expect(dayClient).toContain("buildCalendarOperationalGuidance");
+    expect(dayClient).toContain("WeekCalendarReadClient");
+    expect(dayClient).toContain('mode="day"');
   });
 
   it("keeps keyboard-first navigation in calendar day/week and datepicker", () => {
     const dayClient = readLocal("app/org/[orgId]/calendar/_components/day/DayCalendarReadClient.tsx");
     const weekClient = readLocal("app/org/[orgId]/calendar/_components/WeekCalendarReadClient.tsx");
-    const datePicker = readLocal("app/org/[orgId]/calendar/_components/day/DatePickerTwoMonths.tsx");
     const sharedDateField = readLocal("components/ui/datetime/OryaDateField.tsx");
 
-    expect(dayClient).toContain('key === "f"');
-    expect(dayClient).toContain('key === "g"');
-    expect(dayClient).toContain('key === "m"');
-    expect(dayClient).toContain('key === "escape"');
+    expect(dayClient).toContain("WeekCalendarReadClient");
+    expect(dayClient).toContain('mode="day"');
     expect(dayClient).not.toContain("Atalhos:");
+    expect(weekClient).toContain('key === "f"');
     expect(weekClient).toContain('key === "g"');
     expect(weekClient).toContain('key === "m"');
+    expect(weekClient).toContain('key === "escape"');
     expect(weekClient).not.toContain("Atalhos: ← → · T · D · G");
 
-    expect(datePicker).toContain("OryaDateField");
     expect(sharedDateField).toContain('event.key === "ArrowLeft"');
     expect(sharedDateField).toContain('event.key === "ArrowRight"');
     expect(sharedDateField).toContain('event.key === "ArrowUp"');
@@ -65,10 +68,22 @@ describe("calendar ux guardrails", () => {
     expect(sharedDateField).toContain('event.key === "Escape"');
   });
 
-  it("usa calendário single-page com switch de vista e redirect legado", () => {
+  it("mantem o toggle de disponibilidade fora da agenda e no modulo de disponibilidade", () => {
+    const weekClient = readLocal("app/org/[orgId]/calendar/_components/WeekCalendarReadClient.tsx");
+    const commandBar = readLocal("app/org/[orgId]/calendar/_components/CalendarCommandBar.tsx");
+    const availabilityPage = readLocal("app/org/[orgId]/calendar/availability/page.tsx");
+
+    expect(weekClient).not.toContain("Disponibilidade ON");
+    expect(weekClient).not.toContain("Disponibilidade OFF");
+    expect(commandBar).not.toContain("overlayControl");
+    expect(availabilityPage).toContain("Disponibilidade ON");
+    expect(availabilityPage).toContain("Disponibilidade OFF");
+  });
+
+  it("usa calendário single-page com switch de vista e redirect canónico de /calendar/day", () => {
     const calendarReadClient = readLocal("app/org/[orgId]/calendar/_components/CalendarReadClient.tsx");
     const viewSwitcher = readLocal("app/org/[orgId]/calendar/_components/ViewSwitcher.tsx");
-    const legacyDayPage = readLocal("app/org/[orgId]/calendar/day/page.tsx");
+    const dayRedirectPage = readLocal("app/org/[orgId]/calendar/day/page.tsx");
     const monthClient = readLocal("app/org/[orgId]/calendar/_components/month/MonthCalendarReadClient.tsx");
 
     expect(calendarReadClient).toContain("view === \"day\"");
@@ -77,7 +92,7 @@ describe("calendar ux guardrails", () => {
     expect(viewSwitcher).toContain("Dia");
     expect(viewSwitcher).toContain("Semana");
     expect(viewSwitcher).toContain("Mês");
-    expect(legacyDayPage).toContain('query.set("view", "day")');
+    expect(dayRedirectPage).toContain('query.set("view", "day")');
     expect(monthClient).toContain("Ver semana");
   });
 
@@ -117,8 +132,6 @@ describe("calendar ux guardrails", () => {
       "app/descobrir/_explorar/ExplorarContent.tsx",
       "app/me/reservas/page.tsx",
       "app/org/[orgId]/calendar/_components/WeekCalendarReadClient.tsx",
-      "app/org/[orgId]/calendar/_components/day/DatePickerTwoMonths.tsx",
-      "app/org/[orgId]/calendar/_components/day/FiltersDrawer.tsx",
       "app/org/[orgId]/finance/FinanceToolClient.tsx",
       "app/org/_internal/core/(dashboard)/crm/campanhas/page.tsx",
       "app/org/_internal/core/(dashboard)/eventos/EventEditClient.tsx",

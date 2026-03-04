@@ -1,5 +1,4 @@
 "use client";
-
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import OrgHubTopNav from "@/app/org/_internal/core/organizations/OrgHubTopNav";
@@ -7,14 +6,12 @@ import { OryaDateField } from "@/components/ui/datetime";
 import { buildOrgHref, buildOrgHubHref } from "@/lib/organizationIdUtils";
 import { resolveGroupDisplayName } from "@/lib/orgHub/groupDisplayName";
 import { cn } from "@/lib/utils";
-
 type OrganizationSummary = {
   id: number;
   name: string;
   username: string | null;
   status: string | null;
 };
-
 type ProfessionalSummary = {
   id: number;
   name: string;
@@ -22,7 +19,6 @@ type ProfessionalSummary = {
   organizationId: number;
   isActive: boolean;
 };
-
 type ResourceSummary = {
   id: number;
   label: string;
@@ -30,7 +26,6 @@ type ResourceSummary = {
   organizationId: number;
   isActive: boolean;
 };
-
 type AgendaItem = {
   organizationId: number;
   organizationName: string;
@@ -40,7 +35,6 @@ type AgendaItem = {
   status: string;
   kind: "EVENT" | "TOURNAMENT" | "RESERVATION";
 };
-
 type Props = {
   group: { id: number; name: string | null; ownerUserId: string };
   organizations: OrganizationSummary[];
@@ -53,7 +47,6 @@ type Props = {
   professionals: ProfessionalSummary[];
   resources: ResourceSummary[];
 };
-
 type FinanceResponse = {
   summary: {
     organizations: number;
@@ -74,7 +67,6 @@ type FinanceResponse = {
     releasedPayoutCents: number;
   }>;
 };
-
 type CrmResponse = {
   summary: {
     organizations: number;
@@ -100,7 +92,6 @@ type CrmResponse = {
     totalSpentCents: number;
   }>;
 };
-
 type ReservasResponse = {
   summary: {
     organizations: number;
@@ -126,7 +117,6 @@ type ReservasResponse = {
     services: number;
   }>;
 };
-
 type RankingsResponse = {
   summary: {
     organizations: number;
@@ -153,7 +143,6 @@ type RankingsResponse = {
     totalPoints: number;
   }>;
 };
-
 type TabKey =
   | "overview"
   | "agenda"
@@ -163,7 +152,6 @@ type TabKey =
   | "crm"
   | "reservas"
   | "rankings";
-
 const TAB_OPTIONS: Array<{ id: TabKey; label: string }> = [
   { id: "overview", label: "Visão geral" },
   { id: "agenda", label: "Agenda" },
@@ -174,41 +162,40 @@ const TAB_OPTIONS: Array<{ id: TabKey; label: string }> = [
   { id: "reservas", label: "Reservas" },
   { id: "rankings", label: "Rankings" },
 ];
-
-const AGENDA_STATUS_OPTIONS = ["PENDING", "CONFIRMED", "ACTIVE", "CANCELLED"] as const;
-
+const AGENDA_STATUS_OPTIONS = [
+  "PENDING",
+  "CONFIRMED",
+  "ACTIVE",
+  "CANCELLED",
+] as const;
 const STATUS_META: Record<string, string> = {
   ACTIVE: "border-emerald-300/45 bg-emerald-300/14 text-emerald-100",
   SUSPENDED: "border-red-300/45 bg-red-300/14 text-red-100",
 };
-
 const AGENDA_STATUS_META: Record<string, string> = {
   CONFIRMED: "border-emerald-300/45 bg-emerald-300/14 text-emerald-100",
   ACTIVE: "border-sky-300/45 bg-sky-300/14 text-sky-100",
   PENDING: "border-amber-300/45 bg-amber-300/14 text-amber-100",
   CANCELLED: "border-red-300/45 bg-red-300/14 text-red-100",
 };
-
 function formatDate(value: string | Date) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleDateString("pt-PT", { day: "2-digit", month: "short" });
 }
-
 function formatTimeRange(start: string | Date, end: string | Date) {
   const startDate = start instanceof Date ? start : new Date(start);
   const endDate = end instanceof Date ? end : new Date(end);
-  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return "-";
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()))
+    return "-";
   return `${startDate.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })} · ${endDate.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}`;
 }
-
 function toDateInputValue(date: Date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
-
 function formatMoney(cents: number, currency = "EUR") {
   return new Intl.NumberFormat("pt-PT", {
     style: "currency",
@@ -216,17 +203,28 @@ function formatMoney(cents: number, currency = "EUR") {
     maximumFractionDigits: 2,
   }).format((cents || 0) / 100);
 }
-
-export default function GroupDashboardClient({ group, organizations, metrics, professionals, resources }: Props) {
+export default function GroupDashboardClient({
+  group,
+  organizations,
+  metrics,
+  professionals,
+  resources,
+}: Props) {
   const [tab, setTab] = useState<TabKey>("overview");
   const [agendaLoading, setAgendaLoading] = useState(false);
   const [agendaError, setAgendaError] = useState<string | null>(null);
   const [agendaItems, setAgendaItems] = useState<AgendaItem[]>([]);
   const [orgSelection, setOrgSelection] = useState<number[]>([]);
-  const [typeSelection, setTypeSelection] = useState<string[]>(["RESERVATION", "EVENT", "TOURNAMENT"]);
+  const [typeSelection, setTypeSelection] = useState<string[]>([
+    "RESERVATION",
+    "EVENT",
+    "TOURNAMENT",
+  ]);
   const [statusSelection, setStatusSelection] = useState<string[]>([]);
   const [fromDate, setFromDate] = useState(() => new Date());
-  const [toDate, setToDate] = useState(() => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+  const [toDate, setToDate] = useState(
+    () => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+  );
   const [financeLoading, setFinanceLoading] = useState(false);
   const [financeError, setFinanceError] = useState<string | null>(null);
   const [financeData, setFinanceData] = useState<FinanceResponse | null>(null);
@@ -235,22 +233,26 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
   const [crmData, setCrmData] = useState<CrmResponse | null>(null);
   const [reservasLoading, setReservasLoading] = useState(false);
   const [reservasError, setReservasError] = useState<string | null>(null);
-  const [reservasData, setReservasData] = useState<ReservasResponse | null>(null);
+  const [reservasData, setReservasData] = useState<ReservasResponse | null>(
+    null,
+  );
   const [rankingsLoading, setRankingsLoading] = useState(false);
   const [rankingsError, setRankingsError] = useState<string | null>(null);
-  const [rankingsData, setRankingsData] = useState<RankingsResponse | null>(null);
-
+  const [rankingsData, setRankingsData] = useState<RankingsResponse | null>(
+    null,
+  );
   const groupDisplayName = resolveGroupDisplayName(group.name, group.id);
   const scopedOrgIds = useMemo(
-    () => (orgSelection.length ? orgSelection : organizations.map((org) => org.id)),
+    () =>
+      orgSelection.length ? orgSelection : organizations.map((org) => org.id),
     [orgSelection, organizations],
   );
   const scopedOrgQuery = useMemo(
     () => (orgSelection.length ? `?orgIds=${orgSelection.join(",")}` : ""),
     [orgSelection],
   );
-  const selectedOrganizationsCount = orgSelection.length || organizations.length;
-
+  const selectedOrganizationsCount =
+    orgSelection.length || organizations.length;
   useEffect(() => {
     if (tab !== "agenda") return;
     const controller = new AbortController();
@@ -259,18 +261,25 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
       setAgendaError(null);
       try {
         const params = new URLSearchParams({
-          from: new Date(`${toDateInputValue(fromDate)}T00:00:00`).toISOString(),
+          from: new Date(
+            `${toDateInputValue(fromDate)}T00:00:00`,
+          ).toISOString(),
           to: new Date(`${toDateInputValue(toDate)}T23:59:59`).toISOString(),
           orgIds: scopedOrgIds.join(","),
           types: typeSelection.join(","),
           statuses: statusSelection.join(","),
         });
-        const res = await fetch(`/api/org-hub/groups/${group.id}/dashboard/agenda?${params.toString()}`, {
-          signal: controller.signal,
-        });
+        const res = await fetch(
+          `/api/org-hub/groups/${group.id}/dashboard/agenda?${params.toString()}`,
+          { signal: controller.signal },
+        );
         const json = await res.json().catch(() => null);
         if (!res.ok || json?.ok === false) {
-          throw new Error(json?.error || json?.message || "Não foi possível carregar a agenda.");
+          throw new Error(
+            json?.error ||
+              json?.message ||
+              "Não foi possível carregar a agenda.",
+          );
         }
         setAgendaItems(Array.isArray(json?.items) ? json.items : []);
       } catch (err) {
@@ -282,8 +291,15 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
     };
     void loadAgenda();
     return () => controller.abort();
-  }, [tab, scopedOrgIds, typeSelection, statusSelection, fromDate, toDate, group.id]);
-
+  }, [
+    tab,
+    scopedOrgIds,
+    typeSelection,
+    statusSelection,
+    fromDate,
+    toDate,
+    group.id,
+  ]);
   useEffect(() => {
     if (tab !== "finance") return;
     const controller = new AbortController();
@@ -291,12 +307,17 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
       setFinanceLoading(true);
       setFinanceError(null);
       try {
-        const res = await fetch(`/api/org-hub/groups/${group.id}/dashboard/finance${scopedOrgQuery}`, {
-          signal: controller.signal,
-        });
+        const res = await fetch(
+          `/api/org-hub/groups/${group.id}/dashboard/finance${scopedOrgQuery}`,
+          { signal: controller.signal },
+        );
         const json = await res.json().catch(() => null);
         if (!res.ok || json?.ok === false) {
-          throw new Error(json?.error || json?.message || "Não foi possível carregar o financeiro.");
+          throw new Error(
+            json?.error ||
+              json?.message ||
+              "Não foi possível carregar o financeiro.",
+          );
         }
         setFinanceData({
           summary: json?.summary,
@@ -304,7 +325,9 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
         });
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") return;
-        setFinanceError(err instanceof Error ? err.message : "Erro inesperado.");
+        setFinanceError(
+          err instanceof Error ? err.message : "Erro inesperado.",
+        );
       } finally {
         setFinanceLoading(false);
       }
@@ -312,7 +335,6 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
     void loadFinance();
     return () => controller.abort();
   }, [tab, group.id, scopedOrgQuery]);
-
   useEffect(() => {
     if (tab !== "crm") return;
     const controller = new AbortController();
@@ -320,12 +342,15 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
       setCrmLoading(true);
       setCrmError(null);
       try {
-        const res = await fetch(`/api/org-hub/groups/${group.id}/dashboard/crm${scopedOrgQuery}`, {
-          signal: controller.signal,
-        });
+        const res = await fetch(
+          `/api/org-hub/groups/${group.id}/dashboard/crm${scopedOrgQuery}`,
+          { signal: controller.signal },
+        );
         const json = await res.json().catch(() => null);
         if (!res.ok || json?.ok === false) {
-          throw new Error(json?.error || json?.message || "Não foi possível carregar o CRM.");
+          throw new Error(
+            json?.error || json?.message || "Não foi possível carregar o CRM.",
+          );
         }
         setCrmData({
           summary: json?.summary,
@@ -341,7 +366,6 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
     void loadCrm();
     return () => controller.abort();
   }, [tab, group.id, scopedOrgQuery]);
-
   useEffect(() => {
     if (tab !== "reservas") return;
     const controller = new AbortController();
@@ -349,12 +373,17 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
       setReservasLoading(true);
       setReservasError(null);
       try {
-        const res = await fetch(`/api/org-hub/groups/${group.id}/dashboard/reservas${scopedOrgQuery}`, {
-          signal: controller.signal,
-        });
+        const res = await fetch(
+          `/api/org-hub/groups/${group.id}/dashboard/reservas${scopedOrgQuery}`,
+          { signal: controller.signal },
+        );
         const json = await res.json().catch(() => null);
         if (!res.ok || json?.ok === false) {
-          throw new Error(json?.error || json?.message || "Não foi possível carregar reservas.");
+          throw new Error(
+            json?.error ||
+              json?.message ||
+              "Não foi possível carregar reservas.",
+          );
         }
         setReservasData({
           summary: json?.summary,
@@ -362,7 +391,9 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
         });
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") return;
-        setReservasError(err instanceof Error ? err.message : "Erro inesperado.");
+        setReservasError(
+          err instanceof Error ? err.message : "Erro inesperado.",
+        );
       } finally {
         setReservasLoading(false);
       }
@@ -370,7 +401,6 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
     void loadReservas();
     return () => controller.abort();
   }, [tab, group.id, scopedOrgQuery]);
-
   useEffect(() => {
     if (tab !== "rankings") return;
     const controller = new AbortController();
@@ -378,12 +408,17 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
       setRankingsLoading(true);
       setRankingsError(null);
       try {
-        const res = await fetch(`/api/org-hub/groups/${group.id}/dashboard/rankings${scopedOrgQuery}`, {
-          signal: controller.signal,
-        });
+        const res = await fetch(
+          `/api/org-hub/groups/${group.id}/dashboard/rankings${scopedOrgQuery}`,
+          { signal: controller.signal },
+        );
         const json = await res.json().catch(() => null);
         if (!res.ok || json?.ok === false) {
-          throw new Error(json?.error || json?.message || "Não foi possível carregar rankings.");
+          throw new Error(
+            json?.error ||
+              json?.message ||
+              "Não foi possível carregar rankings.",
+          );
         }
         setRankingsData({
           summary: json?.summary,
@@ -392,7 +427,9 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
         });
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") return;
-        setRankingsError(err instanceof Error ? err.message : "Erro inesperado.");
+        setRankingsError(
+          err instanceof Error ? err.message : "Erro inesperado.",
+        );
       } finally {
         setRankingsLoading(false);
       }
@@ -400,20 +437,28 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
     void loadRankings();
     return () => controller.abort();
   }, [tab, group.id, scopedOrgQuery]);
-
   const groupedAgenda = useMemo(() => {
     if (!agendaItems.length) {
       return [] as Array<{
         dateLabel: string;
-        orgBuckets: Array<{ organizationId: number; organizationName: string; items: AgendaItem[] }>;
+        orgBuckets: Array<{
+          organizationId: number;
+          organizationName: string;
+          items: AgendaItem[];
+        }>;
       }>;
     }
-
     const byDate = new Map<
       string,
-      Map<number, { organizationId: number; organizationName: string; items: AgendaItem[] }>
+      Map<
+        number,
+        {
+          organizationId: number;
+          organizationName: string;
+          items: AgendaItem[];
+        }
+      >
     >();
-
     for (const item of agendaItems) {
       const dateLabel = formatDate(item.startsAt);
       const dateBucket = byDate.get(dateLabel) ?? new Map();
@@ -426,13 +471,13 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
       dateBucket.set(item.organizationId, orgBucket);
       byDate.set(dateLabel, dateBucket);
     }
-
     return Array.from(byDate.entries()).map(([dateLabel, orgMap]) => ({
       dateLabel,
-      orgBuckets: Array.from(orgMap.values()).sort((a, b) => a.organizationName.localeCompare(b.organizationName, "pt")),
+      orgBuckets: Array.from(orgMap.values()).sort((a, b) =>
+        a.organizationName.localeCompare(b.organizationName, "pt"),
+      ),
     }));
   }, [agendaItems]);
-
   const groupedProfessionals = useMemo(() => {
     const map = new Map<number, ProfessionalSummary[]>();
     professionals.forEach((pro) => {
@@ -442,7 +487,6 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
     });
     return map;
   }, [professionals]);
-
   const groupedResources = useMemo(() => {
     const map = new Map<number, ResourceSummary[]>();
     resources.forEach((resource) => {
@@ -452,80 +496,119 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
     });
     return map;
   }, [resources]);
-
   return (
     <div className="mx-auto w-full max-w-[1240px] px-4 py-10 text-white sm:px-6 md:py-12 lg:px-8">
+      {" "}
       <div className="space-y-6">
-        <section className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl sm:p-6">
-          <OrgHubTopNav />
+        {" "}
+        <section className="rounded-3xl border border-white/12 bg-white/[0.04] p-5 sm:p-6">
+          {" "}
+          <OrgHubTopNav />{" "}
           <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
+            {" "}
             <div>
-              <p className="text-[11px] uppercase tracking-[0.28em] text-white/75">Dashboard do grupo</p>
-              <h1 className="text-[30px] font-semibold leading-tight">{groupDisplayName}</h1>
+              {" "}
+              <p className="text-[11px] uppercase tracking-[0.28em] text-white/75">
+                Dashboard do grupo
+              </p>{" "}
+              <h1 className="text-[30px] font-semibold leading-tight">
+                {groupDisplayName}
+              </h1>{" "}
               <p className="mt-1 text-sm text-white/75">
-                Visão agregada operacional e comercial das organizações do grupo.
-              </p>
-            </div>
+                {" "}
+                Visão agregada operacional e comercial das organizações do
+                grupo.{" "}
+              </p>{" "}
+            </div>{" "}
             <div className="rounded-full border border-white/15 bg-white/8 px-4 py-2 text-[11px] uppercase tracking-[0.24em] text-white/70">
-              ID #{group.id}
-            </div>
-          </div>
-
+              {" "}
+              ID #{group.id}{" "}
+            </div>{" "}
+          </div>{" "}
           <div className="mt-4 flex flex-wrap items-center gap-2">
+            {" "}
             <Link
               href={buildOrgHubHref("/groups")}
               className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55"
             >
-              Voltar a grupos
-            </Link>
+              {" "}
+              Voltar a grupos{" "}
+            </Link>{" "}
             <Link
               href={buildOrgHubHref(`/groups/${group.id}/governance`)}
               className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/55"
             >
-              Governança
-            </Link>
+              {" "}
+              Governança{" "}
+            </Link>{" "}
             <span className="rounded-full border border-white/20 bg-white/8 px-3 py-1.5 text-[11px] font-semibold text-white/80">
-              {selectedOrganizationsCount} organização(ões) no filtro
-            </span>
-          </div>
-
+              {" "}
+              {selectedOrganizationsCount} organização(ões) no filtro{" "}
+            </span>{" "}
+          </div>{" "}
           <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            {" "}
             <div className="rounded-2xl border border-white/14 bg-white/6 p-3">
-              <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Organizações</p>
-              <p className="mt-1 text-xl font-semibold">{metrics.organizations}</p>
-            </div>
+              {" "}
+              <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">
+                Organizações
+              </p>{" "}
+              <p className="mt-1 text-xl font-semibold">
+                {metrics.organizations}
+              </p>{" "}
+            </div>{" "}
             <div className="rounded-2xl border border-white/14 bg-white/6 p-3">
-              <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Profissionais</p>
-              <p className="mt-1 text-xl font-semibold">{metrics.professionals}</p>
-            </div>
+              {" "}
+              <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">
+                Profissionais
+              </p>{" "}
+              <p className="mt-1 text-xl font-semibold">
+                {metrics.professionals}
+              </p>{" "}
+            </div>{" "}
             <div className="rounded-2xl border border-white/14 bg-white/6 p-3">
-              <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Recursos</p>
-              <p className="mt-1 text-xl font-semibold">{metrics.resources}</p>
-            </div>
+              {" "}
+              <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">
+                Recursos
+              </p>{" "}
+              <p className="mt-1 text-xl font-semibold">
+                {metrics.resources}
+              </p>{" "}
+            </div>{" "}
             <div className="rounded-2xl border border-[#22D3EE]/32 bg-[#22D3EE]/10 p-3">
-              <p className="text-[10px] uppercase tracking-[0.2em] text-[#B5F9FF]">Agenda 7 dias</p>
-              <p className="mt-1 text-xl font-semibold text-[#DEFDFF]">{metrics.upcomingAgenda}</p>
-            </div>
-          </div>
-
+              {" "}
+              <p className="text-[10px] uppercase tracking-[0.2em] text-[#B5F9FF]">
+                Agenda 7 dias
+              </p>{" "}
+              <p className="mt-1 text-xl font-semibold text-[#DEFDFF]">
+                {metrics.upcomingAgenda}
+              </p>{" "}
+            </div>{" "}
+          </div>{" "}
           <div className="mt-4 rounded-2xl border border-white/14 bg-white/6 p-4">
+            {" "}
             <div className="flex flex-wrap items-center justify-between gap-2">
+              {" "}
               <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/70">
-                Filtro transversal por organização
-              </p>
+                {" "}
+                Filtro transversal por organização{" "}
+              </p>{" "}
               {orgSelection.length > 0 && (
                 <button
                   type="button"
                   onClick={() => setOrgSelection([])}
                   className="rounded-full border border-white/20 bg-white/8 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/75 transition hover:bg-white/12"
                 >
-                  Limpar filtro
+                  {" "}
+                  Limpar filtro{" "}
                 </button>
-              )}
-            </div>
+              )}{" "}
+            </div>{" "}
             <div className="mt-3 flex flex-wrap gap-2">
+              {" "}
               {organizations.map((org) => {
-                const active = orgSelection.length === 0 || orgSelection.includes(org.id);
+                const active =
+                  orgSelection.length === 0 || orgSelection.includes(org.id);
                 return (
                   <button
                     key={`global-org-filter-${org.id}`}
@@ -546,61 +629,75 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
                         : "border-white/20 bg-white/8 text-white/70 hover:bg-white/12",
                     )}
                   >
-                    {org.name}
+                    {" "}
+                    {org.name}{" "}
                   </button>
                 );
-              })}
-            </div>
+              })}{" "}
+            </div>{" "}
             <p className="mt-2 text-[12px] text-white/60">
+              {" "}
               {orgSelection.length === 0
                 ? "Sem filtro específico: a mostrar todas as organizações."
-                : `A mostrar ${orgSelection.length} de ${organizations.length} organizações.`}
-            </p>
-          </div>
-
+                : `A mostrar ${orgSelection.length} de ${organizations.length} organizações.`}{" "}
+            </p>{" "}
+          </div>{" "}
           <div className="mt-4 rounded-2xl border border-white/14 bg-white/6 p-4">
+            {" "}
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/70">
-              Atalhos operacionais por organização
-            </p>
+              {" "}
+              Atalhos operacionais por organização{" "}
+            </p>{" "}
             <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {" "}
               {organizations.map((org) => (
                 <div
                   key={`group-tool-${org.id}`}
                   className="rounded-2xl border border-white/10 bg-black/25 p-3"
                 >
-                  <p className="text-sm font-semibold text-white">{org.name}</p>
-                  <p className="text-[11px] text-white/55">{org.username ? `@${org.username}` : "Sem username"}</p>
+                  {" "}
+                  <p className="text-sm font-semibold text-white">
+                    {org.name}
+                  </p>{" "}
+                  <p className="text-[11px] text-white/55">
+                    {org.username ? `@${org.username}` : "Sem username"}
+                  </p>{" "}
                   <div className="mt-2 flex flex-wrap gap-2">
+                    {" "}
                     <Link
                       href={buildOrgHref(org.id, "/overview")}
                       className="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80 transition hover:bg-white/16"
                     >
-                      Visão geral
-                    </Link>
+                      {" "}
+                      Visão geral{" "}
+                    </Link>{" "}
                     <Link
                       href={buildOrgHref(org.id, "/team")}
                       className="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80 transition hover:bg-white/16"
                     >
-                      Equipa
-                    </Link>
+                      {" "}
+                      Equipa{" "}
+                    </Link>{" "}
                     <Link
                       href={buildOrgHref(org.id, "/finance")}
                       className="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80 transition hover:bg-white/16"
                     >
-                      Financeiro org
-                    </Link>
-                  </div>
+                      {" "}
+                      Financeiro org{" "}
+                    </Link>{" "}
+                  </div>{" "}
                 </div>
-              ))}
+              ))}{" "}
               {organizations.length === 0 && (
                 <p className="rounded-2xl border border-white/10 bg-black/25 p-3 text-sm text-white/65">
-                  Este grupo ainda não tem organizações ativas.
+                  {" "}
+                  Este grupo ainda não tem organizações ativas.{" "}
                 </p>
-              )}
-            </div>
-          </div>
-
+              )}{" "}
+            </div>{" "}
+          </div>{" "}
           <div className="mt-4 flex flex-wrap gap-2">
+            {" "}
             {TAB_OPTIONS.map((item) => {
               const active = tab === item.id;
               return (
@@ -615,130 +712,172 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
                       : "border-white/20 bg-white/8 text-white/70 hover:bg-white/12",
                   )}
                 >
-                  {item.label}
+                  {" "}
+                  {item.label}{" "}
                 </button>
               );
-            })}
-          </div>
-        </section>
-
+            })}{" "}
+          </div>{" "}
+        </section>{" "}
         {organizations.length === 0 && (
           <section className="rounded-3xl border border-white/12 bg-white/6 p-5 text-sm text-white/70">
-            Este grupo ainda não tem organizações ativas. Cria ou adiciona uma organização para ativar métricas e
-            análises agregadas.
+            {" "}
+            Este grupo ainda não tem organizações ativas. Cria ou adiciona uma
+            organização para ativar métricas e análises agregadas.{" "}
           </section>
-        )}
-
+        )}{" "}
         {tab === "overview" && (
           <section className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded-3xl border border-white/12 bg-[linear-gradient(160deg,rgba(12,20,36,0.6),rgba(7,11,22,0.7))] p-5">
-              <h2 className="text-lg font-semibold">Organizações</h2>
+            {" "}
+            <div className="rounded-3xl border border-white/12 bg-white/[0.04] p-5">
+              {" "}
+              <h2 className="text-lg font-semibold">Organizações</h2>{" "}
               <p className="mt-1 text-sm text-white/70">
-                Estado geral das subsidiárias ativas do grupo.
-              </p>
+                {" "}
+                Estado geral das subsidiárias ativas do grupo.{" "}
+              </p>{" "}
               <div className="mt-4 space-y-2">
+                {" "}
                 {organizations.map((org) => (
                   <div
                     key={org.id}
                     className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-white/10 bg-white/6 px-4 py-3"
                   >
+                    {" "}
                     <div>
-                      <p className="text-sm font-semibold text-white">{org.name}</p>
-                      <p className="text-[12px] text-white/60">{org.username ? `@${org.username}` : "Sem username"}</p>
-                    </div>
+                      {" "}
+                      <p className="text-sm font-semibold text-white">
+                        {org.name}
+                      </p>{" "}
+                      <p className="text-[12px] text-white/60">
+                        {org.username ? `@${org.username}` : "Sem username"}
+                      </p>{" "}
+                    </div>{" "}
                     <span
                       className={cn(
                         "rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]",
-                        STATUS_META[(org.status ?? "").toUpperCase()] ?? "border-white/20 bg-white/8 text-white/70",
+                        STATUS_META[(org.status ?? "").toUpperCase()] ??
+                          "border-white/20 bg-white/8 text-white/70",
                       )}
                     >
-                      {org.status ?? "Sem estado"}
-                    </span>
+                      {" "}
+                      {org.status ?? "Sem estado"}{" "}
+                    </span>{" "}
                   </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-white/12 bg-[linear-gradient(160deg,rgba(12,20,36,0.6),rgba(7,11,22,0.7))] p-5">
-              <h2 className="text-lg font-semibold">Distribuição rápida</h2>
-              <p className="mt-1 text-sm text-white/70">Visão rápida de equipas e recursos por organização.</p>
+                ))}{" "}
+              </div>{" "}
+            </div>{" "}
+            <div className="rounded-3xl border border-white/12 bg-white/[0.04] p-5">
+              {" "}
+              <h2 className="text-lg font-semibold">
+                Distribuição rápida
+              </h2>{" "}
+              <p className="mt-1 text-sm text-white/70">
+                Visão rápida de equipas e recursos por organização.
+              </p>{" "}
               <div className="mt-4 space-y-2">
+                {" "}
                 {organizations.map((org) => {
-                  const proCount = groupedProfessionals.get(org.id)?.length ?? 0;
+                  const proCount =
+                    groupedProfessionals.get(org.id)?.length ?? 0;
                   const resCount = groupedResources.get(org.id)?.length ?? 0;
                   return (
                     <div
                       key={`summary-${org.id}`}
                       className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-white/10 bg-white/6 px-4 py-3"
                     >
+                      {" "}
                       <div>
-                        <p className="text-sm font-semibold text-white">{org.name}</p>
-                        <p className="text-[12px] text-white/60">Profissionais e recursos ativos</p>
-                      </div>
+                        {" "}
+                        <p className="text-sm font-semibold text-white">
+                          {org.name}
+                        </p>{" "}
+                        <p className="text-[12px] text-white/60">
+                          Profissionais e recursos ativos
+                        </p>{" "}
+                      </div>{" "}
                       <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.16em]">
+                        {" "}
                         <span className="rounded-full border border-white/20 bg-white/8 px-2.5 py-1 text-white/75">
-                          Profissionais {proCount}
-                        </span>
+                          {" "}
+                          Profissionais {proCount}{" "}
+                        </span>{" "}
                         <span className="rounded-full border border-white/20 bg-white/8 px-2.5 py-1 text-white/75">
-                          Recursos {resCount}
-                        </span>
-                      </div>
+                          {" "}
+                          Recursos {resCount}{" "}
+                        </span>{" "}
+                      </div>{" "}
                     </div>
                   );
-                })}
-              </div>
-            </div>
+                })}{" "}
+              </div>{" "}
+            </div>{" "}
           </section>
-        )}
-
+        )}{" "}
         {tab === "agenda" && (
           <section className="space-y-4">
-            <div className="rounded-3xl border border-white/12 bg-[linear-gradient(160deg,rgba(12,20,36,0.6),rgba(7,11,22,0.7))] p-5">
+            {" "}
+            <div className="rounded-3xl border border-white/12 bg-white/[0.04] p-5">
+              {" "}
               <div className="flex flex-wrap items-center gap-3">
+                {" "}
                 <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-white/70">
-                  <span>De</span>
+                  {" "}
+                  <span>De</span>{" "}
                   <OryaDateField
                     value={toDateInputValue(fromDate)}
-                    onChange={(next) => setFromDate(new Date(`${next}T00:00:00`))}
+                    onChange={(next) =>
+                      setFromDate(new Date(`${next}T00:00:00`))
+                    }
                     buttonClassName="h-9 min-w-[148px] rounded-xl border-white/20 bg-black/30 px-2.5 py-1.5 text-[12px] text-white/90"
-                  />
-                </div>
+                  />{" "}
+                </div>{" "}
                 <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-white/70">
-                  <span>Até</span>
+                  {" "}
+                  <span>Até</span>{" "}
                   <OryaDateField
                     value={toDateInputValue(toDate)}
                     onChange={(next) => setToDate(new Date(`${next}T23:59:59`))}
                     buttonClassName="h-9 min-w-[148px] rounded-xl border-white/20 bg-black/30 px-2.5 py-1.5 text-[12px] text-white/90"
-                  />
-                </div>
-              </div>
-
+                  />{" "}
+                </div>{" "}
+              </div>{" "}
               <div className="mt-3 flex flex-wrap gap-2">
-                {(["RESERVATION", "EVENT", "TOURNAMENT"] as const).map((type) => {
-                  const active = typeSelection.includes(type);
-                  return (
-                    <button
-                      key={`type-${type}`}
-                      type="button"
-                      onClick={() =>
-                        setTypeSelection((prev) =>
-                          prev.includes(type) ? prev.filter((item) => item !== type) : [...prev, type],
-                        )
-                      }
-                      className={cn(
-                        "rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition",
-                        active
-                          ? "border-emerald-300/50 bg-emerald-300/15 text-emerald-100"
-                          : "border-white/20 bg-white/8 text-white/70 hover:bg-white/12",
-                      )}
-                    >
-                      {type === "RESERVATION" ? "Reservas" : type === "EVENT" ? "Eventos" : "Torneios"}
-                    </button>
-                  );
-                })}
-              </div>
-
+                {" "}
+                {(["RESERVATION", "EVENT", "TOURNAMENT"] as const).map(
+                  (type) => {
+                    const active = typeSelection.includes(type);
+                    return (
+                      <button
+                        key={`type-${type}`}
+                        type="button"
+                        onClick={() =>
+                          setTypeSelection((prev) =>
+                            prev.includes(type)
+                              ? prev.filter((item) => item !== type)
+                              : [...prev, type],
+                          )
+                        }
+                        className={cn(
+                          "rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition",
+                          active
+                            ? "border-emerald-300/50 bg-emerald-300/15 text-emerald-100"
+                            : "border-white/20 bg-white/8 text-white/70 hover:bg-white/12",
+                        )}
+                      >
+                        {" "}
+                        {type === "RESERVATION"
+                          ? "Reservas"
+                          : type === "EVENT"
+                            ? "Eventos"
+                            : "Torneios"}{" "}
+                      </button>
+                    );
+                  },
+                )}{" "}
+              </div>{" "}
               <div className="mt-3 flex flex-wrap gap-2">
+                {" "}
                 {AGENDA_STATUS_OPTIONS.map((status) => {
                   const active = statusSelection.includes(status);
                   return (
@@ -747,7 +886,9 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
                       type="button"
                       onClick={() =>
                         setStatusSelection((prev) =>
-                          prev.includes(status) ? prev.filter((item) => item !== status) : [...prev, status],
+                          prev.includes(status)
+                            ? prev.filter((item) => item !== status)
+                            : [...prev, status],
                         )
                       }
                       className={cn(
@@ -757,443 +898,725 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
                           : "border-white/20 bg-white/8 text-white/70 hover:bg-white/12",
                       )}
                     >
-                      {status}
+                      {" "}
+                      {status}{" "}
                     </button>
                   );
-                })}
+                })}{" "}
                 {statusSelection.length > 0 && (
                   <button
                     type="button"
                     onClick={() => setStatusSelection([])}
                     className="rounded-full border border-white/20 bg-white/8 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/70 hover:bg-white/12"
                   >
-                    Estado: todos
+                    {" "}
+                    Estado: todos{" "}
                   </button>
-                )}
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-white/12 bg-[linear-gradient(160deg,rgba(12,20,36,0.6),rgba(7,11,22,0.7))] p-5">
-              {agendaLoading && <p className="text-sm text-white/70">A carregar agenda...</p>}
-              {agendaError && <p className="text-sm text-red-200">{agendaError}</p>}
+                )}{" "}
+              </div>{" "}
+            </div>{" "}
+            <div className="rounded-3xl border border-white/12 bg-white/[0.04] p-5">
+              {" "}
+              {agendaLoading && (
+                <p className="text-sm text-white/70">A carregar agenda...</p>
+              )}{" "}
+              {agendaError && (
+                <p className="text-sm text-red-200">{agendaError}</p>
+              )}{" "}
               {!agendaLoading && !agendaError && agendaItems.length === 0 && (
-                <p className="text-sm text-white/70">Sem items para o intervalo escolhido.</p>
-              )}
+                <p className="text-sm text-white/70">
+                  Sem items para o intervalo escolhido.
+                </p>
+              )}{" "}
               {!agendaLoading && !agendaError && agendaItems.length > 0 && (
                 <div className="space-y-4">
+                  {" "}
                   {groupedAgenda.map((bucket) => (
                     <div key={bucket.dateLabel}>
-                      <p className="text-[12px] uppercase tracking-[0.22em] text-white/60">{bucket.dateLabel}</p>
+                      {" "}
+                      <p className="text-[12px] uppercase tracking-[0.22em] text-white/60">
+                        {bucket.dateLabel}
+                      </p>{" "}
                       <div className="mt-2 space-y-3">
+                        {" "}
                         {bucket.orgBuckets.map((orgBucket) => (
-                          <div key={`${bucket.dateLabel}:${orgBucket.organizationId}`} className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                          <div
+                            key={`${bucket.dateLabel}:${orgBucket.organizationId}`}
+                            className="rounded-2xl border border-white/10 bg-white/5 p-3"
+                          >
+                            {" "}
                             <div className="flex items-center justify-between gap-2">
+                              {" "}
                               <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-white/75">
-                                {orgBucket.organizationName}
-                              </p>
+                                {" "}
+                                {orgBucket.organizationName}{" "}
+                              </p>{" "}
                               <span className="rounded-full border border-white/20 bg-white/8 px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] text-white/70">
-                                {orgBucket.items.length} item{orgBucket.items.length === 1 ? "" : "s"}
-                              </span>
-                            </div>
+                                {" "}
+                                {orgBucket.items.length} item
+                                {orgBucket.items.length === 1 ? "" : "s"}{" "}
+                              </span>{" "}
+                            </div>{" "}
                             <div className="mt-2 space-y-2">
+                              {" "}
                               {orgBucket.items.map((item, index) => (
                                 <div
                                   key={`${item.organizationId}-${item.startsAt}-${index}`}
                                   className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/6 px-4 py-3"
                                 >
+                                  {" "}
                                   <div>
-                                    <p className="text-sm font-semibold text-white">{item.title}</p>
+                                    {" "}
+                                    <p className="text-sm font-semibold text-white">
+                                      {item.title}
+                                    </p>{" "}
                                     <p className="text-[11px] uppercase tracking-[0.16em] text-white/50">
-                                      {item.kind === "RESERVATION" ? "Reserva" : item.kind === "EVENT" ? "Evento" : "Torneio"}
-                                    </p>
-                                  </div>
+                                      {" "}
+                                      {item.kind === "RESERVATION"
+                                        ? "Reserva"
+                                        : item.kind === "EVENT"
+                                          ? "Evento"
+                                          : "Torneio"}{" "}
+                                    </p>{" "}
+                                  </div>{" "}
                                   <div className="text-right">
-                                    <p className="text-[12px] text-white/80">{formatTimeRange(item.startsAt, item.endsAt)}</p>
+                                    {" "}
+                                    <p className="text-[12px] text-white/80">
+                                      {formatTimeRange(
+                                        item.startsAt,
+                                        item.endsAt,
+                                      )}
+                                    </p>{" "}
                                     <span
                                       className={cn(
                                         "mt-1 inline-flex rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]",
-                                        AGENDA_STATUS_META[item.status?.toUpperCase?.() ?? ""] ??
+                                        AGENDA_STATUS_META[
+                                          item.status?.toUpperCase?.() ?? ""
+                                        ] ??
                                           "border-white/20 bg-white/8 text-white/70",
                                       )}
                                     >
-                                      {item.status || "N/A"}
-                                    </span>
-                                  </div>
+                                      {" "}
+                                      {item.status || "N/A"}{" "}
+                                    </span>{" "}
+                                  </div>{" "}
                                 </div>
-                              ))}
-                            </div>
+                              ))}{" "}
+                            </div>{" "}
                           </div>
-                        ))}
-                      </div>
+                        ))}{" "}
+                      </div>{" "}
                     </div>
-                  ))}
+                  ))}{" "}
                 </div>
-              )}
-            </div>
+              )}{" "}
+            </div>{" "}
           </section>
-        )}
-
+        )}{" "}
         {tab === "professionals" && (
-          <section className="rounded-3xl border border-white/12 bg-[linear-gradient(160deg,rgba(12,20,36,0.6),rgba(7,11,22,0.7))] p-5">
-            <h2 className="text-lg font-semibold">Profissionais</h2>
-            <p className="mt-1 text-sm text-white/70">Lista agregada por organização.</p>
+          <section className="rounded-3xl border border-white/12 bg-white/[0.04] p-5">
+            {" "}
+            <h2 className="text-lg font-semibold">Profissionais</h2>{" "}
+            <p className="mt-1 text-sm text-white/70">
+              Lista agregada por organização.
+            </p>{" "}
             <div className="mt-4 space-y-3">
+              {" "}
               {organizations.map((org) => {
                 const list = groupedProfessionals.get(org.id) ?? [];
                 return (
-                  <div key={`pro-${org.id}`} className="rounded-2xl border border-white/10 bg-white/6 p-4">
+                  <div
+                    key={`pro-${org.id}`}
+                    className="rounded-2xl border border-white/10 bg-white/6 p-4"
+                  >
+                    {" "}
                     <div className="flex items-center justify-between">
-                      <p className="text-sm font-semibold text-white">{org.name}</p>
+                      {" "}
+                      <p className="text-sm font-semibold text-white">
+                        {org.name}
+                      </p>{" "}
                       <span className="rounded-full border border-white/20 bg-white/8 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-white/70">
-                        {list.length} profissionais
-                      </span>
-                    </div>
+                        {" "}
+                        {list.length} profissionais{" "}
+                      </span>{" "}
+                    </div>{" "}
                     {list.length === 0 ? (
-                      <p className="mt-2 text-sm text-white/60">Sem profissionais registados.</p>
+                      <p className="mt-2 text-sm text-white/60">
+                        Sem profissionais registados.
+                      </p>
                     ) : (
                       <div className="mt-3 grid gap-2 md:grid-cols-2">
+                        {" "}
                         {list.map((pro) => (
-                          <div key={pro.id} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
-                            <p className="text-sm text-white">{pro.name}</p>
-                            <p className="text-[12px] text-white/60">{pro.roleTitle || "Sem função"}</p>
+                          <div
+                            key={pro.id}
+                            className="rounded-xl border border-white/10 bg-white/5 px-3 py-2"
+                          >
+                            {" "}
+                            <p className="text-sm text-white">
+                              {pro.name}
+                            </p>{" "}
+                            <p className="text-[12px] text-white/60">
+                              {pro.roleTitle || "Sem função"}
+                            </p>{" "}
                           </div>
-                        ))}
+                        ))}{" "}
                       </div>
-                    )}
+                    )}{" "}
                   </div>
                 );
-              })}
-            </div>
+              })}{" "}
+            </div>{" "}
           </section>
-        )}
-
+        )}{" "}
         {tab === "resources" && (
-          <section className="rounded-3xl border border-white/12 bg-[linear-gradient(160deg,rgba(12,20,36,0.6),rgba(7,11,22,0.7))] p-5">
-            <h2 className="text-lg font-semibold">Recursos</h2>
-            <p className="mt-1 text-sm text-white/70">Campos, salas e recursos com capacidade.</p>
+          <section className="rounded-3xl border border-white/12 bg-white/[0.04] p-5">
+            {" "}
+            <h2 className="text-lg font-semibold">Recursos</h2>{" "}
+            <p className="mt-1 text-sm text-white/70">
+              Campos, salas e recursos com capacidade.
+            </p>{" "}
             <div className="mt-4 space-y-3">
+              {" "}
               {organizations.map((org) => {
                 const list = groupedResources.get(org.id) ?? [];
                 return (
-                  <div key={`res-${org.id}`} className="rounded-2xl border border-white/10 bg-white/6 p-4">
+                  <div
+                    key={`res-${org.id}`}
+                    className="rounded-2xl border border-white/10 bg-white/6 p-4"
+                  >
+                    {" "}
                     <div className="flex items-center justify-between">
-                      <p className="text-sm font-semibold text-white">{org.name}</p>
+                      {" "}
+                      <p className="text-sm font-semibold text-white">
+                        {org.name}
+                      </p>{" "}
                       <span className="rounded-full border border-white/20 bg-white/8 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-white/70">
-                        {list.length} recursos
-                      </span>
-                    </div>
+                        {" "}
+                        {list.length} recursos{" "}
+                      </span>{" "}
+                    </div>{" "}
                     {list.length === 0 ? (
-                      <p className="mt-2 text-sm text-white/60">Sem recursos registados.</p>
+                      <p className="mt-2 text-sm text-white/60">
+                        Sem recursos registados.
+                      </p>
                     ) : (
                       <div className="mt-3 grid gap-2 md:grid-cols-2">
+                        {" "}
                         {list.map((resource) => (
-                          <div key={resource.id} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
-                            <p className="text-sm text-white">{resource.label}</p>
-                            <p className="text-[12px] text-white/60">Capacidade {resource.capacity}</p>
+                          <div
+                            key={resource.id}
+                            className="rounded-xl border border-white/10 bg-white/5 px-3 py-2"
+                          >
+                            {" "}
+                            <p className="text-sm text-white">
+                              {resource.label}
+                            </p>{" "}
+                            <p className="text-[12px] text-white/60">
+                              Capacidade {resource.capacity}
+                            </p>{" "}
                           </div>
-                        ))}
+                        ))}{" "}
                       </div>
-                    )}
+                    )}{" "}
                   </div>
                 );
-              })}
-            </div>
+              })}{" "}
+            </div>{" "}
           </section>
-        )}
-
+        )}{" "}
         {tab === "finance" && (
           <section className="space-y-4">
+            {" "}
             {financeLoading && (
               <div className="rounded-3xl border border-white/12 bg-white/6 p-5 text-sm text-white/70">
-                A carregar financeiro...
+                {" "}
+                A carregar financeiro...{" "}
               </div>
-            )}
+            )}{" "}
             {financeError && (
               <div className="rounded-3xl border border-red-300/30 bg-red-400/10 p-5 text-sm text-red-100">
-                {financeError}
+                {" "}
+                {financeError}{" "}
               </div>
-            )}
+            )}{" "}
             {!financeLoading && !financeError && financeData && (
               <>
+                {" "}
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  {" "}
                   <div className="rounded-2xl border border-white/14 bg-white/6 p-4">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Bruto</p>
+                    {" "}
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">
+                      Bruto
+                    </p>{" "}
                     <p className="mt-1 text-xl font-semibold">
-                      {formatMoney(financeData.summary.grossCents, financeData.summary.currency)}
-                    </p>
-                  </div>
+                      {" "}
+                      {formatMoney(
+                        financeData.summary.grossCents,
+                        financeData.summary.currency,
+                      )}{" "}
+                    </p>{" "}
+                  </div>{" "}
                   <div className="rounded-2xl border border-emerald-300/32 bg-emerald-300/10 p-4">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-emerald-100/80">Líquido</p>
+                    {" "}
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-emerald-100/80">
+                      Líquido
+                    </p>{" "}
                     <p className="mt-1 text-xl font-semibold text-emerald-50">
-                      {formatMoney(financeData.summary.netCents, financeData.summary.currency)}
-                    </p>
-                  </div>
+                      {" "}
+                      {formatMoney(
+                        financeData.summary.netCents,
+                        financeData.summary.currency,
+                      )}{" "}
+                    </p>{" "}
+                  </div>{" "}
                   <div className="rounded-2xl border border-white/14 bg-white/6 p-4">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Faturas</p>
+                    {" "}
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">
+                      Faturas
+                    </p>{" "}
                     <p className="mt-1 text-xl font-semibold">
-                      {financeData.summary.paidInvoiceCount}/{financeData.summary.invoiceCount}
-                    </p>
-                  </div>
+                      {" "}
+                      {financeData.summary.paidInvoiceCount}/
+                      {financeData.summary.invoiceCount}{" "}
+                    </p>{" "}
+                  </div>{" "}
                   <div className="rounded-2xl border border-white/14 bg-white/6 p-4">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Payouts libertos</p>
+                    {" "}
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">
+                      Payouts libertos
+                    </p>{" "}
                     <p className="mt-1 text-xl font-semibold">
-                      {formatMoney(financeData.summary.releasedPayoutCents, financeData.summary.currency)}
-                    </p>
-                  </div>
-                </div>
-                <div className="rounded-3xl border border-white/12 bg-[linear-gradient(160deg,rgba(12,20,36,0.6),rgba(7,11,22,0.7))] p-5">
-                  <h2 className="text-lg font-semibold">Financeiro por organização</h2>
+                      {" "}
+                      {formatMoney(
+                        financeData.summary.releasedPayoutCents,
+                        financeData.summary.currency,
+                      )}{" "}
+                    </p>{" "}
+                  </div>{" "}
+                </div>{" "}
+                <div className="rounded-3xl border border-white/12 bg-white/[0.04] p-5">
+                  {" "}
+                  <h2 className="text-lg font-semibold">
+                    Financeiro por organização
+                  </h2>{" "}
                   <div className="mt-4 space-y-2">
+                    {" "}
                     {financeData.items.map((row) => (
                       <div
                         key={`finance-${row.organizationId}`}
                         className="grid gap-2 rounded-2xl border border-white/10 bg-white/6 p-3 md:grid-cols-5"
                       >
-                        <p className="text-sm font-semibold text-white">{row.organizationName}</p>
+                        {" "}
+                        <p className="text-sm font-semibold text-white">
+                          {row.organizationName}
+                        </p>{" "}
                         <p className="text-[12px] text-white/70">
-                          Bruto {formatMoney(row.grossCents, financeData.summary.currency)}
-                        </p>
+                          {" "}
+                          Bruto{" "}
+                          {formatMoney(
+                            row.grossCents,
+                            financeData.summary.currency,
+                          )}{" "}
+                        </p>{" "}
                         <p className="text-[12px] text-white/70">
-                          Líquido {formatMoney(row.netCents, financeData.summary.currency)}
-                        </p>
+                          {" "}
+                          Líquido{" "}
+                          {formatMoney(
+                            row.netCents,
+                            financeData.summary.currency,
+                          )}{" "}
+                        </p>{" "}
                         <p className="text-[12px] text-white/70">
-                          Faturas pagas {row.paidInvoiceCount}/{row.invoiceCount}
-                        </p>
+                          {" "}
+                          Faturas pagas {row.paidInvoiceCount}/
+                          {row.invoiceCount}{" "}
+                        </p>{" "}
                         <p className="text-[12px] text-white/70">
-                          Payout {formatMoney(row.releasedPayoutCents, financeData.summary.currency)}
-                        </p>
+                          {" "}
+                          Payout{" "}
+                          {formatMoney(
+                            row.releasedPayoutCents,
+                            financeData.summary.currency,
+                          )}{" "}
+                        </p>{" "}
                       </div>
-                    ))}
+                    ))}{" "}
                     {financeData.items.length === 0 && (
-                      <p className="text-sm text-white/70">Sem dados financeiros para o filtro selecionado.</p>
-                    )}
-                  </div>
-                </div>
+                      <p className="text-sm text-white/70">
+                        Sem dados financeiros para o filtro selecionado.
+                      </p>
+                    )}{" "}
+                  </div>{" "}
+                </div>{" "}
               </>
-            )}
+            )}{" "}
           </section>
-        )}
-
+        )}{" "}
         {tab === "crm" && (
           <section className="space-y-4">
+            {" "}
             {crmLoading && (
               <div className="rounded-3xl border border-white/12 bg-white/6 p-5 text-sm text-white/70">
-                A carregar CRM...
+                {" "}
+                A carregar CRM...{" "}
               </div>
-            )}
+            )}{" "}
             {crmError && (
               <div className="rounded-3xl border border-red-300/30 bg-red-400/10 p-5 text-sm text-red-100">
-                {crmError}
+                {" "}
+                {crmError}{" "}
               </div>
-            )}
+            )}{" "}
             {!crmLoading && !crmError && crmData && (
               <>
+                {" "}
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  {" "}
                   <div className="rounded-2xl border border-white/14 bg-white/6 p-4">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Contactos</p>
-                    <p className="mt-1 text-xl font-semibold">{crmData.summary.contacts}</p>
-                    <p className="text-[11px] text-white/55">Ativos {crmData.summary.activeContacts}</p>
-                  </div>
+                    {" "}
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">
+                      Contactos
+                    </p>{" "}
+                    <p className="mt-1 text-xl font-semibold">
+                      {crmData.summary.contacts}
+                    </p>{" "}
+                    <p className="text-[11px] text-white/55">
+                      Ativos {crmData.summary.activeContacts}
+                    </p>{" "}
+                  </div>{" "}
                   <div className="rounded-2xl border border-white/14 bg-white/6 p-4">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Opt-in marketing</p>
-                    <p className="mt-1 text-xl font-semibold">{crmData.summary.marketingOptInContacts}</p>
-                  </div>
+                    {" "}
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">
+                      Opt-in marketing
+                    </p>{" "}
+                    <p className="mt-1 text-xl font-semibold">
+                      {crmData.summary.marketingOptInContacts}
+                    </p>{" "}
+                  </div>{" "}
                   <div className="rounded-2xl border border-white/14 bg-white/6 p-4">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Campanhas</p>
-                    <p className="mt-1 text-xl font-semibold">{crmData.summary.campaigns}</p>
-                    <p className="text-[11px] text-white/55">Envios {crmData.summary.campaignsSent}</p>
-                  </div>
+                    {" "}
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">
+                      Campanhas
+                    </p>{" "}
+                    <p className="mt-1 text-xl font-semibold">
+                      {crmData.summary.campaigns}
+                    </p>{" "}
+                    <p className="text-[11px] text-white/55">
+                      Envios {crmData.summary.campaignsSent}
+                    </p>{" "}
+                  </div>{" "}
                   <div className="rounded-2xl border border-white/14 bg-white/6 p-4">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Entregas</p>
-                    <p className="mt-1 text-xl font-semibold">{crmData.summary.deliveries}</p>
-                    <p className="text-[11px] text-red-200">Falhas {crmData.summary.deliveriesFailed}</p>
-                  </div>
-                </div>
-                <div className="rounded-3xl border border-white/12 bg-[linear-gradient(160deg,rgba(12,20,36,0.6),rgba(7,11,22,0.7))] p-5">
-                  <h2 className="text-lg font-semibold">CRM por organização</h2>
+                    {" "}
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">
+                      Entregas
+                    </p>{" "}
+                    <p className="mt-1 text-xl font-semibold">
+                      {crmData.summary.deliveries}
+                    </p>{" "}
+                    <p className="text-[11px] text-red-200">
+                      Falhas {crmData.summary.deliveriesFailed}
+                    </p>{" "}
+                  </div>{" "}
+                </div>{" "}
+                <div className="rounded-3xl border border-white/12 bg-white/[0.04] p-5">
+                  {" "}
+                  <h2 className="text-lg font-semibold">
+                    CRM por organização
+                  </h2>{" "}
                   <div className="mt-4 space-y-2">
+                    {" "}
                     {crmData.items.map((row) => (
                       <div
                         key={`crm-${row.organizationId}`}
                         className="grid gap-2 rounded-2xl border border-white/10 bg-white/6 p-3 md:grid-cols-5"
                       >
-                        <p className="text-sm font-semibold text-white">{row.organizationName}</p>
+                        {" "}
+                        <p className="text-sm font-semibold text-white">
+                          {row.organizationName}
+                        </p>{" "}
                         <p className="text-[12px] text-white/70">
-                          Contactos {row.activeContacts}/{row.contacts}
-                        </p>
-                        <p className="text-[12px] text-white/70">Opt-in {row.marketingOptInContacts}</p>
+                          {" "}
+                          Contactos {row.activeContacts}/{row.contacts}{" "}
+                        </p>{" "}
                         <p className="text-[12px] text-white/70">
-                          Campanhas {row.campaigns} · Envios {row.campaignsSent}
-                        </p>
+                          Opt-in {row.marketingOptInContacts}
+                        </p>{" "}
                         <p className="text-[12px] text-white/70">
-                          Entregas {row.deliveries} · Falhas {row.deliveriesFailed}
-                        </p>
+                          {" "}
+                          Campanhas {row.campaigns} · Envios{" "}
+                          {row.campaignsSent}{" "}
+                        </p>{" "}
+                        <p className="text-[12px] text-white/70">
+                          {" "}
+                          Entregas {row.deliveries} · Falhas{" "}
+                          {row.deliveriesFailed}{" "}
+                        </p>{" "}
                       </div>
-                    ))}
+                    ))}{" "}
                     {crmData.items.length === 0 && (
-                      <p className="text-sm text-white/70">Sem dados de CRM para o filtro selecionado.</p>
-                    )}
-                  </div>
-                </div>
+                      <p className="text-sm text-white/70">
+                        Sem dados de CRM para o filtro selecionado.
+                      </p>
+                    )}{" "}
+                  </div>{" "}
+                </div>{" "}
               </>
-            )}
+            )}{" "}
           </section>
-        )}
-
+        )}{" "}
         {tab === "reservas" && (
           <section className="space-y-4">
+            {" "}
             {reservasLoading && (
               <div className="rounded-3xl border border-white/12 bg-white/6 p-5 text-sm text-white/70">
-                A carregar reservas...
+                {" "}
+                A carregar reservas...{" "}
               </div>
-            )}
+            )}{" "}
             {reservasError && (
               <div className="rounded-3xl border border-red-300/30 bg-red-400/10 p-5 text-sm text-red-100">
-                {reservasError}
+                {" "}
+                {reservasError}{" "}
               </div>
-            )}
+            )}{" "}
             {!reservasLoading && !reservasError && reservasData && (
               <>
+                {" "}
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  {" "}
                   <div className="rounded-2xl border border-white/14 bg-white/6 p-4">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Reservas</p>
-                    <p className="mt-1 text-xl font-semibold">{reservasData.summary.bookings}</p>
-                    <p className="text-[11px] text-white/55">Próximos 7 dias {reservasData.summary.upcoming7d}</p>
-                  </div>
+                    {" "}
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">
+                      Reservas
+                    </p>{" "}
+                    <p className="mt-1 text-xl font-semibold">
+                      {reservasData.summary.bookings}
+                    </p>{" "}
+                    <p className="text-[11px] text-white/55">
+                      Próximos 7 dias {reservasData.summary.upcoming7d}
+                    </p>{" "}
+                  </div>{" "}
                   <div className="rounded-2xl border border-white/14 bg-white/6 p-4">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Estado</p>
-                    <p className="mt-1 text-[12px] text-white/75">Confirmadas {reservasData.summary.confirmed}</p>
-                    <p className="text-[12px] text-white/75">Concluídas {reservasData.summary.completed}</p>
-                    <p className="text-[12px] text-white/75">Canceladas {reservasData.summary.cancelled}</p>
-                  </div>
+                    {" "}
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">
+                      Estado
+                    </p>{" "}
+                    <p className="mt-1 text-[12px] text-white/75">
+                      Confirmadas {reservasData.summary.confirmed}
+                    </p>{" "}
+                    <p className="text-[12px] text-white/75">
+                      Concluídas {reservasData.summary.completed}
+                    </p>{" "}
+                    <p className="text-[12px] text-white/75">
+                      Canceladas {reservasData.summary.cancelled}
+                    </p>{" "}
+                  </div>{" "}
                   <div className="rounded-2xl border border-white/14 bg-white/6 p-4">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Receita</p>
-                    <p className="mt-1 text-xl font-semibold">{formatMoney(reservasData.summary.revenueCents)}</p>
-                    <p className="text-[11px] text-white/55">No-show {reservasData.summary.noShow}</p>
-                  </div>
+                    {" "}
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">
+                      Receita
+                    </p>{" "}
+                    <p className="mt-1 text-xl font-semibold">
+                      {formatMoney(reservasData.summary.revenueCents)}
+                    </p>{" "}
+                    <p className="text-[11px] text-white/55">
+                      No-show {reservasData.summary.noShow}
+                    </p>{" "}
+                  </div>{" "}
                   <div className="rounded-2xl border border-white/14 bg-white/6 p-4">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Serviços ativos</p>
-                    <p className="mt-1 text-xl font-semibold">{reservasData.summary.services}</p>
-                  </div>
-                </div>
-                <div className="rounded-3xl border border-white/12 bg-[linear-gradient(160deg,rgba(12,20,36,0.6),rgba(7,11,22,0.7))] p-5">
-                  <h2 className="text-lg font-semibold">Reservas por organização</h2>
+                    {" "}
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">
+                      Serviços ativos
+                    </p>{" "}
+                    <p className="mt-1 text-xl font-semibold">
+                      {reservasData.summary.services}
+                    </p>{" "}
+                  </div>{" "}
+                </div>{" "}
+                <div className="rounded-3xl border border-white/12 bg-white/[0.04] p-5">
+                  {" "}
+                  <h2 className="text-lg font-semibold">
+                    Reservas por organização
+                  </h2>{" "}
                   <div className="mt-4 space-y-2">
+                    {" "}
                     {reservasData.items.map((row) => (
                       <div
                         key={`reservas-${row.organizationId}`}
                         className="grid gap-2 rounded-2xl border border-white/10 bg-white/6 p-3 md:grid-cols-5"
                       >
-                        <p className="text-sm font-semibold text-white">{row.organizationName}</p>
+                        {" "}
+                        <p className="text-sm font-semibold text-white">
+                          {row.organizationName}
+                        </p>{" "}
                         <p className="text-[12px] text-white/70">
-                          Reservas {row.bookings} · 7d {row.upcoming7d}
-                        </p>
+                          {" "}
+                          Reservas {row.bookings} · 7d {row.upcoming7d}{" "}
+                        </p>{" "}
                         <p className="text-[12px] text-white/70">
-                          Confirmadas {row.confirmed} · Concluídas {row.completed}
-                        </p>
+                          {" "}
+                          Confirmadas {row.confirmed} · Concluídas{" "}
+                          {row.completed}{" "}
+                        </p>{" "}
                         <p className="text-[12px] text-white/70">
-                          Canceladas {row.cancelled} · No-show {row.noShow}
-                        </p>
+                          {" "}
+                          Canceladas {row.cancelled} · No-show {row.noShow}{" "}
+                        </p>{" "}
                         <p className="text-[12px] text-white/70">
-                          Receita {formatMoney(row.revenueCents)} · Serviços {row.services}
-                        </p>
+                          {" "}
+                          Receita {formatMoney(row.revenueCents)} · Serviços{" "}
+                          {row.services}{" "}
+                        </p>{" "}
                       </div>
-                    ))}
+                    ))}{" "}
                     {reservasData.items.length === 0 && (
-                      <p className="text-sm text-white/70">Sem dados de reservas para o filtro selecionado.</p>
-                    )}
-                  </div>
-                </div>
+                      <p className="text-sm text-white/70">
+                        Sem dados de reservas para o filtro selecionado.
+                      </p>
+                    )}{" "}
+                  </div>{" "}
+                </div>{" "}
               </>
-            )}
+            )}{" "}
           </section>
-        )}
-
+        )}{" "}
         {tab === "rankings" && (
           <section className="space-y-4">
+            {" "}
             {rankingsLoading && (
               <div className="rounded-3xl border border-white/12 bg-white/6 p-5 text-sm text-white/70">
-                A carregar rankings...
+                {" "}
+                A carregar rankings...{" "}
               </div>
-            )}
+            )}{" "}
             {rankingsError && (
               <div className="rounded-3xl border border-red-300/30 bg-red-400/10 p-5 text-sm text-red-100">
-                {rankingsError}
+                {" "}
+                {rankingsError}{" "}
               </div>
-            )}
+            )}{" "}
             {!rankingsLoading && !rankingsError && rankingsData && (
               <>
+                {" "}
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  {" "}
                   <div className="rounded-2xl border border-white/14 bg-white/6 p-4">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Entradas ranking</p>
-                    <p className="mt-1 text-xl font-semibold">{rankingsData.summary.rankingEntries}</p>
-                  </div>
+                    {" "}
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">
+                      Entradas ranking
+                    </p>{" "}
+                    <p className="mt-1 text-xl font-semibold">
+                      {rankingsData.summary.rankingEntries}
+                    </p>{" "}
+                  </div>{" "}
                   <div className="rounded-2xl border border-white/14 bg-white/6 p-4">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Jogadores</p>
-                    <p className="mt-1 text-xl font-semibold">{rankingsData.summary.players}</p>
-                  </div>
+                    {" "}
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">
+                      Jogadores
+                    </p>{" "}
+                    <p className="mt-1 text-xl font-semibold">
+                      {rankingsData.summary.players}
+                    </p>{" "}
+                  </div>{" "}
                   <div className="rounded-2xl border border-white/14 bg-white/6 p-4">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Torneios</p>
-                    <p className="mt-1 text-xl font-semibold">{rankingsData.summary.tournaments}</p>
+                    {" "}
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">
+                      Torneios
+                    </p>{" "}
+                    <p className="mt-1 text-xl font-semibold">
+                      {rankingsData.summary.tournaments}
+                    </p>{" "}
                     <p className="text-[11px] text-white/55">
-                      Próximos {rankingsData.summary.upcomingTournaments}
-                    </p>
-                  </div>
+                      {" "}
+                      Próximos {rankingsData.summary.upcomingTournaments}{" "}
+                    </p>{" "}
+                  </div>{" "}
                   <div className="rounded-2xl border border-white/14 bg-white/6 p-4">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Pontos totais</p>
-                    <p className="mt-1 text-xl font-semibold">{rankingsData.summary.totalPoints}</p>
-                  </div>
-                </div>
+                    {" "}
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">
+                      Pontos totais
+                    </p>{" "}
+                    <p className="mt-1 text-xl font-semibold">
+                      {rankingsData.summary.totalPoints}
+                    </p>{" "}
+                  </div>{" "}
+                </div>{" "}
                 <div className="grid gap-4 lg:grid-cols-2">
-                  <div className="rounded-3xl border border-white/12 bg-[linear-gradient(160deg,rgba(12,20,36,0.6),rgba(7,11,22,0.7))] p-5">
-                    <h2 className="text-lg font-semibold">Top jogadores do grupo</h2>
+                  {" "}
+                  <div className="rounded-3xl border border-white/12 bg-white/[0.04] p-5">
+                    {" "}
+                    <h2 className="text-lg font-semibold">
+                      Top jogadores do grupo
+                    </h2>{" "}
                     <div className="mt-4 space-y-2">
+                      {" "}
                       {rankingsData.topPlayers.map((row, index) => (
                         <div
                           key={`top-player-${row.playerId}`}
                           className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/6 px-3 py-2"
                         >
+                          {" "}
                           <p className="text-sm text-white">
-                            #{index + 1} {row.playerName}
-                          </p>
+                            {" "}
+                            #{index + 1} {row.playerName}{" "}
+                          </p>{" "}
                           <p className="text-[12px] text-white/70">
-                            {row.points} pts · {row.organizationName}
-                          </p>
+                            {" "}
+                            {row.points} pts · {row.organizationName}{" "}
+                          </p>{" "}
                         </div>
-                      ))}
+                      ))}{" "}
                       {rankingsData.topPlayers.length === 0 && (
-                        <p className="text-sm text-white/70">Sem pontuações agregadas.</p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="rounded-3xl border border-white/12 bg-[linear-gradient(160deg,rgba(12,20,36,0.6),rgba(7,11,22,0.7))] p-5">
-                    <h2 className="text-lg font-semibold">Rankings por organização</h2>
+                        <p className="text-sm text-white/70">
+                          Sem pontuações agregadas.
+                        </p>
+                      )}{" "}
+                    </div>{" "}
+                  </div>{" "}
+                  <div className="rounded-3xl border border-white/12 bg-white/[0.04] p-5">
+                    {" "}
+                    <h2 className="text-lg font-semibold">
+                      Rankings por organização
+                    </h2>{" "}
                     <div className="mt-4 space-y-2">
+                      {" "}
                       {rankingsData.items.map((row) => (
                         <div
                           key={`rank-org-${row.organizationId}`}
                           className="rounded-2xl border border-white/10 bg-white/6 p-3"
                         >
-                          <p className="text-sm font-semibold text-white">{row.organizationName}</p>
+                          {" "}
+                          <p className="text-sm font-semibold text-white">
+                            {row.organizationName}
+                          </p>{" "}
                           <p className="mt-1 text-[12px] text-white/70">
-                            Entradas {row.rankingEntries} · Jogadores {row.players}
-                          </p>
+                            {" "}
+                            Entradas {row.rankingEntries} · Jogadores{" "}
+                            {row.players}{" "}
+                          </p>{" "}
                           <p className="text-[12px] text-white/70">
-                            Torneios {row.tournaments} (próximos {row.upcomingTournaments}) · Pontos {row.totalPoints}
-                          </p>
+                            {" "}
+                            Torneios {row.tournaments} (próximos{" "}
+                            {row.upcomingTournaments}) · Pontos{" "}
+                            {row.totalPoints}{" "}
+                          </p>{" "}
                         </div>
-                      ))}
+                      ))}{" "}
                       {rankingsData.items.length === 0 && (
-                        <p className="text-sm text-white/70">Sem dados de ranking para o filtro selecionado.</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                        <p className="text-sm text-white/70">
+                          Sem dados de ranking para o filtro selecionado.
+                        </p>
+                      )}{" "}
+                    </div>{" "}
+                  </div>{" "}
+                </div>{" "}
               </>
-            )}
+            )}{" "}
           </section>
-        )}
-      </div>
+        )}{" "}
+      </div>{" "}
     </div>
   );
 }

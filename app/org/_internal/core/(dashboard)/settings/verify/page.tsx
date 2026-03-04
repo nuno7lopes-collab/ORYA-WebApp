@@ -58,13 +58,13 @@ export default function VerifyOfficialEmailPage() {
   }, [organizationId, token, router]);
 
   return (
-    <div className={cn("w-full py-8 text-white", ORG_SHELL_GUTTER)}>
-      <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 text-center shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-3">
-        <div className="inline-flex items-center justify-center rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-white/70 shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
+    <div className={cn("org-clean-page w-full py-8 text-white", ORG_SHELL_GUTTER)} data-org-ui="clean-v1">
+      <div className="org-clean-section space-y-3 p-6 text-center">
+        <div className="org-clean-chip inline-flex items-center justify-center px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-white/78">
           Definições
         </div>
         <h1 className="text-2xl font-semibold">Verificar email oficial</h1>
-        {state === "loading" && <p className="text-white/70">A confirmar token…</p>}
+        {state === "loading" && <p className="text-white/84">A confirmar token…</p>}
         {state === "ok" && <p className="text-emerald-300">Email confirmado. A redirecionar…</p>}
         {state === "error" && <p className="text-amber-300">{message || "Token inválido ou expirado."}</p>}
         <div className="flex justify-center">
@@ -72,7 +72,7 @@ export default function VerifyOfficialEmailPage() {
             onClick={() =>
               router.push(organizationId ? buildOrgHref(organizationId, "/settings") : "/org-hub/organizations")
             }
-            className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:border-white/35"
+            className="inline-flex items-center justify-center rounded-full border border-white/28 bg-white/[0.04] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/[0.08] focus:outline-none focus:ring-2 focus:ring-white/32"
           >
             Voltar a definições
           </button>

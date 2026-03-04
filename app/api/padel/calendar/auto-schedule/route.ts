@@ -99,6 +99,27 @@ type MatchParticipantSideRow = {
   } | null;
 };
 
+type PairingSlotFallbackRow = {
+  playerProfileId: number | null;
+  playerProfile: {
+    email: string | null;
+  } | null;
+};
+
+type MatchSideFallbackRow = {
+  participants: MatchParticipantSideRow[];
+  pairingA?: { slots: PairingSlotFallbackRow[] } | null;
+  pairingB?: { slots: PairingSlotFallbackRow[] } | null;
+};
+
+const uniqueNumbers = (values: Array<number | null | undefined>) =>
+  Array.from(new Set(values.filter((value): value is number => typeof value === "number" && Number.isFinite(value))));
+
+const uniqueStrings = (values: Array<string | null | undefined>) =>
+  Array.from(
+    new Set(values.filter((value): value is string => typeof value === "string" && value.trim().length > 0)),
+  );
+
 const resolveSideProfileIds = (participants: MatchParticipantSideRow[], side: "A" | "B") =>
   participants
     .filter((row) => row.side === side)
@@ -110,6 +131,20 @@ const resolveSideEmails = (participants: MatchParticipantSideRow[], side: "A" | 
     .filter((row) => row.side === side)
     .map((row) => row.participant?.playerProfile?.email?.trim().toLowerCase() ?? null)
     .filter((email): email is string => typeof email === "string" && email.length > 0);
+
+const resolveSideProfileIdsWithFallback = (match: MatchSideFallbackRow, side: "A" | "B") => {
+  const fromParticipants = resolveSideProfileIds(match.participants, side);
+  if (fromParticipants.length > 0) return fromParticipants;
+  const sideSlots = (side === "A" ? match.pairingA?.slots : match.pairingB?.slots) ?? [];
+  return uniqueNumbers(sideSlots.map((slot) => slot.playerProfileId));
+};
+
+const resolveSideEmailsWithFallback = (match: MatchSideFallbackRow, side: "A" | "B") => {
+  const fromParticipants = resolveSideEmails(match.participants, side);
+  if (fromParticipants.length > 0) return fromParticipants;
+  const sideSlots = (side === "A" ? match.pairingA?.slots : match.pairingB?.slots) ?? [];
+  return uniqueStrings(sideSlots.map((slot) => slot.playerProfile?.email?.trim().toLowerCase() ?? null));
+};
 
 async function ensureOrganization(req: NextRequest) {
   const supabase = await createSupabaseServer();
@@ -437,15 +472,43 @@ async function _POST(req: NextRequest) {
             },
           },
         },
+        pairingA: {
+          select: {
+            slots: {
+              select: {
+                playerProfileId: true,
+                playerProfile: {
+                  select: {
+                    email: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        pairingB: {
+          select: {
+            slots: {
+              select: {
+                playerProfileId: true,
+                playerProfile: {
+                  select: {
+                    email: true,
+                  },
+                },
+              },
+            },
+          },
+        },
       },
       orderBy: [{ roundLabel: "asc" }, { id: "asc" }],
     });
     const unscheduledMatches = unscheduledMatchesRaw.map((match) => ({
       ...match,
-      sideAProfileIds: resolveSideProfileIds(match.participants, "A"),
-      sideBProfileIds: resolveSideProfileIds(match.participants, "B"),
-      sideAEmails: resolveSideEmails(match.participants, "A"),
-      sideBEmails: resolveSideEmails(match.participants, "B"),
+      sideAProfileIds: resolveSideProfileIdsWithFallback(match, "A"),
+      sideBProfileIds: resolveSideProfileIdsWithFallback(match, "B"),
+      sideAEmails: resolveSideEmailsWithFallback(match, "A"),
+      sideBEmails: resolveSideEmailsWithFallback(match, "B"),
     }));
     const hasNonStopRows = unscheduledMatchesRaw.some((match) => match.groupLabel === "NS");
 
@@ -511,14 +574,42 @@ async function _POST(req: NextRequest) {
             },
           },
         },
+        pairingA: {
+          select: {
+            slots: {
+              select: {
+                playerProfileId: true,
+                playerProfile: {
+                  select: {
+                    email: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        pairingB: {
+          select: {
+            slots: {
+              select: {
+                playerProfileId: true,
+                playerProfile: {
+                  select: {
+                    email: true,
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     });
     const normalizedScheduledMatches = scheduledMatches.map((match) => ({
       ...match,
-      sideAProfileIds: resolveSideProfileIds(match.participants, "A"),
-      sideBProfileIds: resolveSideProfileIds(match.participants, "B"),
-      sideAEmails: resolveSideEmails(match.participants, "A"),
-      sideBEmails: resolveSideEmails(match.participants, "B"),
+      sideAProfileIds: resolveSideProfileIdsWithFallback(match, "A"),
+      sideBProfileIds: resolveSideProfileIdsWithFallback(match, "B"),
+      sideAEmails: resolveSideEmailsWithFallback(match, "A"),
+      sideBEmails: resolveSideEmailsWithFallback(match, "B"),
     }));
 
     const availabilities = await prisma.calendarAvailability.findMany({

@@ -45,7 +45,6 @@ export default function TabsLayout() {
   const [locationModalBusy, setLocationModalBusy] = useState(false);
   const [locationModalError, setLocationModalError] = useState<string | null>(null);
   const [locationCanAskAgain, setLocationCanAskAgain] = useState(true);
-  const [tabPreloadDistance, setTabPreloadDistance] = useState(0);
   const [backgroundTasksReady, setBackgroundTasksReady] = useState(false);
   const shouldFetchProfileSummary =
     Boolean(session) &&
@@ -120,24 +119,18 @@ export default function TabsLayout() {
 
   useEffect(() => {
     if (gateStatus !== "ready") {
-      setTabPreloadDistance(0);
       setBackgroundTasksReady(false);
       return () => undefined;
     }
     let active = true;
-    let preloadTimer: ReturnType<typeof setTimeout> | null = null;
     let backgroundTimer: ReturnType<typeof setTimeout> | null = null;
     const interactionTask = InteractionManager.runAfterInteractions(() => {
-      preloadTimer = setTimeout(() => {
-        if (active) setTabPreloadDistance(1);
-      }, 220);
       backgroundTimer = setTimeout(() => {
         if (active) setBackgroundTasksReady(true);
       }, 420);
     });
     return () => {
       active = false;
-      if (preloadTimer) clearTimeout(preloadTimer);
       if (backgroundTimer) clearTimeout(backgroundTimer);
       interactionTask.cancel();
     };
@@ -299,7 +292,7 @@ export default function TabsLayout() {
           tabBarIndicatorStyle: { height: 0 },
           tabBarStyle: { backgroundColor: "transparent" },
           lazy: true,
-          lazyPreloadDistance: tabPreloadDistance,
+          lazyPreloadDistance: 0,
         }}
       >
         <ExpoTopTabs.Screen name="inicio" options={{ title: "Início" }} />
