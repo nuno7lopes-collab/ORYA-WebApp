@@ -3,6 +3,7 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondOk } from "@/lib/http/envelope";
 import { prisma } from "@/lib/prisma";
+import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { crmFail, resolveCrmRequest } from "@/app/api/org/[orgId]/crm/_shared";
 import {
   ensureTagDefinitionsForNames,
@@ -11,10 +12,18 @@ import {
   normalizeCrmTagName,
 } from "@/lib/crm/tags";
 
+function hasOrganizationIdConflict(req: NextRequest, resolvedOrganizationId: number) {
+  const organizationId = resolveOrganizationIdFromRequest(req);
+  return organizationId !== null && organizationId !== resolvedOrganizationId;
+}
+
 async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   const access = await resolveCrmRequest({ req, required: "VIEW" });
   if (!access.ok) return access.response;
+  if (hasOrganizationIdConflict(req, access.organization.id)) {
+    return crmFail(req, 400, "ORGANIZATION_ID_CONFLICT");
+  }
 
   const tags = await listCrmTagDefinitions(prisma, access.organization.id);
   return respondOk(ctx, { tags });
@@ -28,6 +37,9 @@ async function _POST(req: NextRequest) {
     requireVerifiedEmailReason: "CRM_TAGS_CREATE",
   });
   if (!access.ok) return access.response;
+  if (hasOrganizationIdConflict(req, access.organization.id)) {
+    return crmFail(req, 400, "ORGANIZATION_ID_CONFLICT");
+  }
 
   const payload = (await req.json().catch(() => null)) as { name?: unknown; color?: unknown } | null;
   const name = normalizeCrmTagName(payload?.name);

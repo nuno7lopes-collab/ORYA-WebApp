@@ -5,7 +5,6 @@ import { prisma } from "@/lib/prisma";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { resolveOrganizationIdStrict } from "@/lib/organizationId";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
-import { isOrgAdminOrAbove } from "@/lib/organizationPermissions";
 import { OrganizationModule } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
@@ -41,9 +40,6 @@ async function _GET(req: NextRequest) {
 
     const membership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
     if (!membership) {
-      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
-    }
-    if (!isOrgAdminOrAbove(membership.role)) {
       return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 

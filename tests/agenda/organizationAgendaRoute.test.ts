@@ -4,19 +4,22 @@ import { SourceType } from "@prisma/client";
 
 const getAgendaItemsForOrganization = vi.hoisted(() => vi.fn());
 const getActiveOrganizationForUser = vi.hoisted(() => vi.fn());
-const ensureMemberModuleAccess = vi.hoisted(() => vi.fn());
-const ensureReservasModuleAccess = vi.hoisted(() => vi.fn());
+const getMemberPermissionOverrides = vi.hoisted(() => vi.fn());
+const getOrganizationActiveModules = vi.hoisted(() => vi.fn());
+const getOrganizationReservasOperationalState = vi.hoisted(() => vi.fn());
+const resolveMemberModuleAccess = vi.hoisted(() => vi.fn());
+const hasModuleAccess = vi.hoisted(() => vi.fn());
 const prismaMock = vi.hoisted(() => ({
   padelClub: { findFirst: vi.fn() },
   padelClubCourt: { findFirst: vi.fn() },
-  organizationModuleEntry: { findMany: vi.fn() },
-  organizationSettings: { findUnique: vi.fn() },
 }));
 
 vi.mock("@/domain/agendaReadModel/query", () => ({ getAgendaItemsForOrganization }));
 vi.mock("@/lib/organizationContext", () => ({ getActiveOrganizationForUser }));
-vi.mock("@/lib/organizationMemberAccess", () => ({ ensureMemberModuleAccess }));
-vi.mock("@/lib/reservas/access", () => ({ ensureReservasModuleAccess }));
+vi.mock("@/lib/organizationMemberAccess", () => ({ getMemberPermissionOverrides }));
+vi.mock("@/lib/organizationModules", () => ({ getOrganizationActiveModules }));
+vi.mock("@/lib/reservas/operationalState", () => ({ getOrganizationReservasOperationalState }));
+vi.mock("@/lib/organizationRbac", () => ({ resolveMemberModuleAccess, hasModuleAccess }));
 vi.mock("@/lib/organizationId", () => ({ resolveOrganizationIdFromRequest: () => null }));
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
 vi.mock("@/lib/supabaseServer", () => ({
@@ -40,13 +43,20 @@ let GET: typeof import("@/app/api/org/[orgId]/agenda/route").GET;
 beforeEach(async () => {
   getAgendaItemsForOrganization.mockReset();
   getActiveOrganizationForUser.mockReset();
-  ensureMemberModuleAccess.mockReset();
-  ensureReservasModuleAccess.mockReset();
+  getMemberPermissionOverrides.mockReset();
+  getOrganizationActiveModules.mockReset();
+  getOrganizationReservasOperationalState.mockReset();
+  resolveMemberModuleAccess.mockReset();
+  hasModuleAccess.mockReset();
   prismaMock.padelClub.findFirst.mockReset();
   prismaMock.padelClubCourt.findFirst.mockReset();
-  prismaMock.organizationModuleEntry.findMany.mockReset();
-  prismaMock.organizationSettings.findUnique.mockReset();
-  prismaMock.organizationSettings.findUnique.mockResolvedValue({ bookingAcceptNewReservations: true });
+  getMemberPermissionOverrides.mockResolvedValue([]);
+  getOrganizationActiveModules.mockResolvedValue({
+    activeModules: ["RESERVAS", "EVENTOS", "TORNEIOS"],
+  });
+  getOrganizationReservasOperationalState.mockResolvedValue({ acceptNewBookings: true });
+  resolveMemberModuleAccess.mockReturnValue({});
+  hasModuleAccess.mockReturnValue(true);
   vi.resetModules();
   GET = (await import("@/app/api/org/[orgId]/agenda/route")).GET;
 });
@@ -61,16 +71,9 @@ describe("organization agenda route", () => {
 
   it("devolve itens com range válido", async () => {
     getActiveOrganizationForUser.mockResolvedValue({
-      organization: { id: 1 },
+      organization: { id: 1, primaryModule: null },
       membership: { role: "ADMIN", rolePack: null },
     });
-    ensureReservasModuleAccess.mockResolvedValue({ ok: true });
-    ensureMemberModuleAccess.mockResolvedValue({ ok: true });
-    prismaMock.organizationModuleEntry.findMany.mockResolvedValue([
-      { moduleKey: "RESERVAS" },
-      { moduleKey: "EVENTOS" },
-      { moduleKey: "TORNEIOS" },
-    ]);
     getAgendaItemsForOrganization.mockResolvedValue([
       { kind: "EVENT", eventId: 1, title: "E1", startsAt: new Date(), endsAt: new Date() },
     ]);
@@ -91,13 +94,13 @@ describe("organization agenda route", () => {
 
   it("expõe estado operacional OFF de reservas", async () => {
     getActiveOrganizationForUser.mockResolvedValue({
-      organization: { id: 1 },
+      organization: { id: 1, primaryModule: null },
       membership: { role: "ADMIN", rolePack: null },
     });
-    ensureReservasModuleAccess.mockResolvedValue({ ok: true });
-    ensureMemberModuleAccess.mockResolvedValue({ ok: true });
-    prismaMock.organizationModuleEntry.findMany.mockResolvedValue([{ moduleKey: "RESERVAS" }]);
-    prismaMock.organizationSettings.findUnique.mockResolvedValue({ bookingAcceptNewReservations: false });
+    getOrganizationActiveModules.mockResolvedValue({
+      activeModules: ["RESERVAS"],
+    });
+    getOrganizationReservasOperationalState.mockResolvedValue({ acceptNewBookings: false });
     getAgendaItemsForOrganization.mockResolvedValue([]);
 
     const req = new NextRequest("http://localhost/api/org/1/agenda?from=2024-01-01&to=2024-01-31");

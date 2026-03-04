@@ -41,9 +41,11 @@ describe("ws handshake rate-limit guardrails", () => {
     const webPreview = readLocal("app/org/_internal/core/(dashboard)/chat/preview/useChatPreviewData.ts");
     const mobileChat = readLocal("apps/mobile/app/comunidade/mensagens/[threadId].tsx");
 
-    expect(webChat).toContain('reason === "RATE_LIMITED" ? 60000 : undefined');
-    expect(webPreview).toContain('reason === "RATE_LIMITED" ? 60000 : undefined');
-    expect(mobileChat).toContain('reason === "RATE_LIMITED" ? 60000 : 2000');
+    expect(webChat).toMatch(/reason\s*===\s*"RATE_LIMITED"\s*\?\s*60000\s*:\s*undefined/);
+    expect(webPreview).toMatch(/reason\s*===\s*"RATE_LIMITED"\s*\?\s*60000\s*:\s*undefined/);
+    expect(mobileChat).toMatch(
+      /const reconnectDelayMs[\s\S]*reason\s*===\s*"RATE_LIMITED"[\s\S]*\?\s*60000[\s\S]*:\s*2000/,
+    );
     expect(mobileChat).toContain("Muitas tentativas de ligação ao chat. Tenta novamente em 1 minuto.");
   });
 });

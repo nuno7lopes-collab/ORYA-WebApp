@@ -82,12 +82,13 @@ beforeEach(async () => {
 
 describe("finance status guardrails", () => {
   it("overview mantém 200, inclui card fees e ignora apenas estados explicitamente não pagos", async () => {
+    const recentCreatedAt = new Date(Date.now() - 2 * 60 * 60 * 1000);
     prisma.saleSummary.findMany.mockResolvedValue([
       {
         id: 1,
         eventId: 11,
         purchaseId: "pay_ok",
-        createdAt: new Date("2026-02-21T10:00:00.000Z"),
+        createdAt: recentCreatedAt,
         subtotalCents: 10000,
         discountCents: 0,
         platformFeeCents: 1000,
@@ -101,7 +102,7 @@ describe("finance status guardrails", () => {
         id: 2,
         eventId: 11,
         purchaseId: "pay_refunded",
-        createdAt: new Date("2026-02-21T10:00:00.000Z"),
+        createdAt: recentCreatedAt,
         subtotalCents: 5000,
         discountCents: 0,
         platformFeeCents: 500,
@@ -115,7 +116,7 @@ describe("finance status guardrails", () => {
         id: 3,
         eventId: 11,
         purchaseId: null,
-        createdAt: new Date("2026-02-21T10:00:00.000Z"),
+        createdAt: recentCreatedAt,
         subtotalCents: 3000,
         discountCents: 0,
         platformFeeCents: 300,

@@ -127,6 +127,13 @@ export const CRON_JOBS: CronJobDefinition[] = [
     endpoint: "/api/cron/crm/campanhas",
   },
   {
+    key: "crm-journeys",
+    envIntervalMs: "CRON_CRM_JOURNEYS_INTERVAL_MS",
+    defaultIntervalMs: 60_000,
+    method: "POST",
+    endpoint: "/api/cron/crm/journeys",
+  },
+  {
     key: "repair-usernames",
     envIntervalMs: "CRON_REPAIR_USERNAMES_INTERVAL_MS",
     defaultIntervalMs: 604_800_000,

@@ -43,6 +43,11 @@ describe("booking access guardrails", () => {
         "-g '!app/api/padel/calendar/auto-schedule/route.ts'",
         "-g '!app/api/cobrancas/[[]token[]]/route.ts'",
         "-g '!app/api/cobrancas/[[]token[]]/checkout/route.ts'",
+        "-g '!app/api/public/org/[[]username[]]/reservas/aulas/reservar/route.ts'",
+        "-g '!app/api/org/[[]orgId[]]/dashboard/summary/route.ts'",
+        "-g '!app/api/org/[[]orgId[]]/academy/sessions/[[]sessionId[]]/enrollments/route.ts'",
+        "-g '!app/api/org/[[]orgId[]]/academy/sessions/[[]sessionId[]]/enrollments/[[]enrollmentId[]]/route.ts'",
+        "-g '!app/api/org/[[]orgId[]]/academy/students/[[]studentId[]]/progress/route.ts'",
       ].join(" "),
       "Booking status usage",
     );

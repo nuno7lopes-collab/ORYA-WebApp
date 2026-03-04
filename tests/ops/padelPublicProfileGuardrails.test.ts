@@ -18,7 +18,7 @@ describe("padel public profile guardrails", () => {
   it("mantém superfície pública padel com fontes canónicas e blocos obrigatórios", () => {
     const source = read("app/[username]/padel/page.tsx");
     expect(source).toMatch(/prisma\.padelPlayerProfile\.findFirst\(/);
-    expect(source).toMatch(/prisma\.padelRatingProfile\.count\(/);
+    expect(source).toMatch(/prisma\.(padelRatingProfile|padelGlobalRatingProfile)\.count\(/);
     expect(source).toContain("Próximos e últimos");
     expect(source).toContain("Top 3 clubes");
     expect(source).toContain("Top 3 duplas");

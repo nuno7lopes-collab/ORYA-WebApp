@@ -22,9 +22,9 @@ describe("calendar class session guardrails", () => {
   it("ui day/week expõe filtro por tipo com Aula", () => {
     const day = readLocal("app/org/[orgId]/calendar/_components/day/DayCalendarReadClient.tsx");
     const week = readLocal("app/org/[orgId]/calendar/_components/WeekCalendarReadClient.tsx");
-    expect(day).toContain("KIND_FILTER_OPTIONS");
-    expect(day).toContain('{ value: "CLASS", label: "Aula" }');
-    expect(week).toContain("KIND_FILTER_OPTIONS");
+    expect(day).toContain("WeekCalendarReadClient");
+    expect(day).toContain('mode="day"');
+    expect(week).toContain("ALL_KIND_FILTER_OPTIONS");
     expect(week).toContain('{ value: "CLASS", label: "Aula" }');
   });
 });

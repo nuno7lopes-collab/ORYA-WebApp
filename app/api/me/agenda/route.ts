@@ -11,6 +11,7 @@ import { resolveEventLocation } from "@/lib/location/eventLocation";
 import { listEffectiveOrganizationMembershipsForUser } from "@/lib/organizationMembers";
 import { OrganizationStatus } from "@prisma/client";
 import {
+  PENDING_BOOKING_STATUSES,
   resolvePendingBookingState,
 } from "@/lib/reservas/pendingBookingState";
 
@@ -211,12 +212,12 @@ async function _GET(req: NextRequest) {
           startsAt: { gte: start, lte: end },
           status: {
             in: [
-              "PENDING_CONFIRMATION",
-              "PENDING",
+              ...PENDING_BOOKING_STATUSES,
               "CONFIRMED",
               "DISPUTED",
               "NO_SHOW",
               "COMPLETED",
+              "CANCELLED_BY_CLIENT",
             ],
           },
         },
@@ -446,6 +447,7 @@ async function _GET(req: NextRequest) {
     const items: AgendaItem[] = Array.from(eventMap.values()).map((entry) => entry.item);
 
     const visibleBookingRows = bookingRows.filter((row) => {
+      if (row.status === "CANCELLED_BY_CLIENT") return false;
       const pendingState = resolvePendingBookingState({
         status: row.status,
         startsAt: row.startsAt,
