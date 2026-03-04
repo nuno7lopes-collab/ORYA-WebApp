@@ -21,9 +21,10 @@ const ALL_ACCESS: OrganizationSidebarAccess = {
 };
 
 describe("organizationToolNavigation", () => {
-  it("mantem ordem canónica das 16 ferramentas", () => {
+  it("mantem ordem canónica das 17 ferramentas", () => {
     const tools = buildOrganizationToolNavigation({ orgId: 42, access: ALL_ACCESS });
     expect(tools.map((tool) => tool.id)).toEqual([
+      "dashboard",
       "calendar",
       "academy",
       "check-in",
@@ -121,6 +122,6 @@ describe("organizationToolNavigation", () => {
         canEditOrgSettings: false,
       },
     });
-    expect(tools.map((tool) => tool.id)).toEqual(["calendar", "academy"]);
+    expect(tools.map((tool) => tool.id)).toEqual(["dashboard", "calendar", "academy"]);
   });
 });

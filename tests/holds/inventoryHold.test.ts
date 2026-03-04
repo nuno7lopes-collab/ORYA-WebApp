@@ -180,6 +180,25 @@ describe("inventory hold service", () => {
     expect(rawPayload ?? "").not.toContain("userId");
   });
 
+  it("normaliza maxStock=0 como OUT_OF_STOCK (não INVALID_HOLD_INPUT)", async () => {
+    const { createInventoryHold } = await import("@/lib/holds/inventoryHold");
+    const result = await createInventoryHold({
+      orgId: 21,
+      subjectType: "TICKET_TYPE",
+      eventId: 88,
+      ticketTypeId: 99,
+      quantity: 1,
+      maxStock: 0,
+      clientSessionId: "sess_inventory_zero_stock_123456",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe("OUT_OF_STOCK");
+      expect(result.available).toBe(0);
+    }
+  });
+
   it("valida ownership por clientSessionId", async () => {
     const { createInventoryHold, verifyInventoryHoldOwnership } = await import(
       "@/lib/holds/inventoryHold"

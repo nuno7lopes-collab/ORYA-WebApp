@@ -108,6 +108,11 @@ function parsePositiveInt(value: unknown) {
   return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : null;
 }
 
+function parseNonNegativeInt(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.trunc(parsed) : null;
+}
+
 function normalizeSubjectType(value: unknown) {
   if (typeof value !== "string") return null;
   const normalized = value.trim().toUpperCase();
@@ -361,14 +366,14 @@ function normalizeCreateInput(input: CreateInventoryHoldInput) {
   const orgId = parsePositiveInt(input.orgId);
   const subjectType = normalizeSubjectType(input.subjectType);
   const quantity = parsePositiveInt(input.quantity);
-  const maxStock = parsePositiveInt(input.maxStock);
+  const maxStock = parseNonNegativeInt(input.maxStock);
   const clientSessionId = normalizeClientSessionId(input.clientSessionId);
   const storeId = parsePositiveInt(input.storeId ?? null);
   const eventId = parsePositiveInt(input.eventId ?? null);
   const productId = parsePositiveInt(input.productId ?? null);
   const variantId = parsePositiveInt(input.variantId ?? null);
   const ticketTypeId = parsePositiveInt(input.ticketTypeId ?? null);
-  if (!orgId || !subjectType || !quantity || !maxStock || !clientSessionId) {
+  if (!orgId || !subjectType || !quantity || maxStock === null || !clientSessionId) {
     return null;
   }
   const subjectFingerprint = ensureFingerprint({
@@ -463,6 +468,22 @@ export async function createInventoryHold(
       code: "INVALID_HOLD_INPUT",
       message: "Dados de hold inválidos.",
       retryable: false,
+    };
+  }
+  if (normalized.maxStock === 0) {
+    emitInventoryHoldMetric("inventory_hold.failed_out_of_stock", {
+      orgId: normalized.orgId,
+      subjectType: normalized.subjectType,
+      subjectFingerprint: normalized.subjectFingerprint,
+      requestedQty: normalized.quantity,
+      available: 0,
+    });
+    return {
+      ok: false,
+      code: "OUT_OF_STOCK",
+      message: "Stock insuficiente.",
+      retryable: false,
+      available: 0,
     };
   }
   if (normalized.quantity > normalized.maxStock) {

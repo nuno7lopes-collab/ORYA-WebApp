@@ -44,7 +44,7 @@
   {
     "id": "org-calendar-day-read",
     "surface": "org",
-    "file": "app/org/[orgId]/calendar/_components/day/DayCalendarReadClient.tsx",
+    "file": "app/org/[orgId]/calendar/_components/WeekCalendarReadClient.tsx",
     "checks": ["loading", "error", "empty", "canonicalNav"]
   },
   {
@@ -158,19 +158,19 @@
   {
     "id": "mobile-profile",
     "surface": "mobile",
-    "file": "apps/mobile/app/(tabs)/profile.tsx",
+    "file": "apps/mobile/app/(tabs)/perfil.tsx",
     "checks": ["loading", "error", "empty", "a11yMobile", "touchTarget"]
   },
   {
     "id": "mobile-bookings",
     "surface": "mobile",
-    "file": "apps/mobile/app/reservas/index.tsx",
+    "file": "apps/mobile/app/(tabs)/reservas.tsx",
     "checks": ["loading", "error", "empty", "a11yMobile", "touchTarget"]
   },
   {
     "id": "mobile-thread",
     "surface": "mobile",
-    "file": "apps/mobile/app/messages/[threadId].tsx",
+    "file": "apps/mobile/app/comunidade/mensagens/[threadId].tsx",
     "checks": ["loading", "error", "a11yMobile", "touchTarget"]
   },
   {
@@ -194,7 +194,7 @@
   {
     "id": "mobile-discover",
     "surface": "mobile",
-    "file": "apps/mobile/app/(tabs)/index.tsx",
+    "file": "apps/mobile/app/(tabs)/comunidade.tsx",
     "checks": ["loading", "error", "empty", "a11yMobile", "touchTarget"]
   },
   {
@@ -206,13 +206,13 @@
   {
     "id": "mobile-message-requests",
     "surface": "mobile",
-    "file": "apps/mobile/app/messages/requests.tsx",
+    "file": "apps/mobile/app/comunidade/mensagens/pedidos.tsx",
     "checks": ["loading", "error", "empty", "a11yMobile", "touchTarget"]
   },
   {
     "id": "mobile-padel-hub",
     "surface": "mobile",
-    "file": "apps/mobile/app/(tabs)/padel.tsx",
+    "file": "apps/mobile/app/(tabs)/competir.tsx",
     "checks": ["loading", "empty", "a11yMobile", "touchTarget"]
   },
   {

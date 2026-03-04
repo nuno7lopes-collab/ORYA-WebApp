@@ -11,9 +11,9 @@ describe("organization topbar subnav routing", () => {
     const content = readLocal("app/org/_internal/core/OrganizationTopBar.tsx");
     expect(content).toContain('if (activeTool === "academy" || activeTool === "bookings")');
     expect(content).toContain("<AcademySubnav");
-    expect(content).toContain('if (activeTool === "calendar") return <CalendarSubnav');
-    expect(content).toContain('if (activeTool === "check-in") return <CheckInSubnav');
-    expect(content).toContain('if (activeTool === "events") return <EventsSubnav');
+    expect(content).toMatch(/if \(activeTool === "calendar"\)\s*return <CalendarSubnav/);
+    expect(content).toMatch(/if \(activeTool === "check-in"\)\s*return <CheckInSubnav/);
+    expect(content).toMatch(/if \(activeTool === "events"\)\s*return <EventsSubnav/);
     expect(content).toContain('if (activeTool === "padel-tournaments")');
     expect(content).toContain("<PadelTournamentsSubnav");
   });

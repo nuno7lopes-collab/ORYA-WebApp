@@ -186,6 +186,7 @@ export function SearchableEntitySelect({
         }}
         className={cn(
           "inline-flex h-8 min-w-[156px] max-w-[280px] items-center gap-2 rounded-full border border-white/24 bg-white/[0.04] px-3 text-xs",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60 focus-visible:border-cyan-300/60",
           "text-white/90 transition hover:border-white/38 hover:bg-white/[0.08] hover:text-white",
           open && "border-cyan-300/60 text-white",
         )}
@@ -284,7 +285,7 @@ export function SearchableEntitySelect({
                 aria-label={`Pesquisar ${label}`}
                 aria-controls={listboxId}
                 aria-activedescendant={activeIndex >= 0 ? `${listboxId}-opt-${activeIndex}` : undefined}
-                className="org-clean-input mb-3 w-full px-3 py-2 text-sm"
+                className="org-clean-input mb-3 w-full px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60 focus-visible:border-cyan-300/60"
                 autoFocus
               />
 
@@ -310,6 +311,7 @@ export function SearchableEntitySelect({
                         onClick={() => toggleOption(option.id)}
                         className={cn(
                           "flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left transition",
+                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60 focus-visible:border-cyan-300/60",
                           selected
                             ? "border-cyan-300/50 bg-cyan-300/10 text-cyan-100"
                             : "border-white/14 text-white/84 hover:border-white/28 hover:text-white",

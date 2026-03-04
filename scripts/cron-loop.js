@@ -224,6 +224,12 @@ const jobs = [
     intervalMs: getInterval("CRON_CRM_CAMPAIGNS_INTERVAL_MS", 60000),
   },
   {
+    name: "crm-journeys",
+    method: "POST",
+    path: "/api/cron/crm/journeys",
+    intervalMs: getInterval("CRON_CRM_JOURNEYS_INTERVAL_MS", 60000),
+  },
+  {
     name: "repair-usernames",
     method: "POST",
     path: "/api/cron/repair-usernames",

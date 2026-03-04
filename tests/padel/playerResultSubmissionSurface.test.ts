@@ -7,13 +7,13 @@ function readLocal(pathname: string) {
 }
 
 describe("padel player result submission surface", () => {
-  it("wires player profile matches to result submission card", () => {
-    const pageSource = readLocal("app/[username]/padel/page.tsx");
+  it("mantém indicadores de submissão do jogador no dashboard /me", () => {
+    const meSource = readLocal("app/me/page.tsx");
 
-    expect(pageSource).toContain('from "./PadelResultSubmitCard"');
-    expect(pageSource).toContain("<PadelResultSubmitCard");
-    expect(pageSource).toContain("playerResultSubmissionEnabled");
-    expect(pageSource).toContain("resultValidationMode");
+    expect(meSource).toContain("playerCanSubmitResult");
+    expect(meSource).toContain("playerSubmissionEnabled");
+    expect(meSource).toContain("resultValidationMode");
+    expect(meSource).toContain("Podes submeter resultado como jogador.");
   });
 
   it("keeps dedicated client component for player result submission", () => {
@@ -25,7 +25,7 @@ describe("padel player result submission surface", () => {
     expect(componentSource).toContain("TIMED_GAMES");
   });
 
-  it("keeps me dashboard padel filters and profile operational summary wired", () => {
+  it("keeps me dashboard padel filters and operational summary wired", () => {
     const meSource = readLocal("app/me/page.tsx");
     const profileSource = readLocal("app/[username]/padel/page.tsx");
 
@@ -36,9 +36,11 @@ describe("padel player result submission surface", () => {
     expect(meSource).toContain("padelAttentionOnly");
     expect(meSource).toContain("resolveAttentionLabel");
     expect(meSource).toContain("/api/padel/me/matches?");
-    expect(profileSource).toContain("padelOperationalSummary");
-    expect(profileSource).toContain("padelAttentionMatches");
-    expect(profileSource).toContain("Fila de atenção (jogador)");
-    expect(profileSource).toContain("Ação jogador");
+    expect(meSource).toContain("padelMatchesSummary.liveNow");
+    expect(meSource).toContain("padelMatchesSummary.actionable");
+    expect(meSource).toContain("padelMatchesSummary.requiresAttention");
+    expect(profileSource).toContain("Próximos torneios");
+    expect(profileSource).toContain("Top 3 clubes");
+    expect(profileSource).toContain("Top 3 duplas");
   });
 });

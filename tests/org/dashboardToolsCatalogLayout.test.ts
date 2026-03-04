@@ -32,14 +32,13 @@ describe("dashboard tools catalog layout", () => {
     ]);
   });
 
-  it("renders tools without flow groups and without KPI cards in create view", () => {
+  it("renders tools sem flow groups e com KPI cards de resumo diário no create view", () => {
     const content = readLocal("app/org/_internal/core/DashboardClient.tsx");
     expect(content).not.toContain("TOOL_FLOW_ORDER");
     expect(content).not.toContain("toolGroups.map(");
-    expect(content).not.toContain("Estado do clube");
-    expect(content).not.toContain("Oferta ativa");
-    expect(content).not.toContain("Agenda 7 dias");
-    expect(content).toContain("Usa a barra lateral para abrir as ferramentas.");
+    expect(content).toContain("Resumo do dia");
+    expect(content).toContain("dailySummaryKpis.map((kpi)");
+    expect(content).not.toContain("Usa a barra lateral para abrir as ferramentas.");
     expect(content).not.toContain("renderToolCard(tool)");
   });
 

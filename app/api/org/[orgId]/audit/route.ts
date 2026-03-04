@@ -43,6 +43,13 @@ async function _GET(req: NextRequest) {
       return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
+    const governanceRoles = new Set(["OWNER", "CO_OWNER", "ADMIN"]);
+    const membershipRole =
+      typeof membership.role === "string" ? membership.role.toUpperCase() : "";
+    if (!governanceRoles.has(membershipRole)) {
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+
     const access = await ensureMemberModuleAccess({
       organizationId,
       userId: user.id,

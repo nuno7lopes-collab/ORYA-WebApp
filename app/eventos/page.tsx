@@ -36,7 +36,7 @@ type EventCard = {
 };
 
 type PageProps = {
-  searchParams?: { q?: string } | Promise<{ q?: string }>;
+  searchParams?: Promise<{ q?: string }>;
 };
 
 function formatDate(date: Date | null | undefined, locale: string) {

@@ -6,6 +6,7 @@ import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-
 import { loadStripe } from "@stripe/stripe-js";
 import { AddressCombobox } from "@/components/ui/address-combobox";
 import type { GeoDetailsItem } from "@/lib/geo/types";
+import { isInventoryHoldContractEnabledClient } from "@/lib/holds/inventoryContractClient";
 
 type CartItem = {
   id: number;
@@ -127,6 +128,7 @@ type InventoryHoldSession = {
 
 const INVENTORY_HOLD_STORAGE_KEY = "orya.inventory.hold.v1";
 const HOLD_TTL_SECONDS = 5 * 60;
+const CLIENT_SESSION_ID_PATTERN = /^[a-zA-Z0-9._:-]{12,128}$/;
 
 const SHIPPING_COUNTRY = "PT";
 
@@ -141,6 +143,10 @@ function createClientSessionId() {
   return `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 14)}`;
 }
 
+function isValidClientSessionId(value: unknown): value is string {
+  return typeof value === "string" && CLIENT_SESSION_ID_PATTERN.test(value.trim());
+}
+
 function readInventoryHoldSession(): InventoryHoldSession | null {
   if (typeof window === "undefined") return null;
   const raw = window.sessionStorage.getItem(INVENTORY_HOLD_STORAGE_KEY);
@@ -148,7 +154,7 @@ function readInventoryHoldSession(): InventoryHoldSession | null {
   try {
     const parsed = JSON.parse(raw) as Partial<InventoryHoldSession>;
     if (!parsed || typeof parsed !== "object") return null;
-    if (typeof parsed.clientSessionId !== "string" || !Array.isArray(parsed.holds)) {
+    if (!isValidClientSessionId(parsed.clientSessionId) || !Array.isArray(parsed.holds)) {
       return null;
     }
     const holds = parsed.holds
@@ -170,7 +176,7 @@ function readInventoryHoldSession(): InventoryHoldSession | null {
         quantity: Math.max(1, Math.trunc(entry.quantity)),
       }));
     return {
-      clientSessionId: parsed.clientSessionId,
+      clientSessionId: parsed.clientSessionId.trim(),
       holds,
       updatedAt:
         typeof parsed.updatedAt === "string"
@@ -262,6 +268,7 @@ export default function StorefrontCheckoutClient({
     termsUrl?: string | null;
   };
 }) {
+  const inventoryHoldEnabled = isInventoryHoldContractEnabledClient();
   const [items, setItems] = useState<CartItem[]>([]);
   const [bundles, setBundles] = useState<BundleGroup[]>([]);
   const [loading, setLoading] = useState(false);
@@ -328,10 +335,15 @@ export default function StorefrontCheckoutClient({
   }, []);
 
   useEffect(() => {
+    if (!inventoryHoldEnabled) {
+      setInventoryHoldSession(null);
+      writeInventoryHoldSession(null);
+      return;
+    }
     const persisted = readInventoryHoldSession();
     if (!persisted) return;
     setInventoryHoldSession(persisted);
-  }, []);
+  }, [inventoryHoldEnabled]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setHoldTick(Date.now()), 1000);
@@ -592,6 +604,7 @@ export default function StorefrontCheckoutClient({
   }, [requiresShipping, subtotalCents]);
 
   useEffect(() => {
+    if (!inventoryHoldEnabled) return;
     if (!inventoryHoldSession) return;
     const active = inventoryHoldSession.holds.filter((entry) => {
       const expires = new Date(entry.expiresAt).getTime();
@@ -610,9 +623,10 @@ export default function StorefrontCheckoutClient({
     };
     setInventoryHoldSession(next);
     writeInventoryHoldSession(next);
-  }, [holdTick, inventoryHoldSession]);
+  }, [holdTick, inventoryHoldEnabled, inventoryHoldSession]);
 
   useEffect(() => {
+    if (!inventoryHoldEnabled) return;
     if (!inventoryHoldSession?.clientSessionId) return;
     if (!inventoryHoldSession.holds.length) return;
     const interval = window.setInterval(() => {
@@ -653,7 +667,7 @@ export default function StorefrontCheckoutClient({
       })();
     }, 45_000);
     return () => window.clearInterval(interval);
-  }, [inventoryHoldSession]);
+  }, [inventoryHoldEnabled, inventoryHoldSession]);
 
   const releaseInventorySessionHolds = async (session: InventoryHoldSession | null) => {
     if (!session?.clientSessionId || !session.holds.length) return;
@@ -671,8 +685,70 @@ export default function StorefrontCheckoutClient({
     );
   };
 
+  const rollbackCreatedInventoryHolds = async (
+    clientSessionId: string,
+    created: InventoryHoldEntry[],
+  ) => {
+    if (!created.length) return;
+    await Promise.all(
+      created.map((entry) =>
+        fetch("/api/holds/inventory/release", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            holdId: entry.holdId,
+            clientSessionId,
+          }),
+        }).catch(() => null),
+      ),
+    );
+  };
+
+  const extractInventoryHoldError = (params: {
+    status: number;
+    responsePayload: unknown;
+    rawBody: string;
+    fallback: string;
+  }) => {
+    const { status, responsePayload, rawBody, fallback } = params;
+    const payload =
+      responsePayload && typeof responsePayload === "object"
+        ? (responsePayload as Record<string, unknown>)
+        : null;
+    const details =
+      payload?.details && typeof payload.details === "object"
+        ? (payload.details as Record<string, unknown>)
+        : null;
+    const nestedData =
+      payload?.data && typeof payload.data === "object"
+        ? (payload.data as Record<string, unknown>)
+        : null;
+
+    const textCandidates = [
+      payload?.message,
+      payload?.error,
+      details?.message,
+      nestedData?.message,
+      nestedData?.error,
+    ];
+    for (const candidate of textCandidates) {
+      if (typeof candidate === "string" && candidate.trim()) {
+        return candidate.trim();
+      }
+    }
+
+    if (typeof rawBody === "string" && rawBody.trim() && !rawBody.trim().startsWith("<")) {
+      return rawBody.trim().slice(0, 220);
+    }
+
+    if (status >= 500) {
+      return "Serviço de reserva de stock temporariamente indisponível. Tenta novamente em instantes.";
+    }
+    return fallback;
+  };
+
   const ensureInventoryHolds = async () => {
-    if (!inventoryRequirements.length) {
+    if (!inventoryHoldEnabled || !inventoryRequirements.length) {
       return { ok: true as const, clientSessionId: null, holdIds: [] as string[] };
     }
 
@@ -686,32 +762,60 @@ export default function StorefrontCheckoutClient({
 
     if (inventoryHoldSession?.holds.length) {
       await releaseInventorySessionHolds(inventoryHoldSession);
+      setInventoryHoldSession(null);
+      writeInventoryHoldSession(null);
     }
 
-    const clientSessionId = inventoryHoldSession?.clientSessionId || createClientSessionId();
+    const clientSessionId =
+      isValidClientSessionId(inventoryHoldSession?.clientSessionId)
+        ? inventoryHoldSession!.clientSessionId
+        : createClientSessionId();
     const createdHolds: InventoryHoldEntry[] = [];
 
     for (const requirement of inventoryRequirements) {
-      const res = await fetch("/api/holds/inventory/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          storeId,
-          productId: requirement.productId,
-          variantId: requirement.variantId,
-          quantity: requirement.quantity,
-          clientSessionId,
-          metadata: { subjectLabel: requirement.subjectLabel },
-        }),
-      });
-      const payload = await res.json().catch(() => null);
-      const data = payload?.data ?? payload;
+      let res: Response;
+      try {
+        res = await fetch("/api/holds/inventory/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            storeId,
+            productId: requirement.productId,
+            variantId: requirement.variantId,
+            quantity: requirement.quantity,
+            clientSessionId,
+            metadata: { subjectLabel: requirement.subjectLabel },
+          }),
+        });
+      } catch {
+        await rollbackCreatedInventoryHolds(clientSessionId, createdHolds);
+        return {
+          ok: false as const,
+          message: "Falha de ligação ao reservar stock para checkout. Verifica a ligação e tenta novamente.",
+        };
+      }
+
+      const rawBody = await res.text().catch(() => "");
+      const payload = (() => {
+        if (!rawBody) return null;
+        try {
+          return JSON.parse(rawBody) as Record<string, unknown>;
+        } catch {
+          return null;
+        }
+      })();
+      const data =
+        payload && typeof payload === "object"
+          ? ((payload.data ?? payload) as Record<string, unknown>)
+          : null;
       if (!res.ok) {
-        const message =
-          payload?.message ||
-          payload?.error ||
-          payload?.details?.message ||
-          "Não foi possível reservar stock para checkout.";
+        await rollbackCreatedInventoryHolds(clientSessionId, createdHolds);
+        const message = extractInventoryHoldError({
+          status: res.status,
+          responsePayload: payload,
+          rawBody,
+          fallback: "Não foi possível reservar stock para checkout.",
+        });
         return { ok: false as const, message };
       }
       const holdRequired = data?.holdRequired !== false;
@@ -724,6 +828,7 @@ export default function StorefrontCheckoutClient({
           ? data.subjectFingerprint
           : null;
       if (!holdId || !expiresAt || !subjectFingerprint) {
+        await rollbackCreatedInventoryHolds(clientSessionId, createdHolds);
         return {
           ok: false as const,
           message: "Resposta inválida ao criar hold de inventory.",
@@ -856,7 +961,11 @@ export default function StorefrontCheckoutClient({
 
       {loading && <p className="text-sm text-white/60">A preparar checkout...</p>}
 
-      {!checkout && inventoryRequirements.length > 0 && activeInventoryHolds.length > 0 && holdsCoverCurrentCart && (
+      {!checkout &&
+        inventoryHoldEnabled &&
+        inventoryRequirements.length > 0 &&
+        activeInventoryHolds.length > 0 &&
+        holdsCoverCurrentCart && (
         <div className="rounded-2xl border border-emerald-400/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
           <p className="font-semibold">Stock reservado para checkout.</p>
           <p className="mt-1 text-emerald-100/90">
@@ -872,7 +981,11 @@ export default function StorefrontCheckoutClient({
         </div>
       )}
 
-      {!checkout && inventoryRequirements.length > 0 && inventoryHoldSession && activeInventoryHolds.length === 0 && (
+      {!checkout &&
+        inventoryHoldEnabled &&
+        inventoryRequirements.length > 0 &&
+        inventoryHoldSession &&
+        activeInventoryHolds.length === 0 && (
         <div className="rounded-2xl border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
           O seu bloqueio expirou - o stock já não está reservado.
         </div>

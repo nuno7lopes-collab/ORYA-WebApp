@@ -17,6 +17,7 @@ import {
   type IntentCycleState,
   type IntentErrorPayload,
 } from "./intentErrorUtils";
+import { isInventoryHoldContractEnabledClient } from "@/lib/holds/inventoryContractClient";
 
 type TicketCopy = ReturnType<typeof getTicketCopy>;
 
@@ -68,6 +69,7 @@ type GuestInfo = {
 
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
 const INVENTORY_HOLD_STORAGE_KEY = "orya.inventory.hold.v1";
+const CLIENT_SESSION_ID_PATTERN = /^[a-zA-Z0-9._:-]{12,128}$/;
 
 type InventoryHoldEntry = {
   holdId: string;
@@ -90,6 +92,10 @@ type TicketInventoryRequirement = {
   subjectLabel: string;
 };
 
+function isValidClientSessionId(value: unknown): value is string {
+  return typeof value === "string" && CLIENT_SESSION_ID_PATTERN.test(value.trim());
+}
+
 function createClientSessionId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
@@ -104,7 +110,7 @@ function readInventoryHoldSession(): InventoryHoldSession | null {
   try {
     const parsed = JSON.parse(raw) as Partial<InventoryHoldSession>;
     if (!parsed || typeof parsed !== "object") return null;
-    if (typeof parsed.clientSessionId !== "string" || !Array.isArray(parsed.holds)) {
+    if (!isValidClientSessionId(parsed.clientSessionId) || !Array.isArray(parsed.holds)) {
       return null;
     }
     const holds = parsed.holds.filter((entry): entry is InventoryHoldEntry => {
@@ -120,7 +126,7 @@ function readInventoryHoldSession(): InventoryHoldSession | null {
       );
     });
     return {
-      clientSessionId: parsed.clientSessionId,
+      clientSessionId: parsed.clientSessionId.trim(),
       holds,
       updatedAt:
         typeof parsed.updatedAt === "string"
@@ -150,6 +156,7 @@ function formatHoldCountdown(expiresAt: string) {
 
 export default function Step2Pagamento() {
   const { dados, irParaPasso, atualizarDados, breakdown, setBreakdown } = useCheckout();
+  const inventoryHoldEnabled = isInventoryHoldContractEnabledClient();
   const checkoutVariant =
     typeof dados?.additional?.checkoutUiVariant === "string"
       ? dados.additional.checkoutUiVariant
@@ -427,12 +434,18 @@ export default function Step2Pagamento() {
   }, [safeDados]);
 
   useEffect(() => {
+    if (!inventoryHoldEnabled) {
+      setInventoryHoldSession(null);
+      writeInventoryHoldSession(null);
+      return;
+    }
     const persisted = readInventoryHoldSession();
     if (!persisted) return;
     setInventoryHoldSession(persisted);
-  }, []);
+  }, [inventoryHoldEnabled]);
 
   useEffect(() => {
+    if (!inventoryHoldEnabled) return;
     if (!inventoryHoldSession?.holds.length) {
       setHoldCountdownLabel(null);
       return;
@@ -465,9 +478,10 @@ export default function Step2Pagamento() {
     tick();
     const timer = window.setInterval(tick, 1000);
     return () => window.clearInterval(timer);
-  }, [inventoryHoldSession]);
+  }, [inventoryHoldEnabled, inventoryHoldSession]);
 
   useEffect(() => {
+    if (!inventoryHoldEnabled) return;
     if (!inventoryHoldSession?.clientSessionId) return;
     if (!inventoryHoldSession.holds.length) return;
     const timer = window.setInterval(() => {
@@ -508,7 +522,7 @@ export default function Step2Pagamento() {
       })();
     }, 45_000);
     return () => window.clearInterval(timer);
-  }, [inventoryHoldSession]);
+  }, [inventoryHoldEnabled, inventoryHoldSession]);
 
   const payload = useMemo(() => {
     if (!safeDados) return null;
@@ -626,8 +640,86 @@ export default function Step2Pagamento() {
     );
   }, [activeInventoryHolds, ticketInventoryRequirements]);
 
+  const releaseInventorySessionHolds = async (session: InventoryHoldSession | null) => {
+    if (!session?.clientSessionId || !session.holds.length) return;
+    await Promise.all(
+      session.holds.map((entry) =>
+        fetch("/api/holds/inventory/release", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            holdId: entry.holdId,
+            clientSessionId: session.clientSessionId,
+          }),
+        }).catch(() => null),
+      ),
+    );
+  };
+
+  const rollbackCreatedInventoryHolds = async (
+    clientSessionId: string,
+    created: InventoryHoldEntry[],
+  ) => {
+    if (!created.length) return;
+    await Promise.all(
+      created.map((entry) =>
+        fetch("/api/holds/inventory/release", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            holdId: entry.holdId,
+            clientSessionId,
+          }),
+        }).catch(() => null),
+      ),
+    );
+  };
+
+  const extractInventoryHoldError = (params: {
+    status: number;
+    responsePayload: unknown;
+    rawBody: string;
+    fallback: string;
+  }) => {
+    const { status, responsePayload, rawBody, fallback } = params;
+    const payload =
+      responsePayload && typeof responsePayload === "object"
+        ? (responsePayload as Record<string, unknown>)
+        : null;
+    const details =
+      payload?.details && typeof payload.details === "object"
+        ? (payload.details as Record<string, unknown>)
+        : null;
+    const nestedData =
+      payload?.data && typeof payload.data === "object"
+        ? (payload.data as Record<string, unknown>)
+        : null;
+
+    const textCandidates = [
+      payload?.message,
+      payload?.error,
+      details?.message,
+      nestedData?.message,
+      nestedData?.error,
+    ];
+    for (const candidate of textCandidates) {
+      if (typeof candidate === "string" && candidate.trim()) {
+        return candidate.trim();
+      }
+    }
+
+    if (typeof rawBody === "string" && rawBody.trim() && !rawBody.trim().startsWith("<")) {
+      return rawBody.trim().slice(0, 220);
+    }
+
+    if (status >= 500) {
+      return "Serviço de reserva temporariamente indisponível. Tenta novamente em instantes.";
+    }
+    return fallback;
+  };
+
   const ensureInventoryHolds = async () => {
-    if (!ticketInventoryRequirements.length) {
+    if (!inventoryHoldEnabled || !ticketInventoryRequirements.length) {
       return { ok: true as const, clientSessionId: null, holdIds: [] as string[] };
     }
 
@@ -639,42 +731,60 @@ export default function Step2Pagamento() {
       };
     }
 
-    if (inventoryHoldSession?.clientSessionId && inventoryHoldSession.holds.length > 0) {
-      await Promise.all(
-        inventoryHoldSession.holds.map((entry) =>
-          fetch("/api/holds/inventory/release", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              holdId: entry.holdId,
-              clientSessionId: inventoryHoldSession.clientSessionId,
-            }),
-          }).catch(() => null),
-        ),
-      );
+    if (inventoryHoldSession?.holds.length) {
+      await releaseInventorySessionHolds(inventoryHoldSession);
+      setInventoryHoldSession(null);
+      writeInventoryHoldSession(null);
     }
 
-    const clientSessionId = inventoryHoldSession?.clientSessionId || createClientSessionId();
+    const clientSessionId =
+      isValidClientSessionId(inventoryHoldSession?.clientSessionId)
+        ? inventoryHoldSession!.clientSessionId
+        : createClientSessionId();
     const created: InventoryHoldEntry[] = [];
     for (const requirement of ticketInventoryRequirements) {
-      const res = await fetch("/api/holds/inventory/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ticketTypeId: requirement.ticketTypeId,
-          quantity: requirement.quantity,
-          eventId: payload?.eventId,
-          clientSessionId,
-          metadata: { subjectLabel: requirement.subjectLabel },
-        }),
-      });
-      const response = await res.json().catch(() => null);
-      const data = response?.data ?? response;
+      let res: Response;
+      try {
+        res = await fetch("/api/holds/inventory/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ticketTypeId: requirement.ticketTypeId,
+            quantity: requirement.quantity,
+            eventId: payload?.eventId,
+            clientSessionId,
+            metadata: { subjectLabel: requirement.subjectLabel },
+          }),
+        });
+      } catch {
+        await rollbackCreatedInventoryHolds(clientSessionId, created);
+        return {
+          ok: false as const,
+          message: "Falha de ligação ao reservar bilhete para checkout. Verifica a ligação e tenta novamente.",
+        };
+      }
+
+      const rawBody = await res.text().catch(() => "");
+      const response = (() => {
+        if (!rawBody) return null;
+        try {
+          return JSON.parse(rawBody) as Record<string, unknown>;
+        } catch {
+          return null;
+        }
+      })();
+      const data =
+        response && typeof response === "object"
+          ? ((response.data ?? response) as Record<string, unknown>)
+          : null;
       if (!res.ok) {
-        const message =
-          response?.message ||
-          response?.error ||
-          "Não foi possível reservar o bilhete para checkout.";
+        await rollbackCreatedInventoryHolds(clientSessionId, created);
+        const message = extractInventoryHoldError({
+          status: res.status,
+          responsePayload: response,
+          rawBody,
+          fallback: "Não foi possível reservar o bilhete para checkout.",
+        });
         return { ok: false as const, message };
       }
       if (data?.holdRequired === false) continue;
@@ -685,6 +795,7 @@ export default function Step2Pagamento() {
           ? data.subjectFingerprint
           : null;
       if (!holdId || !expiresAt || !subjectFingerprint) {
+        await rollbackCreatedInventoryHolds(clientSessionId, created);
         return {
           ok: false as const,
           message: "Resposta inválida ao criar hold de bilhete.",
@@ -1728,7 +1839,10 @@ export default function Step2Pagamento() {
         scenarioCopy={scenarioCopy}
       />
 
-      {ticketInventoryRequirements.length > 0 && activeInventoryHolds.length > 0 && holdsCoverCurrentTickets && (
+      {inventoryHoldEnabled &&
+        ticketInventoryRequirements.length > 0 &&
+        activeInventoryHolds.length > 0 &&
+        holdsCoverCurrentTickets && (
         <div className="rounded-2xl border border-emerald-400/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
           <p className="font-semibold">Bilhetes reservados para checkout.</p>
           <p className="mt-1 text-emerald-100/90">
@@ -1744,7 +1858,10 @@ export default function Step2Pagamento() {
         </div>
       )}
 
-      {ticketInventoryRequirements.length > 0 && inventoryHoldSession && activeInventoryHolds.length === 0 && (
+      {inventoryHoldEnabled &&
+        ticketInventoryRequirements.length > 0 &&
+        inventoryHoldSession &&
+        activeInventoryHolds.length === 0 && (
         <div className="rounded-2xl border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
           O seu bloqueio expirou - os bilhetes já não estão reservados.
         </div>

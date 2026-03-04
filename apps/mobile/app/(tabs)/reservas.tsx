@@ -230,6 +230,7 @@ export default function BookingsScreen() {
                 onPress={() => void handleChangeRequest(booking, "DECLINE")}
                 disabled={respondingRequestId === pendingRequest.id}
                 className="flex-1 rounded-xl border border-white/20 bg-white/5 px-3 py-2"
+                style={{ minHeight: tokens.layout.touchTarget }}
                 accessibilityRole="button"
                 accessibilityLabel="Recusar alteração"
               >
@@ -241,6 +242,7 @@ export default function BookingsScreen() {
                 onPress={() => void handleChangeRequest(booking, "ACCEPT")}
                 disabled={respondingRequestId === pendingRequest.id}
                 className="flex-1 rounded-xl bg-white/90 px-3 py-2"
+                style={{ minHeight: tokens.layout.touchTarget }}
                 accessibilityRole="button"
                 accessibilityLabel="Aceitar alteração"
               >
@@ -257,6 +259,7 @@ export default function BookingsScreen() {
             onPress={() => void handleCancelPress(booking.id)}
             disabled={cancelingBookingId === booking.id}
             className="mt-2 rounded-xl border border-rose-300/40 bg-rose-500/12 px-3 py-2"
+            style={{ minHeight: tokens.layout.touchTarget }}
             accessibilityRole="button"
             accessibilityLabel="Cancelar reserva"
           >

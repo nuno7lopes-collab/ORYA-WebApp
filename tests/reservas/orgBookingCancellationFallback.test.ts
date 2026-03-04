@@ -24,19 +24,21 @@ vi.mock("@/lib/reservas/confirmationSnapshot", () => ({
 import { cancelBookingByOrganizationInTx } from "@/lib/reservas/orgBookingCancellation";
 
 function createBooking(overrides?: Record<string, unknown>) {
-  const now = new Date("2026-02-26T10:00:00.000Z");
+  const now = new Date();
+  const startsAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const createdAt = new Date(now.getTime() - 72 * 60 * 60 * 1000);
   return {
     id: 2653,
     userId: "u_1",
     guestEmail: null,
     status: "CONFIRMED",
-    startsAt: new Date("2026-03-01T10:00:00.000Z"),
+    startsAt,
     price: 5_200,
     currency: "EUR",
     paymentIntentId: null,
     organizationId: 2,
     serviceId: 129,
-    createdAt: new Date("2026-02-23T17:30:21.184Z"),
+    createdAt,
     updatedAt: now,
     snapshotTimezone: "Europe/Lisbon",
     confirmationSnapshot: null,
