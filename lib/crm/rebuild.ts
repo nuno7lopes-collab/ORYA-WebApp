@@ -198,9 +198,19 @@ export async function rebuildCrmContacts(options?: { organizationId?: number | n
   let padelProfilesRecomputed = 0;
   let cursorContactId: string | null = null;
   const batchSize = 200;
-  type CrmContactPadelBatch = Awaited<ReturnType<typeof prisma.crmContactPadel.findMany>>;
+  const padelRecomputeSelect = Prisma.validator<Prisma.CrmContactPadelSelect>()({
+    contactId: true,
+    organizationId: true,
+    playerProfileId: true,
+    level: true,
+    preferredSide: true,
+    clubName: true,
+    tournamentsCount: true,
+    noShowCount: true,
+  });
+  type CrmContactPadelRow = Prisma.CrmContactPadelGetPayload<{ select: typeof padelRecomputeSelect }>;
   while (true) {
-    const rows: CrmContactPadelBatch = await prisma.crmContactPadel.findMany({
+    const rows: CrmContactPadelRow[] = await prisma.crmContactPadel.findMany({
       where: {
         ...(organizationId ? { organizationId } : {}),
       },
@@ -212,16 +222,7 @@ export async function rebuildCrmContacts(options?: { organizationId?: number | n
             skip: 1,
           }
         : {}),
-      select: {
-        contactId: true,
-        organizationId: true,
-        playerProfileId: true,
-        level: true,
-        preferredSide: true,
-        clubName: true,
-        tournamentsCount: true,
-        noShowCount: true,
-      },
+      select: padelRecomputeSelect,
     });
     if (!rows.length) break;
 
