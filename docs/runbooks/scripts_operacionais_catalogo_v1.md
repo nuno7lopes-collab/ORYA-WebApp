@@ -63,17 +63,21 @@ Data de referencia: 2026-02-24
 
 | Script | Comando npm | Ambientes |
 | --- | --- | --- |
+| `scripts/academy_hardcut_trainer_hygiene.ts` | `academy:hardcut:trainer-hygiene:dry` | `dev,local` |
 | `scripts/audit_event_ticket_integrity.ts` | `audit:event-ticket-integrity` | `ci,dev` |
 | `scripts/audit_padel_category_ticket_links.ts` | `audit:padel-category-ticket-links` | `ci,dev` |
 | `scripts/audit_public_events.ts` | `audit:public-events` | `ci,dev` |
 | `scripts/backfill_booking_confirmation_snapshots.ts` | `reservas:backfill-confirmation-snapshots:dry` | `dev,local` |
 | `scripts/codemods/enforce-verified-auth.mjs` | `auth:codemod:enforce-verified` | `dev,local` |
 | `scripts/convert_test_orgs_to_platform.ts` | `orgs:convert-test-platform` | `dev,local` |
+| `scripts/crm/backfillPadelInteractions.ts` | `crm:backfill-padel:dry` | `dev,local` |
+| `scripts/crm/rebuildCrmContacts.ts` | `crm:rebuild` | `dev,local` |
 | `scripts/gate_auth_verified.mjs` | `gate:auth-verified` | `ci,dev` |
 | `scripts/generate_api_ui_orphan_burndown_plan.mjs` | `report:api-ui-burndown` | `ci,dev` |
 | `scripts/operational_scripts_allowlist_gate.mjs` | `gate:scripts-ops` | `ci,dev,local` |
 | `scripts/operational_scripts_catalog_gate.mjs` | `gate:scripts-catalog` | `ci,dev,local` |
 | `scripts/operational_data_integrity_gate.mjs` | `gate:data-integrity` | `dev,local` |
+| `scripts/padel_backfill_tournament_capacity.ts` | `padel:capacity-backfill:dry` | `dev,local` |
 | `scripts/reservas_seed_integrity_gate.ts` | `gate:reservas-seed-integrity` | `ci,dev,local` |
 | `scripts/smoke_reservas_hybrid.ts` | `smoke:reservas:hybrid` | `dev,local` |
 | `scripts/ssot_normative_gate.mjs` | `gate:ssot-normative` | `ci,dev` |
@@ -128,6 +132,7 @@ Data de referencia: 2026-02-24
 
 | Script | Comando npm | Ambientes |
 | --- | --- | --- |
+| `scripts/codespaces-bootstrap.sh` | `codespace:setup` | `dev,local` |
 | `scripts/cron-loop.js` | `cron:local` | `dev,prod` |
 | `scripts/dev-all.js` | `dev:all` | `dev,local` |
 | `scripts/load-env.js` | `db:env` | `dev,local` |
@@ -149,6 +154,13 @@ Data de referencia: 2026-02-24
 | `scripts/test_hygiene_gate.mjs` | `gate:test-hygiene` | `ci,dev,local` |
 
 ## Detalhe por Script
+
+### academy-hardcut-trainer-hygiene-ts
+
+- Script: `scripts/academy_hardcut_trainer_hygiene.ts`
+- Owner: `platform-architecture`
+- Comando npm oficial: `npm run academy:hardcut:trainer-hygiene:dry`
+- Ambientes: `dev,local`
 
 ### audit-api-ui-coverage-ts
 
@@ -255,6 +267,13 @@ Data de referencia: 2026-02-24
 - Comando npm oficial: `npm run orgs:convert-test-platform`
 - Ambientes: `dev,local`
 
+### codespaces-bootstrap-sh
+
+- Script: `scripts/codespaces-bootstrap.sh`
+- Owner: `platform-runtime`
+- Comando npm oficial: `npm run codespace:setup`
+- Ambientes: `dev,local`
+
 ### covers-generate-thumbs-ts
 
 - Script: `scripts/covers/generate-thumbs.ts`
@@ -274,6 +293,20 @@ Data de referencia: 2026-02-24
 - Script: `scripts/covers/validate-manifest.ts`
 - Owner: `content-brand`
 - Comando npm oficial: `npm run covers:validate`
+- Ambientes: `dev,local`
+
+### crm-backfill-padel-interactions-ts
+
+- Script: `scripts/crm/backfillPadelInteractions.ts`
+- Owner: `platform-architecture`
+- Comando npm oficial: `npm run crm:backfill-padel:dry`
+- Ambientes: `dev,local`
+
+### crm-rebuild-crm-contacts-ts
+
+- Script: `scripts/crm/rebuildCrmContacts.ts`
+- Owner: `platform-architecture`
+- Comando npm oficial: `npm run crm:rebuild`
 - Ambientes: `dev,local`
 
 ### prepare-secrets-json-sh
@@ -485,6 +518,13 @@ Data de referencia: 2026-02-24
 - Owner: `platform-runtime`
 - Comando npm oficial: `npm run worker`
 - Ambientes: `dev,prod`
+
+### padel-backfill-tournament-capacity-ts
+
+- Script: `scripts/padel_backfill_tournament_capacity.ts`
+- Owner: `platform-architecture`
+- Comando npm oficial: `npm run padel:capacity-backfill:dry`
+- Ambientes: `dev,local`
 
 ### regenerate-logo-assets-mjs
 

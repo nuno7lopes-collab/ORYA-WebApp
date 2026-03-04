@@ -8,6 +8,17 @@
   },
   "entries": [
     {
+      "script": "scripts/academy_hardcut_trainer_hygiene.ts",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#academy-hardcut-trainer-hygiene-ts",
+      "npmCommand": "academy:hardcut:trainer-hygiene:dry",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
       "script": "scripts/audit_api_ui_coverage.ts",
       "owner": "content-brand",
       "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#audit-api-ui-coverage-ts",
@@ -173,6 +184,17 @@
       "status": "active"
     },
     {
+      "script": "scripts/codespaces-bootstrap.sh",
+      "owner": "platform-runtime",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#codespaces-bootstrap-sh",
+      "npmCommand": "codespace:setup",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
       "script": "scripts/covers/generate-thumbs.ts",
       "owner": "content-brand",
       "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#covers-generate-thumbs-ts",
@@ -199,6 +221,28 @@
       "owner": "content-brand",
       "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#covers-validate-manifest-ts",
       "npmCommand": "covers:validate",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/crm/backfillPadelInteractions.ts",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#crm-backfill-padel-interactions-ts",
+      "npmCommand": "crm:backfill-padel:dry",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/crm/rebuildCrmContacts.ts",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#crm-rebuild-crm-contacts-ts",
+      "npmCommand": "crm:rebuild",
       "environments": [
         "dev",
         "local"
@@ -523,6 +567,17 @@
       "environments": [
         "dev",
         "prod"
+      ],
+      "status": "active"
+    },
+    {
+      "script": "scripts/padel_backfill_tournament_capacity.ts",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#padel-backfill-tournament-capacity-ts",
+      "npmCommand": "padel:capacity-backfill:dry",
+      "environments": [
+        "dev",
+        "local"
       ],
       "status": "active"
     },

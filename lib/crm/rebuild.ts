@@ -198,8 +198,9 @@ export async function rebuildCrmContacts(options?: { organizationId?: number | n
   let padelProfilesRecomputed = 0;
   let cursorContactId: string | null = null;
   const batchSize = 200;
+  type CrmContactPadelBatch = Awaited<ReturnType<typeof prisma.crmContactPadel.findMany>>;
   while (true) {
-    const rows = await prisma.crmContactPadel.findMany({
+    const rows: CrmContactPadelBatch = await prisma.crmContactPadel.findMany({
       where: {
         ...(organizationId ? { organizationId } : {}),
       },
