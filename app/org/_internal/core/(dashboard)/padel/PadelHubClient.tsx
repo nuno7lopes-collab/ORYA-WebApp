@@ -36,12 +36,12 @@ import {
 import { parsePadelFormat } from "@/domain/padel/formatCatalog";
 import { PADEL_FORMAT_LABELS_PT } from "@/domain/padel/formatPresentation";
 import PartnershipsPageClient from "./parcerias/PartnershipsPageClient";
-import { ClubsManagementPanel } from "./clubs-v2/ClubsManagementPanel";
-import { CalendarControls } from "./calendar-v2/CalendarControls";
-import { CalendarExportPanel } from "./calendar-v2/CalendarExportPanel";
-import { CalendarMatrixPanel } from "./calendar-v2/CalendarMatrixPanel";
-import { CalendarManualAdjustmentsPanel } from "./calendar-v2/CalendarManualAdjustmentsPanel";
-import { CalendarMatchAdjustmentsPanel } from "./calendar-v2/CalendarMatchAdjustmentsPanel";
+import { ClubsManagementPanel } from "./clubs/ClubsManagementPanel";
+import { CalendarControls } from "./calendar/CalendarControls";
+import { CalendarExportPanel } from "./calendar/CalendarExportPanel";
+import { CalendarMatrixPanel } from "./calendar/CalendarMatrixPanel";
+import { CalendarManualAdjustmentsPanel } from "./calendar/CalendarManualAdjustmentsPanel";
+import { CalendarMatchAdjustmentsPanel } from "./calendar/CalendarMatchAdjustmentsPanel";
 
 type PadelClub = {
   id: number;

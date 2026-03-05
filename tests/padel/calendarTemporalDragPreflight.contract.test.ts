@@ -5,7 +5,10 @@ import { resolve } from "node:path";
 describe("calendário operacional suporta drag temporal com preflight", () => {
   it("DayFieldGrid expõe drop temporal por slot", () => {
     const source = readFileSync(
-      resolve(process.cwd(), "app/org/_internal/core/(dashboard)/padel/calendar-v2/DayFieldGrid.tsx"),
+      resolve(
+        process.cwd(),
+        "app/org/_internal/core/(dashboard)/padel/calendar/DayFieldGrid.tsx",
+      ),
       "utf8",
     );
 
@@ -17,7 +20,10 @@ describe("calendário operacional suporta drag temporal com preflight", () => {
 
   it("PadelHubClient aplica preflight antes do write de reagendamento", () => {
     const source = readFileSync(
-      resolve(process.cwd(), "app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx"),
+      resolve(
+        process.cwd(),
+        "app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx",
+      ),
       "utf8",
     );
 
