@@ -186,10 +186,10 @@ export default function BookingsScreen() {
     return (
       <View
         key={`booking-${booking.id}`}
-        className="gap-2 border-b px-1 py-3"
+        className="gap-2 rounded-2xl border px-3 py-3"
         style={{
-          borderColor: isFocused ? "rgba(192,235,255,0.45)" : "rgba(255,255,255,0.12)",
-          backgroundColor: isFocused ? "rgba(143,223,255,0.08)" : "transparent",
+          borderColor: isFocused ? "rgba(192,235,255,0.55)" : "rgba(255,255,255,0.14)",
+          backgroundColor: isFocused ? "rgba(143,223,255,0.1)" : "rgba(255,255,255,0.04)",
         }}
       >
         <View className="flex-row items-start justify-between gap-3">
@@ -281,7 +281,7 @@ export default function BookingsScreen() {
             accessibilityLabel="Cancelar reserva"
           >
             <Text className="text-rose-100 text-xs font-semibold text-center">
-              {cancelingBookingId === booking.id ? "A cancelar..." : "Cancelar reserva"}
+              {cancelingBookingId === booking.id ? "A cancelar..." : "Cancelar"}
             </Text>
           </Pressable>
         ) : null}
@@ -344,51 +344,24 @@ export default function BookingsScreen() {
         ) : (
           <View className="gap-3">
             <View className="gap-2">
-              <Text className="text-white text-sm font-semibold">Clubes reserváveis</Text>
+              <Text className="text-white text-sm font-semibold">Clubes</Text>
               {clubsQuery.isLoading ? (
                 <GlassSkeleton height={92} />
               ) : clubsQuery.isError ? (
                 <View className="rounded-2xl border border-rose-300/35 bg-rose-500/10 px-3 py-3">
                   <Text className="text-rose-100 text-xs">
-                    Não foi possível carregar os clubes reserváveis.
+                    Não foi possível carregar.
                   </Text>
                 </View>
-              ) : clubsQuery.data?.configurationIssue === "COURT_CONFIG_MISSING" ? (
-                <View className="rounded-2xl border border-amber-300/35 bg-amber-400/10 px-3 py-3">
-                  <Text className="text-amber-100 text-xs font-semibold">Configuração em falta</Text>
-                  <Text className="mt-1 text-amber-100/85 text-xs">
-                    Alguns clubes não têm campos configurados para reserva (COURT_CONFIG_MISSING).
-                  </Text>
-                </View>
-              ) : availableClubs.length === 0 && !clubsQuery.data?.hasFollowingClubs ? (
+              ) : availableClubs.length === 0 ? (
                 <View className="rounded-2xl border border-white/14 bg-white/6 px-3 py-3 gap-1">
-                  <Text className="text-white text-xs font-semibold">Sem clubes seguidos</Text>
-                  <Text className="text-white/70 text-xs">
-                    Segue clubes para veres opções prioritárias de reserva.
-                  </Text>
-                </View>
-              ) : availableClubs.length === 0 && clubsQuery.data?.hasFollowingClubs ? (
-                <View className="rounded-2xl border border-white/14 bg-white/6 px-3 py-3 gap-1">
-                  <Text className="text-white text-xs font-semibold">Clubes sem campos configurados</Text>
-                  <Text className="text-white/70 text-xs">
-                    Os clubes que segues ainda não têm campos de reserva ativos.
-                  </Text>
+                  <Text className="text-white text-xs font-semibold">Sem clubes disponíveis</Text>
                 </View>
               ) : (
                 <View className="gap-2">
-                  {!clubsQuery.data?.hasFollowingClubs ? (
-                    <View className="rounded-xl border border-white/18 bg-white/8 px-3 py-2">
-                      <Text className="text-white/75 text-[11px]">
-                        Ainda não segues clubes. A mostrar clubes próximos com reservas ativas.
-                      </Text>
-                    </View>
-                  ) : null}
-                  {clubsQuery.data?.hasFollowingClubs &&
-                  availableClubs.every((item) => item.source === "NEARBY") ? (
-                    <View className="rounded-xl border border-cyan-200/30 bg-cyan-300/10 px-3 py-2">
-                      <Text className="text-cyan-50 text-[11px]">
-                        Não encontrámos reservas ativas nos clubes seguidos, a mostrar clubes próximos.
-                      </Text>
+                  {clubsQuery.data?.configurationIssue === "COURT_CONFIG_MISSING" ? (
+                    <View className="rounded-xl border border-amber-300/35 bg-amber-400/10 px-3 py-2">
+                      <Text className="text-amber-100 text-[11px]">Configuração de campos em falta.</Text>
                     </View>
                   ) : null}
                   {availableClubs.map((club) => (
@@ -424,32 +397,22 @@ export default function BookingsScreen() {
                             <Text className="text-white text-sm font-semibold" numberOfLines={1}>
                               {club.clubName}
                             </Text>
-                            <View
-                              className="rounded-full border px-2 py-0.5"
-                              style={{
-                                borderColor:
-                                  club.source === "FOLLOWING"
-                                    ? "rgba(111,244,255,0.45)"
-                                    : "rgba(255,255,255,0.2)",
-                                backgroundColor:
-                                  club.source === "FOLLOWING"
-                                    ? "rgba(111,244,255,0.14)"
-                                    : "rgba(255,255,255,0.08)",
-                              }}
-                            >
+                            <Ionicons name="chevron-forward" size={16} color="rgba(240,247,255,0.82)" />
+                          </View>
+                          <View className="mt-1 flex-row flex-wrap items-center gap-2">
+                            <View className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5">
                               <Text className="text-[10px] text-white/90 font-semibold">
-                                {club.source === "FOLLOWING" ? "Seguido" : "Próximo"}
+                                {club.courtsCount} {club.courtsCount === 1 ? "campo" : "campos"}
                               </Text>
                             </View>
+                            {club.minPriceCents != null && club.currency ? (
+                              <View className="rounded-full border border-cyan-200/35 bg-cyan-300/12 px-2 py-0.5">
+                                <Text className="text-[10px] text-cyan-50 font-semibold">
+                                  Desde {formatMoney(club.minPriceCents, club.currency)}
+                                </Text>
+                              </View>
+                            ) : null}
                           </View>
-                          <Text className="mt-1 text-white/70 text-xs" numberOfLines={1}>
-                            {club.courtsCount} {club.courtsCount === 1 ? "campo ativo" : "campos ativos"}
-                          </Text>
-                          {club.minPriceCents != null && club.currency ? (
-                            <Text className="mt-1 text-white/60 text-xs">
-                              Desde {formatMoney(club.minPriceCents, club.currency)}
-                            </Text>
-                          ) : null}
                         </View>
                       </View>
                     </Pressable>
@@ -461,29 +424,20 @@ export default function BookingsScreen() {
             <View style={{ height: 8 }} />
             <Pressable
               onPress={() => safePush(router, "/aulas")}
-              className="rounded-2xl border border-white/14 bg-white/6 px-4 py-3"
+              className="rounded-2xl border border-white/14 bg-white/7 px-4 py-3"
               accessibilityRole="button"
               accessibilityLabel="Abrir secção de aulas"
             >
               <View className="flex-row items-center justify-between gap-3">
                 <View>
                   <Text className="text-white text-sm font-semibold">Aulas</Text>
-                  <Text className="text-white/70 text-xs">
-                    Ver inscrições por sessão, treinador e capacidade.
-                  </Text>
+                  <Text className="text-white/70 text-xs">Sessões e estado</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color="rgba(240,247,255,0.85)" />
+                <View className="h-8 w-8 items-center justify-center rounded-full border border-cyan-200/40 bg-cyan-300/14">
+                  <Ionicons name="chevron-forward" size={16} color="rgba(220,255,255,0.95)" />
+                </View>
               </View>
             </Pressable>
-
-            <View className="flex-row flex-wrap gap-2">
-              <View className="rounded-full border border-cyan-200/35 bg-cyan-300/12 px-3 py-1.5">
-                <Text className="text-cyan-50 text-xs font-semibold">Ativos {activeBookings.length}</Text>
-              </View>
-              <View className="rounded-full border border-white/16 bg-white/6 px-3 py-1.5">
-                <Text className="text-white/80 text-xs font-semibold">Histórico {timeline.history.length}</Text>
-              </View>
-            </View>
 
             {activeBookings.length === 0 && timeline.history.length === 0 ? (
               <View className="gap-2 border-b border-white/12 pb-4">
@@ -496,6 +450,15 @@ export default function BookingsScreen() {
                 >
                   <Text className="text-white text-xs font-semibold">Explorar serviços</Text>
                 </Pressable>
+              </View>
+            ) : null}
+
+            {activeBookings.length > 0 || timeline.history.length > 0 ? (
+              <View className="flex-row items-center justify-between gap-3">
+                <Text className="text-white text-sm font-semibold">As tuas reservas</Text>
+                <Text className="text-white/60 text-xs">
+                  {activeBookings.length} ativas · {timeline.history.length} histórico
+                </Text>
               </View>
             ) : null}
 

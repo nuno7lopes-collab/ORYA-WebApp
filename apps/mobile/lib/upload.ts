@@ -19,6 +19,8 @@ type UploadPayload = {
   maxRetries?: number;
 };
 
+const UPLOAD_TIMEOUT_MS = 45_000;
+
 const guessMimeType = (filename: string) => {
   const lower = filename.toLowerCase();
   if (lower.endsWith(".png")) return "image/png";
@@ -102,9 +104,22 @@ const uploadWithProgress = async ({
 }): Promise<UploadResponse> =>
   new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
+    let settled = false;
+    const settleResolve = (payload: UploadResponse) => {
+      if (settled) return;
+      settled = true;
+      resolve(payload);
+    };
+    const settleReject = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
+
     xhr.open("POST", endpoint);
     xhr.setRequestHeader("Authorization", `Bearer ${accessToken}`);
     xhr.responseType = "json";
+    xhr.timeout = UPLOAD_TIMEOUT_MS;
 
     xhr.upload.onprogress = (event) => {
       if (!onProgress || !event.lengthComputable) return;
@@ -113,7 +128,11 @@ const uploadWithProgress = async ({
     };
 
     xhr.onerror = () => {
-      reject(new Error("Sem ligação à internet."));
+      settleReject(new Error("Sem ligação à internet."));
+    };
+
+    xhr.ontimeout = () => {
+      settleReject(new Error("Upload demorou demasiado. Tenta novamente."));
     };
 
     xhr.onload = () => {
@@ -135,10 +154,10 @@ const uploadWithProgress = async ({
           (typeof payload.error === "string" && payload.error) ||
           (typeof payload.message === "string" && payload.message) ||
           "Falha no upload da imagem.";
-        reject(new Error(errorMessage));
+        settleReject(new Error(errorMessage));
         return;
       }
-      resolve(payload);
+      settleResolve(payload);
     };
 
     const formData = new FormData();

@@ -9,7 +9,7 @@ function readLocal(pathname: string) {
 describe("dashboard naming guardrails", () => {
   it("keeps canonical Ferramentas naming on primary organization surfaces", () => {
     const files = [
-      "app/org/_internal/core/DashboardClient.tsx",
+      "app/org/_internal/core/OrganizationSidebar.tsx",
       "app/org/_internal/core/OrganizationBreadcrumb.tsx",
     ];
 

@@ -56,6 +56,14 @@ export type BookingHubOrganization = {
   publicName: string | null;
   businessName: string | null;
   timezone: string | null;
+  brandingAvatarUrl: string | null;
+  brandingCoverUrl: string | null;
+  addressRef?: {
+    formattedAddress?: string | null;
+    canonical?: Record<string, unknown> | null;
+    lat?: number | null;
+    lng?: number | null;
+  } | null;
 };
 
 export type BookingHubCourt = {
@@ -89,12 +97,17 @@ export type BookingCourtCard = {
   serviceId: number;
   orgUsername: string;
   clubName: string;
+  clubAvatarUrl: string | null;
   courtName: string;
   description: string | null;
   durationMinutes: number;
   unitPriceCents: number;
   currency: string;
   coverImageUrl: string | null;
+  address: string | null;
+  city: string | null;
+  latitude: number | null;
+  longitude: number | null;
   source: "FOLLOWING" | "NEARBY";
 };
 
@@ -102,7 +115,12 @@ export type BookingClubCard = {
   id: string;
   orgUsername: string;
   clubName: string;
+  avatarUrl: string | null;
   coverImageUrl: string | null;
+  address: string | null;
+  city: string | null;
+  latitude: number | null;
+  longitude: number | null;
   courtsCount: number;
   minPriceCents: number | null;
   currency: string | null;

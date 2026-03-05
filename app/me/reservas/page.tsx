@@ -280,6 +280,30 @@ function resolveBookingCoverUrl(booking: BookingItem) {
   });
 }
 
+function resolveClassCoverUrl(item: ClassEnrollmentItem) {
+  return getEventCoverUrl(item.class.coverImageUrl ?? null, {
+    seed: `class-${item.class.id}-${item.classSessionId}`,
+    width: 720,
+    quality: 72,
+    format: "webp",
+  });
+}
+
+function resolveClassStatusBadge(item: ClassEnrollmentItem) {
+  const enrollmentStatus = String(item.status ?? "").toUpperCase();
+  const sessionStatus = String(item.sessionStatus ?? "").toUpperCase();
+  if (sessionStatus === "CANCELLED" || enrollmentStatus === "CANCELLED") {
+    return { label: "Cancelada", className: "border-red-400/40 bg-red-500/12 text-red-100" };
+  }
+  if (item.isFull) {
+    return { label: "Cheia", className: "border-amber-300/45 bg-amber-500/12 text-amber-100" };
+  }
+  if (enrollmentStatus === "PENDING") {
+    return { label: "Pendente", className: "border-sky-300/45 bg-sky-500/12 text-sky-100" };
+  }
+  return { label: "Confirmada", className: "border-emerald-300/45 bg-emerald-500/12 text-emerald-100" };
+}
+
 function formatCentsInput(cents: number) {
   return (cents / 100).toFixed(2);
 }
@@ -1099,23 +1123,22 @@ export default function MinhasReservasPage() {
         <div>
           <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Reservas</p>
           <h1 className="text-3xl font-semibold text-white">As tuas reservas</h1>
-          <p className="text-sm text-white/65">
-            Confirmações, horários e cancelamentos num só lugar.
-          </p>
         </div>
 
         <section className={cardClass}>
           <div className="flex items-center justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold text-white">Aulas</h2>
-              <p className="text-sm text-white/65">Inscrições por sessão com treinador e campo.</p>
+              <p className="text-[12px] text-white/60">
+                {groupedClasses.upcoming.length} próximas · {groupedClasses.history.length} histórico
+              </p>
             </div>
           </div>
 
           {classesLoading && (
-            <div className="mt-4 space-y-2">
+            <div className="mt-4 space-y-3">
               {Array.from({ length: 2 }).map((_, idx) => (
-                <div key={idx} className="h-16 rounded-xl border border-white/10 orya-skeleton-surface animate-pulse" />
+                <div key={idx} className="h-24 rounded-2xl border border-white/10 orya-skeleton-surface animate-pulse" />
               ))}
             </div>
           )}
@@ -1128,65 +1151,106 @@ export default function MinhasReservasPage() {
 
           {!classesLoading && !classLoadError && groupedClasses.upcoming.length === 0 && groupedClasses.history.length === 0 && (
             <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
-              Ainda não tens inscrições em aulas.
+              Sem aulas.
             </div>
           )}
 
           {!classesLoading && !classLoadError && groupedClasses.upcoming.length > 0 && (
-            <div className="mt-4 space-y-2">
-              <p className="text-[12px] uppercase tracking-[0.2em] text-white/55">Próximas</p>
-              {groupedClasses.upcoming.map((item) => (
-                <div key={`class-upcoming-${item.id}`} className="rounded-xl border border-white/10 bg-white/5 p-3">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <p className="text-sm font-semibold text-white">{item.class.title}</p>
-                      <p className="text-[12px] text-white/65">
+            <div className="mt-4 space-y-3">
+              <p className="text-[12px] uppercase tracking-[0.16em] text-white/55">Próximas</p>
+              {groupedClasses.upcoming.map((item) => {
+                const badge = resolveClassStatusBadge(item);
+                const coverUrl = resolveClassCoverUrl(item);
+                return (
+                  <div key={`class-upcoming-${item.id}`} className="overflow-hidden rounded-2xl border border-white/12 bg-white/5">
+                    <div className="relative h-28">
+                      <Image
+                        src={coverUrl}
+                        alt={item.class.title}
+                        fill
+                        sizes="(max-width: 768px) 100vw, 50vw"
+                        className="object-cover"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-[#05070d] via-[#05070d]/65 to-transparent" />
+                      <div className="absolute left-3 top-3 rounded-full border border-white/20 bg-black/35 px-2 py-1 text-[10px] text-white/85">
                         {new Date(item.startsAt).toLocaleString("pt-PT", { dateStyle: "medium", timeStyle: "short" })}
-                        {item.trainer?.name ? ` · ${item.trainer.name}` : ""}
-                        {item.court?.name ? ` · ${item.court.name}` : ""}
-                        {` · ${item.enrolledCount}/${item.capacity}`}
-                      </p>
+                      </div>
                     </div>
-                    {item.cancellation.allowed && item.booking?.id ? (
-                      <button
-                        type="button"
-                        className="rounded-full border border-red-400/40 bg-red-500/10 px-2.5 py-1 text-[11px] text-red-100 hover:bg-red-500/20 disabled:opacity-60"
-                        onClick={() => handleCancel(item.booking!.id)}
-                        disabled={cancelingId === item.booking.id}
-                      >
-                        {cancelingId === item.booking.id ? "A cancelar..." : "Cancelar"}
-                      </button>
-                    ) : (
-                      <span className="rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[11px] text-white/70">
-                        {item.isFull ? "Cheia" : "Ativa"}
-                      </span>
-                    )}
+                    <div className="space-y-2.5 p-3">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <p className="text-sm font-semibold text-white">{item.class.title}</p>
+                        <span className={`rounded-full border px-2 py-1 text-[10px] font-semibold ${badge.className}`}>
+                          {badge.label}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {item.trainer?.avatarUrl ? (
+                          <Image
+                            src={item.trainer.avatarUrl}
+                            alt={item.trainer.name}
+                            width={24}
+                            height={24}
+                            className="h-6 w-6 rounded-full border border-white/15 object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-6 w-6 items-center justify-center rounded-full border border-white/15 bg-white/10 text-[10px] text-white/75">
+                            {(item.trainer?.name || "T").slice(0, 1).toUpperCase()}
+                          </div>
+                        )}
+                        <p className="text-[12px] text-white/70">{item.trainer?.name || "Treinador por definir"}</p>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {item.court?.name ? (
+                          <span className="rounded-full border border-white/15 bg-white/8 px-2 py-1 text-[10px] text-white/70">
+                            {item.court.name}
+                          </span>
+                        ) : null}
+                        <span className="rounded-full border border-white/15 bg-white/8 px-2 py-1 text-[10px] text-white/70">
+                          {item.enrolledCount}/{item.capacity}
+                        </span>
+                      </div>
+                      {item.cancellation.allowed && item.booking?.id ? (
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            className="rounded-full border border-red-400/40 bg-red-500/10 px-3 py-1.5 text-[11px] text-red-100 hover:bg-red-500/20 disabled:opacity-60"
+                            onClick={() => handleCancel(item.booking!.id)}
+                            disabled={cancelingId === item.booking.id}
+                          >
+                            {cancelingId === item.booking.id ? "A cancelar..." : "Cancelar"}
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
           {!classesLoading && !classLoadError && groupedClasses.history.length > 0 && (
             <div className="mt-4 space-y-2">
-              <p className="text-[12px] uppercase tracking-[0.2em] text-white/55">Histórico</p>
-              {groupedClasses.history.slice(0, 8).map((item) => (
-                <div key={`class-history-${item.id}`} className="rounded-xl border border-white/10 bg-white/5 p-3">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <p className="text-sm font-semibold text-white">{item.class.title}</p>
-                      <p className="text-[12px] text-white/65">
-                        {new Date(item.startsAt).toLocaleString("pt-PT", { dateStyle: "medium", timeStyle: "short" })}
-                        {item.trainer?.name ? ` · ${item.trainer.name}` : ""}
-                        {item.court?.name ? ` · ${item.court.name}` : ""}
-                      </p>
+              <p className="text-[12px] uppercase tracking-[0.16em] text-white/55">Histórico</p>
+              {groupedClasses.history.slice(0, 8).map((item) => {
+                const badge = resolveClassStatusBadge(item);
+                return (
+                  <div key={`class-history-${item.id}`} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-semibold text-white">{item.class.title}</p>
+                        <p className="text-[12px] text-white/65">
+                          {new Date(item.startsAt).toLocaleString("pt-PT", { dateStyle: "medium", timeStyle: "short" })}
+                          {item.trainer?.name ? ` · ${item.trainer.name}` : ""}
+                          {item.court?.name ? ` · ${item.court.name}` : ""}
+                        </p>
+                      </div>
+                      <span className={`rounded-full border px-2 py-1 text-[10px] font-semibold ${badge.className}`}>
+                        {badge.label}
+                      </span>
                     </div>
-                    <span className="rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[11px] text-white/70">
-                      {String(item.status).toUpperCase() === "CANCELLED" ? "Cancelada" : "Histórico"}
-                    </span>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>
@@ -1195,7 +1259,6 @@ export default function MinhasReservasPage() {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-base font-semibold text-white">Próximas</h2>
-              <p className="text-sm text-white/65">Reservas futuras e pendentes.</p>
             </div>
             <Link href="/descobrir/reservas" className="text-[12px] text-[#6BFFFF]">
               Explorar serviços

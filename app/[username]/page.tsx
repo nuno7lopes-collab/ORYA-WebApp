@@ -1191,8 +1191,8 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
                     <h2 className="text-xl font-semibold text-white sm:text-2xl">{orgDisplayName}</h2>
                     <p className="mt-2 text-[12px] text-white/85">
                       {reservasHubClubMode
-                        ? "Escolhe entre Reservar Campo, Aulas e Outros serviços para marcar em poucos passos."
-                        : "Escolhe serviço e profissional para avançar diretamente para a marcação."}
+                        ? "Escolhe e reserva."
+                        : "Escolhe e agenda."}
                     </p>
                   </div>
                   {reservasAcceptingNewBookings ? (
@@ -1210,8 +1210,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
                 </div>
                 {!reservasAcceptingNewBookings ? (
                   <div className="rounded-2xl border border-amber-300/35 bg-amber-400/10 p-4 text-[13px] text-amber-100">
-                    Reservas temporariamente indisponíveis. Podes consultar a disponibilidade e os serviços, mas não
-                    é possível iniciar novas marcações neste momento.
+                    Reservas indisponíveis de momento.
                   </div>
                 ) : null}
                 <div id="reservar">

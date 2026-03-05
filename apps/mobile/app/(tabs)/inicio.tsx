@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
+import { Image } from "expo-image";
 import { tokens, useTranslation } from "@orya/shared";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
@@ -19,9 +20,10 @@ import { useTopHeaderPadding } from "../../components/navigation/useTopHeaderPad
 import { useTopBarScroll } from "../../components/navigation/useTopBarScroll";
 import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
 import { useAuth } from "../../lib/auth";
-import { useMyBookings } from "../../features/bookings/hooks";
+import { useMyBookings, useReservableClubs } from "../../features/bookings/hooks";
 import { splitBookingsByTimeline } from "../../features/bookings/types";
 import { useProfileSummary } from "../../features/profile/hooks";
+import { resolveMediaUri } from "../../lib/media";
 import { safePush } from "../../lib/navigation";
 import { TAB_PATHNAMES } from "../../lib/tabRoutes";
 import {
@@ -80,6 +82,13 @@ export default function InicioScreen() {
     userId,
   );
   const bookingsQuery = useMyBookings(isAuthenticated && isFocused);
+  const clubsQuery = useReservableClubs(
+    {
+      userId,
+      accessToken,
+    },
+    isFocused,
+  );
 
   const firstName = useMemo(() => {
     const byProfile = resolveFirstName(profileQuery.data?.fullName);
@@ -124,6 +133,8 @@ export default function InicioScreen() {
     isAuthenticated &&
     typeof onboardingDone === "boolean" &&
     onboardingDone === false;
+  const nearbyClubs = clubsQuery.data?.items ?? [];
+  const nearbyClubPreview = nearbyClubs.slice(0, 3);
 
   const onRefresh = useCallback(async () => {
     if (!isAuthenticated || refreshing) return;
@@ -144,6 +155,10 @@ export default function InicioScreen() {
       pathname: "/auth",
       params: { next: TAB_PATHNAMES.inicio },
     });
+  }, [router]);
+
+  const openClubsMap = useCallback(() => {
+    safePush(router, "/map");
   }, [router]);
 
   return (
@@ -323,6 +338,64 @@ export default function InicioScreen() {
             </View>
           </View>
         ) : null}
+
+        <View className="rounded-3xl border border-cyan-200/28 bg-cyan-300/8 px-4 py-4">
+          <View className="flex-row items-start justify-between gap-3">
+            <View style={{ flex: 1 }}>
+              <Text className="text-cyan-50 text-sm font-semibold">{t("home:map.title")}</Text>
+              <Text className="mt-1 text-cyan-50/78 text-xs">{t("home:map.subtitle")}</Text>
+            </View>
+            <View className="rounded-2xl border border-cyan-200/38 bg-cyan-300/14 px-2.5 py-2">
+              <Ionicons name="map-outline" size={18} color="rgba(226,246,255,0.94)" />
+            </View>
+          </View>
+
+          {clubsQuery.isLoading && !clubsQuery.data ? (
+            <View className="mt-3 rounded-2xl border border-white/16 bg-white/7 px-3 py-3">
+              <ActivityIndicator color="rgba(228,243,255,0.74)" />
+            </View>
+          ) : nearbyClubPreview.length > 0 ? (
+            <View className="mt-3 flex-row items-center gap-2">
+              {nearbyClubPreview.map((club) => {
+                const avatar = resolveMediaUri(club.avatarUrl ?? club.coverImageUrl ?? null);
+                return (
+                  <View
+                    key={`home-map-club-${club.orgUsername}`}
+                    className="h-11 w-11 overflow-hidden rounded-full border border-white/30 bg-white/10"
+                  >
+                    {avatar ? (
+                      <Image source={{ uri: avatar }} style={{ width: "100%", height: "100%" }} contentFit="cover" />
+                    ) : (
+                      <View className="flex-1 items-center justify-center">
+                        <Ionicons name="business-outline" size={16} color="rgba(228,243,255,0.9)" />
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+              <Text className="ml-1 text-cyan-50/78 text-xs" style={{ flex: 1 }} numberOfLines={2}>
+                {nearbyClubs.length === 1
+                  ? t("home:map.oneClub")
+                  : t("home:map.manyClubs", { count: nearbyClubs.length })}
+              </Text>
+            </View>
+          ) : (
+            <Text className="mt-3 text-cyan-50/70 text-xs">{t("home:map.empty")}</Text>
+          )}
+
+          <Pressable
+            onPress={openClubsMap}
+            className="mt-3 rounded-xl border border-white/18 bg-white/12 px-4 py-3"
+            style={({ pressed }) => [
+              { minHeight: tokens.layout.touchTarget },
+              pressed ? { opacity: 0.88 } : null,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={t("home:map.cta")}
+          >
+            <Text className="text-white text-xs font-semibold text-center">{t("home:map.cta")}</Text>
+          </Pressable>
+        </View>
 
         <View className="rounded-3xl border border-white/12 bg-white/5 px-4 py-4">
           <Text className="mb-2 text-white/72 text-xs uppercase tracking-[0.08em]">

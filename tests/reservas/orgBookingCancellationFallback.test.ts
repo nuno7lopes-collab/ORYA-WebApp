@@ -76,6 +76,9 @@ function createTx(booking: any) {
     bookingSplitParticipant: {
       updateMany: vi.fn(async () => ({ count: 0 })),
     },
+    academyEnrollment: {
+      updateMany: vi.fn(async () => ({ count: 0 })),
+    },
   } as any;
 }
 

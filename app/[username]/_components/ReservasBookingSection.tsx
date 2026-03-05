@@ -108,16 +108,16 @@ type ReservasBookingSectionProps = {
 };
 
 const cardBaseClass =
-  "group relative overflow-hidden rounded-3xl border border-white/12 bg-white/5 p-4 text-left shadow-[0_20px_60px_rgba(0,0,0,0.45)] transition hover:border-white/30 hover:bg-white/10";
+  "group relative overflow-hidden rounded-[28px] border border-white/15 bg-[#0a111d] p-4 text-left shadow-[0_26px_70px_rgba(0,0,0,0.5)] transition duration-200 hover:-translate-y-0.5 hover:border-white/35";
 
 const cardActiveClass =
-  "border-white/45 bg-white/10 shadow-[0_24px_70px_rgba(0,0,0,0.55)]";
+  "border-white/50 shadow-[0_0_0_1px_rgba(255,255,255,0.15),0_32px_80px_rgba(0,0,0,0.55)]";
 
 const modalShellClass =
   "relative mx-auto w-full max-w-6xl overflow-hidden rounded-none border border-white/10 bg-[#050810] shadow-[0_30px_80px_rgba(0,0,0,0.7)] sm:rounded-[32px]";
 
 const toggleBaseClass =
-  "rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] transition";
+  "rounded-full border px-3.5 py-1.5 text-[11px] font-semibold transition";
 
 function formatMoney(cents: number, currency: string) {
   return new Intl.NumberFormat("pt-PT", {
@@ -303,16 +303,6 @@ export default function ReservasBookingSection({
   const sectionTitle =
     hubMode === "club"
       ? activeHubTab === "courts"
-        ? "Reservar Campo"
-        : activeHubTab === "classes"
-          ? "Aulas"
-          : "Outros serviços"
-      : viewMode === "services"
-        ? "Escolhe o serviço"
-        : "Escolhe o profissional";
-  const sectionLabel =
-    hubMode === "club"
-      ? activeHubTab === "courts"
         ? "Campos"
         : activeHubTab === "classes"
           ? "Aulas"
@@ -320,6 +310,7 @@ export default function ReservasBookingSection({
       : viewMode === "services"
         ? "Serviços"
         : "Profissionais";
+  const sectionLabel = "Reservas";
 
   const updateScrollState = useCallback(() => {
     const node = carouselRef.current;
@@ -372,14 +363,16 @@ export default function ReservasBookingSection({
       vertical === "COURT" && cheapestDurationPrice
         ? `Desde ${formatMoney(cheapestDurationPrice.priceCents, service.currency)}`
         : service.unitPriceCents > 0
-          ? `Preço: ${formatMoney(service.unitPriceCents, service.currency)}`
-          : "Preço: Grátis";
-    const badgeLabel =
+          ? formatMoney(service.unitPriceCents, service.currency)
+          : "Grátis";
+    const badgeLabel = vertical === "COURT" ? "Campo" : vertical === "CLASS" ? "Aula" : "Serviço";
+    const badgeTone =
       vertical === "COURT"
-        ? "Ver horários"
+        ? "border-cyan-200/40 bg-cyan-300/15 text-cyan-50"
         : vertical === "CLASS"
-          ? "Reservar aula"
-          : "Reservar serviço";
+          ? "border-emerald-200/35 bg-emerald-300/15 text-emerald-50"
+          : "border-white/25 bg-white/12 text-white/85";
+    const trainerCount = service.professionalLinks?.length ?? 0;
     const categoryLabel = service.category?.label ?? service.categoryTag ?? null;
     return (
       <button
@@ -398,40 +391,46 @@ export default function ReservasBookingSection({
             className="object-cover"
           />
         </div>
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/10" />
-        <div className="relative z-10 flex h-full min-h-[180px] flex-col justify-between gap-3">
+        <div className="absolute inset-0 bg-gradient-to-t from-[#05070d] via-[#05070d]/70 to-[#05070d]/15" />
+        <div className="relative z-10 flex h-full min-h-[210px] flex-col justify-between gap-3">
           <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-white">{service.title}</p>
-              <p className="mt-1 text-[12px] text-white/70">
-                {durationLabel} · {priceLabel}
-              </p>
-            </div>
-            <span className="rounded-full border border-white/20 bg-white/10 px-2 py-1 text-[10px] text-white/70">
-              {acceptNewBookings ? badgeLabel : "Indisponível"}
+            <span className={cn("rounded-full border px-2.5 py-1 text-[10px] font-semibold", badgeTone)}>
+              {badgeLabel}
+            </span>
+            <span className="rounded-full border border-white/20 bg-black/30 px-2.5 py-1 text-[10px] text-white/80">
+              {acceptNewBookings ? "Abrir" : "Fechado"}
             </span>
           </div>
-          <div className="space-y-2">
-            {service.description && (
-              <p className="text-[12px] text-white/70 line-clamp-2">{service.description}</p>
-            )}
-            {vertical === "COURT" && durationPrices.length > 1 && (
-              <div className="flex flex-wrap gap-1.5">
-                {durationPrices.slice(0, 3).map((item) => (
-                  <span
-                    key={`duration-${serviceKey}-${item.durationMinutes}`}
-                    className="inline-flex rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[10px] text-white/70"
-                  >
-                    {item.durationMinutes} min
-                  </span>
-                ))}
-              </div>
-            )}
-            {categoryLabel && (
-              <span className="inline-flex rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[10px] text-white/70">
-                {categoryLabel}
+          <div className="space-y-2.5">
+            <div className="space-y-1">
+              <p className="line-clamp-1 text-base font-semibold text-white">{service.title}</p>
+              {service.description ? (
+                <p className="line-clamp-1 text-[12px] text-white/68">{service.description}</p>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              <span className="inline-flex rounded-full border border-white/20 bg-white/12 px-2.5 py-1 text-[10px] text-white/85">
+                {durationLabel}
               </span>
-            )}
+              <span className="inline-flex rounded-full border border-white/20 bg-white/12 px-2.5 py-1 text-[10px] text-white/85">
+                {priceLabel}
+              </span>
+              {vertical === "CLASS" && trainerCount > 0 ? (
+                <span className="inline-flex rounded-full border border-white/20 bg-white/12 px-2.5 py-1 text-[10px] text-white/80">
+                  {trainerCount} treinador{trainerCount === 1 ? "" : "es"}
+                </span>
+              ) : null}
+              {vertical === "COURT" && durationPrices.length > 1 ? (
+                <span className="inline-flex rounded-full border border-white/20 bg-white/12 px-2.5 py-1 text-[10px] text-white/80">
+                  {durationPrices.length} durações
+                </span>
+              ) : null}
+              {categoryLabel ? (
+                <span className="inline-flex rounded-full border border-white/20 bg-white/12 px-2.5 py-1 text-[10px] text-white/80">
+                  {categoryLabel}
+                </span>
+              ) : null}
+            </div>
           </div>
         </div>
       </button>
@@ -448,31 +447,31 @@ export default function ReservasBookingSection({
 
   return (
     <>
-      <section className="space-y-4">
+      <section className="space-y-4 rounded-[30px] border border-white/12 bg-[radial-gradient(circle_at_top_left,rgba(107,255,255,0.14),transparent_38%),linear-gradient(160deg,rgba(7,11,20,0.88),rgba(4,6,12,0.95))] p-4 shadow-[0_30px_90px_rgba(0,0,0,0.5)] sm:p-5">
         {!acceptNewBookings ? (
           <div className="rounded-2xl border border-amber-300/35 bg-amber-400/10 p-3 text-[12px] text-amber-100">
-            Reservas temporariamente indisponíveis. A consulta de serviços mantém-se ativa.
+            Reservas indisponíveis de momento.
           </div>
         ) : null}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">{sectionLabel}</p>
-            <h3 className="text-lg font-semibold text-white">{sectionTitle}</h3>
+            <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">{sectionLabel}</p>
+            <h3 className="text-xl font-semibold text-white">{sectionTitle}</h3>
           </div>
           <div className="flex items-center gap-2">
             {hubMode === "club" ? (
-              <div className="inline-flex rounded-full border border-white/15 bg-white/5 p-1">
+              <div className="inline-flex rounded-full border border-white/15 bg-white/6 p-1">
                 <button
                   type="button"
                   onClick={() => setActiveHubTab("courts")}
                   className={cn(
                     toggleBaseClass,
                     activeHubTab === "courts"
-                      ? "border-white/35 bg-white/20 text-white"
-                      : "border-transparent text-white/70 hover:text-white",
+                      ? "border-white/35 bg-white/22 text-white"
+                      : "border-transparent text-white/65 hover:text-white",
                   )}
                 >
-                  Reservar Campo
+                  Campos
                 </button>
                 <button
                   type="button"
@@ -480,8 +479,8 @@ export default function ReservasBookingSection({
                   className={cn(
                     toggleBaseClass,
                     activeHubTab === "classes"
-                      ? "border-white/35 bg-white/20 text-white"
-                      : "border-transparent text-white/70 hover:text-white",
+                      ? "border-white/35 bg-white/22 text-white"
+                      : "border-transparent text-white/65 hover:text-white",
                   )}
                 >
                   Aulas
@@ -492,23 +491,23 @@ export default function ReservasBookingSection({
                   className={cn(
                     toggleBaseClass,
                     activeHubTab === "services"
-                      ? "border-white/35 bg-white/20 text-white"
-                      : "border-transparent text-white/70 hover:text-white",
+                      ? "border-white/35 bg-white/22 text-white"
+                      : "border-transparent text-white/65 hover:text-white",
                   )}
                 >
-                  Outros serviços
+                  Serviços
                 </button>
               </div>
             ) : (
-              <div className="inline-flex rounded-full border border-white/15 bg-white/5 p-1">
+              <div className="inline-flex rounded-full border border-white/15 bg-white/6 p-1">
                 <button
                   type="button"
                   onClick={() => setViewMode("services")}
                   className={cn(
                     toggleBaseClass,
                     viewMode === "services"
-                      ? "border-white/35 bg-white/20 text-white"
-                      : "border-transparent text-white/70 hover:text-white",
+                      ? "border-white/35 bg-white/22 text-white"
+                      : "border-transparent text-white/65 hover:text-white",
                   )}
                 >
                   Serviços
@@ -519,20 +518,20 @@ export default function ReservasBookingSection({
                   className={cn(
                     toggleBaseClass,
                     viewMode === "professionals"
-                      ? "border-white/35 bg-white/20 text-white"
-                      : "border-transparent text-white/70 hover:text-white",
+                      ? "border-white/35 bg-white/22 text-white"
+                      : "border-transparent text-white/65 hover:text-white",
                   )}
                 >
                   Profissionais
                 </button>
               </div>
             )}
-            <span className="text-[12px] text-white/60">
+            <span className="rounded-full border border-white/15 bg-white/8 px-2.5 py-1 text-[11px] text-white/75">
               {hubMode === "club"
                 ? servicesForCards.length
                 : viewMode === "services"
                   ? activeServices.length
-                  : activeProfessionals.length} opções
+                  : activeProfessionals.length}
             </span>
           </div>
         </div>
@@ -585,11 +584,11 @@ export default function ReservasBookingSection({
                 <div className="rounded-3xl border border-white/12 bg-white/5 p-4 text-[12px] text-white/70 shadow-[0_20px_60px_rgba(0,0,0,0.45)] sm:p-5">
                   {hubMode === "club"
                     ? activeHubTab === "courts"
-                      ? "Sem campos disponíveis neste momento."
+                      ? "Sem campos disponíveis."
                       : activeHubTab === "classes"
-                        ? "Sem aulas disponíveis neste momento."
-                        : "Sem outros serviços disponíveis neste momento."
-                    : "Sem serviços disponíveis neste momento."}
+                        ? "Sem aulas disponíveis."
+                        : "Sem serviços disponíveis."
+                    : "Sem serviços disponíveis."}
                 </div>
               ) : null}
               {servicesForCards.map((service) => renderServiceCard(service))}
@@ -599,7 +598,7 @@ export default function ReservasBookingSection({
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {activeProfessionals.length === 0 ? (
               <div className="rounded-3xl border border-white/12 bg-white/5 p-4 text-[12px] text-white/70 shadow-[0_20px_60px_rgba(0,0,0,0.45)] sm:p-5">
-                Sem profissionais disponíveis neste momento.
+                Sem profissionais disponíveis.
               </div>
             ) : null}
             {activeProfessionals.map((professional) => {

@@ -232,6 +232,14 @@
       "compete": "Compete",
       "reservations": "Bookings",
       "community": "Community"
+    },
+    "map": {
+      "title": "Nearby clubs map",
+      "subtitle": "Explore clubs around you and open the best club in one tap.",
+      "oneClub": "1 club ready to book near you.",
+      "manyClubs": "{count} clubs ready to book near you.",
+      "empty": "No nearby clubs to show yet.",
+      "cta": "Open clubs map"
     }
   },
   "discover": {
@@ -667,6 +675,8 @@
       "interestsSaveFailed": "Couldn't save interests.",
       "padelSaveFailed": "Couldn't save padel profile.",
       "locationFailed": "Couldn't get location right now.",
+      "offlineGateTitle": "You need an internet connection to finish onboarding.",
+      "offlineGateBody": "As soon as you're online, try again.",
       "missingDataTitle": "Missing info",
       "padelMissing": "Select gender, preferred side, and level.",
       "finalizeFailed": "Couldn't finish onboarding. Try again."

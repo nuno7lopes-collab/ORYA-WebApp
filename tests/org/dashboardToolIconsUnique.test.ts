@@ -8,25 +8,18 @@ function readLocal(pathname: string) {
 
 describe("dashboard tool icons", () => {
   it("defines dedicated icon keys for each dashboard tool card", () => {
-    const content = readLocal("app/org/_internal/core/DashboardClient.tsx");
-    expect(content).toContain('id: "eventos"');
-    expect(content).toContain('iconKey: "TOOL_EVENTOS"');
-    expect(content).toContain('id: "academia"');
-    expect(content).toContain('iconKey: "TOOL_RESERVAS"');
-    expect(content).toContain('id: "calendar"');
-    expect(content).toContain('iconKey: "TOOL_CALENDARIO"');
-    expect(content).toContain('id: "financeiro"');
-    expect(content).toContain('iconKey: "TOOL_FINANCAS"');
-    expect(content).toContain('id: "analytics"');
-    expect(content).toContain('iconKey: "TOOL_ANALYTICS"');
+    const content = readLocal("app/org/_internal/core/moduleIcons.tsx");
+    expect(content).toContain("TOOL_EVENTOS: IconToolEventos");
+    expect(content).toContain("TOOL_RESERVAS: IconToolReservas");
+    expect(content).toContain("TOOL_CALENDARIO: IconToolCalendario");
+    expect(content).toContain("TOOL_FINANCAS: IconToolFinancas");
+    expect(content).toContain("TOOL_ANALYTICS: IconToolAnalytics");
   });
 
   it("ensures academy and calendar do not share the same icon key", () => {
-    const content = readLocal("app/org/_internal/core/DashboardClient.tsx");
-    expect(content).toContain('id: "academia"');
-    expect(content).toContain('iconKey: "TOOL_RESERVAS"');
-    expect(content).toContain('id: "calendar"');
-    expect(content).toContain('iconKey: "TOOL_CALENDARIO"');
-    expect(content).not.toContain('id: "calendar"\n              moduleKey: "RESERVAS",\n              iconKey: "TOOL_RESERVAS"');
+    const content = readLocal("app/org/_internal/core/moduleIcons.tsx");
+    expect(content).toContain("TOOL_RESERVAS: IconToolReservas");
+    expect(content).toContain("TOOL_CALENDARIO: IconToolCalendario");
+    expect(content).not.toContain("TOOL_CALENDARIO: IconToolReservas");
   });
 });

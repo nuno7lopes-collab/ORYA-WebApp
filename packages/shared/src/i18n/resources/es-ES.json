@@ -232,6 +232,14 @@
       "compete": "Competir",
       "reservations": "Reservas",
       "community": "Comunidad"
+    },
+    "map": {
+      "title": "Mapa de clubes cercanos",
+      "subtitle": "Explora clubes a tu alrededor y abre el club ideal en un toque.",
+      "oneClub": "1 club listo para reservar cerca de ti.",
+      "manyClubs": "{count} clubes listos para reservar cerca de ti.",
+      "empty": "Todavía no hay clubes cercanos para mostrar.",
+      "cta": "Abrir mapa de clubes"
     }
   },
   "discover": {

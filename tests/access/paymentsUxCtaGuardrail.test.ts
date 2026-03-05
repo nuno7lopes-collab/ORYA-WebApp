@@ -7,11 +7,10 @@ async function readFile(pathname: string) {
 }
 
 describe("payments UX CTA guardrail", () => {
-  it("reservas novo mapeia erros canónicos para CTA", async () => {
+  it("reservas novo delega para o wizard canónico da academia", async () => {
     const file = await readFile("app/org/_internal/core/(dashboard)/reservas/novo/page.tsx");
-    expect(file).toContain("mapPaymentGateUiState");
-    expect(file).toContain("parseApiError");
-    expect(file).toContain("setErrorCtaHref");
+    expect(file).toContain("ClassCreationWizard");
+    expect(file).toContain("ReservasNovaAulaPage");
   });
 
   it("reservas detalhe mapeia erros canónicos para CTA", async () => {

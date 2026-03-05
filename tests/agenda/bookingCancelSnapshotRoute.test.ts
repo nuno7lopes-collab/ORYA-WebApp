@@ -8,6 +8,7 @@ const {
   bookingFindUnique,
   paymentEventFindFirst,
   paymentFindUnique,
+  academyEnrollmentUpdateMany,
   prismaMockShape,
 } = vi.hoisted(() => {
   const ensureAuthenticatedMock = vi.fn();
@@ -17,6 +18,7 @@ const {
   const bookingFindUnique = vi.fn();
   const paymentEventFindFirst = vi.fn();
   const paymentFindUnique = vi.fn();
+  const academyEnrollmentUpdateMany = vi.fn();
   const prismaMockShape = {
     booking: {
       findUnique: bookingFindUnique,
@@ -26,6 +28,9 @@ const {
     },
     payment: {
       findUnique: paymentFindUnique,
+    },
+    academyEnrollment: {
+      updateMany: academyEnrollmentUpdateMany,
     },
     $transaction: vi.fn(async (fn: any) =>
       fn({
@@ -37,6 +42,9 @@ const {
         },
         payment: {
           findUnique: paymentFindUnique,
+        },
+        academyEnrollment: {
+          updateMany: academyEnrollmentUpdateMany,
         },
       }),
     ),
@@ -50,6 +58,7 @@ const {
     bookingFindUnique,
     paymentEventFindFirst,
     paymentFindUnique,
+    academyEnrollmentUpdateMany,
     prismaMockShape,
   };
 });
@@ -134,6 +143,7 @@ describe("booking cancel snapshot route", () => {
     bookingFindUnique.mockReset();
     paymentEventFindFirst.mockReset();
     paymentFindUnique.mockReset();
+    academyEnrollmentUpdateMany.mockReset();
     prismaMock.$transaction.mockClear();
   });
 

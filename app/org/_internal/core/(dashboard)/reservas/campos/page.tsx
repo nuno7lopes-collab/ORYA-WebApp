@@ -270,11 +270,9 @@ export default function ReservasCamposPage() {
       <div className="space-y-5">
         <header className="flex flex-wrap items-center justify-between gap-3">
           <div className="space-y-2">
-            <p className={DASHBOARD_LABEL}>Academia</p>
+            <p className={DASHBOARD_LABEL}>Reservas</p>
             <h1 className="text-xl font-semibold text-white">Campos</h1>
-            <p className={DASHBOARD_MUTED}>
-              Mapeamento de campo para base COURT, fotografia e disponibilidade por recurso.
-            </p>
+            <p className={DASHBOARD_MUTED}>Fotografia, serviço e disponibilidade por campo.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Link href={appendOrganizationIdToHref("/org/bookings", canonicalOrganizationId)} className={CTA_SECONDARY}>

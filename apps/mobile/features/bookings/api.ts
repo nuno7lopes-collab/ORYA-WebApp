@@ -38,6 +38,20 @@ const normalizeOrgUsername = (value: unknown) => {
   return username.length > 0 ? username : null;
 };
 
+const pickCanonicalCity = (canonical?: Record<string, unknown> | null) => {
+  if (!canonical) return null;
+  const city = canonical.city;
+  if (typeof city === "string" && city.trim()) return city.trim();
+  const fallback = canonical.addressLine2;
+  if (typeof fallback === "string" && fallback.trim()) return fallback.trim();
+  return null;
+};
+
+const asFiniteNumber = (value: unknown) => {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return value;
+};
+
 export const mapHubToCourtCards = (
   hub: BookingHubPayload,
   source: "FOLLOWING" | "NEARBY",
@@ -54,12 +68,17 @@ export const mapHubToCourtCards = (
         hub.organization.businessName?.trim() ||
         hub.organization.username?.trim() ||
         "Clube",
+      clubAvatarUrl: hub.organization.brandingAvatarUrl ?? null,
       courtName: court.name?.trim() || court.service.title || "Campo",
       description: court.description ?? null,
       durationMinutes: court.service.durationMinutes,
       unitPriceCents: court.service.unitPriceCents,
       currency: court.service.currency,
-      coverImageUrl: court.coverImageUrl ?? null,
+      coverImageUrl: court.coverImageUrl ?? hub.organization.brandingCoverUrl ?? null,
+      address: hub.organization.addressRef?.formattedAddress?.trim() || null,
+      city: pickCanonicalCity(hub.organization.addressRef?.canonical ?? null),
+      latitude: asFiniteNumber(hub.organization.addressRef?.lat),
+      longitude: asFiniteNumber(hub.organization.addressRef?.lng),
       source,
     }))
     .filter((item) => item.orgUsername.length > 0);
@@ -145,7 +164,12 @@ const aggregateClubCards = (courts: BookingCourtsState["items"]): BookingClubCar
         id: `club:${court.orgUsername}`,
         orgUsername: court.orgUsername,
         clubName: court.clubName,
+        avatarUrl: court.clubAvatarUrl ?? null,
         coverImageUrl: court.coverImageUrl ?? null,
+        address: court.address ?? null,
+        city: court.city ?? null,
+        latitude: court.latitude ?? null,
+        longitude: court.longitude ?? null,
         courtsCount: 1,
         minPriceCents: Number.isFinite(court.unitPriceCents) ? court.unitPriceCents : null,
         currency: court.currency ?? null,
@@ -156,6 +180,21 @@ const aggregateClubCards = (courts: BookingCourtsState["items"]): BookingClubCar
     existing.courtsCount += 1;
     if (!existing.coverImageUrl && court.coverImageUrl) {
       existing.coverImageUrl = court.coverImageUrl;
+    }
+    if (!existing.avatarUrl && court.clubAvatarUrl) {
+      existing.avatarUrl = court.clubAvatarUrl;
+    }
+    if (!existing.address && court.address) {
+      existing.address = court.address;
+    }
+    if (!existing.city && court.city) {
+      existing.city = court.city;
+    }
+    if (existing.latitude == null && court.latitude != null) {
+      existing.latitude = court.latitude;
+    }
+    if (existing.longitude == null && court.longitude != null) {
+      existing.longitude = court.longitude;
     }
     if (Number.isFinite(court.unitPriceCents)) {
       if (existing.minPriceCents == null || court.unitPriceCents < existing.minPriceCents) {

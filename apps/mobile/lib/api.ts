@@ -391,6 +391,11 @@ export const api = {
       } catch {
         refreshed = false;
       }
+      // Só tentamos novamente com API 401 quando conseguimos renovar sessão.
+      // Isto evita retries inúteis e signOut indevido em falhas transitórias de refresh.
+      if (!refreshed) {
+        throw err;
+      }
       const retryInit = init
         ? { ...init, headers: stripAuthorizationHeader(init.headers) }
         : undefined;

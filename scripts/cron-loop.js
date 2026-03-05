@@ -140,6 +140,18 @@ const jobs = [
     intervalMs: getInterval("CRON_BOOKINGS_INTERVAL_MS", 60000),
   },
   {
+    name: "academy-enrollments-reconcile",
+    method: "POST",
+    path: "/api/cron/academy/enrollments/reconcile",
+    intervalMs: getInterval("CRON_ACADEMY_ENROLLMENTS_RECONCILE_INTERVAL_MS", 3600000),
+  },
+  {
+    name: "academy-enrollments-integrity",
+    method: "GET",
+    path: "/api/cron/academy/enrollments/integrity",
+    intervalMs: getInterval("CRON_ACADEMY_ENROLLMENTS_INTEGRITY_INTERVAL_MS", 86400000),
+  },
+  {
     name: "bookings-split-garantido",
     method: "POST",
     path: "/api/cron/bookings/split-garantido",

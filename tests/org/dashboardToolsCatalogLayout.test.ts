@@ -8,26 +8,27 @@ function readLocal(pathname: string) {
 
 describe("dashboard tools catalog layout", () => {
   it("keeps the final flat tool order", () => {
-    const content = readLocal("app/org/_internal/core/DashboardClient.tsx");
-    const match = content.match(/const TOOL_DISPLAY_ORDER: DashboardToolId\[\] = \[([\s\S]*?)\];/);
+    const content = readLocal("app/org/_internal/core/organizationToolNavigation.ts");
+    const match = content.match(/const tools: Array<OrganizationNavTool \| null> = \[([\s\S]*?)\n\s*\];/);
     expect(match).not.toBeNull();
-    const ids = Array.from(match?.[1].matchAll(/"([^"]+)"/g) ?? []).map((entry) => entry[1]);
+    const ids = Array.from(match?.[1].matchAll(/id:\s*"([^"]+)"/g) ?? []).map((entry) => entry[1]);
     expect(ids).toEqual([
+      "dashboard",
       "calendar",
-      "academia",
-      "checkin",
+      "academy",
+      "check-in",
       "padel-tournaments",
-      "eventos",
+      "events",
       "padel-club",
-      "inscricoes",
-      "mensagens",
+      "forms",
+      "chat",
       "crm",
       "analytics",
-      "financeiro",
+      "finance",
       "marketing",
-      "loja",
-      "staff",
-      "politicas",
+      "store",
+      "team",
+      "policies",
       "settings",
     ]);
   });
@@ -36,16 +37,17 @@ describe("dashboard tools catalog layout", () => {
     const content = readLocal("app/org/_internal/core/DashboardClient.tsx");
     expect(content).not.toContain("TOOL_FLOW_ORDER");
     expect(content).not.toContain("toolGroups.map(");
-    expect(content).toContain("Resumo do dia");
+    expect(content).toContain("Ponto de situação");
     expect(content).toContain("dailySummaryKpis.map((kpi)");
-    expect(content).not.toContain("Usa a barra lateral para abrir as ferramentas.");
-    expect(content).not.toContain("renderToolCard(tool)");
+    expect(content).toContain("id=\"ferramentas\"");
   });
 
   it("keeps Eventos separado de Torneios no gating de permissões", () => {
-    const content = readLocal("app/org/_internal/core/DashboardClient.tsx");
-    expect(content).toContain('const canAccessEventos = canAccessModule("EVENTOS");');
-    expect(content).toContain("eventos: canAccessEventos");
-    expect(content).toContain('moduleKey: "EVENTOS"');
+    const dashboard = readLocal("app/org/_internal/core/DashboardClient.tsx");
+    const nav = readLocal("app/org/_internal/core/organizationToolNavigation.ts");
+    expect(dashboard).toContain('const canAccessEventos = canAccessModule("EVENTOS");');
+    expect(nav).toContain('id: "padel-tournaments"');
+    expect(nav).toContain("access.canAccessEventos");
+    expect(nav).toContain('id: "events"');
   });
 });

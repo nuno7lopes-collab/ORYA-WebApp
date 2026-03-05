@@ -88,6 +88,8 @@ async function _GET(
         username: true,
         publicName: true,
         businessName: true,
+        brandingAvatarUrl: true,
+        brandingCoverUrl: true,
         timezone: true,
         reservationAssignmentMode: true,
         orgType: true,
@@ -96,6 +98,14 @@ async function _GET(
         stripePayoutsEnabled: true,
         officialEmail: true,
         officialEmailVerifiedAt: true,
+        addressRef: {
+          select: {
+            formattedAddress: true,
+            canonical: true,
+            latitude: true,
+            longitude: true,
+          },
+        },
         settings: {
           select: { bookingAcceptNewReservations: true },
         },
@@ -380,7 +390,23 @@ async function _GET(
         username: organization.username,
         publicName: organization.publicName,
         businessName: organization.businessName,
+        brandingAvatarUrl: organization.brandingAvatarUrl ?? null,
+        brandingCoverUrl: organization.brandingCoverUrl ?? null,
         timezone: organization.timezone,
+        addressRef: organization.addressRef
+          ? {
+              formattedAddress: organization.addressRef.formattedAddress ?? null,
+              canonical: organization.addressRef.canonical ?? null,
+              lat:
+                typeof organization.addressRef.latitude === "number"
+                  ? organization.addressRef.latitude
+                  : null,
+              lng:
+                typeof organization.addressRef.longitude === "number"
+                  ? organization.addressRef.longitude
+                  : null,
+            }
+          : null,
         reservationAssignmentMode: organization.reservationAssignmentMode,
         acceptNewBookings: organization.settings?.bookingAcceptNewReservations ?? true,
       },

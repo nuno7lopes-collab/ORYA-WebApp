@@ -160,6 +160,9 @@ function buildTransaction(
     bookingPolicyRef: {
       upsert: vi.fn(),
     },
+    academyEnrollment: {
+      updateMany: vi.fn(async () => ({ count: 0 })),
+    },
     userActivity: {
       create: vi.fn(),
     },

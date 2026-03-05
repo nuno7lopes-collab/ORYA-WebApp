@@ -32,20 +32,39 @@ const formatDateTime = (value?: string | null) => {
   return parsed.toLocaleString("pt-PT", { dateStyle: "medium", timeStyle: "short" });
 };
 
-const resolveStatusLabel = (item: ClassEnrollmentItem) => {
+const resolveStatus = (item: ClassEnrollmentItem) => {
   const sessionStatus = String(item.sessionStatus ?? "").toUpperCase();
-  if (sessionStatus === "CANCELLED") return "Cancelada";
-  if (item.isFull) return "Cheia";
   const enrollmentStatus = String(item.status ?? "").toUpperCase();
-  if (enrollmentStatus === "CANCELLED") return "Cancelada";
-  if (enrollmentStatus === "PENDING") return "Pendente";
-  return "Confirmada";
+
+  if (sessionStatus === "CANCELLED" || enrollmentStatus === "CANCELLED") {
+    return {
+      label: "Cancelada",
+      className: "border-rose-300/45 bg-rose-500/18 text-rose-50",
+    };
+  }
+  if (item.isFull) {
+    return {
+      label: "Cheia",
+      className: "border-amber-200/45 bg-amber-500/18 text-amber-50",
+    };
+  }
+  if (enrollmentStatus === "PENDING") {
+    return {
+      label: "Pendente",
+      className: "border-sky-200/45 bg-sky-500/18 text-sky-50",
+    };
+  }
+  return {
+    label: "Confirmada",
+    className: "border-emerald-200/45 bg-emerald-500/18 text-emerald-50",
+  };
 };
 
 const splitByTimeline = (items: ClassEnrollmentItem[]) => {
   const now = Date.now();
   const upcoming: ClassEnrollmentItem[] = [];
   const history: ClassEnrollmentItem[] = [];
+
   items.forEach((item) => {
     const startsAt = new Date(item.startsAt).getTime();
     const cancelled = String(item.status ?? "").toUpperCase() === "CANCELLED";
@@ -55,6 +74,7 @@ const splitByTimeline = (items: ClassEnrollmentItem[]) => {
     }
     upcoming.push(item);
   });
+
   return {
     upcoming: upcoming.sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()),
     history: history.sort((a, b) => new Date(b.startsAt).getTime() - new Date(a.startsAt).getTime()),
@@ -70,20 +90,23 @@ export default function AulasScreen() {
   const accessReady = Boolean(session?.user?.id);
   const enrollmentsQuery = useMyClassEnrollments(accessReady);
   const [cancelingBookingId, setCancelingBookingId] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<"upcoming" | "history">("upcoming");
 
   const timeline = useMemo(
     () => splitByTimeline(enrollmentsQuery.data ?? []),
     [enrollmentsQuery.data],
   );
 
+  const activeItems = activeTab === "upcoming" ? timeline.upcoming : timeline.history;
+
   const runCancel = async (bookingId: number) => {
     try {
       setCancelingBookingId(bookingId);
       await cancelBooking(bookingId);
       await enrollmentsQuery.refetch();
-      Alert.alert("Aula cancelada", "A inscrição foi cancelada com sucesso.");
+      Alert.alert("Inscrição cancelada", "A tua inscrição foi cancelada.");
     } catch (err) {
-      Alert.alert("Cancelamento", getUserFacingError(err, "Não foi possível cancelar a inscrição."));
+      Alert.alert("Cancelamento", getUserFacingError(err, "Não foi possível cancelar."));
     } finally {
       setCancelingBookingId(null);
     }
@@ -92,7 +115,7 @@ export default function AulasScreen() {
   const renderCard = (item: ClassEnrollmentItem, section: "upcoming" | "history") => {
     const cover = normalizeImageUrl(item.class?.coverImageUrl ?? null);
     const trainerAvatar = normalizeImageUrl(item.trainer?.avatarUrl ?? null);
-    const statusLabel = resolveStatusLabel(item);
+    const status = resolveStatus(item);
     const canCancel =
       section === "upcoming" &&
       item.cancellation.allowed &&
@@ -101,69 +124,85 @@ export default function AulasScreen() {
     return (
       <View
         key={`class-enrollment-${item.id}`}
-        className="rounded-2xl border border-white/14 bg-white/6 p-3"
+        className="overflow-hidden rounded-[22px] border border-white/14 bg-white/6"
       >
-        {cover ? (
-          <Image
-            source={{ uri: cover }}
-            style={{ width: "100%", height: 128, borderRadius: 14, marginBottom: 10 }}
-            contentFit="cover"
-            transition={120}
-          />
-        ) : null}
-
-        <View className="flex-row items-start justify-between gap-3">
-          <View style={{ flex: 1 }}>
-            <Text className="text-white text-sm font-semibold">{item.class.title}</Text>
-            <Text className="text-white/70 text-xs mt-1">{formatDateTime(item.startsAt)}</Text>
-            <Text className="text-white/60 text-xs mt-1">
-              {item.organization.publicName ?? item.organization.businessName ?? item.organization.username ?? "Clube"}
-              {item.court?.name ? ` · ${item.court.name}` : ""}
-            </Text>
-          </View>
-          <View className="rounded-full border border-white/20 bg-white/10 px-2 py-1">
-            <Text className="text-white/80 text-[10px] font-semibold uppercase tracking-[0.12em]">
-              {statusLabel}
-            </Text>
-          </View>
-        </View>
-
-        <View className="mt-3 flex-row items-center gap-2">
-          {trainerAvatar ? (
+        <View className="relative h-32">
+          {cover ? (
             <Image
-              source={{ uri: trainerAvatar }}
-              style={{ width: 24, height: 24, borderRadius: 12 }}
+              source={{ uri: cover }}
+              style={{ width: "100%", height: "100%" }}
               contentFit="cover"
-              transition={100}
+              transition={130}
             />
           ) : (
-            <View className="h-6 w-6 items-center justify-center rounded-full border border-white/20 bg-white/10">
-              <Ionicons name="person" size={13} color="rgba(240,247,255,0.9)" />
-            </View>
+            <View className="h-full w-full bg-white/8" />
           )}
-          <Text className="text-white/75 text-xs">
-            {item.trainer?.name ?? "Treinador por definir"}
-          </Text>
-          <Text className="text-white/55 text-xs">· {item.enrolledCount}/{item.capacity}</Text>
+          <View className="absolute inset-0 bg-black/40" />
+          <View className="absolute left-3 top-3 rounded-full border border-white/25 bg-black/35 px-2 py-1">
+            <Text className="text-white text-[10px] font-semibold">{formatDateTime(item.startsAt)}</Text>
+          </View>
+          <View className={`absolute right-3 top-3 rounded-full border px-2 py-1 ${status.className}`}>
+            <Text className="text-[10px] font-semibold">{status.label}</Text>
+          </View>
         </View>
 
-        {canCancel ? (
-          <Pressable
-            onPress={() => {
-              if (!item.booking?.id) return;
-              void runCancel(item.booking.id);
-            }}
-            disabled={cancelingBookingId === item.booking?.id}
-            className="mt-3 rounded-xl border border-rose-300/40 bg-rose-500/12 px-3 py-2"
-            style={{ minHeight: tokens.layout.touchTarget }}
-            accessibilityRole="button"
-            accessibilityLabel="Cancelar inscrição"
-          >
-            <Text className="text-rose-100 text-xs font-semibold text-center">
-              {cancelingBookingId === item.booking?.id ? "A cancelar..." : "Cancelar inscrição"}
+        <View className="gap-2.5 p-3">
+          <Text className="text-white text-sm font-semibold" numberOfLines={1}>
+            {item.class.title}
+          </Text>
+
+          <View className="flex-row items-center gap-2">
+            {trainerAvatar ? (
+              <Image
+                source={{ uri: trainerAvatar }}
+                style={{ width: 24, height: 24, borderRadius: 12 }}
+                contentFit="cover"
+                transition={100}
+              />
+            ) : (
+              <View className="h-6 w-6 items-center justify-center rounded-full border border-white/20 bg-white/10">
+                <Ionicons name="person" size={13} color="rgba(240,247,255,0.9)" />
+              </View>
+            )}
+            <Text className="text-white/78 text-xs" numberOfLines={1}>
+              {item.trainer?.name ?? "Treinador por definir"}
             </Text>
-          </Pressable>
-        ) : null}
+          </View>
+
+          <View className="flex-row flex-wrap gap-1.5">
+            {item.court?.name ? (
+              <View className="rounded-full border border-white/20 bg-white/10 px-2 py-1">
+                <Text className="text-white/75 text-[10px]">{item.court.name}</Text>
+              </View>
+            ) : null}
+            <View className="rounded-full border border-white/20 bg-white/10 px-2 py-1">
+              <Text className="text-white/75 text-[10px]">{item.enrolledCount}/{item.capacity}</Text>
+            </View>
+            <View className="rounded-full border border-white/20 bg-white/10 px-2 py-1">
+              <Text className="text-white/75 text-[10px]" numberOfLines={1}>
+                {item.organization.publicName ?? item.organization.businessName ?? item.organization.username ?? "Clube"}
+              </Text>
+            </View>
+          </View>
+
+          {canCancel ? (
+            <Pressable
+              onPress={() => {
+                if (!item.booking?.id) return;
+                void runCancel(item.booking.id);
+              }}
+              disabled={cancelingBookingId === item.booking?.id}
+              className="rounded-xl border border-rose-300/45 bg-rose-500/14 px-3 py-2"
+              style={{ minHeight: tokens.layout.touchTarget }}
+              accessibilityRole="button"
+              accessibilityLabel="Cancelar inscrição"
+            >
+              <Text className="text-rose-50 text-xs font-semibold text-center">
+                {cancelingBookingId === item.booking?.id ? "A cancelar..." : "Cancelar"}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
       </View>
     );
   };
@@ -207,7 +246,7 @@ export default function AulasScreen() {
       >
         {!accessReady ? (
           <View className="rounded-2xl border border-white/14 bg-white/6 px-4 py-4 gap-2">
-            <Text className="text-white text-sm font-semibold">Inicia sessão para ver as tuas aulas.</Text>
+            <Text className="text-white text-sm font-semibold">Inicia sessão para aceder às aulas.</Text>
             <Pressable
               onPress={() => safePush(router, { pathname: "/auth", params: { next: "/aulas" } })}
               className="mt-2 self-start rounded-full border border-white/20 bg-white/90 px-4 py-2.5"
@@ -223,7 +262,7 @@ export default function AulasScreen() {
           </View>
         ) : enrollmentsQuery.isError ? (
           <View className="rounded-2xl border border-rose-300/40 bg-rose-500/12 px-4 py-4 gap-2">
-            <Text className="text-rose-100 text-sm font-semibold">Não foi possível carregar as aulas.</Text>
+            <Text className="text-rose-100 text-sm font-semibold">Não foi possível carregar.</Text>
             <Pressable
               onPress={() => enrollmentsQuery.refetch()}
               className="self-start rounded-full border border-white/20 bg-white/8 px-4 py-2"
@@ -235,33 +274,58 @@ export default function AulasScreen() {
           </View>
         ) : (
           <>
-            <View className="gap-3">
-              <View>
-                <Text className="text-white text-sm font-semibold">Próximas</Text>
-                <Text className="text-white/65 text-xs">As tuas inscrições ativas por sessão.</Text>
+            <View className="rounded-2xl border border-white/14 bg-white/6 px-3 py-3">
+              <View className="flex-row items-center justify-between">
+                <Text className="text-white text-sm font-semibold">Inscrições</Text>
+                <Text className="text-white/70 text-xs">{timeline.upcoming.length + timeline.history.length}</Text>
               </View>
-              {timeline.upcoming.length === 0 ? (
-                <View className="rounded-2xl border border-white/14 bg-white/6 px-4 py-4">
-                  <Text className="text-white/70 text-xs">Sem aulas próximas.</Text>
+              <View className="mt-2 flex-row gap-2">
+                <View className="rounded-full border border-emerald-200/40 bg-emerald-400/12 px-3 py-1">
+                  <Text className="text-emerald-50 text-[11px] font-semibold">Próximas {timeline.upcoming.length}</Text>
                 </View>
-              ) : (
-                timeline.upcoming.map((item) => renderCard(item, "upcoming"))
-              )}
+                <View className="rounded-full border border-white/18 bg-white/8 px-3 py-1">
+                  <Text className="text-white/80 text-[11px] font-semibold">Histórico {timeline.history.length}</Text>
+                </View>
+              </View>
+              <View className="mt-3 rounded-full border border-white/16 bg-white/8 p-1 flex-row">
+                <Pressable
+                  onPress={() => setActiveTab("upcoming")}
+                  className={
+                    activeTab === "upcoming"
+                      ? "flex-1 rounded-full bg-white/18 px-3 py-2"
+                      : "flex-1 rounded-full px-3 py-2"
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel="Ver próximas"
+                >
+                  <Text className={activeTab === "upcoming" ? "text-white text-xs font-semibold text-center" : "text-white/65 text-xs font-semibold text-center"}>
+                    Próximas
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => setActiveTab("history")}
+                  className={
+                    activeTab === "history"
+                      ? "flex-1 rounded-full bg-white/18 px-3 py-2"
+                      : "flex-1 rounded-full px-3 py-2"
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel="Ver histórico"
+                >
+                  <Text className={activeTab === "history" ? "text-white text-xs font-semibold text-center" : "text-white/65 text-xs font-semibold text-center"}>
+                    Histórico
+                  </Text>
+                </Pressable>
+              </View>
             </View>
 
-            <View className="gap-3">
-              <View>
-                <Text className="text-white text-sm font-semibold">Histórico</Text>
-                <Text className="text-white/65 text-xs">Aulas concluídas, passadas ou canceladas.</Text>
+            {activeItems.length === 0 ? (
+              <View className="rounded-2xl border border-white/14 bg-white/6 px-4 py-4">
+                <Text className="text-white/70 text-xs">Sem aulas {activeTab === "upcoming" ? "próximas" : "no histórico"}.</Text>
               </View>
-              {timeline.history.length === 0 ? (
-                <View className="rounded-2xl border border-white/14 bg-white/6 px-4 py-4">
-                  <Text className="text-white/70 text-xs">Sem histórico de aulas.</Text>
-                </View>
-              ) : (
-                timeline.history.map((item) => renderCard(item, "history"))
-              )}
-            </View>
+            ) : (
+              activeItems.map((item) => renderCard(item, activeTab))
+            )}
           </>
         )}
       </ScrollView>

@@ -159,7 +159,6 @@ export default function TabsLayout() {
 
   const handleLocationAllow = useCallback(async () => {
     if (locationModalBusy) return;
-    markLocationPromptSeen(session?.user?.id ?? null).catch(() => undefined);
     setLocationModalBusy(true);
     setLocationModalError(null);
     try {
@@ -168,6 +167,7 @@ export default function TabsLayout() {
         accessToken: session?.access_token ?? null,
       });
       setLocationCanAskAgain(result.canAskAgain);
+      markLocationPromptSeen(session?.user?.id ?? null).catch(() => undefined);
       setLocationModalVisible(false);
     } catch (error) {
       console.warn("Location modal allow failed", error);
@@ -239,22 +239,31 @@ export default function TabsLayout() {
   }
 
   if (gateStatus === "offline") {
+    const isReloading = profileQuery.isFetching;
+    const reloadLabel = isReloading
+      ? t("common:actions.loading")
+      : t("common:actions.reload");
     return (
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24, backgroundColor: APP_BACKGROUND }}>
         <View style={{ maxWidth: 320 }}>
           <Text style={{ color: "white", fontSize: 16, textAlign: "center", fontWeight: "600" }}>
-            Precisas de internet para concluir o onboarding.
+            {t("onboarding:errors.offlineGateTitle")}
           </Text>
         </View>
         <View style={{ height: 10 }} />
         <Text style={{ color: "rgba(255,255,255,0.6)", fontSize: 13, textAlign: "center" }}>
-          Assim que estiveres online, tenta novamente.
+          {t("onboarding:errors.offlineGateBody")}
         </Text>
         <View style={{ height: 16 }} />
         <Pressable
-          onPress={() => profileQuery.refetch()}
+          onPress={() => {
+            if (isReloading) return;
+            profileQuery.refetch();
+          }}
+          disabled={isReloading}
           accessibilityRole="button"
-          accessibilityLabel="Recarregar"
+          accessibilityLabel={reloadLabel}
+          accessibilityState={{ disabled: isReloading, busy: isReloading }}
           unstable_pressDelay={0}
           style={{
             backgroundColor: "rgba(255,255,255,0.12)",
@@ -263,9 +272,10 @@ export default function TabsLayout() {
             paddingHorizontal: 16,
             alignItems: "center",
             minWidth: 160,
+            opacity: isReloading ? 0.72 : 1,
           }}
         >
-          <Text style={{ color: "white", fontWeight: "600" }}>Recarregar</Text>
+          <Text style={{ color: "white", fontWeight: "600" }}>{reloadLabel}</Text>
         </Pressable>
       </View>
     );

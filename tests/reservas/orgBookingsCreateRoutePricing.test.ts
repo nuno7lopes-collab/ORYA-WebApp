@@ -21,6 +21,8 @@ const prisma = vi.hoisted(() => ({
   service: { findFirst: vi.fn() },
   reservationProfessional: { findFirst: vi.fn(), findMany: vi.fn() },
   reservationResource: { findFirst: vi.fn(), findMany: vi.fn(), findUnique: vi.fn() },
+  courtBookingConfig: { findFirst: vi.fn() },
+  padelClubCourt: { findFirst: vi.fn() },
   availabilitySchedule: { findMany: vi.fn() },
   weeklyAvailabilityTemplate: { findMany: vi.fn() },
   availabilityOverride: { findMany: vi.fn() },
@@ -80,6 +82,8 @@ beforeEach(async () => {
   prisma.reservationResource.findFirst.mockReset();
   prisma.reservationResource.findMany.mockReset();
   prisma.reservationResource.findUnique.mockReset();
+  prisma.courtBookingConfig.findFirst.mockReset();
+  prisma.padelClubCourt.findFirst.mockReset();
   prisma.availabilitySchedule.findMany.mockReset();
   prisma.weeklyAvailabilityTemplate.findMany.mockReset();
   prisma.availabilityOverride.findMany.mockReset();
@@ -119,6 +123,8 @@ beforeEach(async () => {
   prisma.reservationResource.findFirst.mockResolvedValue(null);
   prisma.reservationResource.findMany.mockResolvedValue([]);
   prisma.reservationResource.findUnique.mockResolvedValue({ courtId: null });
+  prisma.courtBookingConfig.findFirst.mockResolvedValue(null);
+  prisma.padelClubCourt.findFirst.mockResolvedValue(null);
   prisma.availabilitySchedule.findMany.mockResolvedValue([]);
   prisma.weeklyAvailabilityTemplate.findMany.mockResolvedValue([]);
   prisma.availabilityOverride.findMany.mockResolvedValue([]);
@@ -148,7 +154,7 @@ describe("POST /api/org/[orgId]/reservas", () => {
       organizationId: 21,
       title: "Campo Central",
       kind: "COURT",
-      assignmentMode: "PROFESSIONAL_ONLY",
+      assignmentMode: "RESOURCE_ONLY",
       partySizeRequired: false,
       partySizeMin: 1,
       partySizeMax: 1,
@@ -159,12 +165,25 @@ describe("POST /api/org/[orgId]/reservas", () => {
       locationMode: "FIXED",
       addressId: "addr_1",
       professionalLinks: [],
-      resourceLinks: [],
+      resourceLinks: [{ resourceId: 77, resource: { isActive: true, courtId: 44 } }],
       organization: {
         timezone: "Europe/Lisbon",
         addressId: null,
         reservationAssignmentMode: "PROFESSIONAL_ONLY",
       },
+    });
+    prisma.reservationResource.findFirst.mockResolvedValue({
+      id: 77,
+      capacity: 4,
+      priority: 1,
+      courtId: 44,
+    });
+    prisma.courtBookingConfig.findFirst.mockResolvedValue({
+      courtId: 44,
+      displayName: "Campo Central",
+      coverImageUrl: null,
+      court: { name: "Campo Central" },
+      backingService: null,
     });
 
     const req = new NextRequest("http://localhost/api/org/21/reservas", {
@@ -174,7 +193,7 @@ describe("POST /api/org/[orgId]/reservas", () => {
         serviceId: 7,
         startsAt: "2030-01-01T10:00:00.000Z",
         userId: "client_user",
-        professionalId: 55,
+        resourceId: 77,
       }),
     });
     const res = await POST(req);

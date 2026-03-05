@@ -41,9 +41,10 @@ describe("tournament wizard format requirements", () => {
     expect(source).toContain("format,");
     expect(source).toContain("advancedSettings:");
     expect(source).toContain("formatProfilesByCategory");
-    expect(source).toContain("selectedCategories.reduce<Record<string, WizardFormatProfile>>");
+    expect(source).toContain("const formatProfilesByCategory = selectedCategories.reduce<");
+    expect(source).toContain("Record<string, WizardFormatProfile>");
     expect(source).toContain('acc[String(category.id)]');
-    expect(source).toContain("resolveCategoryFormatProfile(cat.id)");
+    expect(source).toContain("resolveCategoryFormatProfile(category.id)");
     expect(source).toContain("Formato da categoria");
   });
 });

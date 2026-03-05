@@ -40,6 +40,15 @@ export default function ClubCourtsScreen() {
   const courtsQuery = useClubCourts(orgUsername, Boolean(orgUsername));
   const courts = courtsQuery.data ?? [];
   const clubName = courts[0]?.clubName || orgUsername || "Clube";
+  const minPrice = useMemo(() => {
+    if (courts.length === 0) return null;
+    return courts.reduce<number | null>((acc, court) => {
+      if (!Number.isFinite(court.unitPriceCents)) return acc;
+      if (acc == null || court.unitPriceCents < acc) return court.unitPriceCents;
+      return acc;
+    }, null);
+  }, [courts]);
+  const currency = courts[0]?.currency ?? "EUR";
 
   return (
     <LiquidBackground>
@@ -79,10 +88,23 @@ export default function ClubCourtsScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View className="gap-1">
-          <Text className="text-white text-sm font-semibold">Campos disponíveis</Text>
-          <Text className="text-white/65 text-xs">
-            Escolhe o campo para abrir calendário e reservar com o `courtId` correto.
-          </Text>
+          <Text className="text-white text-sm font-semibold">Campos</Text>
+          {courts.length > 0 ? (
+            <View className="mt-1 flex-row flex-wrap items-center gap-2">
+              <View className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5">
+                <Text className="text-[10px] text-white/90 font-semibold">
+                  {courts.length} {courts.length === 1 ? "campo" : "campos"}
+                </Text>
+              </View>
+              {minPrice != null ? (
+                <View className="rounded-full border border-cyan-200/35 bg-cyan-300/12 px-2 py-0.5">
+                  <Text className="text-[10px] text-cyan-50 font-semibold">
+                    Desde {formatMoney(minPrice, currency)}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
         </View>
 
         {!orgUsername ? (
@@ -95,7 +117,7 @@ export default function ClubCourtsScreen() {
           </View>
         ) : courtsQuery.isError ? (
           <View className="rounded-2xl border border-rose-300/35 bg-rose-500/12 px-4 py-4 gap-2">
-            <Text className="text-rose-100 text-xs">Não foi possível carregar os campos deste clube.</Text>
+            <Text className="text-rose-100 text-xs">Não foi possível carregar os campos.</Text>
             <Pressable
               onPress={() => courtsQuery.refetch()}
               className="self-start rounded-full border border-white/20 bg-white/8 px-4 py-2"
@@ -107,7 +129,7 @@ export default function ClubCourtsScreen() {
           </View>
         ) : courts.length === 0 ? (
           <View className="rounded-2xl border border-white/14 bg-white/6 px-4 py-4">
-            <Text className="text-white/70 text-xs">Este clube ainda não tem campos ativos para reserva.</Text>
+            <Text className="text-white/70 text-xs">Sem campos ativos para reserva.</Text>
           </View>
         ) : (
           <View className="gap-3">
@@ -153,12 +175,16 @@ export default function ClubCourtsScreen() {
                         {court.description}
                       </Text>
                     ) : null}
-                    <Text className="mt-1 text-white/70 text-xs">
-                      Duração base: {court.durationMinutes} min
-                    </Text>
-                    <Text className="mt-1 text-white/80 text-xs font-semibold">
-                      Desde {formatMoney(court.unitPriceCents, court.currency)}
-                    </Text>
+                    <View className="mt-2 flex-row flex-wrap items-center gap-2">
+                      <View className="rounded-full border border-white/20 bg-white/10 px-2 py-1">
+                        <Text className="text-[10px] font-semibold text-white/85">{court.durationMinutes} min</Text>
+                      </View>
+                      <View className="rounded-full border border-cyan-200/35 bg-cyan-300/14 px-2 py-1">
+                        <Text className="text-[10px] font-semibold text-cyan-50">
+                          Desde {formatMoney(court.unitPriceCents, court.currency)}
+                        </Text>
+                      </View>
+                    </View>
                   </View>
                 </View>
               </Pressable>

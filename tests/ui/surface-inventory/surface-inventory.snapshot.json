@@ -244,6 +244,7 @@
     "apps/mobile/app/messages/requests.tsx",
     "apps/mobile/app/notifications/index.tsx",
     "apps/mobile/app/onboarding/index.tsx",
+    "apps/mobile/app/reservas/club/[username].tsx",
     "apps/mobile/app/search/index.tsx",
     "apps/mobile/app/service/[id].tsx",
     "apps/mobile/app/service/[id]/__tests__/bookingDurationPolicy.test.tsx",
@@ -482,7 +483,7 @@
   },
   "counts": {
     "webTotal": 208,
-    "mobileTotal": 48,
+    "mobileTotal": 49,
     "org": 83,
     "admin": 18,
     "user": 20,

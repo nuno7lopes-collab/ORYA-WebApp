@@ -232,6 +232,14 @@
       "compete": "Competir",
       "reservations": "Reservas",
       "community": "Comunidade"
+    },
+    "map": {
+      "title": "Mapa de clubes perto",
+      "subtitle": "Explora os clubes disponíveis à tua volta e abre o clube ideal num toque.",
+      "oneClub": "1 clube pronto para reservar perto de ti.",
+      "manyClubs": "{count} clubes prontos para reservar perto de ti.",
+      "empty": "Ainda não há clubes próximos para mostrar.",
+      "cta": "Abrir mapa de clubes"
     }
   },
   "discover": {
@@ -667,6 +675,8 @@
       "interestsSaveFailed": "Não foi possível guardar os interesses.",
       "padelSaveFailed": "Não foi possível guardar o perfil de padel.",
       "locationFailed": "Não foi possível obter localização agora.",
+      "offlineGateTitle": "Precisas de internet para concluir o onboarding.",
+      "offlineGateBody": "Assim que estiveres online, tenta novamente.",
       "missingDataTitle": "Faltam dados",
       "padelMissing": "Seleciona o género, o lado preferido e o nível.",
       "finalizeFailed": "Não foi possível concluir o onboarding. Tenta novamente."
