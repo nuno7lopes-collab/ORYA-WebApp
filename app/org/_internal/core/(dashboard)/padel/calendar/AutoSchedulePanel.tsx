@@ -8,7 +8,7 @@ export function AutoSchedulePanel(props: {
   return (
     <div className="rounded-2xl border border-white/12 bg-white/5 p-3 text-white">
       <p className="text-sm font-semibold">Agendamento</p>
-      <div className="mt-2 grid gap-2">
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
         {props.onGenerate ? (
           <button
             type="button"
@@ -31,7 +31,9 @@ export function AutoSchedulePanel(props: {
           type="button"
           onClick={props.onApply}
           disabled={props.busy}
-          className="rounded-full bg-white px-3 py-2 text-sm font-semibold text-black disabled:opacity-50"
+          className={`rounded-full bg-white px-3 py-2 text-sm font-semibold text-black disabled:opacity-50 ${
+            props.onGenerate ? "" : "sm:col-span-2"
+          }`}
         >
           Aplicar
         </button>

@@ -26,6 +26,9 @@ const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 const DURATION_OPTIONS = [30, 60, 90, 120];
 const DAY_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+const CONTROL_BASE =
+  "mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none transition focus:border-cyan-300/70 focus:ring-2 focus:ring-cyan-300/20";
+const PANEL_BASE = "rounded-2xl border border-white/10 bg-white/[0.03]";
 type SeriesDraftMode = "RECURRING" | "SINGLE";
 
 type Service = {
@@ -1030,11 +1033,11 @@ export default function AcademyClassDetailPage() {
               )}
             >
               <p className="text-sm font-semibold">Sessão única</p>
-              <p className="text-[11px] text-white/55">Data única</p>
+              <p className="text-[11px] text-white/55">Data</p>
             </button>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+          <div className={cn(PANEL_BASE, "grid gap-3 p-3 md:grid-cols-2 lg:grid-cols-4")}>
             <label className="text-[12px] text-white/70">
               Hora
               <OryaTimeField
@@ -1042,19 +1045,19 @@ export default function AcademyClassDetailPage() {
                 onChange={setSeriesStartTime}
                 stepMinutes={15}
                 className="mt-1 w-full"
-                buttonClassName="h-10 rounded-xl"
+                buttonClassName="h-10 rounded-xl border border-white/15 bg-white/5 text-white transition hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-cyan-300/20"
               />
             </label>
             <label className="text-[12px] text-white/70">
-              Duração (min)
+              Duração
               <select
-                className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                className={CONTROL_BASE}
                 value={seriesDuration}
                 onChange={(e) => setSeriesDuration(e.target.value)}
               >
                 {DURATION_OPTIONS.map((opt) => (
                   <option key={opt} value={opt}>
-                    {opt}
+                    {opt} min
                   </option>
                 ))}
               </select>
@@ -1064,7 +1067,7 @@ export default function AcademyClassDetailPage() {
               <input
                 type="number"
                 min="1"
-                className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                className={CONTROL_BASE}
                 value={seriesCapacity}
                 onChange={(e) => setSeriesCapacity(e.target.value)}
               />
@@ -1072,7 +1075,7 @@ export default function AcademyClassDetailPage() {
             <label className="text-[12px] text-white/70">
               {professionalLabelSingular}
               <select
-                className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                className={CONTROL_BASE}
                 value={seriesProfessionalId}
                 onChange={(e) => setSeriesProfessionalId(e.target.value)}
               >
@@ -1086,13 +1089,13 @@ export default function AcademyClassDetailPage() {
             </label>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+          <div className={cn(PANEL_BASE, "grid gap-3 p-3 md:grid-cols-2 lg:grid-cols-4")}>
             {seriesDraftMode === "RECURRING" ? (
               <>
                 <label className="text-[12px] text-white/70">
-                  Dia da semana
+                  Dia
                   <select
-                    className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                    className={CONTROL_BASE}
                     value={seriesDay}
                     onChange={(e) => setSeriesDay(e.target.value)}
                   >
@@ -1104,41 +1107,41 @@ export default function AcademyClassDetailPage() {
                   </select>
                 </label>
                 <label className="text-[12px] text-white/70">
-                  Válido desde
+                  Desde
                   <OryaDateField
                     value={seriesValidFrom}
                     onChange={setSeriesValidFrom}
                     className="mt-1 w-full"
-                    buttonClassName="h-10 rounded-xl"
+                    buttonClassName="h-10 rounded-xl border border-white/15 bg-white/5 text-white transition hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-cyan-300/20"
                   />
                 </label>
                 <label className="text-[12px] text-white/70">
-                  Válido até
+                  Até
                   <OryaDateField
                     value={seriesValidUntil}
                     onChange={setSeriesValidUntil}
                     minDate={seriesValidFrom || undefined}
                     className="mt-1 w-full"
-                    buttonClassName="h-10 rounded-xl"
+                    buttonClassName="h-10 rounded-xl border border-white/15 bg-white/5 text-white transition hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-cyan-300/20"
                   />
                 </label>
               </>
             ) : (
               <label className="text-[12px] text-white/70">
-                Data da sessão
+                Data
                 <OryaDateField
                   value={seriesSingleDate}
                   onChange={setSeriesSingleDate}
                   minDate={todayIso}
                   className="mt-1 w-full"
-                  buttonClassName="h-10 rounded-xl"
+                  buttonClassName="h-10 rounded-xl border border-white/15 bg-white/5 text-white transition hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-cyan-300/20"
                 />
               </label>
             )}
             <label className="text-[12px] text-white/70">
-              Campo (opcional)
+              Campo
               <select
-                className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                className={CONTROL_BASE}
                 value={seriesCourtId}
                 onChange={(e) => setSeriesCourtId(e.target.value)}
                 disabled={seriesCourtOptions.length === 0}
@@ -1152,13 +1155,13 @@ export default function AcademyClassDetailPage() {
               </select>
             </label>
           </div>
-          <label className="flex items-center gap-2 text-[12px] text-white/70">
+          <label className="inline-flex items-center gap-2 text-[12px] text-white/70">
             <input
               type="checkbox"
               checked={seriesActive}
               onChange={(e) => setSeriesActive(e.target.checked)}
             />
-            {seriesDraftMode === "SINGLE" ? "Sessão ativa" : "Série ativa"}
+            Ativa
           </label>
 
           {seriesError && (
@@ -1173,7 +1176,7 @@ export default function AcademyClassDetailPage() {
               : seriesEditingId
                 ? "Guardar agenda"
                 : seriesDraftMode === "SINGLE"
-                  ? "Criar sessão única"
+                  ? "Criar sessão"
                   : "Criar série"}
           </button>
 

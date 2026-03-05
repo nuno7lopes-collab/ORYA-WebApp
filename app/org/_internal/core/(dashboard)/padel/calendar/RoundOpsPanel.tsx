@@ -17,33 +17,20 @@ export function RoundOpsPanel(props: {
   return (
     <div className="rounded-2xl border border-white/12 bg-white/5 p-3 text-white">
       <p className="text-sm font-semibold">Operação por rondas</p>
-      <p className="mt-1 text-xs text-white/70">
-        Avanço incremental com validação de runtime.
-      </p>
-
-      <div className="mt-2 grid gap-2">
-        <div className="rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-[11px] text-white/75">
-          <p>
-            Categoria:{" "}
-            <span className="font-semibold text-white">
-              {props.categoryLabel}
-            </span>
-          </p>
-          <p>
-            Formato:{" "}
-            <span className="font-semibold text-white">
-              {props.formatLabel}
-            </span>
-          </p>
-          <p className="mt-1">
-            Ronda atual:{" "}
-            <span className="font-semibold text-white">{props.roundLabel}</span>
-          </p>
-          {props.note ? (
-            <p className="mt-1 text-white/65">{props.note}</p>
-          ) : null}
-        </div>
+      <div className="mt-2 flex flex-wrap gap-1 text-[11px]">
+        <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-white/80">
+          {props.categoryLabel}
+        </span>
+        <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-white/80">
+          {props.formatLabel}
+        </span>
+        <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-white/80">
+          {props.roundLabel}
+        </span>
       </div>
+      {props.note ? (
+        <p className="mt-2 text-[11px] text-white/65">{props.note}</p>
+      ) : null}
 
       {!props.hasRuntime ? (
         <p className="mt-2 rounded-lg border border-amber-300/35 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
@@ -74,7 +61,7 @@ export function RoundOpsPanel(props: {
           disabled={!props.hasRuntime || disabled}
           className="rounded-full border border-white/20 px-3 py-2 text-sm text-white hover:border-white/35 disabled:opacity-50"
         >
-          {props.busy ? "A processar..." : "Simular avanço"}
+          {props.busy ? "A processar..." : "Simular"}
         </button>
         <button
           type="button"

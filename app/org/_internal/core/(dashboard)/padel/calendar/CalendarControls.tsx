@@ -49,8 +49,8 @@ export function CalendarControls(props: {
         </span>
       </div>
 
-      <div className="grid gap-2 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_auto_auto_auto]">
-        <label className="flex min-w-0 items-center gap-2 rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[12px] text-white/80">
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_auto_auto_auto]">
+        <label className="flex min-w-0 items-center gap-2 rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[12px] text-white/80 sm:col-span-2 xl:col-span-1">
           <span className="shrink-0 text-white/55">Torneio</span>
           <select
             value={props.eventId ? String(props.eventId) : ""}
@@ -122,7 +122,7 @@ export function CalendarControls(props: {
           buttonClassName="h-8 rounded-xl text-[12px]"
         />
 
-        <div className="inline-flex rounded-full border border-white/15 bg-white/5 p-1 text-[12px]">
+        <div className="inline-flex rounded-full border border-white/15 bg-white/5 p-1 text-[12px] sm:col-span-2 lg:col-span-3 xl:col-span-1">
           {[
             { key: "all", label: "Todos os clubes" },
             { key: "club", label: "Clube selecionado" },

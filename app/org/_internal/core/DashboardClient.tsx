@@ -1971,10 +1971,10 @@ function OrganizacaoPageInner({
       addAlert(upcomingTournamentsKpi.reason);
     }
     if (!alerts.length) {
-      addAlert("Sem alertas críticos.", false);
+      addAlert("Sem alertas críticos hoje.", false);
     }
     if (!opportunities.length) {
-      addOpportunity("Sem oportunidade clara com os dados atuais.");
+      addOpportunity("Sem oportunidades destacadas hoje.");
     }
     const recommendation = hasCriticalAlert
       ? `Prioridade: ${alerts[0]}`
@@ -3166,18 +3166,11 @@ function OrganizacaoPageInner({
               {" "}
               <div className="flex flex-wrap items-center justify-between gap-3">
                 {" "}
-                <div className="space-y-1">
+                <div>
                   {" "}
-                  <p className="text-[11px] uppercase tracking-[0.26em] text-white/70">
-                    {managePrimaryLabel}
-                  </p>{" "}
                   <h2 className="text-2xl font-semibold text-white">
-                    {" "}
-                    Gestão de {managePrimaryLabel.toLowerCase()}{" "}
+                    {managePrimaryLabel}
                   </h2>{" "}
-                  <p className="text-sm text-white/80">
-                    Pesquisa por estado e período.
-                  </p>{" "}
                 </div>{" "}
                 <Link
                   href={manageCreateMeta.href}
@@ -3205,14 +3198,11 @@ function OrganizacaoPageInner({
                         {" "}
                         <input
                           type="search"
-                          placeholder={`Procurar por ${managePrimaryLabelLower}...`}
+                          placeholder={`Pesquisar ${managePrimaryLabelLower}...`}
                           value={searchTerm}
                           onChange={(e) => setSearchTerm(e.target.value)}
                           className="flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/40"
                         />{" "}
-                        <div className="hidden text-[12px] text-white/50 md:inline">
-                          ⌘/
-                        </div>{" "}
                       </div>{" "}
                     </div>{" "}
                     <div className="flex flex-wrap items-center gap-2">
@@ -3397,7 +3387,7 @@ function OrganizacaoPageInner({
                                   </button>{" "}
                                   {categoryOptions.length === 0 && (
                                     <div className="px-2 py-2 text-[12px] text-white/45">
-                                      Sem categorias.
+                                      Sem opções.
                                     </div>
                                   )}{" "}
                                   {categoryOptions.map((cat) => (
@@ -3452,7 +3442,7 @@ function OrganizacaoPageInner({
                                   </button>{" "}
                                   {partnerClubOptions.length === 0 && (
                                     <div className="px-2 py-2 text-[12px] text-white/45">
-                                      Sem clubes.
+                                      Sem opções.
                                     </div>
                                   )}{" "}
                                   {partnerClubOptions.map((club) => (
@@ -3541,7 +3531,7 @@ function OrganizacaoPageInner({
                   <div className="relative z-10 flex flex-wrap items-center gap-2 rounded-2xl border border-white/12 bg-white/[0.04] px-3 py-2 text-[12px] text-white/80 ">
                     {" "}
                     <span className="font-semibold text-white/75">
-                      Filtros ativos ({activeFilterCount})
+                      {activeFilterCount} ativos
                     </span>{" "}
                     {eventStatusFilter !== "active" && (
                       <button
@@ -3594,7 +3584,7 @@ function OrganizacaoPageInner({
                         className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2.5 py-1 hover:border-white/40"
                       >
                         {" "}
-                        Pesquisa: “{searchTerm}” ×{" "}
+                        “{searchTerm}” ×{" "}
                       </button>
                     )}{" "}
                   </div>
@@ -3660,123 +3650,17 @@ function OrganizacaoPageInner({
                   )}{" "}
                   {!eventsListLoading && eventsList.length === 0 && (
                     <div className="rounded-2xl border border-dashed border-white/15 bg-white/5 px-4 py-8 text-center text-sm text-white/70 space-y-3">
-                      {" "}
-                      <svg
-                        viewBox="0 0 240 160"
-                        role="img"
-                        aria-label={`Sem ${managePrimaryLabelLower}s`}
-                        className="mx-auto h-32 w-32"
-                      >
-                        {" "}
-                        <defs>
-                          {" "}
-                          <linearGradient
-                            id="calendarGlow"
-                            x1="0"
-                            y1="0"
-                            x2="1"
-                            y2="1"
-                          >
-                            {" "}
-                            <stop
-                              offset="0%"
-                              stopColor="#22D3EE"
-                              stopOpacity="0.5"
-                            />{" "}
-                            <stop
-                              offset="50%"
-                              stopColor="#FF7AD1"
-                              stopOpacity="0.45"
-                            />{" "}
-                            <stop
-                              offset="100%"
-                              stopColor="#6A7BFF"
-                              stopOpacity="0.5"
-                            />{" "}
-                          </linearGradient>{" "}
-                        </defs>{" "}
-                        <rect
-                          x="32"
-                          y="34"
-                          width="176"
-                          height="104"
-                          rx="18"
-                          fill="rgba(255,255,255,0.06)"
-                          stroke="url(#calendarGlow)"
-                          strokeWidth="2"
-                        />{" "}
-                        <rect
-                          x="32"
-                          y="34"
-                          width="176"
-                          height="22"
-                          rx="12"
-                          fill="rgba(255,255,255,0.12)"
-                        />{" "}
-                        <circle
-                          cx="64"
-                          cy="30"
-                          r="8"
-                          fill="rgba(255,255,255,0.25)"
-                        />{" "}
-                        <circle
-                          cx="176"
-                          cy="30"
-                          r="8"
-                          fill="rgba(255,255,255,0.25)"
-                        />{" "}
-                        <rect
-                          x="70"
-                          y="74"
-                          width="36"
-                          height="28"
-                          rx="8"
-                          fill="rgba(255,255,255,0.12)"
-                        />{" "}
-                        <rect
-                          x="118"
-                          y="74"
-                          width="36"
-                          height="28"
-                          rx="8"
-                          fill="rgba(255,255,255,0.12)"
-                        />{" "}
-                        <rect
-                          x="166"
-                          y="74"
-                          width="28"
-                          height="28"
-                          rx="8"
-                          fill="rgba(255,255,255,0.12)"
-                        />{" "}
-                        <circle
-                          cx="54"
-                          cy="120"
-                          r="10"
-                          fill="rgba(34,211,238,0.4)"
-                        />{" "}
-                        <circle
-                          cx="186"
-                          cy="120"
-                          r="10"
-                          fill="rgba(255,122,209,0.4)"
-                        />{" "}
-                        <path
-                          d="M120 96c6 0 10-6 10-12h-20c0 6 4 12 10 12Z"
-                          fill="rgba(255,255,255,0.5)"
-                        />{" "}
-                        <path
-                          d="M112 96h16v10c0 4-4 8-8 8s-8-4-8-8V96Z"
-                          fill="rgba(255,255,255,0.25)"
-                        />{" "}
-                      </svg>{" "}
                       <p className="text-base font-semibold text-white">
-                        {" "}
-                        Ainda sem {managePrimaryLabelLower}s.{" "}
+                        Sem {managePrimaryLabelLower}s.
                       </p>{" "}
-                      <p className="text-white/65">
-                        Cria o primeiro para começar.
-                      </p>{" "}
+                      <div>
+                        <Link
+                          href={manageCreateMeta.href}
+                          className={cn(CTA_PRIMARY, "text-[12px]")}
+                        >
+                          {manageCreateMeta.label}
+                        </Link>
+                      </div>
                     </div>
                   )}{" "}
                   {!eventsListLoading &&
@@ -3788,9 +3672,7 @@ function OrganizacaoPageInner({
                           {" "}
                           Sem resultados.{" "}
                         </p>{" "}
-                        <p className="text-white/65">
-                          Troca o período ou limpa filtros.
-                        </p>{" "}
+                        <p className="text-white/65">Revê filtros.</p>{" "}
                         <div className="flex flex-wrap justify-center gap-2 text-[12px]">
                           {" "}
                           <button
@@ -3911,7 +3793,7 @@ function OrganizacaoPageInner({
                                     }
                                   : ev.status === "DRAFT"
                                     ? {
-                                        label: "Nao publicado (legado)",
+                                        label: "Rascunho",
                                         classes:
                                           "border-amber-300/60 bg-amber-500/10 text-amber-100",
                                       }
@@ -3928,10 +3810,10 @@ function OrganizacaoPageInner({
                                               "border-sky-400/60 bg-sky-500/10 text-sky-100",
                                           }
                                         : isFinished
-                                          ? {
-                                              label: "Concluído",
-                                              classes:
-                                                "border-purple-400/60 bg-purple-500/10 text-purple-100",
+                                        ? {
+                                            label: "Concluído",
+                                            classes:
+                                                "border-slate-300/50 bg-slate-400/10 text-slate-100",
                                             }
                                           : {
                                               label: ev.status,
@@ -4140,7 +4022,7 @@ function OrganizacaoPageInner({
                                 }
                               : ev.status === "DRAFT"
                                 ? {
-                                    label: "Nao publicado (legado)",
+                                    label: "Rascunho",
                                     classes:
                                       "border-amber-300/60 bg-amber-500/10 text-amber-100",
                                   }
@@ -4160,7 +4042,7 @@ function OrganizacaoPageInner({
                                       ? {
                                           label: "Concluído",
                                           classes:
-                                            "border-purple-400/60 bg-purple-500/10 text-purple-100",
+                                            "border-slate-300/50 bg-slate-400/10 text-slate-100",
                                         }
                                       : {
                                           label: ev.status,
@@ -4431,7 +4313,7 @@ function OrganizacaoPageInner({
                 <h2 className="text-2xl sm:text-3xl font-semibold text-white">
                   {" "}
                   {activeSection === "overview"
-                    ? "Resumo financeiro"
+                    ? "Visão financeira"
                     : activeSection === "vendas"
                       ? "Vendas"
                       : activeSection === "financas" &&
@@ -4443,8 +4325,8 @@ function OrganizacaoPageInner({
                           : activeSection === "invoices"
                             ? "Faturação"
                             : activeSection === "ops"
-                              ? "Operações"
-                              : "Finanças"}{" "}
+                      ? "Operações"
+                      : "Finanças"}{" "}
                 </h2>{" "}
               </div>{" "}
             </div>{" "}
@@ -4472,7 +4354,7 @@ function OrganizacaoPageInner({
                   <div
                     key={card.label}
                     className={cn(
-                      "relative overflow-hidden rounded-3xl border border-white/12 p-4 transition hover:-translate-y-0.5 hover:border-white/25 hover:",
+                      "relative overflow-hidden rounded-3xl border border-white/12 p-4 transition hover:-translate-y-0.5 hover:border-white/25",
                       "bg-white/[0.04]",
                       statGradients[idx % statGradients.length],
                     )}
@@ -4506,7 +4388,7 @@ function OrganizacaoPageInner({
                 Recibos e documentos
               </h3>{" "}
               <p className="text-[12px] text-white/65">
-                Invoices e dados fiscais.
+                Documentos fiscais.
               </p>{" "}
               <Link
                 href={
@@ -4526,10 +4408,10 @@ function OrganizacaoPageInner({
                 Transferências
               </p>{" "}
               <h3 className="text-lg font-semibold text-white">
-                Detalhe de receitas
+                Transferências e taxas
               </h3>{" "}
               <p className="text-[12px] text-white/65">
-                Detalhe de reservas e releases.
+                Fluxo financeiro.
               </p>{" "}
               <Link
                 href={
@@ -4547,7 +4429,7 @@ function OrganizacaoPageInner({
           {analyticsDimensions?.ok && (
             <div className="rounded-2xl border border-white/12 bg-white/5 px-4 py-3 text-[12px] text-white/70">
               {" "}
-              Dimensões macro/micro ativas:{" "}
+              Dimensões ativas:{" "}
               <span className="font-semibold text-white">
                 {Object.keys(analyticsDimensions.items ?? {}).length}
               </span>{" "}
@@ -4560,7 +4442,7 @@ function OrganizacaoPageInner({
               <div className="flex items-center gap-2">
                 {" "}
                 <h3 className="text-lg font-semibold">
-                  Vendas ao longo do tempo
+                  Evolução de vendas
                 </h3>{" "}
                 <span className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] text-white/70">
                   Últimos 30 dias
@@ -4621,16 +4503,9 @@ function OrganizacaoPageInner({
               {" "}
               <div>
                 {" "}
-                <p className="text-[11px] uppercase tracking-[0.3em] text-white/70">
-                  {" "}
-                  {salesUnitLabel} &amp; Vendas{" "}
-                </p>{" "}
                 <h2 className="text-2xl font-semibold text-white">
-                  Vendas por {managePrimaryLabelLower}
+                  Performance de vendas
                 </h2>{" "}
-                <p className="text-sm text-white/70">
-                  Escolhe um {managePrimaryLabelLower} para ver evolução.
-                </p>{" "}
               </div>{" "}
               <div className="flex flex-wrap items-center gap-2">
                 {" "}
@@ -4684,7 +4559,7 @@ function OrganizacaoPageInner({
                   className="w-full rounded-2xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE] focus:ring-2 focus:ring-[rgba(34,211,238,0.35)]"
                 >
                   {" "}
-                  <option value="">Seleciona</option>{" "}
+                  <option value="">Selecionar</option>{" "}
                   {eventsList.map((ev) => (
                     <option key={ev.id} value={ev.id}>
                       {" "}
@@ -4695,13 +4570,12 @@ function OrganizacaoPageInner({
               </div>{" "}
               {!eventsList.length && (
                 <span className="text-[12px] text-white/65">
-                  Sem {managePrimaryLabelLower}s.
+                  Sem itens.
                 </span>
               )}{" "}
               {selectedSalesEvent && (
                 <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] text-white/75 ">
-                  {" "}
-                  A ver: {selectedSalesEvent.title}{" "}
+                  {selectedSalesEvent.title}
                 </span>
               )}{" "}
             </div>{" "}
@@ -4710,8 +4584,7 @@ function OrganizacaoPageInner({
             {" "}
             {!salesEventId && (
               <div className="col-span-full rounded-2xl border border-dashed border-white/20 bg-black/30 p-4 text-white/70 text-sm">
-                {" "}
-                Seleciona um {managePrimaryLabelLower} para ver métricas.{" "}
+                Seleciona um item.
               </div>
             )}{" "}
             {salesLoading && (
@@ -4735,7 +4608,7 @@ function OrganizacaoPageInner({
               salesSeries.points?.length === 0 && (
                 <div className="col-span-full rounded-2xl border border-dashed border-white/20 bg-black/30 p-4 text-white/70 text-sm">
                   {" "}
-                  Sem dados neste período.{" "}
+                  Sem dados no período.{" "}
                 </div>
               )}{" "}
             {!salesLoading &&
@@ -4829,7 +4702,7 @@ function OrganizacaoPageInner({
                 </div>
               ) : !salesEventId ? (
                 <span className="text-white/40 text-xs">
-                  Escolhe um {managePrimaryLabelLower}.
+                  Seleciona um item.
                 </span>
               ) : salesSeries?.points?.length ? (
                 <SalesAreaChart
@@ -4863,15 +4736,12 @@ function OrganizacaoPageInner({
               <div>
                 {" "}
                 <h3 className="text-lg font-semibold">
-                  {managePrimaryLabel} com mais vendas
+                  Top por receita
                 </h3>{" "}
-                <p className="text-[11px] text-white/60">Maior receita.</p>{" "}
               </div>{" "}
             </div>{" "}
             {topEvents.length === 0 && (
-              <p className="text-sm text-white/60">
-                Sem {managePrimaryLabelLower}s com vendas.
-              </p>
+              <p className="text-sm text-white/60">Sem vendas registadas.</p>
             )}{" "}
             {topEvents.length > 0 && (
               <div className="overflow-auto">
@@ -4903,7 +4773,7 @@ function OrganizacaoPageInner({
                             }
                           : ev.status === "DRAFT"
                             ? {
-                                label: "Nao publicado (legado)",
+                                label: "Rascunho",
                                 classes:
                                   "border-amber-300/60 bg-amber-500/10 text-amber-100",
                               }
@@ -4967,9 +4837,6 @@ function OrganizacaoPageInner({
               <div>
                 {" "}
                 <h3 className="text-lg font-semibold">Compradores</h3>{" "}
-                <p className="text-[11px] text-white/60">
-                  Lista rápida. Exporta CSV.
-                </p>{" "}
               </div>{" "}
               <button
                 type="button"
@@ -5040,7 +4907,7 @@ function OrganizacaoPageInner({
             )}{" "}
             {!buyersLoading && !salesEventId && (
               <p className="text-sm text-white/60">
-                Escolhe um {managePrimaryLabelLower}.
+                Seleciona um item.
               </p>
             )}{" "}
             {!buyersLoading &&
@@ -5056,7 +4923,7 @@ function OrganizacaoPageInner({
               buyers &&
               buyers.ok !== false &&
               buyersItems.length === 0 && (
-                <p className="text-sm text-white/60">Sem compras.</p>
+                <p className="text-sm text-white/60">Sem compras registadas.</p>
               )}{" "}
             {!buyersLoading &&
               salesEventId &&

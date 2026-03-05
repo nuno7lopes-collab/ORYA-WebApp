@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { formatDateTime, resolveLocale, t } from "@/lib/i18n";
 import useSWR from "swr";
@@ -111,6 +111,26 @@ type ImportSummary = {
 type ImportPreview = {
   categories?: Record<string, number>;
   validRows?: number;
+};
+type WaitlistItem = {
+  id: number;
+  status: string;
+  user?: {
+    fullName?: string | null;
+    username?: string | null;
+  } | null;
+  category?: {
+    label?: string | null;
+  } | null;
+};
+type GroupsConfig = Record<string, unknown> & {
+  groupCount?: number | null;
+  groupSize?: number | null;
+  qualifyPerGroup?: number | null;
+  extraQualifiers?: number | null;
+  seeding?: "SNAKE" | "NONE";
+  mode?: "AUTO" | "MANUAL";
+  manualAssignments?: Record<string, string> | null;
 };
 type AuditItem = {
   id: string;
@@ -397,9 +417,35 @@ export default function PadelTournamentTabs({
   const [broadcastBusy, setBroadcastBusy] = useState(false);
   const [broadcastResult, setBroadcastResult] = useState<string | null>(null);
   const [broadcastError, setBroadcastError] = useState<string | null>(null);
+  const configMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const flashConfigMessage = useCallback(
+    (message: string, durationMs = 2000) => {
+      setConfigMessage(message);
+      if (configMessageTimerRef.current) {
+        clearTimeout(configMessageTimerRef.current);
+        configMessageTimerRef.current = null;
+      }
+      if (durationMs <= 0) return;
+      configMessageTimerRef.current = setTimeout(() => {
+        setConfigMessage(null);
+        configMessageTimerRef.current = null;
+      }, durationMs);
+    },
+    [],
+  );
   useEffect(() => {
     setCoverUrl(coverImageUrl ?? null);
   }, [coverImageUrl]);
+  useEffect(() => {
+    return () => {
+      if (configMessageTimerRef.current) {
+        clearTimeout(configMessageTimerRef.current);
+        configMessageTimerRef.current = null;
+      }
+    };
+  }, []);
   const saveCoverImage = useCallback(
     async (nextCoverUrl: string | null) => {
       setCoverUrl(nextCoverUrl);
@@ -420,21 +466,22 @@ export default function PadelTournamentTabs({
             ),
           );
         }
-        setConfigMessage("Capa atualizada.");
+        flashConfigMessage("Capa atualizada.");
       } catch (err) {
-        setConfigMessage(
+        flashConfigMessage(
           err instanceof Error
             ? sanitizeUiErrorMessage(
                 err.message,
                 "Falha ao atualizar capa do torneio.",
               )
             : "Falha ao atualizar capa do torneio.",
+          2500,
         );
       } finally {
         setCoverSaving(false);
       }
     },
-    [eventId, organizationId],
+    [eventId, flashConfigMessage, organizationId],
   );
   const { data: eventCategoriesRes } = useSWR<{
     ok?: boolean;
@@ -611,11 +658,11 @@ export default function PadelTournamentTabs({
     );
   }, [standings]);
   const waitlistItems = Array.isArray(waitlistRes?.items)
-    ? (waitlistRes.items as Array<any>)
+    ? (waitlistRes.items as WaitlistItem[])
     : [];
   const advanced = (configRes?.config?.advancedSettings || {}) as Record<
     string,
-    any
+    unknown
   >;
   const ruleSets = Array.isArray(ruleSetsRes?.items)
     ? (ruleSetsRes.items as PadelRuleSetSummary[])
@@ -861,15 +908,6 @@ export default function PadelTournamentTabs({
     matches.length > 0
       ? Math.round((scheduledMatchesCount / matches.length) * 100)
       : 0;
-  const formatExecutionHint = supportsGroups
-    ? "Fluxo recomendado: gerar grupos, gerar eliminatórias e depois auto-agendar no calendário."
-    : supportsKnockout
-      ? "Fluxo recomendado: gerar quadro eliminatório e depois auto-agendar no calendário."
-      : isNonStopFormat
-        ? "Fluxo recomendado: gerar ronda inicial NON_STOP, operar avanço de ronda e auto-agendar no calendário."
-        : isAmMxFormat
-          ? "Fluxo recomendado: gerar ronda inicial, avançar ronda a ronda e auto-agendar no calendário."
-          : "Fluxo recomendado: gerar rondas e depois auto-agendar no calendário.";
   const calendarReadinessHint =
     matches.length === 0
       ? "Sem jogos gerados."
@@ -1513,7 +1551,8 @@ export default function PadelTournamentTabs({
       [matchId]: { ...prev[matchId], ...patch },
     }));
   };
-  const groupsConfig = (advanced.groupsConfig as Record<string, any>) || {};
+  const groupsConfig =
+    (advanced.groupsConfig as GroupsConfig | undefined) || {};
   const groupMode = groupsConfig.mode === "MANUAL" ? "MANUAL" : "AUTO";
   const manualAssignments =
     (groupsConfig.manualAssignments as Record<string, string> | undefined) ??
@@ -1762,16 +1801,7 @@ export default function PadelTournamentTabs({
       koRounds[koRounds.length - 1];
     return resolveWinner(finalRound ?? null);
   }, [koRounds]);
-  async function saveGroupsConfig(
-    update: Partial<{
-      groupCount: number | null;
-      qualifyPerGroup: number | null;
-      extraQualifiers: number | null;
-      seeding: "SNAKE" | "NONE";
-      mode: "AUTO" | "MANUAL";
-      manualAssignments: Record<string, string> | null;
-    }>,
-  ) {
+  async function saveGroupsConfig(update: Partial<GroupsConfig>) {
     const organizationId = configRes?.config?.organizationId;
     const format = generationFormatBase;
     if (!organizationId || !eventId) return;
@@ -1787,12 +1817,10 @@ export default function PadelTournamentTabs({
       }),
     });
     if (res.ok) {
-      setConfigMessage("Configuração guardada.");
       mutateConfig();
-      setTimeout(() => setConfigMessage(null), 2000);
+      flashConfigMessage("Configuração guardada.");
     } else {
-      setConfigMessage("Erro ao guardar configuração.");
-      setTimeout(() => setConfigMessage(null), 2500);
+      flashConfigMessage("Erro ao guardar configuração.", 2500);
     }
   }
   async function saveScoreRules(
@@ -1819,12 +1847,10 @@ export default function PadelTournamentTabs({
       body: JSON.stringify(payload),
     });
     if (res.ok) {
-      setConfigMessage("Regras de score guardadas.");
       mutateConfig();
-      setTimeout(() => setConfigMessage(null), 2000);
+      flashConfigMessage("Regras de score guardadas.");
     } else {
-      setConfigMessage("Erro ao guardar regras de score.");
-      setTimeout(() => setConfigMessage(null), 2500);
+      flashConfigMessage("Erro ao guardar regras de score.", 2500);
     }
   }
   async function clearCategoryScoreRulesOverride() {
@@ -1843,12 +1869,10 @@ export default function PadelTournamentTabs({
       }),
     });
     if (res.ok) {
-      setConfigMessage("Override de score removido da categoria.");
       mutateConfig();
-      setTimeout(() => setConfigMessage(null), 2000);
+      flashConfigMessage("Override de score removido da categoria.");
     } else {
-      setConfigMessage("Erro ao remover override de score.");
-      setTimeout(() => setConfigMessage(null), 2500);
+      flashConfigMessage("Erro ao remover override de score.", 2500);
     }
   }
   async function saveLiveWorkflowConfig(
@@ -1870,12 +1894,10 @@ export default function PadelTournamentTabs({
       body: JSON.stringify({ organizationId, eventId, format, ...patch }),
     });
     if (res.ok) {
-      setConfigMessage("Fluxo live guardado.");
       mutateConfig();
-      setTimeout(() => setConfigMessage(null), 2000);
+      flashConfigMessage("Fluxo live guardado.");
     } else {
-      setConfigMessage("Erro ao guardar fluxo live.");
-      setTimeout(() => setConfigMessage(null), 2500);
+      flashConfigMessage("Erro ao guardar fluxo live.", 2500);
     }
   }
   async function saveFormatProfileConfig(
@@ -1892,8 +1914,7 @@ export default function PadelTournamentTabs({
     const format = generationFormatBase;
     if (!organizationId || !eventId) return;
     if (!isAdminRole) {
-      setConfigMessage("Sem permissões para editar perfil de formato.");
-      setTimeout(() => setConfigMessage(null), 2500);
+      flashConfigMessage("Sem permissões para editar perfil de formato.", 2500);
       return;
     }
     const targetKey =
@@ -1975,12 +1996,10 @@ export default function PadelTournamentTabs({
       }),
     });
     if (res.ok) {
-      setConfigMessage("Formato do torneio guardado.");
       mutateConfig();
-      setTimeout(() => setConfigMessage(null), 2000);
+      flashConfigMessage("Formato do torneio guardado.");
     } else {
-      setConfigMessage("Erro ao guardar perfil por formato.");
-      setTimeout(() => setConfigMessage(null), 2500);
+      flashConfigMessage("Erro ao guardar perfil por formato.", 2500);
     }
   }
   async function applyTemplate(template: {
@@ -2012,12 +2031,10 @@ export default function PadelTournamentTabs({
       }),
     });
     if (res.ok) {
-      setConfigMessage(`Modelo"${template.label}" aplicado.`);
+      flashConfigMessage(`Modelo "${template.label}" aplicado.`);
       mutateConfig();
-      setTimeout(() => setConfigMessage(null), 2000);
     } else {
-      setConfigMessage("Erro ao aplicar modelo.");
-      setTimeout(() => setConfigMessage(null), 2500);
+      flashConfigMessage("Erro ao aplicar modelo.", 2500);
     }
   }
   async function generateMatches(phase: "GROUPS" | "KNOCKOUT") {
@@ -2294,12 +2311,10 @@ export default function PadelTournamentTabs({
       }),
     });
     if (res.ok) {
-      setConfigMessage("Monitor atualizado.");
       mutateConfig();
-      setTimeout(() => setConfigMessage(null), 2000);
+      flashConfigMessage("Monitor atualizado.");
     } else {
-      setConfigMessage("Erro ao atualizar monitor.");
-      setTimeout(() => setConfigMessage(null), 2500);
+      flashConfigMessage("Erro ao atualizar monitor.", 2500);
     }
   }
   async function toggleWaitlist(next: boolean) {
@@ -2318,12 +2333,10 @@ export default function PadelTournamentTabs({
       }),
     });
     if (res.ok) {
-      setConfigMessage("Configuração guardada.");
       mutateConfig();
-      setTimeout(() => setConfigMessage(null), 2000);
+      flashConfigMessage("Configuração guardada.");
     } else {
-      setConfigMessage("Erro ao guardar configuração.");
-      setTimeout(() => setConfigMessage(null), 2500);
+      flashConfigMessage("Erro ao guardar configuração.", 2500);
     }
   }
   const canSubmitSwap =
@@ -2447,10 +2460,9 @@ export default function PadelTournamentTabs({
       }),
     });
     if (res.ok) {
-      setConfigMessage("Entrada promovida com sucesso.");
       mutateConfig();
       mutateWaitlist();
-      setTimeout(() => setConfigMessage(null), 2000);
+      flashConfigMessage("Entrada promovida com sucesso.");
     } else {
       const data = await res.json().catch(() => null);
       const error =
@@ -2473,8 +2485,7 @@ export default function PadelTournamentTabs({
                         : data?.error === "TOURNAMENT_STARTED"
                           ? "Torneio já começou."
                           : "Falha a promover waitlist.";
-      setConfigMessage(error);
-      setTimeout(() => setConfigMessage(null), 2500);
+      flashConfigMessage(error, 2500);
     }
   }
   async function saveRegistrationWindow(payload: {
@@ -2495,8 +2506,10 @@ export default function PadelTournamentTabs({
         !Number.isNaN(e.getTime()) &&
         e.getTime() <= s.getTime()
       ) {
-        setConfigMessage("A data de fecho deve ser depois da abertura.");
-        setTimeout(() => setConfigMessage(null), 2500);
+        flashConfigMessage(
+          "A data de fecho deve ser depois da abertura.",
+          2500,
+        );
         return;
       }
     }
@@ -2512,12 +2525,10 @@ export default function PadelTournamentTabs({
       }),
     });
     if (res.ok) {
-      setConfigMessage("Configuração guardada.");
       mutateConfig();
-      setTimeout(() => setConfigMessage(null), 2000);
+      flashConfigMessage("Configuração guardada.");
     } else {
-      setConfigMessage("Erro ao guardar configuração.");
-      setTimeout(() => setConfigMessage(null), 2500);
+      flashConfigMessage("Erro ao guardar configuração.", 2500);
     }
   }
   async function savePolicy(update: {
@@ -2534,12 +2545,10 @@ export default function PadelTournamentTabs({
       body: JSON.stringify({ organizationId, eventId, format, ...update }),
     });
     if (res.ok) {
-      setConfigMessage("Configuração guardada.");
       mutateConfig();
-      setTimeout(() => setConfigMessage(null), 2000);
+      flashConfigMessage("Configuração guardada.");
     } else {
-      setConfigMessage("Erro ao guardar configuração.");
-      setTimeout(() => setConfigMessage(null), 2500);
+      flashConfigMessage("Erro ao guardar configuração.", 2500);
     }
   }
   async function saveCompetitionState(next: string) {
@@ -2558,12 +2567,10 @@ export default function PadelTournamentTabs({
       }),
     });
     if (res.ok) {
-      setConfigMessage("Estado atualizado.");
       mutateConfig();
-      setTimeout(() => setConfigMessage(null), 2000);
+      flashConfigMessage("Estado atualizado.");
     } else {
-      setConfigMessage("Erro ao atualizar estado.");
-      setTimeout(() => setConfigMessage(null), 2500);
+      flashConfigMessage("Erro ao atualizar estado.", 2500);
     }
   }
   async function saveRuleSetId(nextId: number | null) {
@@ -2582,12 +2589,10 @@ export default function PadelTournamentTabs({
       }),
     });
     if (res.ok) {
-      setConfigMessage("Regras guardadas.");
       mutateConfig();
-      setTimeout(() => setConfigMessage(null), 2000);
+      flashConfigMessage("Regras guardadas.");
     } else {
-      setConfigMessage("Erro ao guardar regras.");
-      setTimeout(() => setConfigMessage(null), 2500);
+      flashConfigMessage("Erro ao guardar regras.", 2500);
     }
   }
   async function saveSeedRank(pairingId: number, value: number | null) {
@@ -2612,12 +2617,10 @@ export default function PadelTournamentTabs({
       }),
     });
     if (res.ok) {
-      setConfigMessage("Seeds guardadas.");
       mutateConfig();
-      setTimeout(() => setConfigMessage(null), 2000);
+      flashConfigMessage("Seeds guardadas.");
     } else {
-      setConfigMessage("Erro ao guardar seeds.");
-      setTimeout(() => setConfigMessage(null), 2500);
+      flashConfigMessage("Erro ao guardar seeds.", 2500);
     }
   }
   async function generateSeedsFromRanking() {
@@ -2632,19 +2635,20 @@ export default function PadelTournamentTabs({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        setConfigMessage(
+        flashConfigMessage(
           sanitizeUiErrorMessage(json?.error, "Erro ao gerar seeds."),
+          2500,
         );
-        setTimeout(() => setConfigMessage(null), 2500);
         return;
       }
-      setConfigMessage("Seeds geradas automaticamente com base no ranking.");
       mutateConfig();
-      setTimeout(() => setConfigMessage(null), 2200);
+      flashConfigMessage(
+        "Seeds geradas automaticamente com base no ranking.",
+        2200,
+      );
     } catch (err) {
       console.error("[padel/seeds] generate", err);
-      setConfigMessage("Erro ao gerar seeds.");
-      setTimeout(() => setConfigMessage(null), 2500);
+      flashConfigMessage("Erro ao gerar seeds.", 2500);
     } finally {
       setSeedingBusy(false);
     }
@@ -2659,7 +2663,15 @@ export default function PadelTournamentTabs({
       e.target.value = "";
       return;
     }
-    saveGroupsConfig({ [key]: val } as any);
+    if (key === "groupCount") {
+      saveGroupsConfig({ groupCount: val });
+      return;
+    }
+    if (key === "qualifyPerGroup") {
+      saveGroupsConfig({ qualifyPerGroup: val });
+      return;
+    }
+    saveGroupsConfig({ extraQualifiers: val });
   };
   async function submitResult(matchId: number) {
     const draft = resultDrafts[matchId];
@@ -3634,7 +3646,13 @@ export default function PadelTournamentTabs({
             subtitle="Capa do torneio"
           />
           {coverSaving ? (
-            <p className="text-[11px] text-white/60">A guardar capa...</p>
+            <p
+              role="status"
+              aria-live="polite"
+              className="text-[11px] text-white/60"
+            >
+              A guardar capa...
+            </p>
           ) : null}
         </div>
       }
@@ -4094,7 +4112,13 @@ export default function PadelTournamentTabs({
                   : `Configuração de ${groupsTabLabel.toLowerCase()}`}
               </p>
               {configMessage && (
-                <p className="text-[12px] text-white/70">{configMessage}</p>
+                <p
+                  role="status"
+                  aria-live="polite"
+                  className="text-[12px] text-white/70"
+                >
+                  {configMessage}
+                </p>
               )}
               <div className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/80">
                 <div>
@@ -4128,13 +4152,19 @@ export default function PadelTournamentTabs({
                 </button>
               </div>
               {generationPhase === "GROUPS" && generationError && (
-                <p className="text-[12px] text-red-200">{generationError}</p>
+                <p role="alert" className="text-[12px] text-red-200">
+                  {generationError}
+                </p>
               )}
               {generationPhase === "GROUPS" &&
                 generationError &&
                 renderGenerationPlanPanel()}
               {generationPhase === "GROUPS" && generationMessage && (
-                <p className="text-[12px] text-emerald-200">
+                <p
+                  role="status"
+                  aria-live="polite"
+                  className="text-[12px] text-emerald-200"
+                >
                   {generationMessage}
                 </p>
               )}
@@ -4555,7 +4585,10 @@ export default function PadelTournamentTabs({
                         defaultValue={groupsConfig.seeding ?? "SNAKE"}
                         className="rounded-lg border border-white/15 bg-black/30 px-2 py-1"
                         onChange={(e) =>
-                          saveGroupsConfig({ seeding: e.target.value as any })
+                          saveGroupsConfig({
+                            seeding:
+                              e.target.value === "NONE" ? "NONE" : "SNAKE",
+                          })
                         }
                       >
                         <option value="SNAKE">Snake (equilibrado)</option>
@@ -4744,12 +4777,16 @@ export default function PadelTournamentTabs({
                     {broadcastBusy ? "A enviar..." : "Enviar mensagem"}
                   </button>
                   {broadcastResult && (
-                    <span className="text-[11px] text-emerald-200">
+                    <span
+                      role="status"
+                      aria-live="polite"
+                      className="text-[11px] text-emerald-200"
+                    >
                       {broadcastResult}
                     </span>
                   )}
                   {broadcastError && (
-                    <span className="text-[11px] text-rose-200">
+                    <span role="alert" className="text-[11px] text-rose-200">
                       {broadcastError}
                     </span>
                   )}
@@ -4890,12 +4927,16 @@ export default function PadelTournamentTabs({
                     {swapBusy ? "A trocar..." : "Trocar parceiros"}
                   </button>
                   {swapMessage && (
-                    <span className="text-[11px] text-emerald-200">
+                    <span
+                      role="status"
+                      aria-live="polite"
+                      className="text-[11px] text-emerald-200"
+                    >
                       {swapMessage}
                     </span>
                   )}
                   {swapError && (
-                    <span className="text-[11px] text-rose-200">
+                    <span role="alert" className="text-[11px] text-rose-200">
                       {swapError}
                     </span>
                   )}
@@ -4958,10 +4999,19 @@ export default function PadelTournamentTabs({
                   </p>
                 )}
                 {importMessage && (
-                  <p className="text-[11px] text-white/70">{importMessage}</p>
+                  <p
+                    role="status"
+                    aria-live="polite"
+                    className="text-[11px] text-white/70"
+                  >
+                    {importMessage}
+                  </p>
                 )}
                 {importErrors.length > 0 && (
-                  <div className="max-h-40 space-y-1 overflow-auto rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-[11px] text-white/70">
+                  <div
+                    role="alert"
+                    className="max-h-40 space-y-1 overflow-auto rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-[11px] text-white/70"
+                  >
                     {importErrors.map((err, idx) => (
                       <p key={`import-err-${err.row}-${idx}`}>
                         Linha {err.row} {err.field ? ` · ${err.field}` : ""}:
@@ -5086,7 +5136,7 @@ export default function PadelTournamentTabs({
                       Promover próximo
                     </button>
                   </div>
-                  {waitlistItems.map((item: any) => (
+                  {waitlistItems.map((item) => (
                     <div
                       key={`wait-${item.id}`}
                       className="flex items-center justify-between gap-2 text-[12px]"
@@ -5255,13 +5305,19 @@ export default function PadelTournamentTabs({
                 </button>
               </div>
               {generationPhase === "KNOCKOUT" && generationError && (
-                <p className="text-[12px] text-red-200">{generationError}</p>
+                <p role="alert" className="text-[12px] text-red-200">
+                  {generationError}
+                </p>
               )}
               {generationPhase === "KNOCKOUT" &&
                 generationError &&
                 renderGenerationPlanPanel()}
               {generationPhase === "KNOCKOUT" && generationMessage && (
-                <p className="text-[12px] text-emerald-200">
+                <p
+                  role="status"
+                  aria-live="polite"
+                  className="text-[12px] text-emerald-200"
+                >
                   {generationMessage}
                 </p>
               )}
@@ -5283,7 +5339,13 @@ export default function PadelTournamentTabs({
                 </p>
               )}
               {koEditMessage && (
-                <p className="text-[11px] text-white/70">{koEditMessage}</p>
+                <p
+                  role="status"
+                  aria-live="polite"
+                  className="text-[11px] text-white/70"
+                >
+                  {koEditMessage}
+                </p>
               )}
               {koRounds.length === 0 && (
                 <p className="text-sm text-white/70">Sem eliminatórias.</p>

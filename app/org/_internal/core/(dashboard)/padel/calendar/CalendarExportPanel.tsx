@@ -10,10 +10,7 @@ export function CalendarExportPanel(props: {
 }) {
   return (
     <div className="space-y-3 rounded-2xl border border-white/12 bg-white/[0.04] p-4 text-white">
-      <p className="text-sm font-semibold text-white">Exportar</p>
-      <p className="text-[12px] text-white/65">
-        Partilha a agenda com equipas e árbitros.
-      </p>
+      <p className="text-sm font-semibold text-white">Exportação</p>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {props.links.map((link) => {
           const disabled = !props.eventId;
@@ -31,11 +28,6 @@ export function CalendarExportPanel(props: {
           );
         })}
       </div>
-      {!props.eventId ? (
-        <p className="text-[12px] text-white/55">
-          Seleciona um torneio para exportar.
-        </p>
-      ) : null}
     </div>
   );
 }

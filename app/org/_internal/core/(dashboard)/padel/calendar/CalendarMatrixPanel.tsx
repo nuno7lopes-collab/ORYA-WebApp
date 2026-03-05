@@ -137,7 +137,7 @@ export function CalendarMatrixPanel(props: {
   };
 }) {
   return (
-    <div className="min-h-[420px] rounded-2xl border border-dashed border-white/15 bg-black/25 p-4 text-white/70">
+    <div className="min-h-[420px] rounded-2xl border border-white/12 bg-black/25 p-4 text-white/70">
       <div className="flex items-center justify-between">
         <p className="text-sm font-semibold text-white">
           Agenda por campo
@@ -236,21 +236,21 @@ export function CalendarMatrixPanel(props: {
             }
             side={
               <>
-                <DiagnosticsPanel
-                  warnings={props.warnings}
-                  conflictsCount={props.conflictsCount}
-                  occupancyLegend={props.occupancyLegend}
-                  arbitrationPolicy={props.arbitrationPolicy}
-                  byCategory={props.byCategory}
-                />
-                <AutoScheduleRunStatusPanel run={props.latestRun ?? null} />
-                <UnscheduledQueue rows={props.unscheduledRows} />
                 <AutoSchedulePanel
                   busy={props.autoScheduling}
                   onGenerate={props.onGenerate}
                   onSimulate={props.onSimulate}
                   onApply={props.onApply}
                   onUndo={props.onUndoLastRun}
+                />
+                <AutoScheduleRunStatusPanel run={props.latestRun ?? null} />
+                <UnscheduledQueue rows={props.unscheduledRows} />
+                <DiagnosticsPanel
+                  warnings={props.warnings}
+                  conflictsCount={props.conflictsCount}
+                  occupancyLegend={props.occupancyLegend}
+                  arbitrationPolicy={props.arbitrationPolicy}
+                  byCategory={props.byCategory}
                 />
                 <RoundOpsPanel
                   categoryLabel={props.roundOps.categoryLabel}

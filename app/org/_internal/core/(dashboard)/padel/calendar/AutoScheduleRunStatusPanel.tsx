@@ -94,7 +94,7 @@ export function AutoScheduleRunStatusPanel(props: {
             ) : null}
             {(run.byCategory ?? []).slice(0, 4).map((row) => (
               <p key={`run-category-${row.categoryId ?? "global"}`}>
-                {row.categoryLabel || row.categoryId || "global"}:{" "}
+                {row.categoryLabel || row.categoryId || "Global"}:{" "}
                 {row.scheduledCount}/{row.scheduledCount + row.skippedCount}
               </p>
             ))}

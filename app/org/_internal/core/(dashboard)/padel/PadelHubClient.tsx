@@ -679,6 +679,11 @@ const AUTO_SCHEDULE_REASON_LABELS_PT: Record<string, string> = {
   NO_SLOT_AVAILABLE: "Sem slot disponível",
   COURT_NOT_AVAILABLE: "Campo indisponível",
 };
+const TOURNAMENT_CONFLICT_POLICY_LABELS: Record<string, string> = {
+  CASCADE_SAME_COURT: "Cascata no mesmo campo",
+  REJECT_ON_CONFLICT: "Rejeitar em conflito",
+  FORCE_OVERRIDE: "Forçar exceção",
+};
 
 const resolvePadelTabParam = (
   value: string | null,
@@ -7861,14 +7866,14 @@ export default function PadelHubClient({
               conflictsCount={calendarConflicts.length}
               occupancyLegend={calendarOccupancyLegend}
               arbitrationPolicy={calendarArbitrationPolicy}
-              byCategory={autoScheduleByCategory.map((row) => ({
-                ...row,
-                categoryLabel:
-                  row.categoryId === null
-                    ? "global"
+                byCategory={autoScheduleByCategory.map((row) => ({
+                  ...row,
+                  categoryLabel:
+                    row.categoryId === null
+                    ? "Global"
                     : eventCategoryLabelById.get(row.categoryId) ||
                       `#${row.categoryId}`,
-              }))}
+                }))}
               unscheduledRows={calendarUnscheduledRows}
               autoScheduling={autoScheduling}
               onGenerate={generateCalendarMatches}
@@ -7927,9 +7932,6 @@ export default function PadelHubClient({
                     <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">
                       Bloqueio em lote
                     </p>
-                    <p className="text-[12px] text-white/70">
-                      Aplica bloqueios em vários campos.
-                    </p>
                   </div>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     <label className="space-y-1 text-[12px] text-white/65">
@@ -7970,10 +7972,10 @@ export default function PadelHubClient({
                         className="w-full rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-white"
                       >
                         <option value="CASCADE_SAME_COURT">
-                          CASCADE_SAME_COURT
+                          {TOURNAMENT_CONFLICT_POLICY_LABELS.CASCADE_SAME_COURT}
                         </option>
                         <option value="REJECT_ON_CONFLICT">
-                          REJECT_ON_CONFLICT
+                          {TOURNAMENT_CONFLICT_POLICY_LABELS.REJECT_ON_CONFLICT}
                         </option>
                       </select>
                     </label>
@@ -8026,7 +8028,7 @@ export default function PadelHubClient({
                     disabled={bulkBlockBusy || !eventId}
                     className={CTA_PAD_PRIMARY_SM}
                   >
-                    {bulkBlockBusy ? "A aplicar…" : "Criar bloqueio em lote"}
+                    {bulkBlockBusy ? "A aplicar…" : "Criar bloqueio"}
                   </button>
                 </div>
 
@@ -8034,9 +8036,6 @@ export default function PadelHubClient({
                   <div>
                     <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">
                       Override auditável
-                    </p>
-                    <p className="text-[12px] text-white/70">
-                      Regista exceções auditáveis.
                     </p>
                   </div>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -8076,9 +8075,11 @@ export default function PadelHubClient({
                         className="w-full rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-white"
                       >
                         <option value="REJECT_ON_CONFLICT">
-                          REJECT_ON_CONFLICT
+                          {TOURNAMENT_CONFLICT_POLICY_LABELS.REJECT_ON_CONFLICT}
                         </option>
-                        <option value="FORCE_OVERRIDE">FORCE_OVERRIDE</option>
+                        <option value="FORCE_OVERRIDE">
+                          {TOURNAMENT_CONFLICT_POLICY_LABELS.FORCE_OVERRIDE}
+                        </option>
                       </select>
                     </label>
                     <label className="space-y-1 text-[12px] text-white/65">
@@ -8123,7 +8124,7 @@ export default function PadelHubClient({
                   </button>
                   <div className="rounded-xl border border-white/10 bg-black/20 p-2">
                     <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">
-                      Histórico recente
+                      Registos recentes
                     </p>
                     <div className="mt-2 space-y-1 text-[12px] text-white/70">
                       {tournamentOverrides.length === 0 && (
@@ -8132,7 +8133,12 @@ export default function PadelHubClient({
                       {tournamentOverrides.slice(0, 5).map((item) => (
                         <p key={`override-${item.auditId}`}>
                           {item.reasonCode || "—"} ·{" "}
-                          {item.conflictPolicy || "—"} ·{" "}
+                          {item.conflictPolicy
+                            ? TOURNAMENT_CONFLICT_POLICY_LABELS[
+                                item.conflictPolicy
+                              ] || item.conflictPolicy
+                            : "—"}{" "}
+                          ·{" "}
                           {item.createdAt
                             ? formatShortDate(item.createdAt)
                             : "—"}
@@ -9354,7 +9360,7 @@ export default function PadelHubClient({
                         >
                           {coach.professionalId &&
                           coach.professionalIsActive === true
-                            ? "Profissional ativo"
+                            ? "Ativo na Academia"
                             : "Inativo na Academia"}
                         </span>
                       </div>
@@ -9449,7 +9455,7 @@ export default function PadelHubClient({
             lessonServices.length === 0 && (
               <div className="rounded-2xl border border-white/15 bg-white/5 p-6 text-white ">
                 <p className="text-lg font-semibold">Sem aulas no catálogo.</p>
-                <p className="text-sm text-white/70">Cria a primeira aula na Academia.</p>
+                <p className="text-sm text-white/70">Cria a primeira aula.</p>
                 <div className="mt-4">
                   <Link
                     href={
@@ -9519,35 +9525,6 @@ export default function PadelHubClient({
             </div>
           )}
 
-          {!lessonsErrorLabel && (
-            <div className="rounded-2xl border border-white/12 bg-white/5 p-4 space-y-2">
-              <div>
-                <p className="text-sm font-semibold text-white">Gestão de aulas na Academia</p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Link
-                  href={
-                    organizationId
-                      ? buildOrgHref(organizationId, "/academy/classes/new")
-                      : buildOrgHubHref("/organizations")
-                  }
-                  className={CTA_PAD_PRIMARY_SM}
-                >
-                  Nova aula
-                </Link>
-                <Link
-                  href={
-                    organizationId
-                      ? buildOrgHref(organizationId, "/academy/trainers")
-                      : buildOrgHubHref("/organizations")
-                  }
-                  className={CTA_SECONDARY}
-                >
-                  Gerir treinadores
-                </Link>
-              </div>
-            </div>
-          )}
         </div>
       )}
 

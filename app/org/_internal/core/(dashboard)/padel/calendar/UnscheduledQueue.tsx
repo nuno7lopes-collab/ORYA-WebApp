@@ -8,7 +8,7 @@ export function UnscheduledQueue(props: {
       {props.rows.length === 0 ? (
         <p className="mt-2 text-[12px] text-white/65">Sem pendentes.</p>
       ) : (
-        <div className="mt-2 space-y-1 text-[12px] text-white/75">
+        <div className="mt-2 max-h-52 space-y-1 overflow-y-auto pr-1 text-[12px] text-white/75 orya-scrollbar-hide">
           {props.rows.map((row) => (
             <div
               key={row.label}

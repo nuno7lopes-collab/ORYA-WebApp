@@ -51,6 +51,9 @@ const DEFAULT_CURRENCY = "EUR";
 const DEFAULT_LOCATION_MODE: LocationMode = "FIXED";
 const DURATION_OPTIONS = [30, 60, 90, 120];
 const DAY_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"];
+const CONTROL_BASE =
+  "w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2.5 text-sm text-white outline-none transition focus:border-cyan-300/70 focus:ring-2 focus:ring-cyan-300/20";
+const PANEL_BASE = "rounded-2xl border border-white/10 bg-white/[0.03]";
 
 const WIZARD_STEPS = [
   {
@@ -157,7 +160,7 @@ function mapSeriesApiErrorToMessage(parsedError: { errorCode: string | null; mes
   return parsedError.message;
 }
 
-export default function NovaAulaPage() {
+export default function ClassCreationWizard() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -739,7 +742,7 @@ export default function NovaAulaPage() {
         <div className="space-y-2">
           <p className={DASHBOARD_LABEL}>Academia</p>
           <h1 className="text-3xl font-semibold text-white">Nova aula</h1>
-          <p className={DASHBOARD_MUTED}>Fluxo único para aula única ou recorrente.</p>
+          <p className={DASHBOARD_MUTED}>Aula única e recorrente no mesmo fluxo.</p>
         </div>
 
         <section className={cn(DASHBOARD_CARD, "overflow-hidden p-0")}>
@@ -775,7 +778,7 @@ export default function NovaAulaPage() {
                     )}
                   >
                     <p className={cn("text-sm font-semibold", isActive ? "text-white" : "text-white/85")}>{step.title}</p>
-                    <p className="text-[11px] text-white/55">{isDone ? "Concluído" : step.subtitle}</p>
+                    <p className="text-[11px] text-white/55">{isDone ? "Feito" : step.subtitle}</p>
                   </button>
                 );
               })}
@@ -790,7 +793,7 @@ export default function NovaAulaPage() {
                     <label className="space-y-1.5 text-sm text-white/80">
                       <span>Título</span>
                       <input
-                        className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2.5 text-sm text-white outline-none transition focus:border-cyan-300/70"
+                        className={CONTROL_BASE}
                         value={title}
                         onChange={(event) => setTitle(event.target.value)}
                         placeholder="Ex: Aula de iniciação"
@@ -799,7 +802,7 @@ export default function NovaAulaPage() {
                     <label className="space-y-1.5 text-sm text-white/80">
                       <span>Duração</span>
                       <select
-                        className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2.5 text-sm text-white outline-none transition focus:border-cyan-300/70"
+                        className={CONTROL_BASE}
                         value={durationMinutes}
                         onChange={(event) => setDurationMinutes(event.target.value)}
                       >
@@ -820,14 +823,14 @@ export default function NovaAulaPage() {
                         min="0"
                         step="0.01"
                         inputMode="decimal"
-                        className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2.5 text-sm text-white outline-none transition focus:border-cyan-300/70"
+                        className={CONTROL_BASE}
                         value={unitPrice}
                         onChange={(event) => setUnitPrice(event.target.value)}
                       />
                     </label>
                     <label className="space-y-1.5 text-sm text-white/80">
                       <span>Moeda</span>
-                      <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white/75">
+                      <div className={cn(CONTROL_BASE, "border-white/10 text-white/75")}>
                         {DEFAULT_CURRENCY}
                       </div>
                     </label>
@@ -836,7 +839,7 @@ export default function NovaAulaPage() {
                   <label className="space-y-1.5 text-sm text-white/80">
                     <span>Descrição</span>
                     <textarea
-                      className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2.5 text-sm text-white outline-none transition focus:border-cyan-300/70"
+                      className={CONTROL_BASE}
                       rows={4}
                       value={description}
                       onChange={(event) => setDescription(event.target.value)}
@@ -852,7 +855,7 @@ export default function NovaAulaPage() {
                     <label className="space-y-1.5 text-sm text-white/80">
                       <span>Treinador</span>
                       <select
-                        className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2.5 text-sm text-white outline-none transition focus:border-cyan-300/70"
+                        className={CONTROL_BASE}
                         value={selectedProfessionalId}
                         onChange={(event) => setSelectedProfessionalId(event.target.value)}
                       >
@@ -868,7 +871,7 @@ export default function NovaAulaPage() {
                     <label className="space-y-1.5 text-sm text-white/80">
                       <span>Campo</span>
                       <select
-                        className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2.5 text-sm text-white outline-none transition focus:border-cyan-300/70"
+                        className={CONTROL_BASE}
                         value={selectedResourceId}
                         onChange={(event) => {
                           setSelectedResourceId(event.target.value);
@@ -889,7 +892,7 @@ export default function NovaAulaPage() {
                     </label>
                   </div>
 
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                  <div className={cn(PANEL_BASE, "p-3")}>
                     <p className="text-[12px] text-white/70">Imagem</p>
                     <div className="mt-2 flex flex-wrap gap-3">
                       <div className="relative h-28 w-28 overflow-hidden rounded-xl border border-white/15 bg-white/5">
@@ -925,190 +928,190 @@ export default function NovaAulaPage() {
               {currentStep === 2 && (
                 <div className="space-y-4">
                   <div className="grid gap-2 md:grid-cols-3">
-                  {[
-                    {
-                      id: "SINGLE",
-                      title: "Aula única",
-                      subtitle: "Uma sessão específica",
-                    },
-                    {
-                      id: "RECURRING",
-                      title: "Aula recorrente",
-                      subtitle: "Série semanal automática",
-                    },
-                    {
-                      id: "NONE",
-                      title: "Sem agenda",
-                      subtitle: "Criar serviço e agendar depois",
-                    },
-                  ].map((option) => {
-                    const isSelected = scheduleMode === option.id;
-                    return (
-                      <button
-                        key={option.id}
-                        type="button"
-                        onClick={() => setScheduleMode(option.id as ScheduleMode)}
-                        className={cn(
-                          "rounded-xl border px-3 py-2.5 text-left transition",
-                          isSelected
-                            ? "border-cyan-300/60 bg-cyan-300/10"
-                            : "border-white/12 bg-white/[0.04] hover:border-white/30",
-                        )}
-                      >
-                        <p className="text-sm font-semibold text-white">{option.title}</p>
-                        <p className="text-[11px] text-white/55">{option.subtitle}</p>
-                      </button>
-                    );
-                  })}
+                    {[
+                      {
+                        id: "SINGLE",
+                        title: "Aula única",
+                        subtitle: "Data definida",
+                      },
+                      {
+                        id: "RECURRING",
+                        title: "Aula recorrente",
+                        subtitle: "Semanal",
+                      },
+                      {
+                        id: "NONE",
+                        title: "Sem agenda",
+                        subtitle: "Só serviço",
+                      },
+                    ].map((option) => {
+                      const isSelected = scheduleMode === option.id;
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() => setScheduleMode(option.id as ScheduleMode)}
+                          className={cn(
+                            "rounded-xl border px-3 py-2.5 text-left transition",
+                            isSelected
+                              ? "border-cyan-300/60 bg-cyan-300/10"
+                              : "border-white/12 bg-white/[0.04] hover:border-white/30",
+                          )}
+                        >
+                          <p className="text-sm font-semibold text-white">{option.title}</p>
+                          <p className="text-[11px] text-white/55">{option.subtitle}</p>
+                        </button>
+                      );
+                    })}
                   </div>
 
                   {scheduleMode !== "NONE" && (
-                    <div className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
-                    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-                      <label className="text-[12px] text-white/70">
-                        Hora
-                        <OryaTimeField
-                          value={scheduleStartTime}
-                          onChange={setScheduleStartTime}
-                          stepMinutes={15}
-                          className="mt-1 w-full"
-                          buttonClassName="h-10 rounded-xl"
-                        />
-                      </label>
-
-                      <label className="text-[12px] text-white/70">
-                        Capacidade
-                        <input
-                          type="number"
-                          min="1"
-                          className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300/70"
-                          value={scheduleCapacity}
-                          onChange={(event) => setScheduleCapacity(event.target.value)}
-                        />
-                      </label>
-
-                      <label className="text-[12px] text-white/70">
-                        Treinador
-                        <select
-                          className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300/70"
-                          value={seriesProfessionalId}
-                          onChange={(event) => {
-                            setSeriesProfessionalTouched(true);
-                            setSeriesProfessionalId(event.target.value);
-                          }}
-                        >
-                          <option value="">Sem treinador fixo</option>
-                          {activeProfessionals.map((professional) => (
-                            <option key={professional.id} value={professional.id}>
-                              {professional.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-
-                      <label className="text-[12px] text-white/70">
-                        Campo
-                        <select
-                          className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300/70"
-                          value={seriesCourtId}
-                          onChange={(event) => {
-                            setSeriesCourtTouched(true);
-                            setSeriesCourtId(event.target.value);
-                          }}
-                        >
-                          <option value="">Sem campo fixo</option>
-                          {scheduleCourtOptions.map((court) => (
-                            <option key={court.courtId} value={court.courtId}>
-                              {court.labelText}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-
-                    {scheduleMode === "SINGLE" ? (
+                    <div className={cn(PANEL_BASE, "space-y-4 p-3")}>
                       <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
                         <label className="text-[12px] text-white/70">
-                          Data da aula única
-                          <OryaDateField
-                            value={singleDate}
-                            onChange={setSingleDate}
-                            minDate={today}
+                          Hora
+                          <OryaTimeField
+                            value={scheduleStartTime}
+                            onChange={setScheduleStartTime}
+                            stepMinutes={15}
                             className="mt-1 w-full"
-                            buttonClassName="h-10 rounded-xl"
+                            buttonClassName="h-10 rounded-xl border border-white/15 bg-white/5 text-white transition hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-cyan-300/20"
                           />
                         </label>
-                      </div>
-                    ) : (
-                      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+
                         <label className="text-[12px] text-white/70">
-                          Dia da semana
+                          Capacidade
+                          <input
+                            type="number"
+                            min="1"
+                            className={cn(CONTROL_BASE, "mt-1 py-2")}
+                            value={scheduleCapacity}
+                            onChange={(event) => setScheduleCapacity(event.target.value)}
+                          />
+                        </label>
+
+                        <label className="text-[12px] text-white/70">
+                          Treinador
                           <select
-                            className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300/70"
-                            value={recurringDay}
-                            onChange={(event) => setRecurringDay(event.target.value)}
+                            className={cn(CONTROL_BASE, "mt-1 py-2")}
+                            value={seriesProfessionalId}
+                            onChange={(event) => {
+                              setSeriesProfessionalTouched(true);
+                              setSeriesProfessionalId(event.target.value);
+                            }}
                           >
-                            {DAY_LABELS.map((label, idx) => (
-                              <option key={label} value={idx}>
-                                {label}
+                            <option value="">Sem treinador fixo</option>
+                            {activeProfessionals.map((professional) => (
+                              <option key={professional.id} value={professional.id}>
+                                {professional.name}
                               </option>
                             ))}
                           </select>
                         </label>
 
                         <label className="text-[12px] text-white/70">
-                          Válido desde
-                          <OryaDateField
-                            value={recurringValidFrom}
-                            onChange={setRecurringValidFrom}
-                            className="mt-1 w-full"
-                            buttonClassName="h-10 rounded-xl"
-                          />
+                          Campo
+                          <select
+                            className={cn(CONTROL_BASE, "mt-1 py-2")}
+                            value={seriesCourtId}
+                            onChange={(event) => {
+                              setSeriesCourtTouched(true);
+                              setSeriesCourtId(event.target.value);
+                            }}
+                          >
+                            <option value="">Sem campo fixo</option>
+                            {scheduleCourtOptions.map((court) => (
+                              <option key={court.courtId} value={court.courtId}>
+                                {court.labelText}
+                              </option>
+                            ))}
+                          </select>
                         </label>
-
-                        <label className="text-[12px] text-white/70">
-                          Válido até
-                          <OryaDateField
-                            value={recurringValidUntil}
-                            onChange={setRecurringValidUntil}
-                            minDate={recurringValidFrom || undefined}
-                            className="mt-1 w-full"
-                            buttonClassName="h-10 rounded-xl"
-                          />
-                        </label>
-
-                        <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white/80">
-                          <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Sessões</p>
-                          <p className="mt-1 font-semibold text-white">
-                            {recurringEstimatedSessions == null
-                              ? "Sem fim definido"
-                              : `${recurringEstimatedSessions} sessão${recurringEstimatedSessions === 1 ? "" : "ões"}`}
-                          </p>
-                        </div>
                       </div>
-                    )}
+
+                      {scheduleMode === "SINGLE" ? (
+                        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+                          <label className="text-[12px] text-white/70">
+                            Data
+                            <OryaDateField
+                              value={singleDate}
+                              onChange={setSingleDate}
+                              minDate={today}
+                              className="mt-1 w-full"
+                              buttonClassName="h-10 rounded-xl border border-white/15 bg-white/5 text-white transition hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-cyan-300/20"
+                            />
+                          </label>
+                        </div>
+                      ) : (
+                        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+                          <label className="text-[12px] text-white/70">
+                            Dia
+                            <select
+                              className={cn(CONTROL_BASE, "mt-1 py-2")}
+                              value={recurringDay}
+                              onChange={(event) => setRecurringDay(event.target.value)}
+                            >
+                              {DAY_LABELS.map((label, idx) => (
+                                <option key={label} value={idx}>
+                                  {label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          <label className="text-[12px] text-white/70">
+                            Desde
+                            <OryaDateField
+                              value={recurringValidFrom}
+                              onChange={setRecurringValidFrom}
+                              className="mt-1 w-full"
+                              buttonClassName="h-10 rounded-xl border border-white/15 bg-white/5 text-white transition hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-cyan-300/20"
+                            />
+                          </label>
+
+                          <label className="text-[12px] text-white/70">
+                            Até
+                            <OryaDateField
+                              value={recurringValidUntil}
+                              onChange={setRecurringValidUntil}
+                              minDate={recurringValidFrom || undefined}
+                              className="mt-1 w-full"
+                              buttonClassName="h-10 rounded-xl border border-white/15 bg-white/5 text-white transition hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-cyan-300/20"
+                            />
+                          </label>
+
+                          <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white/80">
+                            <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Sessões</p>
+                            <p className="mt-1 font-semibold text-white">
+                              {recurringEstimatedSessions == null
+                                ? "Sem fim"
+                                : `${recurringEstimatedSessions} sessão${recurringEstimatedSessions === 1 ? "" : "ões"}`}
+                            </p>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Pré-visualização</p>
-                  {scheduleMode === "NONE" ? (
+                  <div className={cn(PANEL_BASE, "p-4")}>
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Prévia</p>
+                    {scheduleMode === "NONE" ? (
                       <p className="mt-2 text-sm text-white/65">Sem sessões automáticas.</p>
-                  ) : schedulePreview.length === 0 ? (
+                    ) : schedulePreview.length === 0 ? (
                       <p className="mt-2 text-sm text-white/65">Preenche agenda para visualizar.</p>
-                  ) : (
+                    ) : (
                       <div className="mt-3 space-y-2">
-                      {schedulePreview.map((session) => (
+                        {schedulePreview.map((session) => (
                           <div key={session.key} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/75">
-                          <p className="font-semibold text-white">{formatSessionLabel(session)}</p>
-                          <p>
+                            <p className="font-semibold text-white">{formatSessionLabel(session)}</p>
+                            <p>
                               Fim às{" "}
-                            {new Intl.DateTimeFormat("pt-PT", { timeStyle: "short" }).format(session.endsAt)}
-                          </p>
-                        </div>
-                      ))}
+                              {new Intl.DateTimeFormat("pt-PT", { timeStyle: "short" }).format(session.endsAt)}
+                            </p>
+                          </div>
+                        ))}
                       </div>
-                  )}
+                    )}
                   </div>
                 </div>
               )}
@@ -1116,15 +1119,15 @@ export default function NovaAulaPage() {
               {currentStep === 3 ? (
                 <div className="space-y-3">
                   <div className="rounded-2xl border border-emerald-300/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
-                    Pronto para criar.
+                    Tudo pronto.
                   </div>
                   <div className="grid gap-3 md:grid-cols-2">
-                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className={cn(PANEL_BASE, "p-4")}>
                       <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Aula</p>
                       <p className="mt-2 text-base font-semibold text-white">{title || "Sem título"}</p>
                       <p className="text-[12px] text-white/65">{durationMinutes} min · {pricePreview}</p>
                     </div>
-                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className={cn(PANEL_BASE, "p-4")}>
                       <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Agenda</p>
                       <p className="mt-2 text-sm font-semibold text-white">{scheduleModeLabel}</p>
                       {scheduleMode !== "NONE" ? (
@@ -1182,22 +1185,38 @@ export default function NovaAulaPage() {
             </div>
 
             <aside className="space-y-3 xl:sticky xl:top-4 xl:self-start">
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <div className={cn(PANEL_BASE, "p-4")}>
                 <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Resumo</p>
                 <p className="mt-2 text-base font-semibold text-white">{title.trim() || "Nova aula"}</p>
-                <div className="mt-3 space-y-2 text-[12px] text-white/70">
-                  <p>{durationMinutes} min · {pricePreview}</p>
-                  <p>{selectedProfessionalName}</p>
-                  <p>{selectedResourceLabel}</p>
-                  <p>{scheduleModeLabel}</p>
+                <div className="mt-3 space-y-2 text-[12px]">
+                  <p className="flex items-center justify-between gap-3 text-white/70">
+                    <span>Duração</span>
+                    <span className="text-white">{durationMinutes} min</span>
+                  </p>
+                  <p className="flex items-center justify-between gap-3 text-white/70">
+                    <span>Preço</span>
+                    <span className="text-white">{pricePreview}</span>
+                  </p>
+                  <p className="flex items-center justify-between gap-3 text-white/70">
+                    <span>Treinador</span>
+                    <span className="text-white">{selectedProfessionalName}</span>
+                  </p>
+                  <p className="flex items-center justify-between gap-3 text-white/70">
+                    <span>Campo</span>
+                    <span className="text-white">{selectedResourceLabel}</span>
+                  </p>
+                  <p className="flex items-center justify-between gap-3 text-white/70">
+                    <span>Agenda</span>
+                    <span className="text-white">{scheduleModeLabel}</span>
+                  </p>
                 </div>
               </div>
 
               {scheduleMode !== "NONE" ? (
-                <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                <div className={cn(PANEL_BASE, "p-4")}>
                   <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Próximas sessões</p>
                   {schedulePreview.length === 0 ? (
-                    <p className="mt-2 text-[12px] text-white/65">Sem dados.</p>
+                    <p className="mt-2 text-[12px] text-white/65">Sem sessões.</p>
                   ) : (
                     <div className="mt-2 space-y-2">
                       {schedulePreview.slice(0, 4).map((session) => (

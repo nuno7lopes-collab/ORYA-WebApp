@@ -1346,7 +1346,7 @@ export default function PadelTournamentWizardClient({
                 <input
                   value={startsAt ? startsAt.replace("T", "") : ""}
                   disabled
-                  placeholder="Derivado dos dias configurados"
+                  placeholder="Automático"
                   className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-white/80 outline-none disabled:cursor-not-allowed"
                 />
               </label>
@@ -1357,7 +1357,7 @@ export default function PadelTournamentWizardClient({
                 <input
                   value={endsAt ? endsAt.replace("T", "") : ""}
                   disabled
-                  placeholder="Derivado dos dias configurados"
+                  placeholder="Automático"
                   className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-white/80 outline-none disabled:cursor-not-allowed"
                 />
               </label>
@@ -1386,9 +1386,7 @@ export default function PadelTournamentWizardClient({
                   </p>
                 </div>
               ) : (
-                <p className="text-[12px] text-white/60">
-                  Seleciona um clube para carregar a morada.
-                </p>
+                <p className="text-[12px] text-white/60">Seleciona um clube.</p>
               )}
             </div>
             {renderSectionIssues(identityIssues)}
@@ -1399,7 +1397,7 @@ export default function PadelTournamentWizardClient({
           >
             <div className="space-y-1 border-b border-white/10 pb-3">
               <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">
-                Inscrições e agenda
+                Inscrições
               </p>
             </div>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -1521,7 +1519,7 @@ export default function PadelTournamentWizardClient({
                     }
                     className="rounded-lg border border-white/15 px-3 py-1.5 text-[12px] text-white/70 transition hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
                   >
-                    Aplicar 1.º horário a todos
+                    Aplicar a todos
                   </button>
                 </div>
               </div>
@@ -1694,7 +1692,7 @@ export default function PadelTournamentWizardClient({
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">
-                    Políticas avançadas
+                    Avançado
                   </p>
                 </div>
                 <button
@@ -1817,7 +1815,7 @@ export default function PadelTournamentWizardClient({
             )}
             {capacityPlanLoading && (
               <div className="rounded-2xl border border-white/15 bg-black/25 px-4 py-3 text-[12px] text-white/70">
-                A calcular viabilidade por formato/campos...
+                A calcular viabilidade...
               </div>
             )}
             {capacityPlanError && (
@@ -1833,7 +1831,7 @@ export default function PadelTournamentWizardClient({
               <div
                 className={`rounded-2xl border px-4 py-3 text-[12px] ${capacityPlan.feasible ? "border-emerald-300/35 bg-emerald-500/10 text-emerald-100" : "border-amber-300/40 bg-amber-500/10 text-amber-100"}`}
               >
-                <p className="font-semibold">Viabilidade por formato</p>
+                <p className="font-semibold">Viabilidade</p>
                 <p className="text-[11px] opacity-90">
                   Slots {capacityPlan.totalSlots} · Jogos
                   {capacityPlan.matchesNeeded} · Em falta
@@ -1898,9 +1896,6 @@ export default function PadelTournamentWizardClient({
                 <div className="md:col-span-3">
                   <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">
                     Parâmetros base do formato
-                  </p>
-                  <p className="text-[12px] text-white/65">
-                    Aplicados apenas em categorias sem personalização.
                   </p>
                 </div>
                 {isAmMxFormat(format) && (

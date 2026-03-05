@@ -27,7 +27,7 @@ describe("padel calendar copy hygiene", () => {
     );
 
     expect(hub).toContain("Bloqueios e overrides");
-    expect(hub).toContain("Histórico recente");
+    expect(hub).toContain("Registos recentes");
     expect(hub).not.toContain("Operações avançadas de bloqueio");
   });
 });

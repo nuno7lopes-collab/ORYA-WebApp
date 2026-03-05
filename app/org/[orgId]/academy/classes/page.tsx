@@ -57,6 +57,7 @@ export default function AcademyClassesPage() {
   );
   const services = data?.items ?? [];
   const classServices = services.filter((service) => resolveVertical(service) === "CLASS");
+  const activeClassServicesCount = classServices.filter((service) => service.isActive).length;
 
   return (
     <div className="space-y-5">
@@ -64,7 +65,15 @@ export default function AcademyClassesPage() {
         <div className="space-y-2">
           <p className={DASHBOARD_LABEL}>Academia</p>
           <h1 className="text-xl font-semibold text-white">Aulas</h1>
-          <p className={DASHBOARD_MUTED}>Catálogo dedicado a aulas (vertical CLASS).</p>
+          <p className={DASHBOARD_MUTED}>Catálogo operacional de aulas.</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-white/65">
+            <span className="rounded-full border border-emerald-300/35 bg-emerald-400/10 px-2 py-0.5 text-emerald-100">
+              {activeClassServicesCount} ativas
+            </span>
+            <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5">
+              {classServices.length} total
+            </span>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Link href={appendOrganizationIdToHref("/org/academy/trainers", canonicalOrganizationId)} className={CTA_SECONDARY}>
@@ -79,23 +88,34 @@ export default function AcademyClassesPage() {
         </div>
       </header>
 
-      <section className={cn(DASHBOARD_CARD, "p-4 space-y-3")}>
+      <section className={cn(DASHBOARD_CARD, "p-5 space-y-4")}>
         {isLoading && <p className="text-[12px] text-white/60">A carregar...</p>}
         {!isLoading && classServices.length === 0 && (
-          <p className="text-[12px] text-white/50">Ainda não tens aulas. Cria a primeira.</p>
+          <div className="rounded-2xl border border-white/12 bg-white/5 p-5">
+            <p className="text-sm font-semibold text-white">Sem aulas no catálogo.</p>
+            <p className="mt-1 text-[12px] text-white/60">Cria a primeira aula para começares a operar.</p>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <Link href={appendOrganizationIdToHref("/org/academy/classes/new", canonicalOrganizationId)} className={CTA_PRIMARY}>
+                Nova aula
+              </Link>
+              <Link href={appendOrganizationIdToHref("/org/academy/trainers", canonicalOrganizationId)} className={CTA_SECONDARY}>
+                Gerir treinadores
+              </Link>
+            </div>
+          </div>
         )}
-        <div className="grid gap-2">
+        <div className="grid gap-2.5">
           {classServices.map((service) => (
             <Link
               key={service.id}
               href={appendOrganizationIdToHref(`/org/academy/classes/${service.id}`, canonicalOrganizationId)}
-              className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 transition hover:bg-white/10"
+              className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 transition hover:border-white/30 hover:bg-white/10"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-[12px] font-semibold text-white">{service.title}</p>
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] text-white/50">
-                    {service.durationMinutes} min · Preço: {formatPrice(service.unitPriceCents, service.currency)}
+                    {service.durationMinutes} min · {formatPrice(service.unitPriceCents, service.currency)}
                   </span>
                   <span
                     className={cn(

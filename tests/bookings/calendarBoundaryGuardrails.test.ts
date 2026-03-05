@@ -6,6 +6,19 @@ function readLocal(pathname: string) {
   return readFileSync(resolve(process.cwd(), pathname), "utf8");
 }
 
+function readResolvedUiSource(pathname: string) {
+  const file = readLocal(pathname);
+  const reExportMatch = file.match(/export\s+\{\s*default\s*\}\s+from\s+"([^"]+)";?/);
+  if (!reExportMatch) return file;
+  const importPath = reExportMatch[1];
+  if (!importPath.startsWith("@/")) return file;
+  const relativePath = importPath.slice(2);
+  const withTsx = relativePath.endsWith(".tsx") ? relativePath : `${relativePath}.tsx`;
+  const target = resolve(process.cwd(), withTsx);
+  if (!existsSync(target)) return file;
+  return readFileSync(target, "utf8");
+}
+
 describe("bookings x calendar boundary guardrails", () => {
   it("keeps legacy agenda timeline out of bookings dashboard", () => {
     const reservasDashboard = readLocal("app/org/_internal/core/(dashboard)/reservas/page.tsx");
@@ -70,7 +83,7 @@ describe("bookings x calendar boundary guardrails", () => {
   });
 
   it("keeps setup pages with visible titles", () => {
-    const professionalsPage = readLocal("app/org/_internal/core/(dashboard)/reservas/profissionais/page.tsx");
+    const professionalsPage = readResolvedUiSource("app/org/_internal/core/(dashboard)/reservas/profissionais/page.tsx");
     const resourcesPage = readLocal("app/org/_internal/core/(dashboard)/reservas/recursos/page.tsx");
     const customersPage = readLocal("app/org/_internal/core/(dashboard)/reservas/clientes/page.tsx");
 
