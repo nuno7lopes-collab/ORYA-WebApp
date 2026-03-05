@@ -196,6 +196,17 @@ export async function confirmPendingBooking({
   }
 
   if (booking.status === "CONFIRMED") {
+    await tx.academyEnrollment.updateMany({
+      where: {
+        bookingId: booking.id,
+        organizationId: booking.organizationId,
+        status: { in: ["PENDING", "CONFIRMED"] },
+      },
+      data: {
+        status: "CONFIRMED",
+        holdExpiresAt: null,
+      },
+    });
     return {
       ok: true,
       bookingId: booking.id,
@@ -214,6 +225,17 @@ export async function confirmPendingBooking({
     await tx.booking.update({
       where: { id: booking.id },
       data: { status: "CANCELLED_BY_CLIENT" },
+    });
+    await tx.academyEnrollment.updateMany({
+      where: {
+        bookingId: booking.id,
+        organizationId: booking.organizationId,
+        status: { in: ["PENDING", "CONFIRMED"] },
+      },
+      data: {
+        status: "CANCELLED",
+        holdExpiresAt: null,
+      },
     });
     return { ok: false, code: "INVALID_STATUS", message: "Pré-reserva expirada." };
   }
@@ -854,6 +876,17 @@ export async function confirmPendingBooking({
       confirmationSnapshotCreatedAt: snapshotCreatedAt,
     },
     select: { id: true },
+  });
+  await tx.academyEnrollment.updateMany({
+    where: {
+      bookingId: booking.id,
+      organizationId: booking.organizationId,
+      status: { in: ["PENDING", "CONFIRMED"] },
+    },
+    data: {
+      status: "CONFIRMED",
+      holdExpiresAt: null,
+    },
   });
 
   if (!booking.policyRef) {

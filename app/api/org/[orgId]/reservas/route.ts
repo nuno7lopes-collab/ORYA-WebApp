@@ -56,6 +56,7 @@ import {
   PENDING_BOOKING_STATUSES,
   resolvePendingBookingState,
 } from "@/lib/reservas/pendingBookingState";
+import { resolveCourtSnapshot } from "@/lib/reservas/courtSnapshot";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -769,7 +770,7 @@ async function _POST(req: NextRequest) {
 
         if (assignmentConfig.isCourtService) {
           if (!selectedResource.courtId) {
-            return fail(ctx, 409, "COURT_RESOURCE_INVALID", "Recurso sem ligação canónica a campo.");
+            return fail(ctx, 409, "COURT_CONFIG_MISSING", "Recurso sem ligação canónica a campo.");
           }
           if (courtIdRaw && selectedResource.courtId !== courtIdRaw) {
             return fail(ctx, 409, "COURT_RESOURCE_MISMATCH", "Recurso não corresponde ao campo selecionado.");
@@ -963,7 +964,7 @@ async function _POST(req: NextRequest) {
           return fail(ctx, 404, "RESOURCE_INVALID", "Recurso inválido.");
         }
         if (assignmentConfig.isCourtService && !selectedResource.courtId) {
-          return fail(ctx, 409, "COURT_RESOURCE_INVALID", "Recurso sem ligação canónica a campo.");
+          return fail(ctx, 409, "COURT_CONFIG_MISSING", "Recurso sem ligação canónica a campo.");
         }
         resourceScopes = [
           {
@@ -1228,7 +1229,26 @@ async function _POST(req: NextRequest) {
       }
       bookingCourtId = assignmentConfig.isCourtService ? linkedCourtId : null;
       if (assignmentConfig.isCourtService && !bookingCourtId) {
-        return fail(ctx, 409, "COURT_RESOURCE_INVALID", "Sem ligação canónica entre campo e recurso.");
+        return fail(ctx, 409, "COURT_CONFIG_MISSING", "Sem ligação canónica entre campo e recurso.");
+      }
+    }
+    if (assignmentConfig.isCourtService && !bookingCourtId) {
+      return fail(ctx, 409, "COURT_CONFIG_MISSING", "Campo inválido para este serviço.");
+    }
+    if (assignmentConfig.isCourtService && resourceId) {
+      let linkedCourtId = resourceCourtById.get(resourceId) ?? null;
+      if (!linkedCourtId) {
+        const resource = await prisma.reservationResource.findUnique({
+          where: { id: resourceId },
+          select: { courtId: true },
+        });
+        linkedCourtId = resource?.courtId ?? null;
+      }
+      if (!linkedCourtId) {
+        return fail(ctx, 409, "COURT_CONFIG_MISSING", "Recurso sem ligação canónica a campo.");
+      }
+      if (bookingCourtId && linkedCourtId !== bookingCourtId) {
+        return fail(ctx, 409, "COURT_RESOURCE_MISMATCH", "Recurso não corresponde ao campo selecionado.");
       }
     }
 
@@ -1461,6 +1481,11 @@ async function _POST(req: NextRequest) {
         }
       }
 
+      const courtSnapshot = await resolveCourtSnapshot(tx as any, {
+        organizationId: service.organizationId,
+        courtId: bookingCourtId,
+      });
+
       return createBooking({
         tx,
         organizationId: service.organizationId,
@@ -1478,6 +1503,8 @@ async function _POST(req: NextRequest) {
           professionalId,
           resourceId,
           courtId: bookingCourtId,
+          courtSnapshotName: courtSnapshot?.name ?? null,
+          courtSnapshotCoverImageUrl: courtSnapshot?.coverImageUrl ?? null,
           partySize,
           pendingExpiresAt,
           snapshotTimezone: timezone,

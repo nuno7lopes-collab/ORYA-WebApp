@@ -8,12 +8,22 @@ import { resolveBookingVerticalFromServiceKind } from "@/lib/reservas/bookingVer
 import { resolveAllowedServiceScopeIds } from "@/lib/reservas/serviceScopes";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
+function parsePositiveInt(value: string | null | undefined) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : null;
+}
+
 async function _GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const resolved = await params;
   const serviceId = Number(resolved.id);
+  const courtIdParam = req.nextUrl.searchParams.get("courtId");
+  const requestedCourtId = parsePositiveInt(courtIdParam);
+  if (courtIdParam != null && !requestedCourtId) {
+    return jsonWrap({ ok: false, error: "INVALID_COURT" }, { status: 400 });
+  }
   if (!Number.isFinite(serviceId)) {
     return jsonWrap({ ok: false, error: "Serviço inválido." }, { status: 400 });
   }
@@ -191,7 +201,7 @@ async function _GET(
       resourceLinks: service.resourceLinks,
     });
 
-    const [professionals, resources, courtConfig] = await Promise.all([
+    const [professionals, resources, courtConfigs] = await Promise.all([
       prisma.reservationProfessional.findMany({
         where: {
           organizationId: service.organization.id,
@@ -213,6 +223,7 @@ async function _GET(
           organizationId: service.organization.id,
           isActive: true,
           ...(assignmentConfig.isCourtService ? { courtId: { not: null } } : {}),
+          ...(assignmentConfig.isCourtService && requestedCourtId ? { courtId: requestedCourtId } : {}),
           ...(allowedResourceIds ? { id: { in: allowedResourceIds } } : {}),
         },
         orderBy: [{ priority: "asc" }, { id: "asc" }],
@@ -225,12 +236,14 @@ async function _GET(
         },
       }),
       assignmentConfig.isCourtService
-        ? prisma.courtBookingConfig.findFirst({
+        ? prisma.courtBookingConfig.findMany({
             where: {
               organizationId: service.organization.id,
               backingServiceId: service.id,
               isActive: true,
+              ...(requestedCourtId ? { courtId: requestedCourtId } : {}),
             },
+            orderBy: [{ courtId: "asc" }],
             select: {
               courtId: true,
               displayName: true,
@@ -246,8 +259,17 @@ async function _GET(
               },
             },
           })
-        : Promise.resolve(null),
+        : Promise.resolve([]),
     ]);
+    const courtConfig =
+      assignmentConfig.isCourtService && requestedCourtId
+        ? courtConfigs.find((config) => config.courtId === requestedCourtId) ?? null
+        : courtConfigs.length === 1
+          ? courtConfigs[0] ?? null
+          : null;
+    if (assignmentConfig.isCourtService && requestedCourtId && !courtConfig) {
+      return jsonWrap({ ok: false, error: "COURT_CONFIG_MISSING" }, { status: 409 });
+    }
 
     const selectionRules = resolveServicePartySizeRules({
       assignmentMode: assignmentConfig.assignmentMode,

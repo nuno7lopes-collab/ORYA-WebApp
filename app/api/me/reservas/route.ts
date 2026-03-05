@@ -17,6 +17,7 @@ import {
 import { loadScheduleDelays, resolveBookingDelay } from "@/lib/reservas/scheduleDelay";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { resolveEffectiveBookingStatus, resolvePendingBookingState } from "@/lib/reservas/pendingBookingState";
+import { resolveBookingVerticalFromServiceKind } from "@/lib/reservas/bookingVertical";
 
 function errorCodeForStatus(status: number) {
   if (status === 401) return "UNAUTHENTICATED";
@@ -25,6 +26,126 @@ function errorCodeForStatus(status: number) {
   if (status === 409) return "CONFLICT";
   if (status === 400) return "BAD_REQUEST";
   return "INTERNAL_ERROR";
+}
+
+type ClassBookingMeta = {
+  classSessionId: number;
+  enrollmentStatus: string;
+  sessionStatus: string;
+  capacity: number;
+  enrolledCount: number;
+  classInfo: {
+    id: number;
+    title: string;
+    coverImageUrl: string | null;
+  };
+  trainer: {
+    id: number;
+    name: string;
+    avatarUrl: string | null;
+    username: string | null;
+    fullName: string | null;
+  } | null;
+  court: {
+    id: number;
+    name: string | null;
+    isActive: boolean | null;
+  } | null;
+};
+
+async function loadClassBookingMeta(bookingIds: number[]) {
+  if (bookingIds.length === 0) return new Map<number, ClassBookingMeta>();
+
+  const enrollments = await prisma.academyEnrollment.findMany({
+    where: {
+      bookingId: { in: bookingIds },
+    },
+    select: {
+      bookingId: true,
+      status: true,
+      classSessionId: true,
+      classSession: {
+        select: {
+          id: true,
+          status: true,
+          capacity: true,
+          service: {
+            select: {
+              id: true,
+              title: true,
+              coverImageUrl: true,
+            },
+          },
+          professional: {
+            select: {
+              id: true,
+              name: true,
+              user: { select: { avatarUrl: true, username: true, fullName: true } },
+            },
+          },
+          court: { select: { id: true, name: true, isActive: true } },
+        },
+      },
+    },
+  } as any);
+
+  const sessionIds = Array.from(
+    new Set(
+      enrollments
+        .map((enrollment) => enrollment.classSessionId)
+        .filter((sessionId): sessionId is number => typeof sessionId === "number" && sessionId > 0),
+    ),
+  );
+  const enrollmentCounts = sessionIds.length
+    ? await prisma.academyEnrollment.groupBy({
+        by: ["classSessionId"],
+        where: {
+          classSessionId: { in: sessionIds },
+          status: { in: ["PENDING", "CONFIRMED"] },
+        },
+        _count: { _all: true },
+      })
+    : [];
+  const enrolledCountBySession = new Map<number, number>();
+  enrollmentCounts.forEach((row) => {
+    enrolledCountBySession.set(row.classSessionId, row._count._all);
+  });
+
+  const classMetaByBookingId = new Map<number, ClassBookingMeta>();
+  enrollments.forEach((enrollment) => {
+    const bookingId = enrollment.bookingId;
+    if (!bookingId || !enrollment.classSession) return;
+    classMetaByBookingId.set(bookingId, {
+      classSessionId: enrollment.classSession.id,
+      enrollmentStatus: enrollment.status,
+      sessionStatus: enrollment.classSession.status,
+      capacity: enrollment.classSession.capacity,
+      enrolledCount: enrolledCountBySession.get(enrollment.classSession.id) ?? 0,
+      classInfo: {
+        id: enrollment.classSession.service.id,
+        title: enrollment.classSession.service.title,
+        coverImageUrl: enrollment.classSession.service.coverImageUrl ?? null,
+      },
+      trainer: enrollment.classSession.professional
+        ? {
+            id: enrollment.classSession.professional.id,
+            name: enrollment.classSession.professional.name,
+            avatarUrl: enrollment.classSession.professional.user?.avatarUrl ?? null,
+            username: enrollment.classSession.professional.user?.username ?? null,
+            fullName: enrollment.classSession.professional.user?.fullName ?? null,
+          }
+        : null,
+      court: enrollment.classSession.court
+        ? {
+            id: enrollment.classSession.court.id,
+            name: enrollment.classSession.court.name ?? null,
+            isActive: enrollment.classSession.court.isActive ?? null,
+          }
+        : null,
+    });
+  });
+
+  return classMetaByBookingId;
 }
 
 async function _GET(req: NextRequest) {
@@ -59,6 +180,10 @@ async function _GET(req: NextRequest) {
         take: 120,
         select: {
           id: true,
+          organizationId: true,
+          courtId: true,
+          courtSnapshotName: true,
+          courtSnapshotCoverImageUrl: true,
           startsAt: true,
           durationMinutes: true,
           status: true,
@@ -86,6 +211,7 @@ async function _GET(req: NextRequest) {
             select: {
               id: true,
               title: true,
+              kind: true,
               organization: {
                 select: {
                   id: true,
@@ -98,11 +224,68 @@ async function _GET(req: NextRequest) {
               },
             },
           },
+          court: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
         },
       });
+      const compactFallbackCourtIds = Array.from(
+        new Set(
+          bookings
+            .filter(
+              (booking) =>
+                booking.courtId != null &&
+                (!booking.courtSnapshotName || !booking.courtSnapshotCoverImageUrl),
+            )
+            .map((booking) => booking.courtId)
+            .filter((courtId): courtId is number => typeof courtId === "number" && courtId > 0),
+        ),
+      );
+      const compactFallbackOrgIds = Array.from(new Set(bookings.map((booking) => booking.organizationId)));
+      const compactFallbackConfigs =
+        compactFallbackCourtIds.length > 0
+          ? await prisma.courtBookingConfig.findMany({
+              where: {
+                organizationId: { in: compactFallbackOrgIds },
+                courtId: { in: compactFallbackCourtIds },
+              },
+              select: {
+                courtId: true,
+                displayName: true,
+                coverImageUrl: true,
+                backingService: { select: { coverImageUrl: true } },
+              },
+            })
+          : [];
+      const compactFallbackConfigByCourtId = new Map(
+        compactFallbackConfigs.map((config) => [config.courtId, config]),
+      );
+      const classMetaByBookingId = await loadClassBookingMeta(bookings.map((booking) => booking.id));
+
+      const buildCompactCourtSnapshot = (booking: (typeof bookings)[number]) => {
+        if (booking.courtId == null) return null;
+        const fallbackConfig = compactFallbackConfigByCourtId.get(booking.courtId) ?? null;
+        return {
+          courtId: booking.courtId,
+          name:
+            booking.courtSnapshotName ||
+            fallbackConfig?.displayName ||
+            booking.court?.name ||
+            null,
+          coverImageUrl:
+            booking.courtSnapshotCoverImageUrl ||
+            fallbackConfig?.coverImageUrl ||
+            fallbackConfig?.backingService?.coverImageUrl ||
+            null,
+        };
+      };
 
       const now = new Date();
       const items = bookings.map((booking) => {
+        const classMeta = classMetaByBookingId.get(booking.id) ?? null;
         const pendingState = resolvePendingBookingState({
           status: booking.status,
           startsAt: booking.startsAt,
@@ -135,9 +318,29 @@ async function _GET(req: NextRequest) {
           createdAt: booking.createdAt,
           assignmentMode: booking.assignmentMode,
           partySize: booking.partySize ?? null,
+          courtSnapshot: buildCompactCourtSnapshot(booking),
           estimatedStartsAt: null,
           delayMinutes: null,
           delayReason: null,
+          bookingVertical: classMeta
+            ? "CLASS"
+            : booking.service
+              ? resolveBookingVerticalFromServiceKind(booking.service.kind)
+              : null,
+          classSessionId: classMeta?.classSessionId ?? null,
+          class: classMeta
+            ? {
+                id: classMeta.classInfo.id,
+                title: classMeta.classInfo.title,
+                coverImageUrl: classMeta.classInfo.coverImageUrl,
+                enrollmentStatus: classMeta.enrollmentStatus,
+                sessionStatus: classMeta.sessionStatus,
+                capacity: classMeta.capacity,
+                enrolledCount: classMeta.enrolledCount,
+              }
+            : null,
+          trainer: classMeta?.trainer ?? null,
+          court: classMeta?.court ?? null,
           service: booking.service ? { id: booking.service.id, title: booking.service.title } : null,
           organization: booking.service?.organization ?? null,
           changeRequest: booking.changeRequests?.[0]
@@ -189,6 +392,9 @@ async function _GET(req: NextRequest) {
       select: {
         id: true,
         organizationId: true,
+        courtId: true,
+        courtSnapshotName: true,
+        courtSnapshotCoverImageUrl: true,
         startsAt: true,
         durationMinutes: true,
         status: true,
@@ -252,6 +458,7 @@ async function _GET(req: NextRequest) {
           select: {
             id: true,
             title: true,
+            kind: true,
             policy: {
               select: {
                 id: true,
@@ -302,6 +509,7 @@ async function _GET(req: NextRequest) {
       },
     });
 
+    const classMetaByBookingId = await loadClassBookingMeta(bookings.map((booking) => booking.id));
     const organizationIds = Array.from(new Set(bookings.map((booking) => booking.organizationId)));
     if (organizationIds.length > 0) {
       await Promise.all(organizationIds.map((organizationId) => ensureDefaultPoliciesSafe(organizationId)));
@@ -329,6 +537,36 @@ async function _GET(req: NextRequest) {
     defaults.forEach((policy) => {
       defaultByOrganization.set(policy.organizationId, policy);
     });
+    const fallbackCourtIds = Array.from(
+      new Set(
+        bookings
+          .filter(
+            (booking) =>
+              booking.courtId != null &&
+              (!booking.courtSnapshotName || !booking.courtSnapshotCoverImageUrl),
+          )
+          .map((booking) => booking.courtId)
+          .filter((courtId): courtId is number => typeof courtId === "number" && courtId > 0),
+      ),
+    );
+    const fallbackCourtConfigs =
+      fallbackCourtIds.length > 0
+        ? await prisma.courtBookingConfig.findMany({
+            where: {
+              organizationId: { in: organizationIds },
+              courtId: { in: fallbackCourtIds },
+            },
+            select: {
+              courtId: true,
+              displayName: true,
+              coverImageUrl: true,
+              backingService: { select: { coverImageUrl: true } },
+            },
+          })
+        : [];
+    const fallbackCourtConfigByCourtId = new Map(
+      fallbackCourtConfigs.map((config) => [config.courtId, config]),
+    );
 
     const delayMapsByOrganization = new Map<number, Awaited<ReturnType<typeof loadScheduleDelays>>>();
     for (const orgId of organizationIds) {
@@ -359,6 +597,7 @@ async function _GET(req: NextRequest) {
     const now = new Date();
 
     const items = bookings.map((booking) => {
+      const classMeta = classMetaByBookingId.get(booking.id) ?? null;
       const snapshot = parseBookingConfirmationSnapshot(booking.confirmationSnapshot);
       const pendingState = resolvePendingBookingState({
         status: booking.status,
@@ -429,6 +668,24 @@ async function _GET(req: NextRequest) {
         allowReschedule &&
         rescheduleWindowMinutes != null &&
         rescheduleDecision.allowed;
+      const fallbackCourtConfig =
+        booking.courtId != null ? fallbackCourtConfigByCourtId.get(booking.courtId) ?? null : null;
+      const courtSnapshot =
+        booking.courtId != null
+          ? {
+              courtId: booking.courtId,
+              name:
+                booking.courtSnapshotName ||
+                fallbackCourtConfig?.displayName ||
+                booking.court?.name ||
+                null,
+              coverImageUrl:
+                booking.courtSnapshotCoverImageUrl ||
+                fallbackCourtConfig?.coverImageUrl ||
+                fallbackCourtConfig?.backingService?.coverImageUrl ||
+                null,
+            }
+          : null;
 
       return {
         id: booking.id,
@@ -486,9 +743,28 @@ async function _GET(req: NextRequest) {
         resource: booking.resource
           ? { id: booking.resource.id, label: booking.resource.label, capacity: booking.resource.capacity }
           : null,
+        bookingVertical: classMeta
+          ? "CLASS"
+          : booking.service
+            ? resolveBookingVerticalFromServiceKind(booking.service.kind)
+            : null,
+        classSessionId: classMeta?.classSessionId ?? null,
+        class: classMeta
+          ? {
+              id: classMeta.classInfo.id,
+              title: classMeta.classInfo.title,
+              coverImageUrl: classMeta.classInfo.coverImageUrl,
+              enrollmentStatus: classMeta.enrollmentStatus,
+              sessionStatus: classMeta.sessionStatus,
+              capacity: classMeta.capacity,
+              enrolledCount: classMeta.enrolledCount,
+            }
+          : null,
+        trainer: classMeta?.trainer ?? null,
         reviewId: booking.review?.id ?? null,
+        courtSnapshot,
         service: booking.service ? { id: booking.service.id, title: booking.service.title } : null,
-        court: booking.court ? { id: booking.court.id, name: booking.court.name, isActive: booking.court.isActive } : null,
+        court: classMeta?.court ?? (booking.court ? { id: booking.court.id, name: booking.court.name, isActive: booking.court.isActive } : null),
         organization: booking.service?.organization ?? null,
         changeRequest: booking.changeRequests?.[0]
           ? {

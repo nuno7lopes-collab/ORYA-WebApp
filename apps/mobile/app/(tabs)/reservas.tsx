@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useIsFocused } from "@react-navigation/native";
 import { Image } from "expo-image";
 import { tokens } from "@orya/shared";
+import { Ionicons } from "../../components/icons/Ionicons";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { TopAppHeader } from "../../components/navigation/TopAppHeader";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
@@ -19,7 +20,7 @@ import {
   previewBookingCancellation,
   respondBookingChangeRequest,
 } from "../../features/bookings/api";
-import { useAvailableCourts, useMyBookings } from "../../features/bookings/hooks";
+import { useMyBookings, useReservableClubs } from "../../features/bookings/hooks";
 import type { BookingItem } from "../../features/bookings/types";
 import { splitBookingsByTimeline } from "../../features/bookings/types";
 
@@ -71,7 +72,7 @@ export default function BookingsScreen() {
   const { session } = useAuth();
   const accessReady = Boolean(session?.user?.id);
   const bookingsQuery = useMyBookings(accessReady && isFocused);
-  const courtsQuery = useAvailableCourts(
+  const clubsQuery = useReservableClubs(
     {
       userId: session?.user?.id ?? null,
       accessToken: session?.access_token ?? null,
@@ -92,7 +93,7 @@ export default function BookingsScreen() {
     return [focused, ...remaining];
   }, [focusBookingId, timeline.active]);
 
-  const availableCourts = courtsQuery.data?.items ?? [];
+  const availableClubs = clubsQuery.data?.items ?? [];
 
   const runCancel = async (bookingId: number) => {
     try {
@@ -192,11 +193,27 @@ export default function BookingsScreen() {
         }}
       >
         <View className="flex-row items-start justify-between gap-3">
-          <View style={{ flex: 1 }}>
-            <Text className="text-white text-sm font-semibold">
-              {booking.service?.title?.trim() || "Reserva de serviço"}
-            </Text>
-            <Text className="text-white/65 text-xs">{bookingOrganizationLabel(booking)}</Text>
+          <View className="flex-row gap-3" style={{ flex: 1 }}>
+            <View
+              className="overflow-hidden rounded-xl border border-white/12 bg-white/8"
+              style={{ width: 56, height: 56 }}
+            >
+              {normalizeImageUrl(booking.courtSnapshot?.coverImageUrl) ? (
+                <Image
+                  source={{ uri: normalizeImageUrl(booking.courtSnapshot?.coverImageUrl) as string }}
+                  contentFit="cover"
+                  style={{ width: "100%", height: "100%" }}
+                />
+              ) : (
+                <View className="flex-1 bg-white/6" />
+              )}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text className="text-white text-sm font-semibold">
+                {booking.courtSnapshot?.name?.trim() || booking.service?.title?.trim() || "Reserva de serviço"}
+              </Text>
+              <Text className="text-white/65 text-xs">{bookingOrganizationLabel(booking)}</Text>
+            </View>
           </View>
           <View className="rounded-full border border-white/15 bg-white/10 px-2 py-1">
             <Text className="text-white/80 text-[10px] font-semibold uppercase tracking-[0.12em]">
@@ -327,30 +344,30 @@ export default function BookingsScreen() {
         ) : (
           <View className="gap-3">
             <View className="gap-2">
-              <Text className="text-white text-sm font-semibold">Campos disponíveis</Text>
-              {courtsQuery.isLoading ? (
+              <Text className="text-white text-sm font-semibold">Clubes reserváveis</Text>
+              {clubsQuery.isLoading ? (
                 <GlassSkeleton height={92} />
-              ) : courtsQuery.isError ? (
+              ) : clubsQuery.isError ? (
                 <View className="rounded-2xl border border-rose-300/35 bg-rose-500/10 px-3 py-3">
                   <Text className="text-rose-100 text-xs">
-                    Não foi possível carregar os campos disponíveis.
+                    Não foi possível carregar os clubes reserváveis.
                   </Text>
                 </View>
-              ) : courtsQuery.data?.configurationIssue === "COURT_CONFIG_MISSING" ? (
+              ) : clubsQuery.data?.configurationIssue === "COURT_CONFIG_MISSING" ? (
                 <View className="rounded-2xl border border-amber-300/35 bg-amber-400/10 px-3 py-3">
                   <Text className="text-amber-100 text-xs font-semibold">Configuração em falta</Text>
                   <Text className="mt-1 text-amber-100/85 text-xs">
                     Alguns clubes não têm campos configurados para reserva (COURT_CONFIG_MISSING).
                   </Text>
                 </View>
-              ) : availableCourts.length === 0 && !courtsQuery.data?.hasFollowingClubs ? (
+              ) : availableClubs.length === 0 && !clubsQuery.data?.hasFollowingClubs ? (
                 <View className="rounded-2xl border border-white/14 bg-white/6 px-3 py-3 gap-1">
                   <Text className="text-white text-xs font-semibold">Sem clubes seguidos</Text>
                   <Text className="text-white/70 text-xs">
-                    Segue clubes para veres campos prioritários nesta área.
+                    Segue clubes para veres opções prioritárias de reserva.
                   </Text>
                 </View>
-              ) : availableCourts.length === 0 && courtsQuery.data?.hasFollowingClubs ? (
+              ) : availableClubs.length === 0 && clubsQuery.data?.hasFollowingClubs ? (
                 <View className="rounded-2xl border border-white/14 bg-white/6 px-3 py-3 gap-1">
                   <Text className="text-white text-xs font-semibold">Clubes sem campos configurados</Text>
                   <Text className="text-white/70 text-xs">
@@ -359,44 +376,42 @@ export default function BookingsScreen() {
                 </View>
               ) : (
                 <View className="gap-2">
-                  {!courtsQuery.data?.hasFollowingClubs ? (
+                  {!clubsQuery.data?.hasFollowingClubs ? (
                     <View className="rounded-xl border border-white/18 bg-white/8 px-3 py-2">
                       <Text className="text-white/75 text-[11px]">
-                        Ainda não segues clubes. A mostrar campos de clubes próximos.
+                        Ainda não segues clubes. A mostrar clubes próximos com reservas ativas.
                       </Text>
                     </View>
                   ) : null}
-                  {courtsQuery.data?.hasFollowingClubs &&
-                  availableCourts.every((item) => item.source === "NEARBY") ? (
+                  {clubsQuery.data?.hasFollowingClubs &&
+                  availableClubs.every((item) => item.source === "NEARBY") ? (
                     <View className="rounded-xl border border-cyan-200/30 bg-cyan-300/10 px-3 py-2">
                       <Text className="text-cyan-50 text-[11px]">
-                        Não encontrámos campos nos clubes seguidos, a mostrar clubes próximos.
+                        Não encontrámos reservas ativas nos clubes seguidos, a mostrar clubes próximos.
                       </Text>
                     </View>
                   ) : null}
-                  {availableCourts.map((court) => (
+                  {availableClubs.map((club) => (
                     <Pressable
-                      key={court.id}
+                      key={club.id}
                       onPress={() => {
-                        const params: Record<string, string> = {
-                          id: String(court.serviceId),
-                          bookingVertical: "COURT",
-                          orgUsername: court.orgUsername,
-                        };
-                        safePush(router, { pathname: "/service/[id]/booking", params });
+                        safePush(router, {
+                          pathname: "/reservas/club/[username]",
+                          params: { username: club.orgUsername },
+                        });
                       }}
                       className="rounded-2xl border border-white/12 bg-white/6 px-4 py-3"
                       accessibilityRole="button"
-                      accessibilityLabel={`${court.courtName} ${court.clubName}`}
+                      accessibilityLabel={`Abrir clube ${club.clubName}`}
                     >
                       <View className="flex-row gap-3">
                         <View
                           className="overflow-hidden rounded-xl border border-white/12 bg-white/8"
                           style={{ width: 72, height: 54 }}
                         >
-                          {normalizeImageUrl(court.coverImageUrl) ? (
+                          {normalizeImageUrl(club.coverImageUrl) ? (
                             <Image
-                              source={{ uri: normalizeImageUrl(court.coverImageUrl) as string }}
+                              source={{ uri: normalizeImageUrl(club.coverImageUrl) as string }}
                               contentFit="cover"
                               style={{ width: "100%", height: "100%" }}
                             />
@@ -407,32 +422,34 @@ export default function BookingsScreen() {
                         <View style={{ flex: 1 }}>
                           <View className="flex-row items-center justify-between gap-2">
                             <Text className="text-white text-sm font-semibold" numberOfLines={1}>
-                              {court.courtName}
+                              {club.clubName}
                             </Text>
                             <View
                               className="rounded-full border px-2 py-0.5"
                               style={{
                                 borderColor:
-                                  court.source === "FOLLOWING"
+                                  club.source === "FOLLOWING"
                                     ? "rgba(111,244,255,0.45)"
                                     : "rgba(255,255,255,0.2)",
                                 backgroundColor:
-                                  court.source === "FOLLOWING"
+                                  club.source === "FOLLOWING"
                                     ? "rgba(111,244,255,0.14)"
                                     : "rgba(255,255,255,0.08)",
                               }}
                             >
                               <Text className="text-[10px] text-white/90 font-semibold">
-                                {court.source === "FOLLOWING" ? "Seguido" : "Próximo"}
+                                {club.source === "FOLLOWING" ? "Seguido" : "Próximo"}
                               </Text>
                             </View>
                           </View>
                           <Text className="mt-1 text-white/70 text-xs" numberOfLines={1}>
-                            {court.clubName}
+                            {club.courtsCount} {club.courtsCount === 1 ? "campo ativo" : "campos ativos"}
                           </Text>
-                          <Text className="mt-1 text-white/60 text-xs">
-                            {formatMoney(court.unitPriceCents, court.currency)} · {court.durationMinutes} min
-                          </Text>
+                          {club.minPriceCents != null && club.currency ? (
+                            <Text className="mt-1 text-white/60 text-xs">
+                              Desde {formatMoney(club.minPriceCents, club.currency)}
+                            </Text>
+                          ) : null}
                         </View>
                       </View>
                     </Pressable>
@@ -442,6 +459,23 @@ export default function BookingsScreen() {
             </View>
 
             <View style={{ height: 8 }} />
+            <Pressable
+              onPress={() => safePush(router, "/aulas")}
+              className="rounded-2xl border border-white/14 bg-white/6 px-4 py-3"
+              accessibilityRole="button"
+              accessibilityLabel="Abrir secção de aulas"
+            >
+              <View className="flex-row items-center justify-between gap-3">
+                <View>
+                  <Text className="text-white text-sm font-semibold">Aulas</Text>
+                  <Text className="text-white/70 text-xs">
+                    Ver inscrições por sessão, treinador e capacidade.
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="rgba(240,247,255,0.85)" />
+              </View>
+            </Pressable>
+
             <View className="flex-row flex-wrap gap-2">
               <View className="rounded-full border border-cyan-200/35 bg-cyan-300/12 px-3 py-1.5">
                 <Text className="text-cyan-50 text-xs font-semibold">Ativos {activeBookings.length}</Text>

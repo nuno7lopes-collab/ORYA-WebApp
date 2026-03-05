@@ -79,7 +79,7 @@ async function _GET(req: NextRequest) {
       return fail(ctx, 403, context.reservasAccess.error ?? "RESERVAS_UNAVAILABLE", "RESERVAS_UNAVAILABLE");
     }
 
-    const [courts, configs, courtServices, categories] = await Promise.all([
+    const [courts, configs, courtServices, categories, resources, resourceSchedules] = await Promise.all([
       prisma.padelClubCourt.findMany({
         where: {
           club: {
@@ -176,12 +176,45 @@ async function _GET(req: NextRequest) {
           isActive: true,
         },
       }),
+      prisma.reservationResource.findMany({
+        where: {
+          organizationId: context.organization.id,
+          isActive: true,
+        },
+        select: {
+          id: true,
+          courtId: true,
+        },
+      }),
+      prisma.availabilitySchedule.findMany({
+        where: {
+          organizationId: context.organization.id,
+          scopeType: "RESOURCE",
+        },
+        select: {
+          scopeId: true,
+        },
+      }),
     ]);
 
     const configByCourt = new Map(configs.map((config) => [config.courtId, config]));
+    const resourceByCourtId = new Map(
+      resources
+        .filter((resource) => typeof resource.courtId === "number" && resource.courtId > 0)
+        .map((resource) => [resource.courtId as number, resource.id]),
+    );
+    const resourceScopeIdsWithAvailability = new Set(
+      resourceSchedules
+        .map((schedule) => parsePositiveInt(schedule.scopeId))
+        .filter((scopeId): scopeId is number => Boolean(scopeId)),
+    );
 
     const items = courts.map((court) => {
       const config = configByCourt.get(court.id) ?? null;
+      const resourceId = resourceByCourtId.get(court.id) ?? null;
+      const hasResourceLinked = resourceId != null;
+      const hasResourceSpecificAvailability =
+        resourceId != null && resourceScopeIdsWithAvailability.has(resourceId);
       return {
         court: {
           id: court.id,
@@ -192,6 +225,10 @@ async function _GET(req: NextRequest) {
           club: court.club,
         },
         config,
+        resourceId,
+        availabilityScopeId: resourceId,
+        hasResourceLinked,
+        hasResourceSpecificAvailability,
         status: config ? (config.isActive ? "READY" : "INACTIVE") : "MISSING_CONFIG",
       };
     });

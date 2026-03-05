@@ -40,6 +40,7 @@ import {
   buildBookingConflictBlocks,
   buildSessionConflictBlocks,
 } from "@/lib/reservas/agendaConflictHelpers";
+import { resolveCourtSnapshot } from "@/lib/reservas/courtSnapshot";
 
 function parseId(value: string) {
   const parsed = Number(value);
@@ -131,6 +132,14 @@ async function _POST(
       (!booking.userId && booking.guestEmail && normalizedEmail && booking.guestEmail === normalizedEmail);
     if (!isOwner) {
       return fail(403, "FORBIDDEN", "Sem permissões.");
+    }
+
+    if (booking.service?.kind === "CLASS") {
+      return fail(
+        409,
+        "CLASS_RESCHEDULE_UNSUPPORTED",
+        "Reagendamento direto de aulas não é suportado. Cancela e faz nova inscrição.",
+      );
     }
 
     const { status } = booking;
@@ -241,7 +250,7 @@ async function _POST(
         }
         if (assignmentConfig.isCourtService) {
           if (!resource.courtId) {
-            return fail(409, "COURT_RESOURCE_INVALID", "Recurso sem ligação canónica a campo.");
+            return fail(409, "COURT_CONFIG_MISSING", "Recurso sem ligação canónica a campo.");
           }
         }
         if (allowedResourceIds && !allowedResourceIds.includes(resource.id)) {
@@ -612,7 +621,7 @@ async function _POST(
         }
         nextCourtId = assignmentConfig.isCourtService ? linkedCourtId : null;
         if (assignmentConfig.isCourtService && !nextCourtId) {
-          return fail(409, "COURT_RESOURCE_INVALID", "Sem ligação canónica entre campo e recurso.");
+          return fail(409, "COURT_CONFIG_MISSING", "Sem ligação canónica entre campo e recurso.");
         }
       }
 
@@ -662,7 +671,26 @@ async function _POST(
       return fail(409, "SERVICE_CONFIG_INVALID", "Serviço híbrido sem par disponível.");
     }
     if (availabilityMode === "HYBRID" && assignmentConfig.isCourtService && !nextCourtId) {
-      return fail(409, "COURT_RESOURCE_INVALID", "Sem ligação canónica entre campo e recurso.");
+      return fail(409, "COURT_CONFIG_MISSING", "Sem ligação canónica entre campo e recurso.");
+    }
+    if (assignmentConfig.isCourtService && !nextCourtId) {
+      return fail(409, "COURT_CONFIG_MISSING", "Campo inválido para este serviço.");
+    }
+    if (assignmentConfig.isCourtService && resourceId) {
+      let linkedCourtId = resourceCourtById.get(resourceId) ?? null;
+      if (!linkedCourtId) {
+        const resource = await prisma.reservationResource.findUnique({
+          where: { id: resourceId },
+          select: { courtId: true },
+        });
+        linkedCourtId = resource?.courtId ?? null;
+      }
+      if (!linkedCourtId) {
+        return fail(409, "COURT_CONFIG_MISSING", "Recurso sem ligação canónica a campo.");
+      }
+      if (nextCourtId && linkedCourtId !== nextCourtId) {
+        return fail(409, "COURT_RESOURCE_MISMATCH", "Recurso não corresponde ao campo selecionado.");
+      }
     }
 
     const { booking: updated } = await prisma.$transaction(async (tx) => {
@@ -738,6 +766,17 @@ async function _POST(
         }
       }
 
+      const resolvedCourtId =
+        availabilityMode === "RESOURCE" || availabilityMode === "HYBRID"
+          ? nextCourtId
+          : booking.courtId ?? null;
+      const courtSnapshot = assignmentConfig.isCourtService
+        ? await resolveCourtSnapshot(tx as any, {
+            organizationId: booking.organizationId,
+            courtId: resolvedCourtId,
+          })
+        : null;
+
       return updateBooking({
         tx,
         bookingId: booking.id,
@@ -747,10 +786,13 @@ async function _POST(
           startsAt,
           professionalId,
           resourceId,
-          courtId:
-            availabilityMode === "RESOURCE" || availabilityMode === "HYBRID"
-              ? nextCourtId
-              : booking.courtId ?? null,
+          courtId: resolvedCourtId,
+          ...(assignmentConfig.isCourtService
+            ? {
+                courtSnapshotName: courtSnapshot?.name ?? null,
+                courtSnapshotCoverImageUrl: courtSnapshot?.coverImageUrl ?? null,
+              }
+            : {}),
           partySize,
         },
         select: { id: true, startsAt: true, status: true },

@@ -2,6 +2,9 @@ import { api, unwrapApiResponse } from "../../lib/api";
 import type {
   BookingCancelPreview,
   BookingChangeResponse,
+  BookingClubCard,
+  BookingClubsState,
+  ClassEnrollmentItem,
   BookingCourtsState,
   BookingHubPayload,
   BookingItem,
@@ -9,6 +12,10 @@ import type {
 
 type BookingListPayload = {
   items?: BookingItem[];
+};
+
+type ClassEnrollmentListPayload = {
+  items?: ClassEnrollmentItem[];
 };
 
 type FollowListItem = {
@@ -31,7 +38,7 @@ const normalizeOrgUsername = (value: unknown) => {
   return username.length > 0 ? username : null;
 };
 
-const toCourtCards = (
+export const mapHubToCourtCards = (
   hub: BookingHubPayload,
   source: "FOLLOWING" | "NEARBY",
 ) =>
@@ -39,6 +46,7 @@ const toCourtCards = (
     .filter((court) => Boolean(court.isActive))
     .map((court) => ({
       id: `${hub.organization.username ?? hub.organization.id}:${court.service.id}:${court.id}`,
+      courtId: court.id,
       serviceId: court.service.id,
       orgUsername: String(hub.organization.username ?? ""),
       clubName:
@@ -56,7 +64,7 @@ const toCourtCards = (
     }))
     .filter((item) => item.orgUsername.length > 0);
 
-const fetchReservationHub = async (orgUsername: string): Promise<BookingHubPayload> => {
+export const fetchReservationHub = async (orgUsername: string): Promise<BookingHubPayload> => {
   const response = await api.request<unknown>(
     `/api/public/org/${encodeURIComponent(orgUsername)}/reservas/hub`,
   );
@@ -101,7 +109,7 @@ const loadCourtsFromOrganizations = async (
     usernames.map(async (username) => {
       try {
         const hub = await fetchReservationHub(username);
-        return toCourtCards(hub, source);
+        return mapHubToCourtCards(hub, source);
       } catch (error: unknown) {
         const code =
           typeof error === "object" &&
@@ -128,9 +136,51 @@ const loadCourtsFromOrganizations = async (
   };
 };
 
+const aggregateClubCards = (courts: BookingCourtsState["items"]): BookingClubCard[] => {
+  const map = new Map<string, BookingClubCard>();
+  courts.forEach((court) => {
+    const existing = map.get(court.orgUsername);
+    if (!existing) {
+      map.set(court.orgUsername, {
+        id: `club:${court.orgUsername}`,
+        orgUsername: court.orgUsername,
+        clubName: court.clubName,
+        coverImageUrl: court.coverImageUrl ?? null,
+        courtsCount: 1,
+        minPriceCents: Number.isFinite(court.unitPriceCents) ? court.unitPriceCents : null,
+        currency: court.currency ?? null,
+        source: court.source,
+      });
+      return;
+    }
+    existing.courtsCount += 1;
+    if (!existing.coverImageUrl && court.coverImageUrl) {
+      existing.coverImageUrl = court.coverImageUrl;
+    }
+    if (Number.isFinite(court.unitPriceCents)) {
+      if (existing.minPriceCents == null || court.unitPriceCents < existing.minPriceCents) {
+        existing.minPriceCents = court.unitPriceCents;
+      }
+    }
+    if (existing.source !== "FOLLOWING" && court.source === "FOLLOWING") {
+      existing.source = "FOLLOWING";
+    }
+  });
+  return Array.from(map.values()).sort((a, b) => {
+    if (a.source !== b.source) return a.source === "FOLLOWING" ? -1 : 1;
+    return a.clubName.localeCompare(b.clubName, "pt-PT");
+  });
+};
+
 export const fetchMyBookings = async (): Promise<BookingItem[]> => {
   const response = await api.request<unknown>("/api/me/reservas?compact=1");
   const payload = unwrapApiResponse<BookingListPayload>(response);
+  return Array.isArray(payload?.items) ? payload.items : [];
+};
+
+export const fetchMyClassEnrollments = async (): Promise<ClassEnrollmentItem[]> => {
+  const response = await api.request<unknown>("/api/me/aulas/inscricoes");
+  const payload = unwrapApiResponse<ClassEnrollmentListPayload>(response);
   return Array.isArray(payload?.items) ? payload.items : [];
 };
 
@@ -185,6 +235,19 @@ export const fetchAvailableCourts = async (params: {
     hasFollowingClubs: false,
     hasAnyClubWithUsername: nearbyUsernames.length > 0,
     configurationIssue: nearby.configurationIssue,
+  };
+};
+
+export const fetchReservableClubs = async (params: {
+  userId?: string | null;
+  accessToken?: string | null;
+}): Promise<BookingClubsState> => {
+  const courtsState = await fetchAvailableCourts(params);
+  return {
+    items: aggregateClubCards(courtsState.items),
+    hasFollowingClubs: courtsState.hasFollowingClubs,
+    hasAnyClubWithUsername: courtsState.hasAnyClubWithUsername,
+    configurationIssue: courtsState.configurationIssue,
   };
 };
 

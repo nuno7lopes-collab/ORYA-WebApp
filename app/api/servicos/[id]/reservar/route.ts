@@ -54,6 +54,11 @@ import {
   buildEventClaimConflictBlocks,
   loadActiveEventClaimBlocks,
 } from "@/lib/reservas/eventClaims";
+import { resolveCourtSnapshot } from "@/lib/reservas/courtSnapshot";
+import {
+  ClassEnrollmentError,
+  enrollUserIntoClassSession,
+} from "@/lib/academy/classEnrollmentService";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -198,15 +203,12 @@ async function _POST(
     }
     const startsAtRaw = typeof payload?.startsAt === "string" ? payload.startsAt : null;
     const startsAt = startsAtRaw ? new Date(startsAtRaw) : null;
+    const sessionId = parsePositiveInt(payload?.sessionId);
     const addressIdInput = typeof payload?.addressId === "string" ? payload.addressId.trim() : "";
     const addonSelection = normalizeAddonSelection(payload?.selectedAddons ?? payload?.addons);
     const packageId = parsePackageId(payload?.packageId);
     if (payload?.packageId != null && !packageId) {
       return jsonWrap({ ok: false, error: "Pacote inválido." }, { status: 400 });
-    }
-
-    if (!startsAt || Number.isNaN(startsAt.getTime())) {
-      return jsonWrap({ ok: false, error: "Horário inválido." }, { status: 400 });
     }
 
     const service = await prisma.service.findFirst({
@@ -280,6 +282,101 @@ async function _POST(
         { ok: false, error: reservasOperational.errorCode, message: reservasOperational.message },
         { status: 409 },
       );
+    }
+
+    if (service.kind === "CLASS") {
+      if (!user) {
+        return jsonWrap(
+          { ok: false, error: "AUTH_REQUIRED", errorCode: "AUTH_REQUIRED", message: "Inicia sessão para reservar." },
+          { status: 401 },
+        );
+      }
+
+      const profile = await prisma.profile.findUnique({
+        where: { id: user.id },
+        select: { contactPhone: true },
+      });
+      if (!profile?.contactPhone) {
+        return jsonWrap(
+          { ok: false, error: "PHONE_REQUIRED", message: "Telemóvel obrigatório para reservar." },
+          { status: 400 },
+        );
+      }
+
+      const parsedStartsAt =
+        startsAt && !Number.isNaN(startsAt.getTime()) ? startsAt : null;
+      if (!sessionId && !parsedStartsAt) {
+        return jsonWrap(
+          { ok: false, error: "SESSION_REQUIRED", errorCode: "SESSION_REQUIRED", message: "sessionId obrigatório." },
+          { status: 400 },
+        );
+      }
+
+      try {
+        const enrollmentResult = await enrollUserIntoClassSession({
+          organizationId: service.organizationId,
+          actorUserId: user.id,
+          userId: user.id,
+          source: "PUBLIC",
+          sessionId: sessionId ?? null,
+          serviceId: service.id,
+          startsAt: sessionId ? null : parsedStartsAt,
+          partySize: parsePositiveInt(payload?.partySize),
+          addressId: addressIdInput || null,
+        });
+
+        if (enrollmentResult.bridgeUsed) {
+          console.info("[class-reserve-legacy-bridge] serviceId+startsAt contract used", {
+            organizationId: service.organizationId,
+            serviceId: service.id,
+            userId: user.id,
+            sessionId: enrollmentResult.sessionId,
+          });
+        }
+
+        return jsonWrap({
+          ok: true,
+          deduped: enrollmentResult.kind === "existing",
+          bridgeUsed: enrollmentResult.bridgeUsed,
+          booking: enrollmentResult.booking
+            ? {
+                id: enrollmentResult.booking.id,
+                status: enrollmentResult.booking.status,
+                pendingExpiresAt: enrollmentResult.booking.pendingExpiresAt ?? null,
+                startsAt: enrollmentResult.booking.startsAt,
+                durationMinutes: enrollmentResult.booking.durationMinutes,
+                professionalId: enrollmentResult.booking.professionalId ?? null,
+                resourceId: enrollmentResult.booking.resourceId ?? null,
+                courtId: enrollmentResult.booking.courtId ?? null,
+              }
+            : null,
+          enrollment: {
+            id: enrollmentResult.enrollment.id,
+            bookingId: enrollmentResult.enrollment.bookingId,
+            classSessionId: enrollmentResult.enrollment.classSessionId,
+            status: enrollmentResult.enrollment.status,
+            userId: enrollmentResult.enrollment.userId,
+          },
+        });
+      } catch (err) {
+        if (err instanceof ClassEnrollmentError) {
+          return jsonWrap(
+            {
+              ok: false,
+              error: err.errorCode,
+              errorCode: err.errorCode,
+              message: err.message,
+              retryable: err.retryable,
+            },
+            { status: err.status },
+          );
+        }
+        throw err;
+      }
+    }
+
+    if (!startsAt || Number.isNaN(startsAt.getTime())) {
+      return jsonWrap({ ok: false, error: "Horário inválido." }, { status: 400 });
     }
 
     if (user) {
@@ -1037,7 +1134,7 @@ async function _POST(
       }
       if (!courtId) {
         return jsonWrap(
-          { ok: false, error: "SERVICE_CONFIG_INVALID", message: "Recurso sem ligação a campo.", selectionRules },
+          { ok: false, error: "COURT_CONFIG_MISSING", message: "Recurso sem ligação canónica a campo.", selectionRules },
           { status: 409 },
         );
       }
@@ -1045,13 +1142,46 @@ async function _POST(
 
     if (availabilityMode === "HYBRID" && assignmentConfig.isCourtService && !courtId) {
       return jsonWrap(
-        { ok: false, error: "SERVICE_CONFIG_INVALID", message: "Par híbrido sem ligação a campo.", selectionRules },
+        { ok: false, error: "COURT_CONFIG_MISSING", message: "Par híbrido sem ligação canónica a campo.", selectionRules },
         { status: 409 },
       );
     }
+    if (assignmentConfig.isCourtService && !courtId) {
+      return jsonWrap(
+        { ok: false, error: "COURT_CONFIG_MISSING", message: "Campo inválido para este serviço.", selectionRules },
+        { status: 409 },
+      );
+    }
+    if (assignmentConfig.isCourtService && resourceId) {
+      let linkedCourtId = resourceCourtById.get(resourceId) ?? null;
+      if (!linkedCourtId) {
+        const linkedResource = await prisma.reservationResource.findUnique({
+          where: { id: resourceId },
+          select: { courtId: true },
+        });
+        linkedCourtId = linkedResource?.courtId ?? null;
+      }
+      if (!linkedCourtId) {
+        return jsonWrap(
+          { ok: false, error: "COURT_CONFIG_MISSING", message: "Recurso sem ligação canónica a campo.", selectionRules },
+          { status: 409 },
+        );
+      }
+      if (courtId && linkedCourtId !== courtId) {
+        return jsonWrap(
+          { ok: false, error: "COURT_RESOURCE_MISMATCH", message: "Recurso não corresponde ao campo selecionado.", selectionRules },
+          { status: 409 },
+        );
+      }
+    }
     if (requestedCourtId && courtId && courtId !== requestedCourtId) {
       return jsonWrap(
-        { ok: false, error: "INVALID_COURT", message: "Campo selecionado inválido para este horário.", selectionRules },
+        {
+          ok: false,
+          error: "COURT_RESOURCE_MISMATCH",
+          message: "Campo selecionado não corresponde ao recurso atribuído.",
+          selectionRules,
+        },
         { status: 409 },
       );
     }
@@ -1264,6 +1394,11 @@ async function _POST(
         }
       }
 
+      const courtSnapshot = await resolveCourtSnapshot(tx as any, {
+        organizationId: service.organizationId,
+        courtId,
+      });
+
       const created = await createBooking({
         tx,
         organizationId: service.organizationId,
@@ -1284,6 +1419,8 @@ async function _POST(
           professionalId,
           resourceId,
           courtId,
+          courtSnapshotName: courtSnapshot?.name ?? null,
+          courtSnapshotCoverImageUrl: courtSnapshot?.coverImageUrl ?? null,
           partySize,
           pendingExpiresAt,
           snapshotTimezone: timezone,

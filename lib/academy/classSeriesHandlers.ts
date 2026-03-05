@@ -9,6 +9,8 @@ import { makeUtcDateFromLocal } from "@/lib/reservas/availability";
 import { getOrganizationBookingPolicy, validateStartMinuteAgainstPolicy } from "@/lib/reservas/gridPolicy";
 import { validateClassSessionsAgainstAvailability } from "@/lib/reservas/classSeriesAvailability";
 import { assertTrainerIdsBelongToEligibleTeamMembers } from "@/lib/academy/trainerTeamGuards";
+import { loadActiveEventClaimBlocks } from "@/lib/reservas/eventClaims";
+import { cancelClassSessionEnrollmentsAndBookings } from "@/lib/academy/classEnrollmentService";
 
 const MINUTES_PER_DAY = 24 * 60;
 
@@ -76,6 +78,166 @@ function parseDateParam(raw: string | null) {
   const parsed = new Date(trimmed);
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed;
+}
+
+function rangesOverlap(params: {
+  startsAt: Date;
+  endsAt: Date;
+  otherStartsAt: Date;
+  otherEndsAt: Date;
+}) {
+  return params.startsAt < params.otherEndsAt && params.endsAt > params.otherStartsAt;
+}
+
+async function validateClassSessionsAgainstRealConflicts(params: {
+  organizationId: number;
+  sessions: Array<{ startsAt: Date; endsAt: Date }>;
+  professionalId: number | null;
+  courtId: number | null;
+  excludeSeriesId?: number | null;
+}) {
+  if (!params.sessions.length) return { ok: true as const };
+  if (!params.professionalId && !params.courtId) return { ok: true as const };
+
+  const now = new Date();
+  const rangeStart = new Date(
+    Math.min(...params.sessions.map((session) => session.startsAt.getTime())),
+  );
+  const rangeEnd = new Date(
+    Math.max(...params.sessions.map((session) => session.endsAt.getTime())),
+  );
+  const bookingQueryStart = new Date(rangeStart.getTime() - 6 * 60 * 60 * 1000);
+
+  const [overlappingBookings, overlappingClassSessions, eventClaims] = await Promise.all([
+    prisma.booking.findMany({
+      where: {
+        organizationId: params.organizationId,
+        startsAt: { lt: rangeEnd, gte: bookingQueryStart },
+        AND: [
+          {
+            OR: [
+              { status: { in: ["CONFIRMED", "DISPUTED", "NO_SHOW"] as any } },
+              { status: { in: ["PENDING_CONFIRMATION", "PENDING"] as any }, pendingExpiresAt: { gt: now }, startsAt: { gt: now } },
+            ],
+          },
+          {
+            OR: [
+              ...(params.professionalId ? [{ professionalId: params.professionalId }] : []),
+              ...(params.courtId ? [{ courtId: params.courtId }] : []),
+            ],
+          },
+        ],
+      },
+      select: {
+        id: true,
+        startsAt: true,
+        durationMinutes: true,
+        professionalId: true,
+        courtId: true,
+      },
+    }),
+    prisma.classSession.findMany({
+      where: {
+        organizationId: params.organizationId,
+        status: "SCHEDULED",
+        startsAt: { lt: rangeEnd },
+        endsAt: { gt: rangeStart },
+        OR: [
+          ...(params.professionalId ? [{ professionalId: params.professionalId }] : []),
+          ...(params.courtId ? [{ courtId: params.courtId }] : []),
+        ],
+        ...(params.excludeSeriesId ? { seriesId: { not: params.excludeSeriesId } } : {}),
+      },
+      select: {
+        id: true,
+        startsAt: true,
+        endsAt: true,
+        professionalId: true,
+        courtId: true,
+      },
+    }),
+    loadActiveEventClaimBlocks({
+      tx: prisma as any,
+      organizationId: params.organizationId,
+      rangeStart,
+      rangeEnd,
+      professionalIds: params.professionalId ? [params.professionalId] : [],
+      courtIds: params.courtId ? [params.courtId] : [],
+      resourceIds: [],
+    }),
+  ]);
+
+  for (const session of params.sessions) {
+    const bookingConflict = overlappingBookings.find((booking) => {
+      const bookingEndsAt = new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000);
+      if (!rangesOverlap({ startsAt: session.startsAt, endsAt: session.endsAt, otherStartsAt: booking.startsAt, otherEndsAt: bookingEndsAt })) {
+        return false;
+      }
+      if (params.professionalId && booking.professionalId === params.professionalId) return true;
+      if (params.courtId && booking.courtId === params.courtId) return true;
+      return false;
+    });
+    if (bookingConflict) {
+      return {
+        ok: false as const,
+        conflict: {
+          reason: "booking_conflict",
+          bookingId: bookingConflict.id,
+          startsAt: bookingConflict.startsAt,
+        },
+      };
+    }
+
+    const classConflict = overlappingClassSessions.find((existingSession) => {
+      if (!rangesOverlap({
+        startsAt: session.startsAt,
+        endsAt: session.endsAt,
+        otherStartsAt: existingSession.startsAt,
+        otherEndsAt: existingSession.endsAt,
+      })) {
+        return false;
+      }
+      if (params.professionalId && existingSession.professionalId === params.professionalId) return true;
+      if (params.courtId && existingSession.courtId === params.courtId) return true;
+      return false;
+    });
+    if (classConflict) {
+      return {
+        ok: false as const,
+        conflict: {
+          reason: "class_session_conflict",
+          classSessionId: classConflict.id,
+          startsAt: classConflict.startsAt,
+        },
+      };
+    }
+
+    const eventConflict = eventClaims.find((claim) => {
+      if (!rangesOverlap({
+        startsAt: session.startsAt,
+        endsAt: session.endsAt,
+        otherStartsAt: claim.startsAt,
+        otherEndsAt: claim.endsAt,
+      })) {
+        return false;
+      }
+      if (params.professionalId && claim.professionalId === params.professionalId) return true;
+      if (params.courtId && claim.courtId === params.courtId) return true;
+      return false;
+    });
+    if (eventConflict) {
+      return {
+        ok: false as const,
+        conflict: {
+          reason: "event_claim_conflict",
+          claimSourceId: eventConflict.sourceId,
+          startsAt: eventConflict.startsAt,
+        },
+      };
+    }
+  }
+
+  return { ok: true as const };
 }
 
 async function ensureClassService(params: { organizationId: number; classId: number }) {
@@ -283,6 +445,22 @@ export async function handleAcademyClassSeriesPost(req: NextRequest, classIdRaw:
         availabilityValidation.conflict,
       );
     }
+
+    const conflictValidation = await validateClassSessionsAgainstRealConflicts({
+      organizationId: access.organization.id,
+      sessions: sessions.map((session) => ({ startsAt: session.startsAt, endsAt: session.endsAt })),
+      professionalId,
+      courtId,
+    });
+    if (!conflictValidation.ok) {
+      return academyFail(
+        access.ctx,
+        409,
+        "CLASS_SLOT_CONFLICT",
+        "Conflito com agenda existente de treinador/campo.",
+        conflictValidation.conflict,
+      );
+    }
   }
 
   const series = await prisma.$transaction(async (tx) => {
@@ -472,6 +650,23 @@ export async function handleAcademyClassSeriesPatch(
         availabilityValidation.conflict,
       );
     }
+
+    const conflictValidation = await validateClassSessionsAgainstRealConflicts({
+      organizationId: access.organization.id,
+      sessions: generatedSessions.map((session) => ({ startsAt: session.startsAt, endsAt: session.endsAt })),
+      professionalId,
+      courtId,
+      excludeSeriesId: series.id,
+    });
+    if (!conflictValidation.ok) {
+      return academyFail(
+        access.ctx,
+        409,
+        "CLASS_SLOT_CONFLICT",
+        "Conflito com agenda existente de treinador/campo.",
+        conflictValidation.conflict,
+      );
+    }
   }
   const now = new Date();
 
@@ -492,10 +687,22 @@ export async function handleAcademyClassSeriesPatch(
     });
 
     if (!isActive) {
+      const sessionsToCancel = await tx.classSession.findMany({
+        where: { seriesId: series.id, startsAt: { gte: now }, status: "SCHEDULED" },
+        select: { id: true },
+      });
       await tx.classSession.updateMany({
         where: { seriesId: series.id, startsAt: { gte: now }, status: "SCHEDULED" },
         data: { status: "CANCELLED" },
       });
+      if (sessionsToCancel.length > 0) {
+        await cancelClassSessionEnrollmentsAndBookings({
+          tx,
+          organizationId: access.organization.id,
+          sessionIds: sessionsToCancel.map((session) => session.id),
+          actorUserId: access.profile.id,
+        });
+      }
       return savedSeries;
     }
 
@@ -508,19 +715,33 @@ export async function handleAcademyClassSeriesPatch(
     });
     const existingTimes = new Set(existingSessions.map((session) => session.startsAt.getTime()));
 
+    const sessionsToCancel = existingSessions
+      .filter((session) => !desiredMap.has(session.startsAt.getTime()))
+      .map((session) => session.id);
+
+    if (sessionsToCancel.length > 0) {
+      await tx.classSession.updateMany({
+        where: { id: { in: sessionsToCancel } },
+        data: { status: "CANCELLED" },
+      });
+      await cancelClassSessionEnrollmentsAndBookings({
+        tx,
+        organizationId: access.organization.id,
+        sessionIds: sessionsToCancel,
+        actorUserId: access.profile.id,
+      });
+    }
+
+    const sessionsToUpdate = existingSessions.filter((session) =>
+      desiredMap.has(session.startsAt.getTime()),
+    );
     await Promise.all(
-      existingSessions.map((session) => {
+      sessionsToUpdate.map((session) => {
         const desired = desiredMap.get(session.startsAt.getTime());
-        if (!desired) {
-          return tx.classSession.update({
-            where: { id: session.id },
-            data: { status: "CANCELLED" },
-          });
-        }
         return tx.classSession.update({
           where: { id: session.id },
           data: {
-            endsAt: desired.endsAt,
+            endsAt: desired?.endsAt ?? session.startsAt,
             capacity,
             courtId,
             professionalId,
@@ -575,10 +796,22 @@ export async function handleAcademyClassSeriesDelete(
   const now = new Date();
   await prisma.$transaction(async (tx) => {
     await tx.classSeries.update({ where: { id: series.id }, data: { isActive: false } });
+    const sessionsToCancel = await tx.classSession.findMany({
+      where: { seriesId: series.id, startsAt: { gte: now }, status: "SCHEDULED" },
+      select: { id: true },
+    });
     await tx.classSession.updateMany({
       where: { seriesId: series.id, startsAt: { gte: now }, status: "SCHEDULED" },
       data: { status: "CANCELLED" },
     });
+    if (sessionsToCancel.length > 0) {
+      await cancelClassSessionEnrollmentsAndBookings({
+        tx,
+        organizationId: access.organization.id,
+        sessionIds: sessionsToCancel.map((session) => session.id),
+        actorUserId: access.profile.id,
+      });
+    }
   });
 
   return respondOk(access.ctx, { ok: true });

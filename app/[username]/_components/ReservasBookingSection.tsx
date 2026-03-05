@@ -14,6 +14,7 @@ type ReservationAssignmentMode =
 
 type Service = {
   id: number;
+  selectionKey?: string | null;
   courtId?: number | null;
   backingServiceId?: number | null;
   title: string;
@@ -98,6 +99,7 @@ type ReservasBookingSectionProps = {
   services: Service[];
   professionals: Professional[];
   resources: Resource[];
+  initialServiceKey?: string | null;
   initialServiceId?: number | null;
   featuredServiceIds?: number[];
   servicesLayout?: "grid" | "carousel";
@@ -126,11 +128,16 @@ function formatMoney(cents: number, currency: string) {
   }).format(cents / 100);
 }
 
+function getServiceSelectionKey(service: Service) {
+  return service.selectionKey?.trim() || `service-${service.id}`;
+}
+
 export default function ReservasBookingSection({
   organization,
   services,
   professionals,
   resources,
+  initialServiceKey,
   initialServiceId,
   featuredServiceIds = [],
   servicesLayout = "grid",
@@ -155,33 +162,38 @@ export default function ReservasBookingSection({
     [services],
   );
   const [activeHubTab, setActiveHubTab] = useState<"courts" | "classes" | "services">("courts");
-  const [selectedServiceId, setSelectedServiceId] = useState<number | null>(null);
+  const [selectedServiceKey, setSelectedServiceKey] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"services" | "professionals">("services");
   const [modalOpen, setModalOpen] = useState(false);
-  const [modalServiceId, setModalServiceId] = useState<number | null>(null);
+  const [modalServiceKey, setModalServiceKey] = useState<string | null>(null);
   const [modalProfessionalId, setModalProfessionalId] = useState<number | null>(null);
-  const [modalInitialServiceId, setModalInitialServiceId] = useState<number | null>(null);
+  const [modalInitialServiceKey, setModalInitialServiceKey] = useState<string | null>(null);
   const carouselRef = useRef<HTMLDivElement | null>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
 
   useEffect(() => {
     if (!acceptNewBookings) return;
-    if (!initialServiceId) return;
-    if (!activeServices.some((service) => service.id === initialServiceId)) return;
-    setSelectedServiceId(initialServiceId);
-    setModalServiceId(initialServiceId);
+    const initialService =
+      (initialServiceKey
+        ? activeServices.find((service) => getServiceSelectionKey(service) === initialServiceKey)
+        : null) ??
+      (initialServiceId ? activeServices.find((service) => service.id === initialServiceId) : null);
+    if (!initialService) return;
+    const serviceKey = getServiceSelectionKey(initialService);
+    setSelectedServiceKey(serviceKey);
+    setModalServiceKey(serviceKey);
     setModalProfessionalId(null);
-    setModalInitialServiceId(initialServiceId);
+    setModalInitialServiceKey(serviceKey);
     setModalOpen(true);
-  }, [acceptNewBookings, activeServices, initialServiceId]);
+  }, [acceptNewBookings, activeServices, initialServiceId, initialServiceKey]);
 
   useEffect(() => {
     if (acceptNewBookings) return;
     setModalOpen(false);
-    setModalServiceId(null);
+    setModalServiceKey(null);
     setModalProfessionalId(null);
-    setModalInitialServiceId(null);
+    setModalInitialServiceKey(null);
   }, [acceptNewBookings]);
 
   useEffect(() => {
@@ -194,50 +206,53 @@ export default function ReservasBookingSection({
     };
   }, [modalOpen]);
 
-  const openModal = (serviceId: number) => {
+  const openModal = (serviceKey: string) => {
     if (!acceptNewBookings) return;
-    setSelectedServiceId(serviceId);
-    setModalServiceId(serviceId);
+    setSelectedServiceKey(serviceKey);
+    setModalServiceKey(serviceKey);
     setModalProfessionalId(null);
-    setModalInitialServiceId(serviceId);
+    setModalInitialServiceKey(serviceKey);
     setModalOpen(true);
   };
 
-  const openModalWithProfessional = (serviceId: number, professionalId: number) => {
+  const openModalWithProfessional = (serviceKey: string, professionalId: number) => {
     if (!acceptNewBookings) return;
-    setSelectedServiceId(serviceId);
-    setModalServiceId(serviceId);
+    setSelectedServiceKey(serviceKey);
+    setModalServiceKey(serviceKey);
     setModalProfessionalId(professionalId);
-    setModalInitialServiceId(serviceId);
+    setModalInitialServiceKey(serviceKey);
     setModalOpen(true);
   };
 
   const openModalForProfessional = (professionalId: number) => {
     if (!acceptNewBookings) return;
     const candidate =
-      servicesByProfessional.get(professionalId)?.[0]?.id ?? null;
-    setModalServiceId(null);
+      servicesByProfessional.get(professionalId)?.[0] ?? null;
+    const candidateKey = candidate ? getServiceSelectionKey(candidate) : null;
+    setModalServiceKey(null);
     setModalProfessionalId(professionalId);
-    setModalInitialServiceId(candidate);
+    setModalInitialServiceKey(candidateKey);
     setModalOpen(true);
   };
 
   const closeModal = () => {
     setModalOpen(false);
-    setModalServiceId(null);
+    setModalServiceKey(null);
     setModalProfessionalId(null);
-    setModalInitialServiceId(null);
+    setModalInitialServiceKey(null);
   };
 
   const activeProfessionals = professionals;
   const orderedServices = useMemo(() => {
     const normalizedIds = featuredServiceIds.map((id) => Number(id)).filter((id) => Number.isFinite(id));
     const uniqueFeaturedIds = Array.from(new Set(normalizedIds));
-    const featuredSet = new Set(uniqueFeaturedIds);
     const featured = uniqueFeaturedIds
       .map((id) => activeServices.find((service) => service.id === id))
       .filter((service): service is Service => Boolean(service));
-    const remaining = activeServices.filter((service) => !featuredSet.has(service.id));
+    const featuredSelectionKeys = new Set(featured.map((service) => getServiceSelectionKey(service)));
+    const remaining = activeServices.filter(
+      (service) => !featuredSelectionKeys.has(getServiceSelectionKey(service)),
+    );
     return [...featured, ...remaining];
   }, [activeServices, featuredServiceIds]);
   const courtServices = useMemo(
@@ -335,13 +350,14 @@ export default function ReservasBookingSection({
   }, []);
 
   const renderServiceCard = (service: Service, extraClassName = "") => {
+    const serviceKey = getServiceSelectionKey(service);
     const coverUrl = getEventCoverUrl(service.coverImageUrl, {
-      seed: `service-${service.id}`,
+      seed: serviceKey,
       width: 900,
       quality: 70,
       format: "webp",
     });
-    const isSelected = service.id === selectedServiceId;
+    const isSelected = serviceKey === selectedServiceKey;
     const vertical = resolveServiceVertical(service);
     const durationPrices = (service.durationPrices ?? [])
       .filter((item) => item.isActive !== false)
@@ -367,10 +383,10 @@ export default function ReservasBookingSection({
     const categoryLabel = service.category?.label ?? service.categoryTag ?? null;
     return (
       <button
-        key={service.id}
+        key={serviceKey}
         type="button"
         className={`${cardBaseClass} ${isSelected ? cardActiveClass : ""} ${extraClassName} ${acceptNewBookings ? "" : "cursor-not-allowed opacity-70"}`}
-        onClick={() => openModal(service.id)}
+        onClick={() => openModal(serviceKey)}
         disabled={!acceptNewBookings}
       >
         <div className="absolute inset-0">
@@ -403,7 +419,7 @@ export default function ReservasBookingSection({
               <div className="flex flex-wrap gap-1.5">
                 {durationPrices.slice(0, 3).map((item) => (
                   <span
-                    key={`duration-${service.id}-${item.durationMinutes}`}
+                    key={`duration-${serviceKey}-${item.durationMinutes}`}
                     className="inline-flex rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[10px] text-white/70"
                   >
                     {item.durationMinutes} min
@@ -529,7 +545,7 @@ export default function ReservasBookingSection({
               >
                 {servicesForCards.map((service) => (
                   <div
-                    key={service.id}
+                    key={getServiceSelectionKey(service)}
                     className="min-w-[240px] snap-start sm:min-w-[280px] lg:min-w-[320px]"
                   >
                     {renderServiceCard(service, "w-full")}
@@ -613,9 +629,9 @@ export default function ReservasBookingSection({
                       <div className="flex flex-wrap gap-2">
                         {proServices.slice(0, 3).map((service) => (
                           <button
-                            key={`${professional.id}-${service.id}`}
+                            key={`${professional.id}-${getServiceSelectionKey(service)}`}
                             type="button"
-                            onClick={() => openModalWithProfessional(service.id, professional.id)}
+                            onClick={() => openModalWithProfessional(getServiceSelectionKey(service), professional.id)}
                             disabled={!acceptNewBookings}
                             className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] text-white/70 transition hover:border-white/35 hover:bg-white/15"
                           >
@@ -655,14 +671,15 @@ export default function ReservasBookingSection({
             <div className={modalShellClass}>
               <ReservasBookingClient
                 mode="modal"
-                fixedServiceId={modalServiceId ?? undefined}
+                fixedServiceKey={modalServiceKey ?? undefined}
                 fixedProfessionalId={modalProfessionalId ?? undefined}
                 onClose={closeModal}
                 organization={organization}
                 services={services}
                 professionals={professionals}
                 resources={resources}
-                initialServiceId={modalServiceId ?? modalInitialServiceId ?? initialServiceId ?? null}
+                initialServiceKey={modalServiceKey ?? modalInitialServiceKey ?? null}
+                initialServiceId={initialServiceId ?? null}
               />
             </div>
           </div>

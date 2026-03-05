@@ -49,6 +49,11 @@ function buildDateKey(parts: { year: number; month: number; day: number }) {
   return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`;
 }
 
+function getLocalDateKey(value: Date, timezone: string) {
+  const parts = getDateParts(value, timezone);
+  return buildDateKey(parts);
+}
+
 function isAlignedToGrid(startsAt: Date, timezone: string, gridMinutes: number) {
   if (!Number.isFinite(gridMinutes) || gridMinutes <= 0) return true;
   const timeParts = new Intl.DateTimeFormat("en-US", {
@@ -146,6 +151,8 @@ async function _GET(
       },
       select: {
         id: true,
+        title: true,
+        coverImageUrl: true,
         kind: true,
         assignmentMode: true,
         partySizeRequired: true,
@@ -249,6 +256,192 @@ async function _GET(
       allowCustomDuration: false,
       presetDurations: bookingPolicy.allowedDurations,
     };
+
+    if (service.kind === "CLASS") {
+      const dayParam = parseDayParam(req.nextUrl.searchParams.get("day"));
+      const monthParam = parseMonthParam(req.nextUrl.searchParams.get("month"));
+      const requestedTrainerId = parsePositiveInt(req.nextUrl.searchParams.get("professionalId"));
+      const requestedCourtId = parsePositiveInt(req.nextUrl.searchParams.get("courtId"));
+      const now = new Date();
+
+      if (req.nextUrl.searchParams.get("professionalId") != null && !requestedTrainerId) {
+        return jsonWrap({ ok: false, error: "INVALID_PROFESSIONAL" }, { status: 400 });
+      }
+      if (req.nextUrl.searchParams.get("courtId") != null && !requestedCourtId) {
+        return jsonWrap({ ok: false, error: "INVALID_COURT" }, { status: 400 });
+      }
+
+      const sessionWhereBase = {
+        organizationId: service.organizationId,
+        serviceId: service.id,
+        ...(requestedTrainerId ? { professionalId: requestedTrainerId } : {}),
+        ...(requestedCourtId ? { courtId: requestedCourtId } : {}),
+      };
+
+      const sessionSelect = {
+        id: true,
+        startsAt: true,
+        endsAt: true,
+        capacity: true,
+        status: true,
+        professionalId: true,
+        courtId: true,
+        professional: {
+          select: {
+            id: true,
+            name: true,
+            user: { select: { avatarUrl: true, username: true, fullName: true } },
+          },
+        },
+        court: { select: { id: true, name: true, isActive: true } },
+      } as const;
+
+      if (dayParam) {
+        const dayStart = makeUtcDateFromLocal({ ...dayParam, hour: 0, minute: 0 }, timezone);
+        const dayEnd = makeUtcDateFromLocal({ ...dayParam, hour: 23, minute: 59 }, timezone);
+
+        const sessions = await prisma.classSession.findMany({
+          where: {
+            ...sessionWhereBase,
+            startsAt: { gte: dayStart, lte: dayEnd, gt: now },
+          },
+          orderBy: [{ startsAt: "asc" }],
+          select: sessionSelect,
+        });
+
+        const enrollmentRows = sessions.length
+          ? await prisma.academyEnrollment.groupBy({
+              by: ["classSessionId"],
+              where: {
+                organizationId: service.organizationId,
+                classSessionId: { in: sessions.map((session) => session.id) },
+                status: { in: ["PENDING", "CONFIRMED"] },
+              },
+              _count: { _all: true },
+            })
+          : [];
+        const enrolledCountBySession = new Map<number, number>();
+        enrollmentRows.forEach((row) => enrolledCountBySession.set(row.classSessionId, row._count._all));
+
+        const items = sessions.map((session) => {
+          const enrolledCount = enrolledCountBySession.get(session.id) ?? 0;
+          const isFull = session.status !== "SCHEDULED" || enrolledCount >= session.capacity;
+          return {
+            slotKey: `class-session:${session.id}`,
+            sessionId: session.id,
+            startsAt: session.startsAt,
+            endsAt: session.endsAt,
+            durationMinutes: Math.max(
+              30,
+              Math.round((session.endsAt.getTime() - session.startsAt.getTime()) / 60_000),
+            ),
+            status: session.status !== "SCHEDULED" ? "CANCELLED" : isFull ? "FULL" : "AVAILABLE",
+            capacity: session.capacity,
+            enrolledCount,
+            isFull,
+            trainer: session.professional
+              ? {
+                  id: session.professional.id,
+                  name: session.professional.name,
+                  avatarUrl: session.professional.user?.avatarUrl ?? null,
+                  username: session.professional.user?.username ?? null,
+                  fullName: session.professional.user?.fullName ?? null,
+                }
+              : null,
+            court: session.court
+              ? {
+                  id: session.court.id,
+                  name: session.court.name ?? "Campo",
+                  isActive: session.court.isActive ?? true,
+                }
+              : null,
+            class: {
+              id: service.id,
+              title: service.title,
+              coverImageUrl: service.coverImageUrl ?? null,
+            },
+          };
+        });
+
+        return jsonWrap({
+          ok: true,
+          timezone,
+          serviceId: service.id,
+          month: `${dayParam.year}-${String(dayParam.month).padStart(2, "0")}`,
+          items,
+          selectionRules,
+          bookingPolicy: bookingPolicyPayload,
+        });
+      }
+
+      const targetMonth = monthParam ?? {
+        year: todayPartsForRange.year,
+        month: todayPartsForRange.month,
+      };
+      const monthRange = buildMonthRange({
+        year: targetMonth.year,
+        month: targetMonth.month,
+        timezone,
+      });
+
+      const sessions = await prisma.classSession.findMany({
+        where: {
+          ...sessionWhereBase,
+          startsAt: { gte: monthRange.start, lte: monthRange.end, gt: now },
+        },
+        orderBy: [{ startsAt: "asc" }],
+        select: {
+          id: true,
+          startsAt: true,
+          capacity: true,
+          status: true,
+        },
+      });
+
+      const enrollmentRows = sessions.length
+        ? await prisma.academyEnrollment.groupBy({
+            by: ["classSessionId"],
+            where: {
+              organizationId: service.organizationId,
+              classSessionId: { in: sessions.map((session) => session.id) },
+              status: { in: ["PENDING", "CONFIRMED"] },
+            },
+            _count: { _all: true },
+          })
+        : [];
+      const enrolledCountBySession = new Map<number, number>();
+      enrollmentRows.forEach((row) => enrolledCountBySession.set(row.classSessionId, row._count._all));
+
+      const slotsByDate = new Map<string, number>();
+      for (const session of sessions) {
+        const enrolledCount = enrolledCountBySession.get(session.id) ?? 0;
+        const isAvailable = session.status === "SCHEDULED" && enrolledCount < session.capacity;
+        if (!isAvailable) continue;
+        const key = getLocalDateKey(session.startsAt, timezone);
+        slotsByDate.set(key, (slotsByDate.get(key) ?? 0) + 1);
+      }
+
+      const days = Array.from({ length: monthRange.lastDay }, (_, index) => {
+        const key = buildDateKey({
+          year: targetMonth.year,
+          month: targetMonth.month,
+          day: index + 1,
+        });
+        const slots = slotsByDate.get(key) ?? 0;
+        return { date: key, hasAvailability: slots > 0, slots };
+      });
+
+      return jsonWrap({
+        ok: true,
+        timezone,
+        serviceId: service.id,
+        month: `${targetMonth.year}-${String(targetMonth.month).padStart(2, "0")}`,
+        days,
+        selectionRules,
+        bookingPolicy: bookingPolicyPayload,
+      });
+    }
+
     const { allowedProfessionalIds, allowedResourceIds } = resolveAllowedServiceScopeIds({
       professionalLinks: service.professionalLinks,
       resourceLinks: service.resourceLinks,

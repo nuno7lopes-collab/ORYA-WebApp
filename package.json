@@ -114,6 +114,8 @@
     "smoke:reservas:hybrid": "node scripts/run-ts.cjs scripts/smoke_reservas_hybrid.ts",
     "reservas:backfill-confirmation-snapshots:dry": "node scripts/run-ts.cjs scripts/backfill_booking_confirmation_snapshots.ts",
     "reservas:backfill-confirmation-snapshots:execute": "node scripts/run-ts.cjs scripts/backfill_booking_confirmation_snapshots.ts --execute",
+    "reservas:backfill-court-snapshots:dry": "node scripts/run-ts.cjs scripts/backfill_booking_court_snapshots.ts",
+    "reservas:backfill-court-snapshots:execute": "node scripts/run-ts.cjs scripts/backfill_booking_court_snapshots.ts --execute",
     "academy:hardcut:trainer-hygiene:dry": "node -r ./scripts/load-env.js scripts/run-ts.cjs scripts/academy_hardcut_trainer_hygiene.ts",
     "academy:hardcut:trainer-hygiene:execute": "node -r ./scripts/load-env.js scripts/run-ts.cjs scripts/academy_hardcut_trainer_hygiene.ts --execute",
     "crm:backfill-padel:dry": "node -r ./scripts/load-env.js scripts/run-ts.cjs scripts/crm/backfillPadelInteractions.ts",

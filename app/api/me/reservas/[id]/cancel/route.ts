@@ -187,6 +187,18 @@ async function _POST(
         data: { status: "CANCELLED_BY_CLIENT" },
       });
 
+      await tx.academyEnrollment.updateMany({
+        where: {
+          organizationId: booking.organizationId,
+          bookingId: booking.id,
+          status: { in: ["PENDING", "CONFIRMED"] },
+        },
+        data: {
+          status: "CANCELLED",
+          holdExpiresAt: null,
+        },
+      });
+
       const split = booking.splitPayment ?? null;
       const splitRefunds = split
         ? split.participants

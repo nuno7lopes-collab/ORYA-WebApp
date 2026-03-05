@@ -8,6 +8,8 @@ const prismaReservationProfessionalFindMany = vi.hoisted(() => vi.fn());
 const prismaReservationResourceFindMany = vi.hoisted(() => vi.fn());
 const prismaCourtBookingConfigFindFirst = vi.hoisted(() => vi.fn());
 const prismaCourtBookingConfigFindMany = vi.hoisted(() => vi.fn());
+const prismaClassSessionFindMany = vi.hoisted(() => vi.fn());
+const prismaAcademyEnrollmentGroupBy = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
@@ -16,6 +18,8 @@ vi.mock("@/lib/prisma", () => ({
     reservationProfessional: { findMany: prismaReservationProfessionalFindMany },
     reservationResource: { findMany: prismaReservationResourceFindMany },
     courtBookingConfig: { findFirst: prismaCourtBookingConfigFindFirst, findMany: prismaCourtBookingConfigFindMany },
+    classSession: { findMany: prismaClassSessionFindMany },
+    academyEnrollment: { groupBy: prismaAcademyEnrollmentGroupBy },
   },
 }));
 
@@ -34,6 +38,8 @@ describe("Public reservas V2 routes", () => {
     prismaReservationResourceFindMany.mockReset();
     prismaCourtBookingConfigFindFirst.mockReset();
     prismaCourtBookingConfigFindMany.mockReset();
+    prismaClassSessionFindMany.mockReset();
+    prismaAcademyEnrollmentGroupBy.mockReset();
 
     prismaOrganizationFindFirst.mockResolvedValue({
       id: 10,
@@ -57,6 +63,8 @@ describe("Public reservas V2 routes", () => {
     prismaReservationResourceFindMany.mockResolvedValue([]);
     prismaCourtBookingConfigFindFirst.mockResolvedValue(null);
     prismaCourtBookingConfigFindMany.mockResolvedValue([]);
+    prismaClassSessionFindMany.mockResolvedValue([]);
+    prismaAcademyEnrollmentGroupBy.mockResolvedValue([]);
     global.fetch = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ ok: true, result: {} }), {
         status: 200,
@@ -167,7 +175,7 @@ describe("Public reservas V2 routes", () => {
     expect(json.error).toBe("SERVICE_NOT_FOUND");
   });
 
-  it("GET hub separa COURT/CLASS/SERVICE em secções distintas", async () => {
+  it("GET hub expõe um card por campo real mesmo com backingService partilhado", async () => {
     prismaServiceFindMany.mockResolvedValueOnce([
       {
         id: 77,
@@ -246,6 +254,18 @@ describe("Public reservas V2 routes", () => {
         category: { id: 1, slug: "campo", label: "Campo", domain: "COURT" },
         court: { id: 12, name: "Campo 1", isActive: true },
       },
+      {
+        id: 502,
+        courtId: 13,
+        backingServiceId: 77,
+        categoryId: 1,
+        displayName: "Campo Secundário",
+        displayDescription: "Outdoor",
+        coverImageUrl: "/covers/outdoor.jpg",
+        isActive: true,
+        category: { id: 1, slug: "campo", label: "Campo", domain: "COURT" },
+        court: { id: 13, name: "Campo 2", isActive: true },
+      },
     ]);
 
     const { GET } = await import("@/app/api/public/org/[username]/reservas/hub/route");
@@ -262,8 +282,9 @@ describe("Public reservas V2 routes", () => {
 
     expect(res.status).toBe(200);
     expect(ok).toBe(true);
-    expect(sections.courts).toHaveLength(1);
-    expect(sections.courts[0]).toEqual(expect.objectContaining({ id: 12, serviceId: 77 }));
+    expect(sections.courts).toHaveLength(2);
+    expect(sections.courts.map((item) => item.id)).toEqual([12, 13]);
+    expect(sections.courts.every((item) => item.serviceId === 77)).toBe(true);
     expect(sections.classes.map((item) => item.id)).toEqual([88]);
     expect(sections.services.map((item) => item.id)).toEqual([99]);
   });

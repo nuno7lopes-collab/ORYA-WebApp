@@ -213,6 +213,104 @@ async function _GET(
       }),
     ]);
 
+    const classServiceIds = services.filter((service) => service.kind === "CLASS").map((service) => service.id);
+    const now = new Date();
+    const futureWindowEnd = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+    const upcomingClassSessions = classServiceIds.length
+      ? await prisma.classSession.findMany({
+          where: {
+            organizationId: organization.id,
+            serviceId: { in: classServiceIds },
+            status: "SCHEDULED",
+            startsAt: { gte: now, lte: futureWindowEnd },
+          },
+          orderBy: [{ startsAt: "asc" }],
+          select: {
+            id: true,
+            serviceId: true,
+            startsAt: true,
+            endsAt: true,
+            capacity: true,
+            professional: {
+              select: {
+                id: true,
+                name: true,
+                user: { select: { avatarUrl: true, username: true, fullName: true } },
+              },
+            },
+            court: { select: { id: true, name: true, isActive: true } },
+          },
+        })
+      : [];
+    const classSessionEnrollmentRows = upcomingClassSessions.length
+      ? await prisma.academyEnrollment.groupBy({
+          by: ["classSessionId"],
+          where: {
+            organizationId: organization.id,
+            classSessionId: { in: upcomingClassSessions.map((session) => session.id) },
+            status: { in: ["PENDING", "CONFIRMED"] },
+          },
+          _count: { _all: true },
+        })
+      : [];
+    const enrolledCountBySession = new Map<number, number>();
+    classSessionEnrollmentRows.forEach((row) => {
+      enrolledCountBySession.set(row.classSessionId, row._count._all);
+    });
+    const sessionsByService = new Map<
+      number,
+      Array<{
+        id: number;
+        startsAt: Date;
+        endsAt: Date;
+        capacity: number;
+        enrolledCount: number;
+        isFull: boolean;
+        trainer: {
+          id: number;
+          name: string;
+          avatarUrl: string | null;
+          username: string | null;
+          fullName: string | null;
+        } | null;
+        court: {
+          id: number;
+          name: string | null;
+          isActive: boolean;
+        } | null;
+      }>
+    >();
+    for (const session of upcomingClassSessions) {
+      const enrolledCount = enrolledCountBySession.get(session.id) ?? 0;
+      const item = {
+        id: session.id,
+        startsAt: session.startsAt,
+        endsAt: session.endsAt,
+        capacity: session.capacity,
+        enrolledCount,
+        isFull: enrolledCount >= session.capacity,
+        trainer: session.professional
+          ? {
+              id: session.professional.id,
+              name: session.professional.name,
+              avatarUrl: session.professional.user?.avatarUrl ?? null,
+              username: session.professional.user?.username ?? null,
+              fullName: session.professional.user?.fullName ?? null,
+            }
+          : null,
+        court: session.court
+          ? {
+              id: session.court.id,
+              name: session.court.name ?? null,
+              isActive: session.court.isActive ?? true,
+            }
+          : null,
+      };
+      const bucket = sessionsByService.get(session.serviceId) ?? [];
+      bucket.push(item);
+      sessionsByService.set(session.serviceId, bucket);
+    }
+
     const servicesById = new Map(services.map((service) => [service.id, service]));
     const courts = courtConfigs
       .map((config) => {
@@ -240,7 +338,37 @@ async function _GET(
 
     const classes = services
       .filter((service) => service.kind === "CLASS")
-      .map(toPublicService);
+      .map((service) => {
+        const sessions = (sessionsByService.get(service.id) ?? []).sort(
+          (left, right) => left.startsAt.getTime() - right.startsAt.getTime(),
+        );
+        const nextSession = sessions[0] ?? null;
+        const trainersMap = new Map<number, NonNullable<(typeof sessions)[number]["trainer"]>>();
+        sessions.forEach((session) => {
+          if (session.trainer) trainersMap.set(session.trainer.id, session.trainer);
+        });
+        return {
+          ...toPublicService(service),
+          trainerCount: trainersMap.size,
+          trainers: Array.from(trainersMap.values()),
+          availability: {
+            totalSessions: sessions.length,
+            availableSessions: sessions.filter((session) => !session.isFull).length,
+          },
+          nextSession: nextSession
+            ? {
+                sessionId: nextSession.id,
+                startsAt: nextSession.startsAt,
+                endsAt: nextSession.endsAt,
+                capacity: nextSession.capacity,
+                enrolledCount: nextSession.enrolledCount,
+                isFull: nextSession.isFull,
+                trainer: nextSession.trainer,
+                court: nextSession.court,
+              }
+            : null,
+        };
+      });
     const generalServices = services
       .filter((service) => service.kind === "GENERAL")
       .map(toPublicService);

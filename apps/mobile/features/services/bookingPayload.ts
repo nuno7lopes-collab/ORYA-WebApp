@@ -1,6 +1,7 @@
 export type SelectedAddonPayload = { addonId: number; quantity: number };
 
 export type BookingPayloadInput = {
+  sessionId?: number | null;
   startsAt: string;
   durationMinutes?: number | null;
   professionalId?: number | null;
@@ -21,6 +22,7 @@ export const buildAddonPayload = (
     .filter((item) => Number.isFinite(item.addonId) && Number.isFinite(item.quantity) && item.quantity > 0);
 
 export const buildBookingPayload = (input: BookingPayloadInput) => ({
+  sessionId: input.sessionId ?? null,
   startsAt: input.startsAt,
   durationMinutes: input.durationMinutes ?? null,
   professionalId: input.professionalId ?? null,

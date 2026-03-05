@@ -50,7 +50,9 @@ const PROFILE_DISCOVERABLE_COMMUNITY_ACCESS_MODES: ChatCommunityAccessMode[] = [
 
 type PageProps = {
   params: { username: string } | Promise<{ username: string }>;
-  searchParams?: { serviceId?: string; sec?: string } | Promise<{ serviceId?: string; sec?: string }>;
+  searchParams?:
+    | { serviceId?: string; courtId?: string; serviceKey?: string; sec?: string }
+    | Promise<{ serviceId?: string; courtId?: string; serviceKey?: string; sec?: string }>;
 };
 
 export async function generateMetadata({
@@ -391,6 +393,14 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
   const initialServiceId =
     resolvedSearchParams?.serviceId && Number.isFinite(Number(resolvedSearchParams.serviceId))
       ? Number(resolvedSearchParams.serviceId)
+      : null;
+  const initialCourtId =
+    resolvedSearchParams?.courtId && Number.isFinite(Number(resolvedSearchParams.courtId))
+      ? Number(resolvedSearchParams.courtId)
+      : null;
+  const initialServiceKeyParam =
+    typeof resolvedSearchParams?.serviceKey === "string" && resolvedSearchParams.serviceKey.trim().length > 0
+      ? resolvedSearchParams.serviceKey.trim()
       : null;
 
   if (!profile && !organizationProfile) {
@@ -865,35 +875,81 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     const reservasHubClubMode = services.some((service) =>
       ["COURT", "CLASS"].includes(String(service.kind ?? "").toUpperCase()),
     );
-    const courtConfigByServiceId = new Map(courtBookingConfigs.map((config) => [config.backingServiceId, config]));
-    const reservasServicesForPublic = services.map((service) => {
-      const bookingVertical = resolveBookingVerticalFromServiceKind(service.kind);
-      const courtConfig = bookingVertical === "COURT" ? courtConfigByServiceId.get(service.id) ?? null : null;
-      const resolvedCategory = courtConfig?.category ?? service.category ?? null;
-      const resolvedTitle = courtConfig?.displayName?.trim() || service.title;
-      const resolvedDescription = courtConfig?.displayDescription?.trim() || service.description || null;
-      const resolvedCoverImage = courtConfig?.coverImageUrl || service.coverImageUrl || null;
-
-      return {
-        ...service,
-        title: resolvedTitle,
-        description: resolvedDescription,
-        bookingVertical,
-        category: resolvedCategory
-          ? {
-              id: resolvedCategory.id,
-              slug: resolvedCategory.slug,
-              label: resolvedCategory.label,
-              domain: resolvedCategory.domain,
-            }
-          : null,
-        categoryTag: resolvedCategory?.label ?? service.categoryTag ?? null,
-        coverImageUrl: resolvedCoverImage,
-        locationMode: (service.locationMode ?? "FIXED") as "FIXED" | "CHOOSE_AT_BOOKING",
-        courtId: courtConfig?.courtId ?? null,
-        backingServiceId: bookingVertical === "COURT" ? service.id : null,
-      };
+    const courtConfigsByServiceId = new Map<number, typeof courtBookingConfigs>();
+    courtBookingConfigs.forEach((config) => {
+      const list = courtConfigsByServiceId.get(config.backingServiceId) ?? [];
+      list.push(config);
+      courtConfigsByServiceId.set(config.backingServiceId, list);
     });
+    const reservasServicesForPublic = services.flatMap((service) => {
+      const bookingVertical = resolveBookingVerticalFromServiceKind(service.kind);
+      const mapToPublic = (
+        courtConfig: (typeof courtBookingConfigs)[number] | null,
+        selectionKey: string,
+      ) => {
+        const resolvedCategory = courtConfig?.category ?? service.category ?? null;
+        const resolvedTitle = courtConfig?.displayName?.trim() || service.title;
+        const resolvedDescription = courtConfig?.displayDescription?.trim() || service.description || null;
+        const resolvedCoverImage = courtConfig?.coverImageUrl || service.coverImageUrl || null;
+
+        return {
+          ...service,
+          selectionKey,
+          title: resolvedTitle,
+          description: resolvedDescription,
+          bookingVertical,
+          category: resolvedCategory
+            ? {
+                id: resolvedCategory.id,
+                slug: resolvedCategory.slug,
+                label: resolvedCategory.label,
+                domain: resolvedCategory.domain,
+              }
+            : null,
+          categoryTag: resolvedCategory?.label ?? service.categoryTag ?? null,
+          coverImageUrl: resolvedCoverImage,
+          locationMode: (service.locationMode ?? "FIXED") as "FIXED" | "CHOOSE_AT_BOOKING",
+          courtId: courtConfig?.courtId ?? null,
+          backingServiceId: bookingVertical === "COURT" ? service.id : null,
+        };
+      };
+
+      if (bookingVertical !== "COURT") {
+        return [mapToPublic(null, `service-${service.id}`)];
+      }
+
+      const relatedCourtConfigs = courtConfigsByServiceId.get(service.id) ?? [];
+      if (relatedCourtConfigs.length === 0) {
+        return [mapToPublic(null, `court-${service.id}-generic`)];
+      }
+
+      return relatedCourtConfigs.map((config, index) =>
+        mapToPublic(config, `court-${service.id}-${config.courtId}-${index}`),
+      );
+    });
+    const initialServiceSelectionKey = (() => {
+      if (initialServiceKeyParam) {
+        const byKey = reservasServicesForPublic.find(
+          (service) => service.selectionKey === initialServiceKeyParam,
+        );
+        if (byKey?.selectionKey) return byKey.selectionKey;
+      }
+      if (initialCourtId) {
+        const byCourt = reservasServicesForPublic.find((service) => {
+          if (service.courtId !== initialCourtId) return false;
+          if (!initialServiceId) return true;
+          return service.backingServiceId === initialServiceId || service.id === initialServiceId;
+        });
+        if (byCourt?.selectionKey) return byCourt.selectionKey;
+      }
+      if (initialServiceId) {
+        const byService = reservasServicesForPublic.find(
+          (service) => service.id === initialServiceId || service.backingServiceId === initialServiceId,
+        );
+        if (byService?.selectionKey) return byService.selectionKey;
+      }
+      return null;
+    })();
     const linkedOrganizations = siblingOrganizations
       .filter((organization): organization is typeof organization & { username: string } => Boolean(organization.username))
       .map((organization) => ({
@@ -1070,8 +1126,15 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
       if (sectionId !== defaultSectionId) {
         params.set("sec", sectionId);
       }
-      if (initialServiceId) {
-        params.set("serviceId", String(initialServiceId));
+      if (initialServiceSelectionKey) {
+        params.set("serviceKey", initialServiceSelectionKey);
+      } else {
+        if (initialServiceId) {
+          params.set("serviceId", String(initialServiceId));
+        }
+        if (initialCourtId) {
+          params.set("courtId", String(initialCourtId));
+        }
       }
       const query = params.toString();
       return `/${organizationProfile.username ?? usernameParam}${query ? `?${query}` : ""}`;
@@ -1168,6 +1231,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
                       services={reservasServicesForPublic}
                       professionals={professionalsList}
                       resources={resourcesList}
+                      initialServiceKey={reservasAcceptingNewBookings ? initialServiceSelectionKey : null}
                       initialServiceId={reservasAcceptingNewBookings ? initialServiceId : null}
                       featuredServiceIds={[]}
                       servicesLayout="grid"

@@ -2,11 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import useSWR from "swr";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
 import { getStripePublishableKey } from "@/lib/stripePublic";
 import { OryaDateField, OryaDateTimeField } from "@/components/ui/datetime";
+import { getEventCoverUrl } from "@/lib/eventCover";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -38,6 +40,11 @@ type BookingItem = {
   resource?: { id: number; label: string; capacity: number } | null;
   service: { id: number; title: string | null } | null;
   court: { id: number; name: string | null; isActive?: boolean | null } | null;
+  courtSnapshot?: {
+    courtId: number;
+    name: string | null;
+    coverImageUrl: string | null;
+  } | null;
   organization: {
     id: number;
     publicName: string | null;
@@ -74,6 +81,58 @@ type BookingItem = {
 type Response = {
   ok: boolean;
   items: BookingItem[];
+  error?: string;
+};
+
+type ClassEnrollmentItem = {
+  id: number;
+  status: string;
+  classSessionId: number;
+  startsAt: string;
+  endsAt: string;
+  capacity: number;
+  enrolledCount: number;
+  isFull: boolean;
+  sessionStatus: string;
+  class: {
+    id: number;
+    title: string;
+    coverImageUrl: string | null;
+  };
+  trainer: {
+    id: number;
+    name: string;
+    avatarUrl: string | null;
+    username: string | null;
+    fullName: string | null;
+  } | null;
+  court: {
+    id: number;
+    name: string | null;
+    isActive: boolean | null;
+  } | null;
+  organization: {
+    id: number;
+    username: string | null;
+    publicName: string | null;
+    businessName: string | null;
+  };
+  booking: {
+    id: number;
+    status: string;
+    effectiveStatus: string | null;
+    pendingState: string;
+    pendingExpiresAt: string | null;
+  } | null;
+  cancellation: {
+    allowed: boolean;
+    reason: string | null;
+  };
+};
+
+type ClassEnrollmentsResponse = {
+  ok: boolean;
+  items: ClassEnrollmentItem[];
   error?: string;
 };
 
@@ -200,6 +259,27 @@ function formatMoney(cents: number, currency: string) {
   }).format(cents / 100);
 }
 
+function resolveBookingTitle(booking: BookingItem) {
+  return booking.courtSnapshot?.name?.trim() || booking.service?.title || "Serviço";
+}
+
+function resolveBookingCourtLabel(booking: BookingItem) {
+  const snapshotName = booking.courtSnapshot?.name?.trim();
+  if (snapshotName) return snapshotName;
+  if (!booking.court?.name) return "";
+  return `${booking.court.name}${booking.court.isActive === false ? " (inativo)" : ""}`;
+}
+
+function resolveBookingCoverUrl(booking: BookingItem) {
+  return getEventCoverUrl(booking.courtSnapshot?.coverImageUrl ?? null, {
+    seed: `booking-${booking.id}`,
+    width: 160,
+    quality: 70,
+    format: "webp",
+    square: true,
+  });
+}
+
 function formatCentsInput(cents: number) {
   return (cents / 100).toFixed(2);
 }
@@ -229,6 +309,10 @@ function distributeEvenly(total: number, count: number) {
 
 export default function MinhasReservasPage() {
   const { data, isLoading, mutate } = useSWR<Response>("/api/me/reservas", fetcher);
+  const { data: classesData, isLoading: classesLoading, mutate: mutateClasses } = useSWR<ClassEnrollmentsResponse>(
+    "/api/me/aulas/inscricoes",
+    fetcher,
+  );
   const [cancelingId, setCancelingId] = useState<number | null>(null);
   const [openChatId, setOpenChatId] = useState<number | null>(null);
   const [cancelPreview, setCancelPreview] = useState<{
@@ -291,6 +375,9 @@ export default function MinhasReservasPage() {
 
   const items = data?.items ?? [];
   const loadError = data && data.ok === false ? data.error ?? "Erro ao carregar reservas." : null;
+  const classItems = classesData?.items ?? [];
+  const classLoadError =
+    classesData && classesData.ok === false ? classesData.error ?? "Erro ao carregar aulas." : null;
 
   const grouped = useMemo(() => {
     const upcoming: BookingItem[] = [];
@@ -308,6 +395,24 @@ export default function MinhasReservasPage() {
     });
     return { upcoming, past };
   }, [items]);
+
+  const groupedClasses = useMemo(() => {
+    const upcoming: ClassEnrollmentItem[] = [];
+    const history: ClassEnrollmentItem[] = [];
+    const now = Date.now();
+    classItems.forEach((item) => {
+      const startsAtMs = new Date(item.startsAt).getTime();
+      const cancelled =
+        String(item.status ?? "").toUpperCase() === "CANCELLED" ||
+        String(item.sessionStatus ?? "").toUpperCase() === "CANCELLED";
+      if (!cancelled && Number.isFinite(startsAtMs) && startsAtMs >= now) {
+        upcoming.push(item);
+      } else {
+        history.push(item);
+      }
+    });
+    return { upcoming, history };
+  }, [classItems]);
 
   const splitSummary = useMemo(() => {
     if (!splitState) return null;
@@ -409,6 +514,7 @@ export default function MinhasReservasPage() {
       }
       closeCancelPreview();
       mutate();
+      mutateClasses();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erro ao cancelar reserva.";
       setCancelPreview((prev) => (prev ? { ...prev, saving: false, error: message } : prev));
@@ -999,6 +1105,93 @@ export default function MinhasReservasPage() {
         </div>
 
         <section className={cardClass}>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-white">Aulas</h2>
+              <p className="text-sm text-white/65">Inscrições por sessão com treinador e campo.</p>
+            </div>
+          </div>
+
+          {classesLoading && (
+            <div className="mt-4 space-y-2">
+              {Array.from({ length: 2 }).map((_, idx) => (
+                <div key={idx} className="h-16 rounded-xl border border-white/10 orya-skeleton-surface animate-pulse" />
+              ))}
+            </div>
+          )}
+
+          {!classesLoading && classLoadError && (
+            <div className="mt-4 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+              {classLoadError}
+            </div>
+          )}
+
+          {!classesLoading && !classLoadError && groupedClasses.upcoming.length === 0 && groupedClasses.history.length === 0 && (
+            <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
+              Ainda não tens inscrições em aulas.
+            </div>
+          )}
+
+          {!classesLoading && !classLoadError && groupedClasses.upcoming.length > 0 && (
+            <div className="mt-4 space-y-2">
+              <p className="text-[12px] uppercase tracking-[0.2em] text-white/55">Próximas</p>
+              {groupedClasses.upcoming.map((item) => (
+                <div key={`class-upcoming-${item.id}`} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-white">{item.class.title}</p>
+                      <p className="text-[12px] text-white/65">
+                        {new Date(item.startsAt).toLocaleString("pt-PT", { dateStyle: "medium", timeStyle: "short" })}
+                        {item.trainer?.name ? ` · ${item.trainer.name}` : ""}
+                        {item.court?.name ? ` · ${item.court.name}` : ""}
+                        {` · ${item.enrolledCount}/${item.capacity}`}
+                      </p>
+                    </div>
+                    {item.cancellation.allowed && item.booking?.id ? (
+                      <button
+                        type="button"
+                        className="rounded-full border border-red-400/40 bg-red-500/10 px-2.5 py-1 text-[11px] text-red-100 hover:bg-red-500/20 disabled:opacity-60"
+                        onClick={() => handleCancel(item.booking!.id)}
+                        disabled={cancelingId === item.booking.id}
+                      >
+                        {cancelingId === item.booking.id ? "A cancelar..." : "Cancelar"}
+                      </button>
+                    ) : (
+                      <span className="rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[11px] text-white/70">
+                        {item.isFull ? "Cheia" : "Ativa"}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!classesLoading && !classLoadError && groupedClasses.history.length > 0 && (
+            <div className="mt-4 space-y-2">
+              <p className="text-[12px] uppercase tracking-[0.2em] text-white/55">Histórico</p>
+              {groupedClasses.history.slice(0, 8).map((item) => (
+                <div key={`class-history-${item.id}`} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-white">{item.class.title}</p>
+                      <p className="text-[12px] text-white/65">
+                        {new Date(item.startsAt).toLocaleString("pt-PT", { dateStyle: "medium", timeStyle: "short" })}
+                        {item.trainer?.name ? ` · ${item.trainer.name}` : ""}
+                        {item.court?.name ? ` · ${item.court.name}` : ""}
+                      </p>
+                    </div>
+                    <span className="rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[11px] text-white/70">
+                      {String(item.status).toUpperCase() === "CANCELLED" ? "Cancelada" : "Histórico"}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className={cardClass}>
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-base font-semibold text-white">Próximas</h2>
@@ -1048,9 +1241,10 @@ export default function MinhasReservasPage() {
               const originalStart = new Date(booking.startsAt);
               const showEstimate =
                 estimatedStart && !Number.isNaN(estimatedStart.getTime()) && estimatedStart.getTime() !== originalStart.getTime();
-              const courtLabel = booking.court?.name
-                ? `${booking.court.name}${booking.court.isActive === false ? " (inativo)" : ""}`
-                : "";
+              const bookingTitle = resolveBookingTitle(booking);
+              const courtLabel = resolveBookingCourtLabel(booking);
+              const shouldShowCourtLabel = courtLabel && courtLabel !== bookingTitle;
+              const bookingCoverUrl = resolveBookingCoverUrl(booking);
               const pendingChange = booking.changeRequest?.status === "PENDING";
               const changePriceDelta = booking.changeRequest?.priceDeltaCents ?? 0;
               const changeBusy = changeAction?.bookingId === booking.id && changeAction.loading;
@@ -1058,16 +1252,24 @@ export default function MinhasReservasPage() {
               return (
                 <div key={booking.id} className="rounded-xl border border-white/10 bg-white/5 p-3">
                   <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-white">
-                        {booking.service?.title || "Serviço"}
-                      </p>
+                    <div className="flex min-w-0 flex-1 items-start gap-3">
+                      <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-white/12 bg-white/10">
+                        <Image
+                          src={bookingCoverUrl}
+                          alt={bookingTitle}
+                          fill
+                          sizes="56px"
+                          className="object-cover"
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-white">{bookingTitle}</p>
                       <p className="text-[12px] text-white/60">
                         {originalStart.toLocaleString("pt-PT", { dateStyle: "medium", timeStyle: "short" })}
                         {booking.organization?.publicName || booking.organization?.businessName
                           ? ` · ${booking.organization.publicName || booking.organization.businessName}`
                           : ""}
-                        {courtLabel ? ` · ${courtLabel}` : ""}
+                        {shouldShowCourtLabel ? ` · ${courtLabel}` : ""}
                         {booking.professional?.name ? ` · ${booking.professional.name}` : ""}
                         {booking.resource?.label ? ` · ${booking.resource.label}` : ""}
                         {booking.partySize ? ` · ${booking.partySize} pax` : ""}
@@ -1126,6 +1328,7 @@ export default function MinhasReservasPage() {
                           </div>
                         </div>
                       )}
+                    </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[11px] text-white/70">
@@ -1199,41 +1402,52 @@ export default function MinhasReservasPage() {
               const nowMs = Date.now();
               const pendingState = resolvePendingState(booking, nowMs);
               const status = resolveEffectiveStatus(booking, nowMs);
+              const bookingTitle = resolveBookingTitle(booking);
+              const courtLabel = resolveBookingCourtLabel(booking);
+              const shouldShowCourtLabel = courtLabel && courtLabel !== bookingTitle;
+              const bookingCoverUrl = resolveBookingCoverUrl(booking);
               return (
                 <div key={booking.id} className="rounded-xl border border-white/10 bg-white/5 p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-semibold text-white">
-                      {booking.service?.title || "Serviço"}
-                    </p>
-                    <p className="text-[12px] text-white/60">
-                      {new Date(booking.startsAt).toLocaleString("pt-PT", { dateStyle: "medium", timeStyle: "short" })}
-                      {booking.organization?.publicName || booking.organization?.businessName
-                        ? ` · ${booking.organization.publicName || booking.organization.businessName}`
-                        : ""}
-                      {booking.court?.name
-                        ? ` · ${booking.court.name}${booking.court.isActive === false ? " (inativo)" : ""}`
-                        : ""}
-                      {booking.professional?.name ? ` · ${booking.professional.name}` : ""}
-                      {booking.resource?.label ? ` · ${booking.resource.label}` : ""}
-                      {booking.partySize ? ` · ${booking.partySize} pax` : ""}
-                    </p>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex min-w-0 flex-1 items-start gap-3">
+                      <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-white/12 bg-white/10">
+                        <Image
+                          src={bookingCoverUrl}
+                          alt={bookingTitle}
+                          fill
+                          sizes="56px"
+                          className="object-cover"
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-white">{bookingTitle}</p>
+                        <p className="text-[12px] text-white/60">
+                          {new Date(booking.startsAt).toLocaleString("pt-PT", { dateStyle: "medium", timeStyle: "short" })}
+                          {booking.organization?.publicName || booking.organization?.businessName
+                            ? ` · ${booking.organization.publicName || booking.organization.businessName}`
+                            : ""}
+                          {shouldShowCourtLabel ? ` · ${courtLabel}` : ""}
+                          {booking.professional?.name ? ` · ${booking.professional.name}` : ""}
+                          {booking.resource?.label ? ` · ${booking.resource.label}` : ""}
+                          {booking.partySize ? ` · ${booking.partySize} pax` : ""}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[11px] text-white/70">
+                        {formatBookingStatus(status, pendingState)}
+                      </span>
+                      {["CONFIRMED", "COMPLETED"].includes(status) && (
+                        <button
+                          type="button"
+                          className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-[11px] text-white/70 hover:border-white/40"
+                          onClick={() => toggleChat(booking.id)}
+                        >
+                          {openChatId === booking.id ? "Fechar chat" : "Falar"}
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[11px] text-white/70">
-                      {formatBookingStatus(status, pendingState)}
-                    </span>
-                    {["CONFIRMED", "COMPLETED"].includes(status) && (
-                      <button
-                        type="button"
-                        className="rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-[11px] text-white/70 hover:border-white/40"
-                        onClick={() => toggleChat(booking.id)}
-                      >
-                        {openChatId === booking.id ? "Fechar chat" : "Falar"}
-                      </button>
-                    )}
-                  </div>
-                </div>
                   {openChatId === booking.id && (
                     <div className="mt-3">
                       <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">

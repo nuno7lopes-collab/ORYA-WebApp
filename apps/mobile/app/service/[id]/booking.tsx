@@ -49,9 +49,26 @@ type AvailabilityDay = {
 
 type AvailabilitySlot = {
   slotKey: string;
+  sessionId?: number;
   startsAt: string;
+  endsAt?: string;
   durationMinutes: number;
   status: string;
+  capacity?: number;
+  enrolledCount?: number;
+  isFull?: boolean;
+  trainer?: {
+    id: number;
+    name: string;
+    avatarUrl?: string | null;
+    username?: string | null;
+    fullName?: string | null;
+  } | null;
+  court?: {
+    id: number;
+    name: string | null;
+    isActive?: boolean | null;
+  } | null;
 };
 
 type BookingPolicy = {
@@ -203,13 +220,18 @@ export default function ServiceBookingScreen() {
     const parsed = Number(raw);
     return Number.isFinite(parsed) ? parsed : null;
   }, [params.id]);
+  const courtIdParam = useMemo(() => {
+    const raw = Array.isArray(params.courtId) ? params.courtId[0] : params.courtId;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
+  }, [params.courtId]);
   const {
     data: service,
     isLoading,
     isError,
     error,
     refetch,
-  } = useServiceDetail(serviceId ? String(serviceId) : "");
+  } = useServiceDetail(serviceId ? String(serviceId) : "", { courtId: courtIdParam });
   const setCheckoutDraft = useCheckoutStore((state) => state.setDraft);
   const setCheckoutIntent = useCheckoutStore((state) => state.setIntent);
   const checkoutDraft = useCheckoutStore((state) => state.draft);
@@ -224,11 +246,6 @@ export default function ServiceBookingScreen() {
     const value = String(raw ?? "").trim();
     return value || null;
   }, [params.orgUsername]);
-  const courtIdParam = useMemo(() => {
-    const raw = Array.isArray(params.courtId) ? params.courtId[0] : params.courtId;
-    const parsed = Number(raw);
-    return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
-  }, [params.courtId]);
   const checkoutErrorParam = useMemo(() => {
     const raw = Array.isArray(params.checkoutError) ? params.checkoutError[0] : params.checkoutError;
     return String(raw ?? "")
@@ -677,6 +694,14 @@ export default function ServiceBookingScreen() {
       setBookingError(null);
       setBookingLoading(true);
       try {
+        const slotIsFull = slot.isFull || String(slot.status).toUpperCase() === "FULL";
+        if (slotIsFull) {
+          throw new Error("Este horário está cheio.");
+        }
+        const requiresSessionId = resolvedBookingVertical === "CLASS";
+        if (requiresSessionId && !slot.sessionId) {
+          throw new Error("Sessão inválida. Atualiza os horários e tenta novamente.");
+        }
         if (
           service.locationMode === "CHOOSE_AT_BOOKING" &&
           !addressSelection?.addressId
@@ -684,6 +709,7 @@ export default function ServiceBookingScreen() {
           throw new Error("Seleciona uma morada antes de reservar.");
         }
         const payload = buildBookingPayload({
+          ...(requiresSessionId ? { sessionId: slot.sessionId } : {}),
           startsAt: slot.startsAt,
           durationMinutes: isCourtService ? effectiveDurationMinutes : null,
           professionalId:
@@ -868,6 +894,7 @@ export default function ServiceBookingScreen() {
       selectedPackageId,
       selectedPartySize,
       selectedProfessionalId,
+      resolvedBookingVertical,
       selectedSlot,
       service,
       selectedServiceApiId,
@@ -1449,28 +1476,38 @@ export default function ServiceBookingScreen() {
                   ) : (
                     <View className="flex-row flex-wrap gap-2">
                       {slots.map((slot) => {
+                        const isFull = slot.isFull || String(slot.status).toUpperCase() === "FULL";
                         const active = selectedSlot?.slotKey === slot.slotKey;
                         return (
                           <Pressable
                             key={slot.slotKey}
-                            onPress={() => setSelectedSlot(slot)}
+                            onPress={() => {
+                              if (isFull) return;
+                              setSelectedSlot(slot);
+                            }}
                             className={
-                              active
+                              isFull
+                                ? "rounded-full border border-rose-300/40 bg-rose-500/10 px-3 py-2"
+                                : active
                                 ? "rounded-full bg-white/20 px-3 py-2"
                                 : "rounded-full border border-white/10 bg-white/5 px-3 py-2"
                             }
                             accessibilityRole="button"
                             accessibilityLabel={`Selecionar horário ${formatTime(slot.startsAt, serviceTimezone)}`}
-                            accessibilityState={{ selected: active }}
+                            accessibilityState={{ selected: active, disabled: isFull }}
+                            disabled={isFull}
                           >
                             <Text
                               className={
-                                active
+                                isFull
+                                  ? "text-rose-100 text-xs font-semibold"
+                                  : active
                                   ? "text-white text-xs font-semibold"
                                   : "text-white/70 text-xs"
                               }
                             >
                               {formatTime(slot.startsAt, serviceTimezone)}
+                              {isFull ? " · Cheio" : ""}
                             </Text>
                           </Pressable>
                         );

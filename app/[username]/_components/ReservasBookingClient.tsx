@@ -35,6 +35,7 @@ type ReservationAssignmentMode =
 
 type Service = {
   id: number;
+  selectionKey?: string | null;
   courtId?: number | null;
   backingServiceId?: number | null;
   title: string;
@@ -111,9 +112,26 @@ type AvailabilityDay = {
 
 type AvailabilitySlot = {
   slotKey: string;
+  sessionId?: number;
   startsAt: string;
+  endsAt?: string;
   durationMinutes: number;
   status: string;
+  capacity?: number;
+  enrolledCount?: number;
+  isFull?: boolean;
+  trainer?: {
+    id: number;
+    name: string;
+    avatarUrl: string | null;
+    username: string | null;
+    fullName?: string | null;
+  } | null;
+  court?: {
+    id: number;
+    name: string | null;
+    isActive?: boolean | null;
+  } | null;
 };
 
 type BookingPolicy = {
@@ -179,7 +197,9 @@ type ReservasBookingClientProps = {
   services: Service[];
   professionals: Professional[];
   resources: Resource[];
+  initialServiceKey?: string | null;
   initialServiceId?: number | null;
+  fixedServiceKey?: string | null;
   fixedServiceId?: number | null;
   fixedProfessionalId?: number | null;
   mode?: "inline" | "modal";
@@ -345,6 +365,10 @@ function resolveServiceCover(coverImageUrl: string | null | undefined, seed: str
   return getEventCoverUrl(coverImageUrl, { seed, width: 900, quality: 72 });
 }
 
+function getServiceSelectionKey(service: Service) {
+  return service.selectionKey?.trim() || `service-${service.id}`;
+}
+
 function startOfMonth(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), 1);
 }
@@ -501,7 +525,9 @@ export default function ReservasBookingClient({
   services,
   professionals,
   resources,
+  initialServiceKey,
   initialServiceId,
+  fixedServiceKey,
   fixedServiceId,
   fixedProfessionalId,
   mode = "inline",
@@ -513,15 +539,27 @@ export default function ReservasBookingClient({
   const calendarRequestRef = useRef(0);
   const slotsRequestRef = useRef(0);
   const slotsAbortRef = useRef<AbortController | null>(null);
-  const allowServiceSelection = fixedServiceId == null;
+  const allowServiceSelection = fixedServiceKey == null && fixedServiceId == null;
 
   const activeServices = services.filter((service) => service.isActive);
-  const [selectedServiceId, setSelectedServiceId] = useState<number | null>(
-    fixedServiceId && activeServices.some((s) => s.id === fixedServiceId)
-      ? fixedServiceId
-      : initialServiceId && activeServices.some((s) => s.id === initialServiceId)
-        ? initialServiceId
-        : activeServices[0]?.id ?? null,
+  const resolveServiceBySelectionKey = (selectionKey: string | null | undefined) => {
+    const normalized = selectionKey?.trim();
+    if (!normalized) return null;
+    return activeServices.find((service) => getServiceSelectionKey(service) === normalized) ?? null;
+  };
+  const resolveServiceByLegacyId = (serviceId: number | null | undefined) => {
+    if (!serviceId) return null;
+    return activeServices.find((service) => service.id === serviceId) ?? null;
+  };
+  const initialSelectedService =
+    resolveServiceBySelectionKey(fixedServiceKey) ??
+    resolveServiceByLegacyId(fixedServiceId) ??
+    resolveServiceBySelectionKey(initialServiceKey) ??
+    resolveServiceByLegacyId(initialServiceId) ??
+    activeServices[0] ??
+    null;
+  const [selectedServiceKey, setSelectedServiceKey] = useState<string | null>(
+    initialSelectedService ? getServiceSelectionKey(initialSelectedService) : null,
   );
   const [activeStep, setActiveStep] = useState<ReservationStep>(allowServiceSelection ? 1 : 2);
   const [selectedProfessionalId, setSelectedProfessionalId] = useState<number | null>(null);
@@ -568,9 +606,10 @@ export default function ReservasBookingClient({
   const autoSelectedDayRef = useRef(false);
   const autoAdvanceResourceStepRef = useRef(false);
 
-  const selectedService = activeServices.find((service) => service.id === selectedServiceId) ?? null;
+  const selectedService =
+    activeServices.find((service) => getServiceSelectionKey(service) === selectedServiceKey) ?? null;
   const selectedServiceVertical = resolveServiceVertical(selectedService);
-  const selectedServiceApiId = selectedService?.backingServiceId ?? selectedServiceId;
+  const selectedServiceApiId = selectedService?.backingServiceId ?? selectedService?.id ?? null;
   const normalizedOrganizationUsername = organization.username?.trim() ?? "";
   const publicCalendarsConfig = useMemo(() => {
     if (!normalizedOrganizationUsername) return null;
@@ -1020,7 +1059,7 @@ export default function ReservasBookingClient({
     setCustomDurationDraft("");
     autoSelectedDayRef.current = false;
     autoAdvanceResourceStepRef.current = false;
-  }, [selectedServiceId]);
+  }, [selectedServiceKey]);
 
   useEffect(() => {
     if (durationOverrideMinutes == null) return;
@@ -1032,10 +1071,19 @@ export default function ReservasBookingClient({
   }, [durationOverrideMinutes, canUseCustomDuration, presetDurationOptions]);
 
   useEffect(() => {
-    if (fixedServiceId && fixedServiceId !== selectedServiceId) {
-      setSelectedServiceId(fixedServiceId);
+    const forcedService =
+      (fixedServiceKey
+        ? activeServices.find((service) => getServiceSelectionKey(service) === fixedServiceKey)
+        : null) ??
+      (fixedServiceId
+        ? activeServices.find((service) => service.id === fixedServiceId)
+        : null);
+    if (!forcedService) return;
+    const forcedKey = getServiceSelectionKey(forcedService);
+    if (forcedKey !== selectedServiceKey) {
+      setSelectedServiceKey(forcedKey);
     }
-  }, [fixedServiceId, selectedServiceId]);
+  }, [activeServices, fixedServiceId, fixedServiceKey, selectedServiceKey]);
 
   useEffect(() => {
     if (skipServiceResetRef.current) {
@@ -1065,7 +1113,7 @@ export default function ReservasBookingClient({
     setSlotSubmittingKey(null);
     setPaymentMethod("mbway");
     void releaseHoldSession(checkoutHold, false);
-  }, [selectedServiceId, allowServiceSelection]);
+  }, [selectedServiceKey, allowServiceSelection]);
 
   useEffect(() => {
     if (!requiresProfessional) return;
@@ -1076,7 +1124,7 @@ export default function ReservasBookingClient({
     ) {
       setSelectedProfessionalId(null);
     }
-  }, [requiresProfessional, availableProfessionals, selectedProfessionalId, selectedService?.id]);
+  }, [requiresProfessional, availableProfessionals, selectedProfessionalId, selectedServiceKey]);
 
   const autoAdvanceRef = useRef(false);
 
@@ -1108,7 +1156,7 @@ export default function ReservasBookingClient({
 
   useEffect(() => {
     autoAdvanceRef.current = false;
-  }, [selectedServiceId]);
+  }, [selectedServiceKey]);
 
   useEffect(() => {
     if (skipSelectionResetRef.current) {
@@ -1304,9 +1352,11 @@ export default function ReservasBookingClient({
       }),
     [availableDays, timezone, todayIso, tomorrowIso],
   );
-  const firstDaySlot = daySlots[0] ?? null;
+  const firstDaySlot =
+    daySlots.find((slot) => !(slot.isFull || String(slot.status).toUpperCase() === "FULL")) ?? null;
   const afterWorkSlot =
     daySlots.find((slot) => {
+      if (slot.isFull || String(slot.status).toUpperCase() === "FULL") return false;
       const hour = getSlotHour(new Date(slot.startsAt), timezone);
       return hour >= 18;
     }) ?? null;
@@ -1832,11 +1882,22 @@ export default function ReservasBookingClient({
     setSlotSubmittingKey(slot.slotKey);
 
     try {
+      const slotIsFull = slot.isFull || String(slot.status).toUpperCase() === "FULL";
+      if (slotIsFull) {
+        setBookingError("Este horário está cheio.");
+        return;
+      }
+      const requiresSessionId = selectedServiceVertical === "CLASS";
+      if (requiresSessionId && !slot.sessionId) {
+        setBookingError("Sessão inválida. Atualiza os horários e tenta novamente.");
+        return;
+      }
       if (selectedService.locationMode === "CHOOSE_AT_BOOKING" && !resolvedAddressId) {
         setBookingError("Seleciona uma morada antes de reservar.");
         return;
       }
       const reservePayload = {
+        ...(requiresSessionId ? { sessionId: slot.sessionId } : {}),
         startsAt: slot.startsAt,
         professionalId: requiresProfessional ? selectedProfessionalId : null,
         partySize: requiresResource ? selectedPartySize : null,
@@ -2380,13 +2441,14 @@ export default function ReservasBookingClient({
                 ) : (
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
                     {activeServices.map((service) => {
-                      const isActive = service.id === selectedServiceId;
-                      const coverUrl = resolveServiceCover(service.coverImageUrl, `service-${service.id}`);
+                      const serviceKey = getServiceSelectionKey(service);
+                      const isActive = serviceKey === selectedServiceKey;
+                      const coverUrl = resolveServiceCover(service.coverImageUrl, serviceKey);
                       return (
                         <button
-                          key={service.id}
+                          key={serviceKey}
                           type="button"
-                          onClick={() => setSelectedServiceId(service.id)}
+                          onClick={() => setSelectedServiceKey(serviceKey)}
                           className={`relative min-h-[150px] overflow-hidden rounded-2xl border p-4 text-left transition sm:min-h-[170px] ${
                             isActive
                               ? "border-white/45 shadow-[0_18px_45px_rgba(0,0,0,0.45)]"
@@ -2800,20 +2862,26 @@ export default function ReservasBookingClient({
                                   minute: "2-digit",
                                   timeZone: timezone,
                                 });
+                                const isFull = slot.isFull || String(slot.status).toUpperCase() === "FULL";
                                 const isSelected = selectedSlot?.slotKey === slot.slotKey;
                                 const isFirst = highlightedSlotKeys.first === slot.slotKey;
                                 const isAfterWork = highlightedSlotKeys.afterWork === slot.slotKey && !isFirst;
-                                const slotBadge = isFirst ? "Mais cedo" : isAfterWork ? "Pós-laboral" : null;
+                                const slotBadge = isFull ? "Cheio" : isFirst ? "Mais cedo" : isAfterWork ? "Pós-laboral" : null;
                                 return (
                                   <button
                                     key={slot.slotKey}
                                     type="button"
-                                    onClick={() => reserveSlot(slot)}
-                                    disabled={Boolean(slotSubmittingKey)}
+                                    onClick={() => {
+                                      if (isFull) return;
+                                      reserveSlot(slot);
+                                    }}
+                                    disabled={Boolean(slotSubmittingKey) || isFull}
                                     className={`snap-start inline-flex items-center gap-1 rounded-full border px-4 py-2 text-[12px] font-semibold text-white/85 transition ${
                                       isSelected
                                         ? "border-white/60 bg-white/15"
-                                        : "border-white/15 bg-white/5 hover:border-white/35 hover:bg-white/10"
+                                        : isFull
+                                          ? "border-rose-300/30 bg-rose-500/10 text-rose-100/70"
+                                          : "border-white/15 bg-white/5 hover:border-white/35 hover:bg-white/10"
                                     }`}
                                   >
                                     {timeLabel}

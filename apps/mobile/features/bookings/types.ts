@@ -40,6 +40,11 @@ export type BookingItem = {
   delayReason?: string | null;
   service: BookingService;
   organization: BookingOrganization | null;
+  courtSnapshot?: {
+    courtId: number;
+    name: string | null;
+    coverImageUrl: string | null;
+  } | null;
   cancellation: BookingActionPolicy;
   reschedule: BookingActionPolicy;
   changeRequest?: BookingChangeRequest | null;
@@ -80,6 +85,7 @@ export type BookingHubPayload = {
 
 export type BookingCourtCard = {
   id: string;
+  courtId: number;
   serviceId: number;
   orgUsername: string;
   clubName: string;
@@ -92,8 +98,26 @@ export type BookingCourtCard = {
   source: "FOLLOWING" | "NEARBY";
 };
 
+export type BookingClubCard = {
+  id: string;
+  orgUsername: string;
+  clubName: string;
+  coverImageUrl: string | null;
+  courtsCount: number;
+  minPriceCents: number | null;
+  currency: string | null;
+  source: "FOLLOWING" | "NEARBY";
+};
+
 export type BookingCourtsState = {
   items: BookingCourtCard[];
+  hasFollowingClubs: boolean;
+  hasAnyClubWithUsername: boolean;
+  configurationIssue: "COURT_CONFIG_MISSING" | null;
+};
+
+export type BookingClubsState = {
+  items: BookingClubCard[];
   hasFollowingClubs: boolean;
   hasAnyClubWithUsername: boolean;
   configurationIssue: "COURT_CONFIG_MISSING" | null;
@@ -126,6 +150,54 @@ export type BookingChangeResponse = {
     amountCents: number;
     currency: string;
   } | null;
+};
+
+export type ClassEnrollmentItem = {
+  id: number;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  classSessionId: number;
+  startsAt: string;
+  endsAt: string;
+  capacity: number;
+  enrolledCount: number;
+  isFull: boolean;
+  sessionStatus: string;
+  class: {
+    id: number;
+    title: string;
+    coverImageUrl: string | null;
+  };
+  trainer: {
+    id: number;
+    name: string;
+    avatarUrl: string | null;
+    username: string | null;
+    fullName: string | null;
+  } | null;
+  court: {
+    id: number;
+    name: string | null;
+    isActive: boolean | null;
+  } | null;
+  organization: {
+    id: number;
+    username: string | null;
+    publicName: string | null;
+    businessName: string | null;
+  };
+  booking: {
+    id: number;
+    status: string;
+    effectiveStatus: string | null;
+    pendingState: string;
+    pendingExpiresAt: string | null;
+  } | null;
+  cancellation: {
+    allowed: boolean;
+    reason: string | null;
+  };
 };
 
 const TERMINAL_BOOKING_STATUSES = new Set([

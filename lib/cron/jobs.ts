@@ -29,6 +29,20 @@ export const CRON_JOBS: CronJobDefinition[] = [
     endpoint: "/api/cron/bookings/cleanup",
   },
   {
+    key: "academy-enrollments-reconcile",
+    envIntervalMs: "CRON_ACADEMY_ENROLLMENTS_RECONCILE_INTERVAL_MS",
+    defaultIntervalMs: 3_600_000,
+    method: "POST",
+    endpoint: "/api/cron/academy/enrollments/reconcile",
+  },
+  {
+    key: "academy-enrollments-integrity",
+    envIntervalMs: "CRON_ACADEMY_ENROLLMENTS_INTEGRITY_INTERVAL_MS",
+    defaultIntervalMs: 86_400_000,
+    method: "GET",
+    endpoint: "/api/cron/academy/enrollments/integrity",
+  },
+  {
     key: "bookings-split-garantido",
     envIntervalMs: "CRON_BOOKINGS_SPLIT_GARANTIDO_INTERVAL_MS",
     defaultIntervalMs: 300_000,

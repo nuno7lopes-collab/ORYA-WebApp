@@ -5085,6 +5085,8 @@ model Booking {
   confirmationSnapshot          Json?                            @map("confirmation_snapshot")
   confirmationSnapshotVersion   Int?                             @map("confirmation_snapshot_version")
   confirmationSnapshotCreatedAt DateTime?                        @map("confirmation_snapshot_created_at") @db.Timestamptz(6)
+  courtSnapshotName             String?                          @map("court_snapshot_name")
+  courtSnapshotCoverImageUrl    String?                          @map("court_snapshot_cover_image_url")
   locationMode                  ServiceLocationMode              @default(FIXED) @map("location_mode")
   addressId                     String?                          @map("address_id") @db.Uuid
   createdAt                     DateTime                         @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -5109,6 +5111,7 @@ model Booking {
   creditLedger                  ServiceCreditLedger[]
   entitlements                  Entitlement[]
   changeRequests                BookingChangeRequest[]
+  academyEnrollment             AcademyEnrollment?               @relation("AcademyEnrollmentBooking")
 
   @@index([serviceId])
   @@index([organizationId])
@@ -5230,6 +5233,7 @@ model ClassSession {
   service        Service                  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
   court          PadelClubCourt?          @relation(fields: [courtId], references: [id], onDelete: SetNull)
   professional   ReservationProfessional? @relation(fields: [professionalId], references: [id], onDelete: SetNull)
+  academyEnrollments AcademyEnrollment[]  @relation("AcademyEnrollmentClassSession")
 
   @@unique([seriesId, startsAt], map: "class_sessions_series_start_unique")
   @@index([organizationId, startsAt], map: "class_sessions_org_start_idx")
@@ -5314,6 +5318,8 @@ model AcademyEnrollment {
   currency       String   @default("EUR")
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  classSession   ClassSession @relation("AcademyEnrollmentClassSession", fields: [classSessionId], references: [id], onDelete: Cascade)
+  booking        Booking?     @relation("AcademyEnrollmentBooking", fields: [bookingId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, classSessionId], map: "academy_enrollments_org_session_idx")
   @@index([organizationId, userId], map: "academy_enrollments_org_user_idx")

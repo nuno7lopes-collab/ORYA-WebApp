@@ -30,6 +30,7 @@ function resolveEffectiveState(status: string, pendingState: "NONE" | "ACTIVE" |
 
 const BOOKING_SELECT = {
   id: true,
+  organizationId: true,
   status: true,
   startsAt: true,
   durationMinutes: true,
@@ -175,6 +176,17 @@ async function _GET(
           status: { in: [...PENDING_BOOKING_STATUSES] as any },
         },
         data: { status: "CANCELLED_BY_CLIENT" },
+      });
+      await prisma.academyEnrollment.updateMany({
+        where: {
+          bookingId: booking.id,
+          organizationId: booking.organizationId,
+          status: { in: ["PENDING", "CONFIRMED"] },
+        },
+        data: {
+          status: "CANCELLED",
+          holdExpiresAt: null,
+        },
       });
     }
 

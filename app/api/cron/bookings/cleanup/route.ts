@@ -65,6 +65,17 @@ async function _GET(req: NextRequest) {
             actorUserId: null,
             data: { status: "CANCELLED_BY_CLIENT" },
           });
+          await tx.academyEnrollment.updateMany({
+            where: {
+              organizationId: booking.organizationId,
+              bookingId: booking.id,
+              status: { in: ["PENDING", "CONFIRMED"] },
+            },
+            data: {
+              status: "CANCELLED",
+              holdExpiresAt: null,
+            },
+          });
           await recordOrganizationAudit(tx, {
             organizationId: booking.organizationId,
             actorUserId: null,

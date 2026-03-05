@@ -233,6 +233,17 @@ export async function cancelBookingByOrganizationInTx(params: {
     actorUserId: params.actorUserId,
     data: { status: "CANCELLED_BY_ORG" },
   });
+  await params.tx.academyEnrollment.updateMany({
+    where: {
+      organizationId: booking.organizationId,
+      bookingId: booking.id,
+      status: { in: ["PENDING", "CONFIRMED"] },
+    },
+    data: {
+      status: "CANCELLED",
+      holdExpiresAt: null,
+    },
+  });
 
   const split = booking.splitPayment ?? null;
   const splitRefunds: SplitRefund[] = split
