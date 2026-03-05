@@ -33,6 +33,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 const isWebPlatform = Platform.OS === "web";
+const isJestRuntime = typeof process.env.JEST_WORKER_ID === "string";
 const volatileStorage = new Map<string, string>();
 let secureStoreFallbackWarned = false;
 
@@ -108,6 +109,10 @@ export const clearSupabaseAuthStorage = async () => {
   await Promise.all(keys.map((key) => secureStorage.removeItem(key).catch(() => undefined)));
 };
 
+const processLockForRuntime: typeof processLock = isJestRuntime
+  ? async (_name, _acquireTimeout, fn) => await fn()
+  : processLock;
+
 export const supabase = createClient(supabaseUrl ?? "", supabaseAnonKey ?? "", {
   auth: {
     storage: secureStorage,
@@ -116,7 +121,7 @@ export const supabase = createClient(supabaseUrl ?? "", supabaseAnonKey ?? "", {
     // Refresh manual para evitar corridas de token no cliente mobile.
     autoRefreshToken: false,
     // Evita refresh concorrente (mesmo token) no runtime React Native.
-    lock: processLock,
+    lock: processLockForRuntime,
     detectSessionInUrl: false,
     flowType: "pkce",
   },

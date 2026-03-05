@@ -3156,7 +3156,7 @@ function OrganizacaoPageInner({
       {activeObjective === "manage" && activeSection === "eventos" && (
         <section className={cn("space-y-4", fadeClass)} id="eventos">
           {" "}
-          <div className="relative overflow-hidden rounded-3xl border border-white/16 bg-white/[0.04] p-5 ">
+          <div className="relative overflow-hidden rounded-3xl border border-white/16 bg-white/[0.04] p-4 sm:p-5 ">
             {" "}
             <div className="pointer-events-none absolute inset-0">
               {" "}
@@ -3201,7 +3201,7 @@ function OrganizacaoPageInner({
                           placeholder={`Pesquisar ${managePrimaryLabelLower}...`}
                           value={searchTerm}
                           onChange={(e) => setSearchTerm(e.target.value)}
-                          className="flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/40"
+                          className="flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/55"
                         />{" "}
                       </div>{" "}
                     </div>{" "}
@@ -3705,7 +3705,7 @@ function OrganizacaoPageInner({
                       {eventView === "list" ? (
                         <div className="overflow-hidden rounded-3xl border border-white/16 bg-white/[0.04] ">
                           {" "}
-                          <table className="min-w-full text-sm text-white/90">
+                          <table className="min-w-[760px] text-sm text-white/90">
                             {" "}
                             <thead className="bg-white/10 text-left text-[11px] uppercase tracking-wide text-white/75">
                               {" "}
@@ -4470,7 +4470,7 @@ function OrganizacaoPageInner({
                 />
               )}{" "}
               {timeSeries && overviewChartPoints.length === 0 && (
-                <span className="text-white/40 text-xs">
+                <span className="text-white/55 text-xs">
                   Sem dados suficientes.
                 </span>
               )}{" "}
@@ -4496,7 +4496,7 @@ function OrganizacaoPageInner({
       {activeObjective === "analyze" && activeSection === "vendas" && (
         <section className={cn("space-y-4", fadeClass)} id="vendas">
           {" "}
-          <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-white/[0.04] p-5 space-y-4">
+          <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-white/[0.04] p-4 sm:p-5 space-y-4">
             {" "}
             <div className="pointer-events-none absolute inset-0 bg-white/[0.04]" />{" "}
             <div className="relative flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -4510,34 +4510,36 @@ function OrganizacaoPageInner({
               <div className="flex flex-wrap items-center gap-2">
                 {" "}
                 <span className="text-[11px] text-white/70">Período</span>{" "}
-                <div className="inline-flex rounded-full border border-white/15 bg-white/5 p-[3px] text-[11px] ">
-                  {" "}
-                  {(["7d", "30d", "90d", "365d", "all"] as SalesRange[]).map(
-                    (range) => (
-                      <button
-                        key={range}
-                        type="button"
-                        onClick={() => setSalesRange(range)}
-                        className={cn(
-                          "rounded-full px-3 py-1 transition",
-                          salesRange === range
-                            ? cn(CTA_PRIMARY, "px-3 py-1 text-[11px]")
-                            : "text-white/75 hover:bg-white/5",
-                        )}
-                      >
-                        {" "}
-                        {range === "7d"
-                          ? "7 dias"
-                          : range === "30d"
-                            ? "30 dias"
-                            : range === "90d"
-                              ? "3 meses"
-                              : range === "365d"
-                                ? "1 ano"
-                                : "Sempre"}{" "}
-                      </button>
-                    ),
-                  )}{" "}
+                <div className="w-full max-w-full overflow-x-auto sm:w-auto">
+                  <div className="inline-flex min-w-max rounded-full border border-white/15 bg-white/5 p-[3px] text-[11px]">
+                    {" "}
+                    {(["7d", "30d", "90d", "365d", "all"] as SalesRange[]).map(
+                      (range) => (
+                        <button
+                          key={range}
+                          type="button"
+                          onClick={() => setSalesRange(range)}
+                          className={cn(
+                            "rounded-full px-3 py-1 transition",
+                            salesRange === range
+                              ? cn(CTA_PRIMARY, "px-3 py-1 text-[11px]")
+                              : "text-white/75 hover:bg-white/5",
+                          )}
+                        >
+                          {" "}
+                          {range === "7d"
+                            ? "7 dias"
+                            : range === "30d"
+                              ? "30 dias"
+                              : range === "90d"
+                                ? "3 meses"
+                                : range === "365d"
+                                  ? "1 ano"
+                                  : "Sempre"}{" "}
+                        </button>
+                      ),
+                    )}{" "}
+                  </div>{" "}
                 </div>{" "}
               </div>{" "}
             </div>{" "}
@@ -4574,7 +4576,7 @@ function OrganizacaoPageInner({
                 </span>
               )}{" "}
               {selectedSalesEvent && (
-                <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] text-white/75 ">
+                <span className="max-w-full truncate rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] text-white/75 ">
                   {selectedSalesEvent.title}
                 </span>
               )}{" "}
@@ -4583,7 +4585,7 @@ function OrganizacaoPageInner({
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
             {" "}
             {!salesEventId && (
-              <div className="col-span-full rounded-2xl border border-dashed border-white/20 bg-black/30 p-4 text-white/70 text-sm">
+              <div className="col-span-full rounded-2xl border border-dashed border-white/20 bg-white/[0.04] p-4 text-white/75 text-sm">
                 Seleciona um item.
               </div>
             )}{" "}
@@ -4606,7 +4608,7 @@ function OrganizacaoPageInner({
             {!salesLoading &&
               salesSeries &&
               salesSeries.points?.length === 0 && (
-                <div className="col-span-full rounded-2xl border border-dashed border-white/20 bg-black/30 p-4 text-white/70 text-sm">
+                <div className="col-span-full rounded-2xl border border-dashed border-white/20 bg-white/[0.04] p-4 text-white/75 text-sm">
                   {" "}
                   Sem dados no período.{" "}
                 </div>
@@ -4701,7 +4703,7 @@ function OrganizacaoPageInner({
                   <div className="hidden h-28 w-20 rounded-xl bg-white/10 animate-pulse md:block" />{" "}
                 </div>
               ) : !salesEventId ? (
-                <span className="text-white/40 text-xs">
+                <span className="text-white/55 text-xs">
                   Seleciona um item.
                 </span>
               ) : salesSeries?.points?.length ? (
@@ -4710,7 +4712,7 @@ function OrganizacaoPageInner({
                   periodLabel={salesRangeLabelLong(salesRange)}
                 />
               ) : (
-                <span className="text-white/40 text-xs">Sem dados.</span>
+                <span className="text-white/55 text-xs">Sem dados.</span>
               )}{" "}
             </div>{" "}
             {salesSeriesBreakdown && (
@@ -4746,7 +4748,7 @@ function OrganizacaoPageInner({
             {topEvents.length > 0 && (
               <div className="overflow-auto">
                 {" "}
-                <table className="min-w-full text-sm">
+                <table className="min-w-[720px] text-sm">
                   {" "}
                   <thead className="text-left text-[11px] text-white/60">
                     {" "}
@@ -4830,7 +4832,7 @@ function OrganizacaoPageInner({
               </div>
             )}{" "}
           </div>{" "}
-          <div className="rounded-3xl border border-white/10 bg-black/40 p-4 space-y-3">
+          <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 space-y-3">
             {" "}
             <div className="flex items-center justify-between">
               {" "}
@@ -4892,7 +4894,7 @@ function OrganizacaoPageInner({
                 {[...Array(4)].map((_, idx) => (
                   <div
                     key={idx}
-                    className="flex items-center justify-between rounded-xl border border-white/10 bg-black/25 p-3 animate-pulse"
+                    className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.04] p-3 animate-pulse"
                   >
                     {" "}
                     <div className="space-y-2">
@@ -4932,7 +4934,7 @@ function OrganizacaoPageInner({
               buyersItems.length > 0 && (
                 <div className="overflow-auto">
                   {" "}
-                  <table className="min-w-full text-sm">
+                  <table className="min-w-[760px] text-sm">
                     {" "}
                     <thead className="text-left text-[11px] text-white/60">
                       {" "}
@@ -5038,7 +5040,7 @@ function OrganizacaoPageInner({
                   <p className="font-semibold">Conta interna ORYA</p>{" "}
                   <p className="text-[12px] text-emerald-50/85">
                     {" "}
-                    Pagamentos na conta ORYA. Sem Stripe Connect.{" "}
+                    Pagamentos na conta ORYA.{" "}
                   </p>{" "}
                 </div>{" "}
               </div>{" "}
@@ -5295,7 +5297,7 @@ function OrganizacaoPageInner({
                   </h3>{" "}
                   <div className="grid gap-2 sm:grid-cols-2 text-sm">
                     {" "}
-                    <div className="rounded-2xl border border-white/12 bg-white/8 p-3">
+                    <div className="rounded-2xl border border-white/12 bg-white/[0.08] p-3">
                       {" "}
                       <p className="text-white/70 text-xs">
                         Próxima transferência (estimada)
@@ -5312,7 +5314,7 @@ function OrganizacaoPageInner({
                         €{" "}
                       </p>{" "}
                     </div>{" "}
-                    <div className="rounded-2xl border border-white/12 bg-white/8 p-3">
+                    <div className="rounded-2xl border border-white/12 bg-white/[0.08] p-3">
                       {" "}
                       <p className="text-white/70 text-xs">
                         Receita bruta (total)
@@ -5330,7 +5332,7 @@ function OrganizacaoPageInner({
                   </div>{" "}
                   <div className="grid gap-2 sm:grid-cols-2 text-sm">
                     {" "}
-                    <div className="rounded-2xl border border-white/12 bg-white/8 p-3">
+                    <div className="rounded-2xl border border-white/12 bg-white/[0.08] p-3">
                       {" "}
                       <p className="text-white/70 text-xs">
                         Taxas acumuladas
@@ -5347,7 +5349,7 @@ function OrganizacaoPageInner({
                         €{" "}
                       </p>{" "}
                     </div>{" "}
-                    <div className="rounded-2xl border border-white/12 bg-white/8 p-3">
+                    <div className="rounded-2xl border border-white/12 bg-white/[0.08] p-3">
                       {" "}
                       <p className="text-white/70 text-xs">
                         {managePrimaryLabel} com vendas
@@ -5366,7 +5368,7 @@ function OrganizacaoPageInner({
                     <div className="flex flex-wrap gap-2 text-[11px]">
                       {" "}
                       {payoutAlerts.holdUntil && (
-                        <span className="rounded-full border border-white/15 bg-white/8 px-3 py-1 text-white/80">
+                        <span className="rounded-full border border-white/15 bg-white/[0.08] px-3 py-1 text-white/80">
                           {" "}
                           Pendente (em espera até{" "}
                           {formatDateTime(new Date(payoutAlerts.holdUntil), {
@@ -5441,7 +5443,7 @@ function OrganizacaoPageInner({
               {financeData && financeData.events.length > 0 && (
                 <div className="overflow-auto">
                   {" "}
-                  <table className="min-w-full text-sm text-white/80">
+                  <table className="min-w-[760px] text-sm text-white/80">
                     {" "}
                     <thead className="text-left text-[11px] uppercase tracking-wide text-white/60">
                       {" "}
@@ -5524,17 +5526,17 @@ function OrganizacaoPageInner({
       {activeObjective === "analyze" && activeSection === "ops" && (
         <section className={cn("space-y-4", fadeClass)} id="ops">
           {" "}
-          <div className="rounded-3xl border border-white/12 bg-white/[0.04] px-5 py-4 ">
+          <div className="rounded-3xl border border-white/12 bg-white/[0.04] px-4 py-4 sm:px-5 ">
             {" "}
             <div className="flex flex-wrap items-start justify-between gap-3">
               {" "}
               <div>
                 {" "}
-                <h2 className="text-3xl font-semibold text-white">
+                <h2 className="text-2xl sm:text-3xl font-semibold text-white">
                   Feed operacional
                 </h2>{" "}
                 <p className="text-sm text-white/70">
-                  Atividade operacional recente com correlação.
+                  Atividade recente.
                 </p>{" "}
               </div>{" "}
             </div>{" "}
@@ -5542,13 +5544,13 @@ function OrganizacaoPageInner({
           {!opsFeed && (
             <div className="rounded-2xl border border-white/12 bg-white/5 px-4 py-4 text-sm text-white/70">
               {" "}
-              A carregar feed operacional...{" "}
+              A carregar atividade...{" "}
             </div>
           )}{" "}
           {opsFeed?.ok && (opsFeed.items?.length ?? 0) === 0 && (
             <div className="rounded-2xl border border-white/12 bg-white/5 px-4 py-4 text-sm text-white/70">
               {" "}
-              Sem eventos no feed operacional.{" "}
+              Sem atividade recente.{" "}
             </div>
           )}{" "}
           {opsFeed?.ok && (opsFeed.items?.length ?? 0) > 0 && (
@@ -5556,7 +5558,7 @@ function OrganizacaoPageInner({
               {" "}
               <div className="overflow-auto">
                 {" "}
-                <table className="min-w-full text-sm text-white/80">
+                <table className="min-w-[760px] text-sm text-white/80">
                   {" "}
                   <thead className="text-left text-[11px] uppercase tracking-wide text-white/60">
                     {" "}
@@ -5597,7 +5599,7 @@ function OrganizacaoPageInner({
           {opsFeed && !opsFeed.ok && (
             <div className="rounded-2xl border border-rose-400/40 bg-rose-500/10 px-4 py-4 text-sm text-rose-100">
               {" "}
-              Não foi possível carregar o feed operacional.{" "}
+              Não foi possível carregar atividade.{" "}
             </div>
           )}{" "}
         </section>
@@ -5621,16 +5623,13 @@ function OrganizacaoPageInner({
                   {" "}
                   Promoções{" "}
                 </h2>{" "}
-                <p className="text-sm text-white/70">
-                  Promoções e audiência.
-                </p>{" "}
               </div>{" "}
             </div>{" "}
           </div>{" "}
           {!canPromote && (
             <div className="mt-4 rounded-2xl border border-white/12 bg-white/5 px-4 py-4 text-sm text-white/70">
               {" "}
-              Sem permissões para promoções.{" "}
+              Sem acesso a promoções.{" "}
             </div>
           )}{" "}
           {canUseMarketing && marketingSection === "overview" && (
@@ -5641,16 +5640,16 @@ function OrganizacaoPageInner({
                 {marketingOverview
                   ? [
                       {
-                        label: "Receita atribuída a promoções",
+                        label: "Receita via promoções",
                         value: marketingKpis.marketingRevenueCents
                           ? `${(marketingKpis.marketingRevenueCents / 100).toFixed(2)} €`
                           : "—",
-                        hint: "Estimado via códigos.",
+                        hint: null,
                       },
                       {
                         label: `${salesUnitLabel} via promoções`,
                         value: marketingKpis.ticketsWithPromo,
-                        hint: "Usos de códigos.",
+                        hint: null,
                       },
                       {
                         label: "Top código",
@@ -5664,12 +5663,12 @@ function OrganizacaoPageInner({
                       {
                         label: "Códigos promocionais ativos",
                         value: marketingKpis.activePromos,
-                        hint: "Ativos agora.",
+                        hint: null,
                       },
-                    ].map((card, idx) => (
+                    ].map((card) => (
                       <div
                         key={card.label}
-                        className={`rounded-2xl border border-white/10 p-3 ${idx % 2 === 0 ? "bg-white/[0.04] " : "bg-white/[0.04] "}`}
+                        className="rounded-2xl border border-white/10 bg-white/[0.04] p-3"
                       >
                         {" "}
                         <p className="text-[11px] text-white/60">
@@ -5678,9 +5677,9 @@ function OrganizacaoPageInner({
                         <p className="mt-1 text-2xl font-bold text-white">
                           {card.value}
                         </p>{" "}
-                        <p className="text-[11px] text-white/50">
-                          {card.hint}
-                        </p>{" "}
+                        {card.hint ? (
+                          <p className="text-[11px] text-white/50">{card.hint}</p>
+                        ) : null}{" "}
                       </div>
                     ))
                   : [...Array(4)].map((_, idx) => (
@@ -5697,20 +5696,17 @@ function OrganizacaoPageInner({
               </div>{" "}
               <div className="rounded-3xl border border-white/12 bg-white/[0.04] p-4 space-y-3">
                 {" "}
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   {" "}
                   <div>
                     {" "}
                     <h3 className="text-lg font-semibold text-white">
-                      Encher a casa
+                      Sugestões de promoção
                     </h3>{" "}
-                    <p className="text-[12px] text-white/65">
-                      Ações sugeridas.
-                    </p>{" "}
                   </div>{" "}
                   <span className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[12px] text-white/70">
                     {" "}
-                    Ações sugeridas{" "}
+                    {fillTheRoomEvents.length} itens{" "}
                   </span>{" "}
                 </div>{" "}
                 {fillTheRoomEvents.length === 0 && (
@@ -5790,7 +5786,7 @@ function OrganizacaoPageInner({
                             <div className="h-2 w-28 rounded-full bg-white/10">
                               {" "}
                               <div
-                                className="h-2 rounded-full bg-white/[0.04] "
+                                className="h-2 rounded-full bg-cyan-300/70 "
                                 style={{
                                   width: `${Math.min(100, Math.round((ev.occupancy ?? 0) * 100))}%`,
                                 }}
@@ -5802,7 +5798,7 @@ function OrganizacaoPageInner({
                                 : "—"}
                             </span>{" "}
                           </div>{" "}
-                          <div className="flex flex-wrap justify-end gap-2 text-[11px]">
+                          <div className="flex flex-wrap justify-start gap-2 text-[11px] md:justify-end">
                             {" "}
                             <Link
                               href={appendOrganizationIdToHref(
@@ -5852,10 +5848,10 @@ function OrganizacaoPageInner({
                   <div>
                     {" "}
                     <h4 className="text-lg font-semibold text-white">
-                      Funil de promoções (v1)
+                      Funil de promoções
                     </h4>{" "}
                     <p className="text-[12px] text-white/65">
-                      Totais vs promo vs convidados.
+                      Totais, promoções e convidados.
                     </p>{" "}
                   </div>{" "}
                   <span className="rounded-full border border-white/15 bg-white/5 px-2 py-1 text-[11px] text-white/70">
@@ -5880,7 +5876,7 @@ function OrganizacaoPageInner({
                   ].map((item) => (
                     <div
                       key={item.label}
-                      className="rounded-2xl border border-white/10 bg-white/5/80 bg-black/20 p-3 "
+                      className="rounded-2xl border border-white/10 bg-white/[0.06] p-3 "
                     >
                       {" "}
                       <p className="text-[11px] text-white/60">
@@ -5912,7 +5908,7 @@ function OrganizacaoPageInner({
                     Conteúdo &amp; Kits
                   </h3>{" "}
                   <p className="text-[12px] text-white/65">
-                    Textos rápidos por {managePrimaryLabelLower}.
+                    Textos rápidos.
                   </p>{" "}
                 </div>{" "}
                 <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/70">

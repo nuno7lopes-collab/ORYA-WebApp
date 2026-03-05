@@ -176,6 +176,8 @@ const LIVE_ACTION_STATUSES = new Set([
   "PENDING_REVIEW_EXPIRED",
   "DISPUTED",
 ]);
+const SURFACE_CARD_CLASS =
+  "rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-[12px] text-white/80";
 const isMatchDisputeOpen = (match: Match) => {
   const score = (match.score || {}) as Record<string, unknown>;
   return score.disputeStatus === "OPEN";
@@ -3074,7 +3076,7 @@ export default function PadelTournamentTabs({
                 type="button"
                 onClick={() => confirmResult(m.id)}
                 disabled={!isAdminRole || actionRunning}
-                className="rounded-full border border-sky-200/45 px-3 py-1 text-[11px] text-sky-100 hover:bg-sky-400/10 disabled:opacity-60"
+                className="rounded-full border border-sky-200/45 px-3 py-1 text-[11px] text-sky-100 hover:bg-sky-400/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55"
               >
                 Confirmar
               </button>
@@ -3082,7 +3084,7 @@ export default function PadelTournamentTabs({
                 type="button"
                 onClick={() => rejectResult(m.id)}
                 disabled={!isAdminRole || actionRunning}
-                className="rounded-full border border-white/25 px-3 py-1 text-[11px] text-white/90 hover:bg-white/10 disabled:opacity-60"
+                className="rounded-full border border-white/25 px-3 py-1 text-[11px] text-white/90 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55"
               >
                 Rejeitar
               </button>
@@ -3104,7 +3106,7 @@ export default function PadelTournamentTabs({
                 type="button"
                 onClick={() => confirmResult(m.id)}
                 disabled={!isAdminRole || actionRunning}
-                className="rounded-full border border-rose-200/45 px-3 py-1 text-[11px] text-rose-100 hover:bg-rose-400/10 disabled:opacity-60"
+                className="rounded-full border border-rose-200/45 px-3 py-1 text-[11px] text-rose-100 hover:bg-rose-400/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55"
               >
                 Confirmar
               </button>
@@ -3112,7 +3114,7 @@ export default function PadelTournamentTabs({
                 type="button"
                 onClick={() => rejectResult(m.id)}
                 disabled={!isAdminRole || actionRunning}
-                className="rounded-full border border-white/25 px-3 py-1 text-[11px] text-white/90 hover:bg-white/10 disabled:opacity-60"
+                className="rounded-full border border-white/25 px-3 py-1 text-[11px] text-white/90 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55"
               >
                 Rejeitar
               </button>
@@ -3120,7 +3122,7 @@ export default function PadelTournamentTabs({
                 type="button"
                 onClick={() => resetPendingResult(m.id, "IN_PROGRESS")}
                 disabled={!isAdminRole || actionRunning}
-                className="rounded-full border border-white/25 px-3 py-1 text-[11px] text-white/90 hover:bg-white/10 disabled:opacity-60"
+                className="rounded-full border border-white/25 px-3 py-1 text-[11px] text-white/90 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55"
               >
                 Reset {"->"} Em curso
               </button>
@@ -3128,7 +3130,7 @@ export default function PadelTournamentTabs({
                 type="button"
                 onClick={() => resetPendingResult(m.id, "RESULT_SUBMITTED")}
                 disabled={!isAdminRole || actionRunning}
-                className="rounded-full border border-white/25 px-3 py-1 text-[11px] text-white/90 hover:bg-white/10 disabled:opacity-60"
+                className="rounded-full border border-white/25 px-3 py-1 text-[11px] text-white/90 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55"
               >
                 Reset {"->"} Submetido
               </button>
@@ -3136,7 +3138,7 @@ export default function PadelTournamentTabs({
                 type="button"
                 onClick={() => overrideResult(m.id)}
                 disabled={!isAdminRole || actionRunning}
-                className="rounded-full border border-amber-200/45 px-3 py-1 text-[11px] text-amber-100 hover:bg-amber-400/10 disabled:opacity-60"
+                className="rounded-full border border-amber-200/45 px-3 py-1 text-[11px] text-amber-100 hover:bg-amber-400/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55"
               >
                 Override
               </button>
@@ -3154,7 +3156,7 @@ export default function PadelTournamentTabs({
                 type="button"
                 onClick={() => confirmResult(m.id)}
                 disabled={!isAdminRole || actionRunning}
-                className="rounded-full border border-indigo-200/45 px-3 py-1 text-[11px] text-indigo-100 hover:bg-indigo-400/10 disabled:opacity-60"
+                className="rounded-full border border-indigo-200/45 px-3 py-1 text-[11px] text-indigo-100 hover:bg-indigo-400/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55"
               >
                 Confirmar resultado
               </button>
@@ -3174,7 +3176,7 @@ export default function PadelTournamentTabs({
                 type="button"
                 onClick={() => overrideResult(m.id)}
                 disabled={actionRunning}
-                className="rounded-full border border-amber-200/45 px-3 py-1 text-[11px] text-amber-100 hover:bg-amber-400/10 disabled:opacity-60"
+                className="rounded-full border border-amber-200/45 px-3 py-1 text-[11px] text-amber-100 hover:bg-amber-400/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55"
               >
                 Override para oficial
               </button>
@@ -3193,7 +3195,7 @@ export default function PadelTournamentTabs({
                   type="button"
                   onClick={() => resolveMatchDispute(m.id)}
                   disabled={resolving}
-                  className="rounded-full border border-amber-200/40 px-3 py-1 text-[11px] text-amber-100 hover:bg-amber-400/10 disabled:opacity-60"
+                  className="rounded-full border border-amber-200/40 px-3 py-1 text-[11px] text-amber-100 hover:bg-amber-400/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55"
                 >
                   {resolving ? "A resolver…" : "Resolver disputa"}
                 </button>
@@ -3238,7 +3240,7 @@ export default function PadelTournamentTabs({
                         : false,
                 }))
               }
-              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/90 hover:bg-white/10"
+              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/90 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35"
             >
               {fallbackEnabled
                 ? "Fechar fallback manual"
@@ -3260,7 +3262,7 @@ export default function PadelTournamentTabs({
               })
             }
             disabled={lockInputs}
-            className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 disabled:opacity-60"
+            className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55 outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
           >
             <option value="NORMAL">Resultado normal</option>
             <option value="WALKOVER">WO / Falta</option>
@@ -3277,7 +3279,7 @@ export default function PadelTournamentTabs({
                 })
               }
               disabled={lockInputs}
-              className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 disabled:opacity-60"
+              className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55 outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
             >
               <option value="SETS">Modo sets</option>
               <option value="TIMED_GAMES">Modo tempo (jogos)</option>
@@ -3294,7 +3296,7 @@ export default function PadelTournamentTabs({
                 updateResultDraft(m.id, { scoreText: e.target.value })
               }
               disabled={lockInputs}
-              className="w-full rounded-lg border border-white/15 bg-black/30 px-2 py-1 disabled:opacity-60"
+              className="w-full rounded-lg border border-white/15 bg-black/30 px-2 py-1 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55 outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
             />
             <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/70">
               <span className="text-white/55">Atalhos:</span>
@@ -3304,7 +3306,7 @@ export default function PadelTournamentTabs({
                   type="button"
                   onClick={() => updateResultDraft(m.id, { scoreText: preset })}
                   disabled={lockInputs}
-                  className="rounded-full border border-white/20 px-2 py-0.5 text-[11px] text-white/80 hover:bg-white/10 disabled:opacity-60"
+                  className="rounded-full border border-white/20 px-2 py-0.5 text-[11px] text-white/80 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55"
                 >
                   {preset}
                 </button>
@@ -3324,7 +3326,7 @@ export default function PadelTournamentTabs({
               }
               disabled={lockInputs}
               placeholder={`Jogos A · ${nameFromSlots(m.pairingA, locale)}`}
-              className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 disabled:opacity-60"
+              className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55 outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
             />
             <input
               type="number"
@@ -3336,7 +3338,7 @@ export default function PadelTournamentTabs({
               }
               disabled={lockInputs}
               placeholder={`Jogos B · ${nameFromSlots(m.pairingB, locale)}`}
-              className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 disabled:opacity-60"
+              className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55 outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
             />
             <label className="flex items-center gap-2 rounded-lg border border-white/15 bg-black/20 px-2 py-1 text-[11px] text-white/75">
               <input
@@ -3377,7 +3379,7 @@ export default function PadelTournamentTabs({
                     })
                   }
                   disabled={lockInputs}
-                  className="rounded-full border border-white/20 px-2 py-0.5 text-[11px] text-white/80 hover:bg-white/10 disabled:opacity-60"
+                  className="rounded-full border border-white/20 px-2 py-0.5 text-[11px] text-white/80 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55"
                 >
                   {preset.label}
                 </button>
@@ -3394,7 +3396,7 @@ export default function PadelTournamentTabs({
               })
             }
             disabled={lockInputs}
-            className="w-full rounded-lg border border-white/15 bg-black/30 px-2 py-1 disabled:opacity-60"
+            className="w-full rounded-lg border border-white/15 bg-black/30 px-2 py-1 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55 outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
           >
             <option value="">Seleciona vencedor</option>
             <option value="A">A · {nameFromSlots(m.pairingA, locale)}</option>
@@ -3412,7 +3414,7 @@ export default function PadelTournamentTabs({
                 if (file) uploadResultPhoto(m.id, file);
               }}
               disabled={lockInputs}
-              className="text-[11px] text-white/70 disabled:opacity-60"
+              className="text-[11px] text-white/70 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55"
             />
           </label>
           {draft.uploading && <span>A enviar…</span>}
@@ -3432,7 +3434,7 @@ export default function PadelTournamentTabs({
             type="button"
             onClick={() => savePartialScore(m.id)}
             disabled={draft.saving || draft.uploading || lockInputs}
-            className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 disabled:opacity-60"
+            className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55"
           >
             Guardar parcial
           </button>
@@ -3440,7 +3442,7 @@ export default function PadelTournamentTabs({
             type="button"
             onClick={() => submitResult(m.id)}
             disabled={draft.saving || draft.uploading || lockInputs}
-            className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-black disabled:opacity-60"
+            className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-black disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55"
           >
             {draft.saving ? "A guardar…" : "Guardar resultado"}
           </button>
@@ -3659,9 +3661,9 @@ export default function PadelTournamentTabs({
       rightColumn={
         <section
           id="padel-config"
-          className="space-y-4 rounded-2xl border border-white/10 bg-black/40 p-4"
+          className="space-y-5 rounded-3xl border border-white/10 bg-black/45 p-5 md:p-6"
         >
-          <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/80 space-y-3">
+          <div className={`${SURFACE_CARD_CLASS} space-y-4`}>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">
@@ -3687,7 +3689,7 @@ export default function PadelTournamentTabs({
                       "selected",
                     )
                   }
-                  className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px] disabled:opacity-60"
+                  className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55 outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
                 >
                   {PADEL_FORMAT_PROFILE_OPTIONS.map((opt) => (
                     <option key={`profile-format-${opt}`} value={opt}>
@@ -3716,7 +3718,7 @@ export default function PadelTournamentTabs({
                           "selected",
                         )
                       }
-                      className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px] disabled:opacity-60"
+                      className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55 outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
                     >
                       <option value="INDIVIDUAL_ROTATION">
                         Rotação individual
@@ -3737,7 +3739,7 @@ export default function PadelTournamentTabs({
                           "selected",
                         )
                       }
-                      className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px] disabled:opacity-60"
+                      className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55 outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
                     >
                       <option value="ROUND_BY_ROUND">Ronda a ronda</option>
                     </select>
@@ -3764,7 +3766,7 @@ export default function PadelTournamentTabs({
                           "selected",
                         )
                       }
-                      className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px] disabled:opacity-60"
+                      className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55 outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
                     >
                       <option value="ACTIVE_QUEUE">Fila ativa</option>
                       <option value="HARD_CAP_WAITLIST">
@@ -3782,7 +3784,7 @@ export default function PadelTournamentTabs({
                       min={1}
                       defaultValue={selectedNonStopRounds}
                       disabled={!isAdminRole}
-                      className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px] disabled:opacity-60"
+                      className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55 outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
                       onBlur={(e) => {
                         const parsed = Number(e.target.value);
                         if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -3806,7 +3808,9 @@ export default function PadelTournamentTabs({
             </div>
           </div>
           {categoryOptions.length > 1 && (
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/80">
+            <div
+              className={`${SURFACE_CARD_CLASS} flex flex-wrap items-center justify-between gap-2 py-3`}
+            >
               <span className="uppercase tracking-[0.18em] text-[11px] text-white/60">
                 Categoria ativa
               </span>
@@ -3821,7 +3825,7 @@ export default function PadelTournamentTabs({
                   setPreferGlobalCategory(true);
                   setSelectedCategoryId(null);
                 }}
-                className="rounded-full border border-white/15 bg-black/30 px-3 py-1 text-[12px] text-white/80"
+                className="rounded-full border border-white/15 bg-black/30 px-3 py-1 text-[12px] text-white/80 outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
               >
                 <option value="">Global / todas</option>
                 {categoryOptions.map((opt) => (
@@ -3832,7 +3836,7 @@ export default function PadelTournamentTabs({
               </select>
             </div>
           )}
-          <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/80 space-y-3">
+          <div className={`${SURFACE_CARD_CLASS} space-y-3`}>
             <div className="flex items-center justify-between gap-3">
               <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">
                 Auditoria
@@ -3881,7 +3885,7 @@ export default function PadelTournamentTabs({
           )}
           <section
             id="padel-exports"
-            className="scroll-mt-24 flex flex-wrap gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/80"
+            className="scroll-mt-24 flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-[12px] text-white/80"
           >
             <span className="uppercase tracking-[0.16em] text-[11px] text-white/60">
               Exportações
@@ -3890,7 +3894,7 @@ export default function PadelTournamentTabs({
               href={orgApi(
                 `/padel/exports/inscritos?eventId=${eventId}&format=xlsx`,
               )}
-              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35"
             >
               Inscritos (Excel)
             </a>
@@ -3898,7 +3902,7 @@ export default function PadelTournamentTabs({
               href={orgApi(
                 `/padel/exports/resultados?eventId=${eventId}&format=xlsx`,
               )}
-              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35"
             >
               Resultados (Excel)
             </a>
@@ -3908,7 +3912,7 @@ export default function PadelTournamentTabs({
               )}
               target="_blank"
               rel="noreferrer"
-              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35"
             >
               Bracket (PDF)
             </a>
@@ -3918,7 +3922,7 @@ export default function PadelTournamentTabs({
               )}
               target="_blank"
               rel="noreferrer"
-              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35"
             >
               Bracket (Poster)
             </a>
@@ -3928,7 +3932,7 @@ export default function PadelTournamentTabs({
               )}
               target="_blank"
               rel="noreferrer"
-              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35"
             >
               Calendário (PDF)
             </a>
@@ -3936,7 +3940,7 @@ export default function PadelTournamentTabs({
               href={orgApi(
                 `/padel/exports/calendario?eventId=${eventId}&format=csv`,
               )}
-              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35"
             >
               Calendário (CSV)
             </a>
@@ -3944,7 +3948,7 @@ export default function PadelTournamentTabs({
               href={orgApi(
                 `/padel/exports/calendario?eventId=${eventId}&format=ics`,
               )}
-              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35"
             >
               Calendário (ICS)
             </a>
@@ -3952,7 +3956,7 @@ export default function PadelTournamentTabs({
               href={orgApi(
                 `/padel/exports/analytics?eventId=${eventId}&format=xlsx`,
               )}
-              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35"
             >
               Análises (Excel)
             </a>
@@ -3960,7 +3964,7 @@ export default function PadelTournamentTabs({
               href={orgApi(
                 `/padel/exports/analytics?eventId=${eventId}&format=csv`,
               )}
-              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35"
             >
               Análises (CSV)
             </a>
@@ -3974,7 +3978,7 @@ export default function PadelTournamentTabs({
               </div>
             )}
           {(generationVersion || (supportsGroups && groupMissing > 0)) && (
-            <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/80 flex items-center justify-between gap-3 flex-wrap">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-[12px] text-white/80 flex items-center justify-between gap-3 flex-wrap">
               <span>Motor: {generationVersion ?? "v1-groups-ko"}</span>
               {supportsGroups && groupMissing > 0 && (
                 <span className="rounded-full bg-amber-500/15 px-3 py-1 text-amber-100">
@@ -3984,7 +3988,7 @@ export default function PadelTournamentTabs({
               )}
             </div>
           )}
-          <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/80">
+          <div className={`${SURFACE_CARD_CLASS}`}>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="space-y-1">
                 <p>
@@ -4033,14 +4037,14 @@ export default function PadelTournamentTabs({
               <div className="flex flex-wrap items-center gap-2">
                 <a
                   href={autoScheduleHref}
-                  className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+                  className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35"
                 >
                   Calendário automático
                 </a>
                 {(isNonStopFormat || isAmMxFormat) && (
                   <a
                     href={roundOpsHref}
-                    className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+                    className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35"
                   >
                     Operar rondas
                   </a>
@@ -4050,7 +4054,7 @@ export default function PadelTournamentTabs({
           </div>
           {renderPlanningPreviewPanel()}
           {matches.length > 0 && (
-            <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/80 space-y-2">
+            <div className={`${SURFACE_CARD_CLASS} space-y-2`}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">
                   Filtro live
@@ -4096,7 +4100,7 @@ export default function PadelTournamentTabs({
                     key={`live-filter-${item.key}`}
                     type="button"
                     onClick={() => setLiveOpsFilter(item.key)}
-                    className={`rounded-full border px-3 py-1 text-[11px] ${liveOpsFilter === item.key ? "border-sky-300/60 bg-sky-500/20 text-sky-100" : "border-white/20 bg-white/5 text-white/75 hover:bg-white/10"}`}
+                    className={`rounded-full border px-3 py-1 text-[11px] ${liveOpsFilter === item.key ? "border-sky-300/60 bg-sky-500/20 text-sky-100" : "border-white/20 bg-white/5 text-white/75 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35"}`}
                   >
                     {item.label} ({item.count})
                   </button>
@@ -4105,7 +4109,7 @@ export default function PadelTournamentTabs({
             </div>
           )}
           {tab === "grupos" && (
-            <div className="rounded-xl border border-white/15 bg-white/5 p-3 text-sm space-y-2">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm space-y-3">
               <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">
                 {supportsGroups
                   ? "Configuração de grupos"
@@ -4142,7 +4146,7 @@ export default function PadelTournamentTabs({
                       ? "Sem permissões para gerar jogos."
                       : undefined
                   }
-                  className="rounded-full border border-white/20 px-3 py-1 text-[12px] text-white/80 hover:bg-white/10 disabled:opacity-60"
+                  className="rounded-full border border-white/20 px-3 py-1 text-[12px] text-white/80 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55"
                 >
                   {generationBusy === "GROUPS"
                     ? "A gerar..."
@@ -4230,7 +4234,7 @@ export default function PadelTournamentTabs({
                   )}
                   <a
                     href={roundOpsHref}
-                    className="inline-flex rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+                    className="inline-flex rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35"
                   >
                     Abrir painel de avanço
                   </a>
@@ -4271,7 +4275,7 @@ export default function PadelTournamentTabs({
                         key={tpl.id}
                         type="button"
                         onClick={() => applyTemplate(tpl)}
-                        className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[12px] text-white/80 hover:border-white/40"
+                        className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[12px] text-white/80 hover:border-white/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35"
                       >
                         {tpl.label}
                       </button>
@@ -4291,7 +4295,7 @@ export default function PadelTournamentTabs({
                 <select
                   value={competitionState || "DEVELOPMENT"}
                   onChange={(e) => saveCompetitionState(e.target.value)}
-                  className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px]"
+                  className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px] outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
                 >
                   <option value="HIDDEN">Oculto</option>
                   <option value="DEVELOPMENT">Desenvolvimento</option>
@@ -4313,7 +4317,7 @@ export default function PadelTournamentTabs({
                         e.target.value ? Number(e.target.value) : null,
                       )
                     }
-                    className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px]"
+                    className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px] outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
                   >
                     <option value="">Default</option>
                     {ruleSets.map((rule) => (
@@ -4367,7 +4371,7 @@ export default function PadelTournamentTabs({
                       );
                       saveScoreRules(nextRules, "selected");
                     }}
-                    className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px]"
+                    className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px] outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
                   >
                     {PADEL_SCORE_RULE_PRESETS.map((preset) => (
                       <option
@@ -4395,7 +4399,7 @@ export default function PadelTournamentTabs({
                       );
                       saveScoreRules(nextRules, "selected");
                     }}
-                    className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px]"
+                    className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px] outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
                   >
                     {PADEL_DEUCE_MODE_OPTIONS.map((option) => (
                       <option
@@ -4424,7 +4428,7 @@ export default function PadelTournamentTabs({
                   <button
                     type="button"
                     onClick={clearCategoryScoreRulesOverride}
-                    className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+                    className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35"
                   >
                     Repor para regra global
                   </button>
@@ -4464,7 +4468,7 @@ export default function PadelTournamentTabs({
                             : "IMMEDIATE_OFFICIAL",
                       })
                     }
-                    className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px]"
+                    className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px] outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
                   >
                     <option value="IMMEDIATE_OFFICIAL">
                       Staff: oficial imediato
@@ -4479,7 +4483,7 @@ export default function PadelTournamentTabs({
                     min={1}
                     max={240}
                     defaultValue={pendingConfirmationWindowMinutes}
-                    className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px]"
+                    className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px] outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
                     onBlur={(e) => {
                       const raw = Number(e.target.value);
                       if (!Number.isFinite(raw) || raw <= 0) {
@@ -4551,7 +4555,7 @@ export default function PadelTournamentTabs({
                         type="number"
                         min={1}
                         defaultValue={groupsConfig.groupCount ?? ""}
-                        className="rounded-lg border border-white/15 bg-black/30 px-2 py-1"
+                        className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
                         onBlur={(e) => handleNumberConfig(e, "groupCount")}
                       />
                     </label>
@@ -4563,7 +4567,7 @@ export default function PadelTournamentTabs({
                         type="number"
                         min={1}
                         defaultValue={groupsConfig.qualifyPerGroup ?? 2}
-                        className="rounded-lg border border-white/15 bg-black/30 px-2 py-1"
+                        className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
                         onBlur={(e) => handleNumberConfig(e, "qualifyPerGroup")}
                       />
                     </label>
@@ -4575,7 +4579,7 @@ export default function PadelTournamentTabs({
                         type="number"
                         min={0}
                         defaultValue={groupsConfig.extraQualifiers ?? ""}
-                        className="rounded-lg border border-white/15 bg-black/30 px-2 py-1"
+                        className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
                         onBlur={(e) => handleNumberConfig(e, "extraQualifiers")}
                       />
                     </label>
@@ -4583,7 +4587,7 @@ export default function PadelTournamentTabs({
                       <span className="text-[11px] text-white/60">Seeding</span>
                       <select
                         defaultValue={groupsConfig.seeding ?? "SNAKE"}
-                        className="rounded-lg border border-white/15 bg-black/30 px-2 py-1"
+                        className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
                         onChange={(e) =>
                           saveGroupsConfig({
                             seeding:
@@ -4656,7 +4660,7 @@ export default function PadelTournamentTabs({
                     type="number"
                     min={0}
                     defaultValue={maxEntriesTotal ?? ""}
-                    className="rounded-lg border border-white/15 bg-black/30 px-2 py-1"
+                    className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
                     onBlur={(e) => {
                       const raw = e.target.value.trim();
                       if (!raw) {
@@ -4710,7 +4714,7 @@ export default function PadelTournamentTabs({
                     type="text"
                     value={tvFooterText}
                     onChange={(e) => setTvFooterText(e.target.value)}
-                    className="rounded-lg border border-white/15 bg-black/30 px-2 py-2"
+                    className="rounded-lg border border-white/15 bg-black/30 px-2 py-2 outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
                     placeholder="Ex: Bem-vindos ao torneio!"
                   />
                 </label>
@@ -4721,14 +4725,14 @@ export default function PadelTournamentTabs({
                   <textarea
                     value={tvSponsors}
                     onChange={(e) => setTvSponsors(e.target.value)}
-                    className="min-h-[72px] rounded-lg border border-white/15 bg-black/30 px-2 py-2"
+                    className="min-h-[72px] rounded-lg border border-white/15 bg-black/30 px-2 py-2 outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
                     placeholder="Marca A&#10;Marca B"
                   />
                 </label>
                 <button
                   type="button"
                   onClick={saveTvMonitorSettings}
-                  className="rounded-full border border-white/20 px-3 py-1 text-[12px] text-white/80 hover:border-white/40"
+                  className="rounded-full border border-white/20 px-3 py-1 text-[12px] text-white/80 hover:border-white/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35"
                 >
                   Guardar monitor
                 </button>
@@ -4744,7 +4748,7 @@ export default function PadelTournamentTabs({
                     type="text"
                     value={broadcastTitle}
                     onChange={(e) => setBroadcastTitle(e.target.value)}
-                    className="rounded-lg border border-white/15 bg-black/30 px-2 py-2"
+                    className="rounded-lg border border-white/15 bg-black/30 px-2 py-2 outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
                     placeholder="Título (opcional)"
                   />
                   <select
@@ -4754,7 +4758,7 @@ export default function PadelTournamentTabs({
                         e.target.value as "ALL" | "PLAYERS" | "WAITLIST",
                       )
                     }
-                    className="rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-[12px]"
+                    className="rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-[12px] outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
                   >
                     <option value="ALL">Todos</option>
                     <option value="PLAYERS">Participantes</option>
@@ -4764,7 +4768,7 @@ export default function PadelTournamentTabs({
                 <textarea
                   value={broadcastMessage}
                   onChange={(e) => setBroadcastMessage(e.target.value)}
-                  className="min-h-[96px] rounded-lg border border-white/15 bg-black/30 px-2 py-2"
+                  className="min-h-[96px] rounded-lg border border-white/15 bg-black/30 px-2 py-2 outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
                   placeholder="Mensagem para enviar"
                 />
                 <div className="flex flex-wrap items-center gap-2">
@@ -4772,7 +4776,7 @@ export default function PadelTournamentTabs({
                     type="button"
                     onClick={sendBroadcast}
                     disabled={broadcastBusy}
-                    className="rounded-full border border-white/20 px-3 py-1 text-[12px] text-white/80 hover:border-white/40 disabled:opacity-50"
+                    className="rounded-full border border-white/20 px-3 py-1 text-[12px] text-white/80 hover:border-white/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {broadcastBusy ? "A enviar..." : "Enviar mensagem"}
                   </button>
@@ -4796,7 +4800,7 @@ export default function PadelTournamentTabs({
           )}
           {tab === "duplas" && (
             <div className="space-y-2">
-              <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-[12px] text-white/80 space-y-3">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-[12px] text-white/80 space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <div>
                     <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">
@@ -4880,7 +4884,7 @@ export default function PadelTournamentTabs({
                   </div>
                 </div>
               </div>
-              <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-[12px] text-white/80 space-y-3">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-[12px] text-white/80 space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <div>
                     <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">
@@ -4895,7 +4899,7 @@ export default function PadelTournamentTabs({
                   <select
                     value={swapPairingAId}
                     onChange={(e) => setSwapPairingAId(e.target.value)}
-                    className="rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-[12px]"
+                    className="rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-[12px] outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
                   >
                     <option value="">Dupla A</option>
                     {swapCandidates.map((pairing) => (
@@ -4907,7 +4911,7 @@ export default function PadelTournamentTabs({
                   <select
                     value={swapPairingBId}
                     onChange={(e) => setSwapPairingBId(e.target.value)}
-                    className="rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-[12px]"
+                    className="rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-[12px] outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
                   >
                     <option value="">Dupla B</option>
                     {swapCandidates.map((pairing) => (
@@ -4922,7 +4926,7 @@ export default function PadelTournamentTabs({
                     type="button"
                     onClick={handleSwapPairings}
                     disabled={!canSubmitSwap}
-                    className="rounded-full border border-white/20 px-3 py-1 text-[12px] text-white/80 hover:border-white/40 disabled:opacity-50"
+                    className="rounded-full border border-white/20 px-3 py-1 text-[12px] text-white/80 hover:border-white/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {swapBusy ? "A trocar..." : "Trocar parceiros"}
                   </button>
@@ -4942,7 +4946,7 @@ export default function PadelTournamentTabs({
                   )}
                 </div>
               </div>
-              <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-[12px] text-white/80 space-y-2">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-[12px] text-white/80 space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <span className="uppercase tracking-[0.16em] text-[11px] text-white/60">
                     Importar inscritos
@@ -4950,7 +4954,7 @@ export default function PadelTournamentTabs({
                   <button
                     type="button"
                     onClick={downloadImportTemplate}
-                    className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+                    className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35"
                   >
                     Modelo CSV
                   </button>
@@ -4969,7 +4973,7 @@ export default function PadelTournamentTabs({
                     type="button"
                     onClick={() => submitImport("preview")}
                     disabled={!importFile || importMode !== null}
-                    className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 disabled:opacity-60"
+                    className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55"
                   >
                     {importMode === "preview" ? "A validar..." : "Validar"}
                   </button>
@@ -4977,7 +4981,7 @@ export default function PadelTournamentTabs({
                     type="button"
                     onClick={() => submitImport("import")}
                     disabled={!importFile || importMode !== null}
-                    className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 disabled:opacity-60"
+                    className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55"
                   >
                     {importMode === "import" ? "A importar..." : "Importar"}
                   </button>
@@ -5030,7 +5034,7 @@ export default function PadelTournamentTabs({
                     type="button"
                     onClick={generateSeedsFromRanking}
                     disabled={!isAdminRole || seedingBusy}
-                    className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 disabled:opacity-60"
+                    className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55"
                     title={
                       !isAdminRole
                         ? "Sem permissões para gerar seeds."
@@ -5047,7 +5051,7 @@ export default function PadelTournamentTabs({
               {filteredPairings.map((p) => (
                 <div
                   key={p.id}
-                  className="rounded-xl border border-white/15 bg-white/5 p-3 text-sm flex items-center justify-between gap-3"
+                  className="rounded-2xl border border-white/12 bg-white/[0.04] p-3 text-sm flex flex-col items-start gap-3 md:flex-row md:items-center md:justify-between"
                 >
                   <div className="min-w-0">
                     <p className="font-semibold truncate">
@@ -5057,14 +5061,14 @@ export default function PadelTournamentTabs({
                       {`${resolvePairingStatusLabel(p, locale)} · ${resolvePaymentModeLabel(p.paymentMode, locale)}`}
                     </p>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <div className="flex w-full flex-wrap items-center gap-2 md:w-auto md:shrink-0">
                     <label className="flex items-center gap-2 text-[11px] text-white/70">
                       Seed
                       <input
                         type="number"
                         min={1}
                         defaultValue={seedRanks[String(p.id)] ?? ""}
-                        className="w-20 rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[11px]"
+                        className="w-20 rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[11px] outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
                         onBlur={(e) => {
                           const raw = e.target.value.trim();
                           if (!raw) {
@@ -5095,7 +5099,7 @@ export default function PadelTournamentTabs({
                             }
                             saveGroupsConfig({ manualAssignments: next });
                           }}
-                          className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[11px]"
+                          className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[11px] outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
                         >
                           <option value="">Auto</option>
                           {groupLabels.map((label) => (
@@ -5114,7 +5118,7 @@ export default function PadelTournamentTabs({
                             `${window.location.origin}/eventos/${eventSlug}?inviteToken=${p.inviteToken}`,
                           )
                         }
-                        className="rounded-full border border-white/20 px-3 py-1 text-[12px] text-white/80 hover:bg-white/10"
+                        className="rounded-full border border-white/20 px-3 py-1 text-[12px] text-white/80 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35"
                       >
                         Copiar convite
                       </button>
@@ -5123,7 +5127,7 @@ export default function PadelTournamentTabs({
                 </div>
               ))}
               {waitlistItems.length > 0 && (
-                <div className="rounded-xl border border-white/15 bg-white/5 p-3 text-sm space-y-2">
+                <div className="rounded-2xl border border-white/12 bg-white/[0.04] p-3 text-sm space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">
                       Lista de espera
@@ -5131,7 +5135,7 @@ export default function PadelTournamentTabs({
                     <button
                       type="button"
                       onClick={promoteWaitlist}
-                      className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+                      className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35"
                     >
                       Promover próximo
                     </button>
@@ -5139,7 +5143,7 @@ export default function PadelTournamentTabs({
                   {waitlistItems.map((item) => (
                     <div
                       key={`wait-${item.id}`}
-                      className="flex items-center justify-between gap-2 text-[12px]"
+                      className="flex items-center justify-between gap-3 text-[12px]"
                     >
                       <span className="min-w-0 truncate">
                         {(item.user?.fullName ||
@@ -5163,7 +5167,7 @@ export default function PadelTournamentTabs({
                   {standingsGroups.map(([groupLabel, rows]) => (
                     <div
                       key={`standings-${groupLabel}`}
-                      className="rounded-xl border border-white/12 bg-white/5 p-3 text-sm space-y-2"
+                      className="rounded-2xl border border-white/12 bg-white/[0.04] p-3 text-sm space-y-2"
                     >
                       <div className="flex items-center justify-between">
                         <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">
@@ -5241,7 +5245,7 @@ export default function PadelTournamentTabs({
               {filteredPrimaryRoundMatches.map((m) => (
                 <div
                   key={m.id}
-                  className="rounded-xl border border-white/15 bg-white/5 p-3 text-sm space-y-2"
+                  className="rounded-2xl border border-white/12 bg-white/[0.04] p-3 text-sm space-y-2"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
@@ -5271,7 +5275,7 @@ export default function PadelTournamentTabs({
           )}
           {tab === "eliminatorias" && (
             <div className="space-y-3">
-              <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/80">
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-[12px] text-white/80">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">
                     Gerar eliminatórias
@@ -5297,7 +5301,7 @@ export default function PadelTournamentTabs({
                       ? "Sem permissões para gerar jogos."
                       : undefined
                   }
-                  className="rounded-full border border-white/20 px-3 py-1 text-[12px] text-white/80 hover:bg-white/10 disabled:opacity-60"
+                  className="rounded-full border border-white/20 px-3 py-1 text-[12px] text-white/80 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55"
                 >
                   {generationBusy === "KNOCKOUT"
                     ? "A gerar..."
@@ -5321,14 +5325,14 @@ export default function PadelTournamentTabs({
                   {generationMessage}
                 </p>
               )}
-              <div className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/80">
+              <div className="flex items-center justify-between gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-[12px] text-white/80">
                 <span className="uppercase tracking-[0.16em] text-[11px] text-white/60">
                   Gestão do quadro
                 </span>
                 <button
                   type="button"
                   onClick={() => setKoEditMode((prev) => !prev)}
-                  className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+                  className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35"
                 >
                   {koEditMode ? "Fechar edição" : "Editar quadro"}
                 </button>
@@ -5359,7 +5363,7 @@ export default function PadelTournamentTabs({
                   </p>
                 )}
               {koGeneratedAt && (
-                <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/80 space-y-1">
+                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-[12px] text-white/80 space-y-1">
                   <p>Quadro: {formatDate(koGeneratedAt)}.</p>
                   {koOverride && (
                     <p className="text-amber-200">
@@ -5377,15 +5381,15 @@ export default function PadelTournamentTabs({
                       {koSeedSnapshot.map((q) => (
                         <div
                           key={`${q.groupLabel}-${q.rank}-${q.pairingId}`}
-                          className="flex items-center justify-between gap-2"
+                          className="flex items-center justify-between gap-3"
                         >
-                          <span>
+                          <span className="min-w-0 truncate">
                             {q.rank}º {q.groupLabel}
                             {q.isExtra ? " (extra)" : ""} —
                             {pairingNameById.get(q.pairingId) ??
                               `Dupla ${q.pairingId}`}
                           </span>
-                          <span className="text-white/50">
+                          <span className="shrink-0 text-white/50">
                             Pts {q.points ?? "—"} · SetΔ {q.setDiff ?? "—"} ·
                             GameΔ {q.gameDiff ?? "—"}
                           </span>
@@ -5487,7 +5491,7 @@ export default function PadelTournamentTabs({
                               >
                                 <div className="flex items-center justify-between text-[12px] text-white">
                                   <span
-                                    className={`font-semibold ${g.winner === "A" ? "text-emerald-300" : ""}`}
+                                    className={`max-w-[140px] truncate font-semibold ${g.winner === "A" ? "text-emerald-300" : ""}`}
                                   >
                                     {g.teamA}
                                   </span>
@@ -5497,7 +5501,7 @@ export default function PadelTournamentTabs({
                                 </div>
                                 <div className="flex items-center justify-between text-[12px] text-white">
                                   <span
-                                    className={`font-semibold ${g.winner === "B" ? "text-emerald-300" : ""}`}
+                                    className={`max-w-[140px] truncate font-semibold ${g.winner === "B" ? "text-emerald-300" : ""}`}
                                   >
                                     {g.teamB}
                                   </span>
@@ -5522,7 +5526,7 @@ export default function PadelTournamentTabs({
                                               pairingAId: next,
                                             });
                                           }}
-                                          className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[11px]"
+                                          className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[11px] outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
                                         >
                                           <option value="">—</option>
                                           {availableA.map((p) => (
@@ -5550,7 +5554,7 @@ export default function PadelTournamentTabs({
                                               pairingBId: next,
                                             });
                                           }}
-                                          className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[11px]"
+                                          className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[11px] outline-none transition focus:border-white/35 focus-visible:ring-2 focus-visible:ring-white/25"
                                         >
                                           <option value="">—</option>
                                           {availableB.map((p) => (
@@ -5573,7 +5577,7 @@ export default function PadelTournamentTabs({
                                       onClick={() =>
                                         saveKoAssignment(fullMatch)
                                       }
-                                      className="w-full rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 disabled:opacity-60"
+                                      className="w-full rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55"
                                     >
                                       {koSaving[fullMatch.id]
                                         ? "A guardar..."

@@ -1301,13 +1301,13 @@ export default function PadelTournamentWizardClient({
         </div>
       }
       rightColumn={
-        <div className="space-y-5">
+        <div className="space-y-6">
           <section
             id="wizard-identity"
-            className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4"
+            className="space-y-4 rounded-3xl border border-white/10 bg-white/[0.03] p-5 md:p-6"
           >
             <div className="space-y-1 border-b border-white/10 pb-3">
-              <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">
+              <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/60">
                 Identidade
               </p>
             </div>
@@ -1319,7 +1319,7 @@ export default function PadelTournamentWizardClient({
                 <input
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
+                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/40"
                 />
               </label>
               <label className="space-y-1 text-sm text-white/70">
@@ -1329,7 +1329,7 @@ export default function PadelTournamentWizardClient({
                 <select
                   value={selectedClubId}
                   onChange={(e) => setSelectedClubId(e.target.value)}
-                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
+                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/40"
                 >
                   <option value="">Seleciona...</option>
                   {selectableClubs.map((club) => (
@@ -1369,10 +1369,10 @@ export default function PadelTournamentWizardClient({
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                className="min-h-[120px] w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
+                className="min-h-[120px] w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/40"
               />
             </label>
-            <div className="grid gap-3 rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-white/70">
+            <div className="grid gap-3 rounded-3xl border border-white/10 bg-black/30 p-5 text-sm text-white/70">
               <p className="text-[12px] uppercase tracking-[0.18em] text-white/50">
                 Localização
               </p>
@@ -1393,10 +1393,10 @@ export default function PadelTournamentWizardClient({
           </section>
           <section
             id="wizard-registration"
-            className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4"
+            className="space-y-4 rounded-3xl border border-white/10 bg-white/[0.03] p-5 md:p-6"
           >
             <div className="space-y-1 border-b border-white/10 pb-3">
-              <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">
+              <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/60">
                 Inscrições
               </p>
             </div>
@@ -1408,7 +1408,7 @@ export default function PadelTournamentWizardClient({
                 <select
                   value={timezone}
                   onChange={(e) => setTimezone(e.target.value)}
-                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
+                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/40"
                 >
                   {TIMEZONE_OPTIONS.map((tz) => (
                     <option key={`tz-${tz}`} value={tz}>
@@ -1454,7 +1454,7 @@ export default function PadelTournamentWizardClient({
                 ))}
               </div>
             )}
-            <div className="space-y-3 rounded-2xl border border-white/10 bg-black/30 p-4">
+            <div className="space-y-3 rounded-3xl border border-white/10 bg-black/30 p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-[12px] uppercase tracking-[0.18em] text-white/60">
@@ -1495,7 +1495,7 @@ export default function PadelTournamentWizardClient({
                         ];
                       })
                     }
-                    className="rounded-lg border border-white/15 px-3 py-1.5 text-[12px] text-white/80 transition hover:border-white/30 hover:text-white"
+                    className="rounded-lg border border-white/15 px-3 py-1.5 text-[12px] text-white/80 transition hover:border-white/30 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 active:scale-[0.99]"
                   >
                     Adicionar dia seguinte
                   </button>
@@ -1517,7 +1517,7 @@ export default function PadelTournamentWizardClient({
                         );
                       })
                     }
-                    className="rounded-lg border border-white/15 px-3 py-1.5 text-[12px] text-white/70 transition hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+                    className="rounded-lg border border-white/15 px-3 py-1.5 text-[12px] text-white/70 transition hover:border-white/30 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-45"
                   >
                     Aplicar a todos
                   </button>
@@ -1638,7 +1638,7 @@ export default function PadelTournamentWizardClient({
                               );
                             })
                           }
-                          className="rounded-lg border border-white/15 px-3 py-2 text-[11px] text-white/70 transition hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+                          className="rounded-lg border border-white/15 px-3 py-2 text-[11px] text-white/70 transition hover:border-white/30 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-45"
                         >
                           Copiar horário
                         </button>
@@ -1652,7 +1652,7 @@ export default function PadelTournamentWizardClient({
                               ),
                             )
                           }
-                          className="rounded-lg border border-white/15 px-3 py-2 text-[12px] text-white/70 transition hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+                          className="rounded-lg border border-white/15 px-3 py-2 text-[12px] text-white/70 transition hover:border-white/30 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-45"
                         >
                           Remover
                         </button>
@@ -1672,7 +1672,7 @@ export default function PadelTournamentWizardClient({
                   min={10}
                   value={durationMinutes}
                   onChange={(e) => setDurationMinutes(e.target.value)}
-                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
+                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/40"
                 />
               </label>
               <label className="space-y-1 text-sm text-white/70">
@@ -1684,11 +1684,11 @@ export default function PadelTournamentWizardClient({
                   min={0}
                   value={minRestMinutes}
                   onChange={(e) => setMinRestMinutes(e.target.value)}
-                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
+                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/40"
                 />
               </label>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-[12px] text-white/80">
+            <div className="rounded-3xl border border-white/10 bg-black/30 px-5 py-4 text-[12px] text-white/80">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">
@@ -1698,7 +1698,7 @@ export default function PadelTournamentWizardClient({
                 <button
                   type="button"
                   onClick={() => setShowAdvancedPolicies((prev) => !prev)}
-                  className="rounded-lg border border-white/15 px-3 py-2 text-[12px] text-white/80 transition hover:border-white/30 hover:text-white"
+                  className="rounded-lg border border-white/15 px-3 py-2 text-[12px] text-white/80 transition hover:border-white/30 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 active:scale-[0.99]"
                 >
                   {showAdvancedPolicies ? "Ocultar" : "Mostrar"}
                 </button>
@@ -1712,7 +1712,7 @@ export default function PadelTournamentWizardClient({
                     <select
                       value={eligibility}
                       onChange={(e) => setEligibility(e.target.value)}
-                      className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
+                      className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/40"
                     >
                       {ELIGIBILITY_OPTIONS.map((opt) => (
                         <option key={`elig-${opt.value}`} value={opt.value}>
@@ -1728,7 +1728,7 @@ export default function PadelTournamentWizardClient({
                     <select
                       value={ruleSetId}
                       onChange={(e) => setRuleSetId(e.target.value)}
-                      className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
+                      className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/40"
                     >
                       <option value="">Padrão</option>
                       {rulesets.map((set) => (
@@ -1752,7 +1752,7 @@ export default function PadelTournamentWizardClient({
                               : "GROUPS_FIRST",
                           )
                         }
-                        className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
+                        className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/40"
                       >
                         <option value="GROUPS_FIRST">Grupos primeiro</option>
                         <option value="KNOCKOUT_FIRST">
@@ -1770,7 +1770,7 @@ export default function PadelTournamentWizardClient({
                       min={0}
                       value={bufferMinutes}
                       onChange={(e) => setBufferMinutes(e.target.value)}
-                      className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
+                      className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/40"
                     />
                   </label>
                   <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/80">
@@ -1793,7 +1793,7 @@ export default function PadelTournamentWizardClient({
                           e.target.value === "minimum" ? "minimum" : "capacity",
                         )
                       }
-                      className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
+                      className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/40"
                     >
                       <option value="capacity">Capacidade declarada</option>
                       <option value="minimum">Mínimo técnico</option>
@@ -1855,10 +1855,10 @@ export default function PadelTournamentWizardClient({
           </section>
           <section
             id="wizard-categories"
-            className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4"
+            className="space-y-4 rounded-3xl border border-white/10 bg-white/[0.03] p-5 md:p-6"
           >
             <div className="space-y-1 border-b border-white/10 pb-3">
-              <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">
+              <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/60">
                 Categorias
               </p>
             </div>
@@ -1870,7 +1870,7 @@ export default function PadelTournamentWizardClient({
                 <select
                   value={format}
                   onChange={(e) => setFormat(e.target.value)}
-                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
+                  className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/40"
                 >
                   {PADEL_FORMATS.map((opt) => (
                     <option key={`format-${opt.value}`} value={opt.value}>
@@ -1892,7 +1892,7 @@ export default function PadelTournamentWizardClient({
               </div>
             </div>
             {(isAmMxFormat(format) || isNonStopFormat(format)) && (
-              <div className="grid gap-3 rounded-2xl border border-white/10 bg-black/30 p-3 md:grid-cols-3">
+              <div className="grid gap-3 rounded-3xl border border-white/10 bg-black/30 p-4 md:grid-cols-3">
                 <div className="md:col-span-3">
                   <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">
                     Parâmetros base do formato
@@ -1912,7 +1912,7 @@ export default function PadelTournamentWizardClient({
                             : "INDIVIDUAL_ROTATION",
                         )
                       }
-                      className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                      className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/40"
                     >
                       <option value="INDIVIDUAL_ROTATION">
                         Rotação individual
@@ -1943,7 +1943,7 @@ export default function PadelTournamentWizardClient({
                             : "HARD_CAP_WAITLIST",
                         )
                       }
-                      className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                      className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/40"
                     >
                       <option value="ACTIVE_QUEUE">Fila ativa</option>
                       <option value="HARD_CAP_WAITLIST">
@@ -1962,7 +1962,7 @@ export default function PadelTournamentWizardClient({
                       min={1}
                       value={globalNonStopRounds}
                       onChange={(e) => setGlobalNonStopRounds(e.target.value)}
-                      className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                      className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/40"
                     />
                   </label>
                 )}
@@ -1974,7 +1974,7 @@ export default function PadelTournamentWizardClient({
               </p>
             </div>
             {categories.length === 0 ? (
-              <div className="rounded-2xl border border-white/10 bg-black/30 p-4 text-[12px] text-white/60">
+              <div className="rounded-3xl border border-white/10 bg-black/30 p-5 text-[12px] text-white/60">
                 Ainda não tens categorias. Cria pelo menos uma antes de avançar.
               </div>
             ) : (
@@ -2006,7 +2006,7 @@ export default function PadelTournamentWizardClient({
               </div>
             )}
             {selectedCategories.length > 0 && (
-              <div className="space-y-2 rounded-2xl border border-white/10 bg-black/30 p-3">
+              <div className="space-y-2 rounded-3xl border border-white/10 bg-black/30 p-4">
                 <p className="text-[12px] uppercase tracking-[0.16em] text-white/60">
                   Edição das selecionadas
                 </p>
@@ -2040,7 +2040,7 @@ export default function PadelTournamentWizardClient({
                                 nonStopRounds: undefined,
                               })
                             }
-                            className="rounded-lg border border-white/15 px-2 py-1 text-[11px] text-white/70 transition hover:border-white/30 hover:text-white"
+                            className="rounded-lg border border-white/15 px-2 py-1 text-[11px] text-white/70 transition hover:border-white/30 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 active:scale-[0.99]"
                           >
                             Usar base
                           </button>
@@ -2062,7 +2062,7 @@ export default function PadelTournamentWizardClient({
                                 price: e.target.value,
                               })
                             }
-                            className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                            className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/40"
                           />
                         </label>
                         <label className="space-y-1 text-[12px] text-white/70">
@@ -2076,7 +2076,7 @@ export default function PadelTournamentWizardClient({
                                 capacityTeams: e.target.value,
                               })
                             }
-                            className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                            className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/40"
                           />
                         </label>
                         <label className="space-y-1 text-[12px] text-white/70">
@@ -2090,7 +2090,7 @@ export default function PadelTournamentWizardClient({
                                 format: e.target.value,
                               })
                             }
-                            className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                            className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/40"
                           >
                             {PADEL_FORMATS.map((opt) => (
                               <option
@@ -2120,7 +2120,7 @@ export default function PadelTournamentWizardClient({
                                   amMxProgressionMode: "ROUND_BY_ROUND",
                                 })
                               }
-                              className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                              className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/40"
                             >
                               <option value="INDIVIDUAL_ROTATION">
                                 Rotação individual
@@ -2152,7 +2152,7 @@ export default function PadelTournamentWizardClient({
                                       : "HARD_CAP_WAITLIST",
                                 })
                               }
-                              className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                              className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/40"
                             >
                               <option value="ACTIVE_QUEUE">Fila ativa</option>
                               <option value="HARD_CAP_WAITLIST">
@@ -2173,7 +2173,7 @@ export default function PadelTournamentWizardClient({
                                   nonStopRounds: e.target.value,
                                 })
                               }
-                              className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                              className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/40"
                             />
                           </label>
                         </div>
@@ -2211,7 +2211,7 @@ export default function PadelTournamentWizardClient({
                                       "STANDARD",
                                   })
                                 }
-                                className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                                className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/40"
                               >
                                 {PADEL_SCORE_RULE_PRESETS.map((preset) => (
                                   <option
@@ -2237,7 +2237,7 @@ export default function PadelTournamentWizardClient({
                                         : "ADVANTAGE",
                                   })
                                 }
-                                className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                                className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/40"
                               >
                                 {PADEL_DEUCE_MODE_OPTIONS.map((option) => (
                                   <option
@@ -2276,15 +2276,15 @@ export default function PadelTournamentWizardClient({
           </section>
           <section
             id="wizard-operation"
-            className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4"
+            className="space-y-4 rounded-3xl border border-white/10 bg-white/[0.03] p-5 md:p-6"
           >
             <div className="space-y-1 border-b border-white/10 pb-3">
-              <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">
+              <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/60">
                 Operação
               </p>
             </div>
             <div className="grid gap-3 md:grid-cols-2">
-              <div className="rounded-2xl border border-white/10 bg-black/30 p-4 space-y-3">
+              <div className="rounded-3xl border border-white/10 bg-black/30 p-5 space-y-3">
                 <p className="text-[12px] uppercase tracking-[0.18em] text-white/60">
                   Operação em direto
                 </p>
@@ -2312,7 +2312,7 @@ export default function PadelTournamentWizardClient({
                           : "IMMEDIATE_OFFICIAL",
                       )
                     }
-                    className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                    className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/40"
                   >
                     <option value="IMMEDIATE_OFFICIAL">
                       Staff oficial imediato
@@ -2334,11 +2334,11 @@ export default function PadelTournamentWizardClient({
                     onChange={(e) =>
                       setPendingConfirmationWindowMinutes(e.target.value)
                     }
-                    className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                    className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/40"
                   />
                 </label>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-black/30 p-4 space-y-3">
+              <div className="rounded-3xl border border-white/10 bg-black/30 p-5 space-y-3">
                 <p className="text-[12px] uppercase tracking-[0.18em] text-white/60">
                   Regras de pontuação (global)
                 </p>
@@ -2354,7 +2354,7 @@ export default function PadelTournamentWizardClient({
                           "STANDARD",
                       )
                     }
-                    className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                    className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/40"
                   >
                     {PADEL_SCORE_RULE_PRESETS.map((preset) => (
                       <option
@@ -2379,7 +2379,7 @@ export default function PadelTournamentWizardClient({
                           : "ADVANTAGE",
                       )
                     }
-                    className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
+                    className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none transition focus:border-[#22D3EE] focus-visible:ring-2 focus-visible:ring-[#22D3EE]/40"
                   >
                     {PADEL_DEUCE_MODE_OPTIONS.map((option) => (
                       <option
@@ -2401,7 +2401,7 @@ export default function PadelTournamentWizardClient({
               </div>
             </div>
             {selectedClub && courts.length > 0 && (
-              <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
+              <div className="rounded-3xl border border-white/10 bg-black/30 p-5">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <p className="text-[12px] uppercase tracking-[0.18em] text-white/60">
                     Campos
@@ -2457,7 +2457,7 @@ export default function PadelTournamentWizardClient({
                             activeCourts.map((court) => court.id),
                           )
                         }
-                        className="rounded-lg border border-white/15 px-2 py-1 text-[11px] text-white/70 transition hover:border-white/30 hover:text-white"
+                        className="rounded-lg border border-white/15 px-2 py-1 text-[11px] text-white/70 transition hover:border-white/30 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 active:scale-[0.99]"
                       >
                         Repor ordem
                       </button>
@@ -2476,7 +2476,7 @@ export default function PadelTournamentWizardClient({
                               type="button"
                               disabled={idx === 0}
                               onClick={() => moveCourtPriority(court.id, -1)}
-                              className="rounded-lg border border-white/15 px-2 py-1 text-[11px] text-white/70 transition hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                              className="rounded-lg border border-white/15 px-2 py-1 text-[11px] text-white/70 transition hover:border-white/30 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 active:scale-[0.99] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               Subir
                             </button>
@@ -2484,7 +2484,7 @@ export default function PadelTournamentWizardClient({
                               type="button"
                               disabled={idx === resolvedCourts.length - 1}
                               onClick={() => moveCourtPriority(court.id, 1)}
-                              className="rounded-lg border border-white/15 px-2 py-1 text-[11px] text-white/70 transition hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                              className="rounded-lg border border-white/15 px-2 py-1 text-[11px] text-white/70 transition hover:border-white/30 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 active:scale-[0.99] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               Descer
                             </button>
@@ -2497,7 +2497,7 @@ export default function PadelTournamentWizardClient({
               </div>
             )}
             {selectedClub && staffMembers.length > 0 && (
-              <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
+              <div className="rounded-3xl border border-white/10 bg-black/30 p-5">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <p className="text-[12px] uppercase tracking-[0.18em] text-white/60">
                     Staff operacional
@@ -2549,7 +2549,7 @@ export default function PadelTournamentWizardClient({
             onClick={handleSubmit}
             disabled={saving}
             aria-busy={isSubmitting}
-            className={`${CTA_PRIMARY} disabled:opacity-60`}
+            className={`${CTA_PRIMARY} disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-55`}
           >
             {isSubmitting ? "A criar torneio..." : "Criar torneio"}
           </button>
