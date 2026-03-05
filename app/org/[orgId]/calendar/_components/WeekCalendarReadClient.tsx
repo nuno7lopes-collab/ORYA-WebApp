@@ -35,8 +35,20 @@ import {
   type ProjectedAgendaItem as WeekProjectedAgendaItem,
 } from "./week/aggregation";
 import {
+  addDays,
+  buildZonedDate,
+  fetchJson,
+  formatDateParam,
+  getDayKey,
+  getTimeParts,
+  isSameDay,
+  pad2,
+  parseDateParam,
+  parseIdList,
+  setIdListParam,
+} from "./day/helpers";
+import {
   getDateParts,
-  makeUtcDateFromLocal,
   normalizeIntervals,
   resolveIntervalsForDate,
   resolveScheduleForDate,
@@ -45,7 +57,6 @@ import { normalizeCalendarTimezone } from "./timezones";
 import { summarizeAgendaItemsByStatus } from "./statusSummary";
 import {
   resolveAggregateItemsToneClass,
-  resolveEventToneClass,
 } from "./eventTones";
 import type { OrganizationOperationalMode } from "@/lib/organizationOperationalMode";
 type AgendaItem = {
@@ -72,7 +83,6 @@ type AgendaResponse = {
   items: AgendaItem[];
   capabilities?: AgendaCapabilities;
   operationalMode?: OrganizationOperationalMode;
-  reservasOperational?: { acceptsNewBookings: boolean };
 };
 type CollectionResponse<T> = {
   ok: boolean;
@@ -225,39 +235,6 @@ function decodePrefixedIds(values: string[], prefix: string) {
     .forEach((value) => deduped.add(value));
   return [...deduped].sort((a, b) => a - b);
 }
-async function fetchJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, { cache: "no-store" });
-  const json = (await res.json().catch(() => null)) as T | null;
-  if (!res.ok || json === null) {
-    const message =
-      typeof (json as { message?: string } | null)?.message === "string"
-        ? (json as { message: string }).message
-        : `Falha ao carregar dados (${res.status})`;
-    throw new Error(message);
-  }
-  return json;
-}
-function parseIdList(raw: string | null): number[] {
-  if (!raw) return [];
-  const deduped = new Set<number>();
-  raw
-    .split(",")
-    .map((part) => Number(part.trim()))
-    .forEach((id) => {
-      if (Number.isFinite(id) && id > 0) deduped.add(id);
-    });
-  return [...deduped].sort((a, b) => a - b);
-}
-function setIdListParam(params: URLSearchParams, key: string, ids: number[]) {
-  if (ids.length === 0) {
-    params.delete(key);
-    return;
-  }
-  params.set(key, ids.join(","));
-}
-function pad2(value: number) {
-  return String(value).padStart(2, "0");
-}
 function addDaysToParts(
   parts: { year: number; month: number; day: number },
   amount: number,
@@ -270,45 +247,6 @@ function addDaysToParts(
     day: base.getUTCDate(),
   };
 }
-function buildZonedDate(
-  parts: { year: number; month: number; day: number },
-  timezone: string,
-  hour = 0,
-  minute = 0,
-) {
-  return makeUtcDateFromLocal({ ...parts, hour, minute }, timezone);
-}
-function parseDateParam(raw: string | null, timezone: string): Date | null {
-  if (!raw) return null;
-  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return null;
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  if (
-    !Number.isFinite(year) ||
-    !Number.isFinite(month) ||
-    !Number.isFinite(day)
-  )
-    return null;
-  const candidate = buildZonedDate({ year, month, day }, timezone, 12, 0);
-  const resolved = getDateParts(candidate, timezone);
-  if (
-    resolved.year !== year ||
-    resolved.month !== month ||
-    resolved.day !== day
-  )
-    return null;
-  return candidate;
-}
-function formatDateParam(date: Date, timezone: string) {
-  const parts = getDateParts(date, timezone);
-  return `${parts.year}-${pad2(parts.month)}-${pad2(parts.day)}`;
-}
-function addDays(date: Date, amount: number, timezone: string) {
-  const parts = getDateParts(date, timezone);
-  return buildZonedDate(addDaysToParts(parts, amount), timezone, 12, 0);
-}
 function getWeekStart(date: Date, timezone: string) {
   const parts = getDateParts(date, timezone);
   const weekday = new Date(
@@ -316,19 +254,6 @@ function getWeekStart(date: Date, timezone: string) {
   ).getUTCDay();
   const diff = (weekday + 6) % 7;
   return buildZonedDate(addDaysToParts(parts, -diff), timezone, 0, 0);
-}
-function getTimeParts(date: Date, timezone: string) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    hour12: false,
-    hour: "2-digit",
-    minute: "2-digit",
-  }).formatToParts(date);
-  const map = new Map(parts.map((part) => [part.type, part.value]));
-  return {
-    hour: Number(map.get("hour") || 0),
-    minute: Number(map.get("minute") || 0),
-  };
 }
 function formatRangeLabel(start: Date, timezone: string) {
   const end = addDays(start, 6, timezone);
@@ -348,15 +273,6 @@ function formatDayLabel(date: Date, timezone: string) {
     year: "numeric",
     timeZone: timezone,
   }).format(date);
-}
-function getDayKey(date: Date, timezone: string) {
-  const parts = getDateParts(date, timezone);
-  return `${parts.year}-${pad2(parts.month)}-${pad2(parts.day)}`;
-}
-function isSameDay(a: Date, b: Date, timezone: string) {
-  const aa = getDateParts(a, timezone);
-  const bb = getDateParts(b, timezone);
-  return aa.year === bb.year && aa.month === bb.month && aa.day === bb.day;
 }
 function normalizeAvailability(
   payload: AvailabilityResponse,
@@ -507,9 +423,6 @@ function resolveKindLabel(kind: AgendaItem["kind"]) {
   if (kind === "CLASS") return "Aula";
   if (kind === "TOURNAMENT") return "Torneio";
   return "Evento";
-}
-function resolveCardTone(item: AgendaItem) {
-  return resolveEventToneClass({ status: item.status, kind: item.kind });
 }
 function resolveAggregateTone(items: ProjectedAgendaItem[]) {
   return resolveAggregateItemsToneClass(items.map((entry) => entry.item));
@@ -1247,7 +1160,6 @@ export default function WeekCalendarReadClient({
   const nowTimeParts = getTimeParts(now, timezone);
   const nowTop = (nowTimeParts.hour * 60 + nowTimeParts.minute) * minuteHeight;
   const dateInputValue = formatDateParam(anchorDate, timezone);
-  const visibleCountLabel = `${filteredItems.length} ${filteredItems.length === 1 ? "item visível" : "itens visíveis"}`;
   const statusSummary = useMemo(
     () => summarizeAgendaItemsByStatus(filteredItems),
     [filteredItems],
@@ -1261,14 +1173,9 @@ export default function WeekCalendarReadClient({
       }),
     [agendaCapabilities, operationalMode, organizationId],
   );
-  const commandBarHint = [
-    hasActiveSelection
-      ? `Escopo ativo (${selectedScopesCount}): ${selectedScopesLabel}.`
-      : operationalGuidance.selectionHint,
-    availabilityHint,
-  ]
-    .filter((hint): hint is string => Boolean(hint && hint.trim().length > 0))
-    .join(" ");
+  const commandBarHint = hasActiveSelection
+    ? `Escopo ativo (${selectedScopesCount}): ${selectedScopesLabel}.`
+    : operationalGuidance.selectionHint;
   const commandBarActions = operationalGuidance.actions
     .slice(0, 2)
     .map((action) => ({
@@ -1521,9 +1428,6 @@ export default function WeekCalendarReadClient({
               );
             })}{" "}
           </div>{" "}
-          {availabilityHint ? (
-            <p className="mt-2 text-[11px] text-white/55">{availabilityHint}</p>
-          ) : null}{" "}
           <div
             className="mt-2 flex flex-wrap items-center gap-2 text-[11px]"
             aria-live="polite"
@@ -1557,9 +1461,6 @@ export default function WeekCalendarReadClient({
                 Disputa {statusSummary.disputed}{" "}
               </span>
             ) : null}{" "}
-            <span className="text-[11px] text-white/50">
-              {visibleCountLabel}
-            </span>{" "}
           </div>{" "}
         </section>
       ) : null}{" "}

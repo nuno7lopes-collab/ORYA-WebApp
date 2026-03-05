@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { AppState } from "react-native";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
-import { getActiveSession, refreshSessionIfPossible } from "./session";
+import { getActiveSession, markSessionHealthy, refreshSessionIfPossible } from "./session";
 import { resetOnboardingDone } from "./onboardingState";
 import { clearOnboardingDraft } from "./onboardingDraft";
 import { perfMark, perfMeasure } from "./perf";
@@ -56,7 +56,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const { data: listener } = supabase.auth.onAuthStateChange((event, next) => {
       if (!mounted) return;
       setSession(next);
+      if (
+        event === "SIGNED_IN" ||
+        event === "TOKEN_REFRESHED" ||
+        event === "USER_UPDATED" ||
+        event === "INITIAL_SESSION"
+      ) {
+        markSessionHealthy();
+      }
       if (event === "SIGNED_OUT") {
+        markSessionHealthy();
         resetOnboardingDone().catch(() => undefined);
         clearOnboardingDraft().catch(() => undefined);
       }

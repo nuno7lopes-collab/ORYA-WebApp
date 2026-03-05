@@ -3,14 +3,18 @@
   margin-top: 1.5rem;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 1.5rem;
-  background: linear-gradient(180deg, rgba(10, 14, 25, 0.92), rgba(6, 9, 16, 0.95));
+  background: linear-gradient(
+    180deg,
+    rgba(10, 14, 25, 0.92),
+    rgba(6, 9, 16, 0.95)
+  );
   padding: 1rem;
 }
 
 .grid {
   display: grid;
   gap: 1.25rem;
-  grid-template-columns: minmax(240px, 38%) minmax(0, 1fr);
+  grid-template-columns: minmax(240px, 34%) minmax(0, 1fr);
 }
 
 .left {
@@ -34,7 +38,7 @@
   border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1180px) {
   .grid {
     grid-template-columns: 1fr;
   }

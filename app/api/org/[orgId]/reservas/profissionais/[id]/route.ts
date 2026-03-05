@@ -1,24 +1,30 @@
 import { NextRequest } from "next/server";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
-import {
-  handleAcademyTrainerDelete,
-  handleAcademyTrainerPatch,
-} from "@/lib/academy/trainersHandlers";
 
-async function _PATCH(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  const resolved = await params;
-  return handleAcademyTrainerPatch(req, resolved.id);
+const LEGACY_GONE_MESSAGE =
+  "ACADEMY_LEGACY_GONE: usa /api/org/[orgId]/academy/trainers/[trainerId].";
+
+function legacyGone(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  return respondError(
+    ctx,
+    {
+      errorCode: "ACADEMY_LEGACY_GONE",
+      message: LEGACY_GONE_MESSAGE,
+      retryable: false,
+    },
+    { status: 410 },
+  );
 }
 
-async function _DELETE(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  const resolved = await params;
-  return handleAcademyTrainerDelete(req, resolved.id);
+async function _PATCH(req: NextRequest) {
+  return legacyGone(req);
+}
+
+async function _DELETE(req: NextRequest) {
+  return legacyGone(req);
 }
 
 export const PATCH = withApiEnvelope(_PATCH);

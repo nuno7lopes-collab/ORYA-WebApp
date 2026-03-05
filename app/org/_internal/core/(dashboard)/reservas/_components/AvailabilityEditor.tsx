@@ -13,7 +13,7 @@ import { useRouter } from "next/navigation";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
 import { normalizeStepMinutes } from "@/lib/datetime/localInput";
-import { getDateParts, normalizeIntervals } from "@/lib/reservas/availability";
+import { normalizeIntervals } from "@/lib/reservas/availability";
 import { OryaDateField, OryaTimeField } from "@/components/ui/datetime";
 import {
   CTA_DANGER,
@@ -51,14 +51,12 @@ type IntervalDraft = { id: string; startMinute: number; endMinute: number };
 type TimeDraft = { start: string; end: string };
 type AvailabilityResponse = {
   ok: boolean;
-  timezone?: string;
   schedules: AvailabilitySchedule[];
   activeScheduleId?: number | null;
   selectedScheduleId?: number | null;
   templates: AvailabilityTemplate[];
   overrides: AvailabilityOverride[];
-  inheritsOrganization?: boolean;
-  bookingPolicy?: { gridMinutes?: number; allowedDurations?: number[] };
+  bookingPolicy?: { gridMinutes?: number };
 };
 type AvailabilityEditorProps = {
   orgId: number;
@@ -166,15 +164,12 @@ export default function AvailabilityEditor({
       revalidateOnReconnect: !isDirty,
     });
   const schedules = availabilityData?.schedules ?? [];
-  const activeScheduleId = availabilityData?.activeScheduleId ?? null;
   const selectedSchedule =
     schedules.find(
       (schedule) =>
         schedule.id ===
         (selectedScheduleId ?? availabilityData?.selectedScheduleId ?? null),
     ) ?? null;
-  const templates = availabilityData?.templates ?? [];
-  const inheritsOrganization = availabilityData?.inheritsOrganization ?? false;
   const minuteHeight = hourHeight / 60;
   const gridHeight = hourHeight * 24;
   const resolvedGridMinutes =
@@ -192,9 +187,6 @@ export default function AvailabilityEditor({
       : DEFAULT_SLOT_MINUTES;
   const timePickerStepMinutes = normalizeStepMinutes(slotMinutes);
   const slotHeight = minuteHeight * slotMinutes;
-  const timezone = availabilityData?.timezone ?? "Europe/Lisbon";
-  const todayParts = getDateParts(new Date(), timezone);
-  const minScheduleDate = `${todayParts.year}-${padTime(todayParts.month)}-${padTime(todayParts.day)}`;
   const pendingChangeSetHref = pendingChangeSetId
     ? buildOrgHref(orgId, `/calendar/conflicts/${pendingChangeSetId}`)
     : null;
@@ -231,7 +223,6 @@ export default function AvailabilityEditor({
     return nextOverrideIdRef.current;
   };
   const [overrideSaving, setOverrideSaving] = useState(false);
-  const [hasUnsavedBarDismissed, setHasUnsavedBarDismissed] = useState(false);
   const hydrationSignatureRef = useRef<string | null>(null);
   const editorRootRef = useRef<HTMLElement | null>(null);
   const dragStateRef = useRef<{
@@ -326,24 +317,12 @@ export default function AvailabilityEditor({
       document.removeEventListener("click", handleAnchorNavigation, true);
     };
   }, [isDirty]);
-  const handleTemplateAdd = (dayIdx: number) => {
-    setTemplateDrafts((prev) => ({
-      ...prev,
-      [dayIdx]: [
-        ...(prev[dayIdx] ?? []),
-        { id: createDraftId(), startMinute: 9 * 60, endMinute: 10 * 60 },
-      ],
-    }));
-    setIsDirty(true);
-    setHasUnsavedBarDismissed(false);
-  };
   const handleTemplateRemove = (dayIdx: number, blockId: string) => {
     setTemplateDrafts((prev) => {
       const list = (prev[dayIdx] ?? []).filter((item) => item.id !== blockId);
       return { ...prev, [dayIdx]: list };
     });
     setIsDirty(true);
-    setHasUnsavedBarDismissed(false);
   };
   const handleSplitInterval = (dayIdx: number, blockId: string) => {
     setTemplateDrafts((prev) => {
@@ -377,7 +356,6 @@ export default function AvailabilityEditor({
       return { ...prev, [dayIdx]: list };
     });
     setIsDirty(true);
-    setHasUnsavedBarDismissed(false);
   };
   const handleTemplateSaveAll = async () => {
     if (guardPendingChangeset()) return;
@@ -444,7 +422,6 @@ export default function AvailabilityEditor({
         ) {
           const changeSetId = Number(details?.changeSetId);
           setIsDirty(false);
-          setHasUnsavedBarDismissed(false);
           router.push(
             buildOrgHref(orgId, `/calendar/conflicts/${changeSetId}`),
           );
@@ -471,7 +448,6 @@ export default function AvailabilityEditor({
         return;
       }
       setIsDirty(false);
-      setHasUnsavedBarDismissed(false);
       await mutateAvailability();
     } catch (err) {
       setAvailabilityError(
@@ -493,7 +469,6 @@ export default function AvailabilityEditor({
       templates: nextTemplates,
     });
     setIsDirty(false);
-    setHasUnsavedBarDismissed(false);
     setAvailabilityError(null);
   };
   const resetScheduleForm = () => {
@@ -605,7 +580,6 @@ export default function AvailabilityEditor({
         Number(payload?.scheduleId) > 0 ? Number(payload?.scheduleId) : null;
       resetScheduleForm();
       setIsDirty(false);
-      setHasUnsavedBarDismissed(false);
       await mutateAvailability();
       if (nextId) {
         setSelectedScheduleId(nextId);
@@ -617,12 +591,6 @@ export default function AvailabilityEditor({
     } finally {
       setScheduleSaving(false);
     }
-  };
-  const handleScheduleDelete = async (scheduleId: number) => {
-    void scheduleId;
-    setAvailabilityError(
-      "A remoção direta foi desativada. Ajusta o período (data fim) e aplica alterações via changeset.",
-    );
   };
   const handleOverrideAdd = () => {
     setOverrideIntervals((prev) => [...prev, { start: "09:00", end: "10:00" }]);
@@ -683,7 +651,6 @@ export default function AvailabilityEditor({
       setOverrideDate("");
       setOverrideIntervals([]);
       setIsDirty(true);
-      setHasUnsavedBarDismissed(false);
     } catch (err) {
       setAvailabilityError(
         err instanceof Error ? err.message : "Erro ao guardar exceção.",
@@ -698,7 +665,6 @@ export default function AvailabilityEditor({
       prev.filter((override) => override.id !== overrideId),
     );
     setIsDirty(true);
-    setHasUnsavedBarDismissed(false);
   };
   const clampMinute = (value: number) =>
     Math.min(DAY_MINUTES, Math.max(0, value));
@@ -890,7 +856,6 @@ export default function AvailabilityEditor({
       if (state) {
         normalizeDayDrafts(state.dayIdx);
         setIsDirty(true);
-        setHasUnsavedBarDismissed(false);
       }
     };
     window.addEventListener("pointermove", handleMove);
@@ -1035,14 +1000,6 @@ export default function AvailabilityEditor({
                       {" "}
                       Editar{" "}
                     </button>{" "}
-                    <button
-                      type="button"
-                      className={CTA_DANGER}
-                      onClick={() => handleScheduleDelete(schedule.id)}
-                    >
-                      {" "}
-                      Remover{" "}
-                    </button>{" "}
                   </div>{" "}
                 </div>{" "}
               </div>
@@ -1107,7 +1064,7 @@ export default function AvailabilityEditor({
           </div>{" "}
         </div>{" "}
       </div>{" "}
-      {isDirty && !hasUnsavedBarDismissed && (
+      {isDirty && (
         <div className="rounded-xl border border-amber-300/35 bg-amber-500/10 p-3">
           {" "}
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1134,39 +1091,17 @@ export default function AvailabilityEditor({
                 {" "}
                 Descartar rascunho{" "}
               </button>{" "}
-              <button
-                type="button"
-                className={CTA_NEUTRAL}
-                onClick={() => setHasUnsavedBarDismissed(true)}
-              >
-                {" "}
-                Fechar{" "}
-              </button>{" "}
             </div>{" "}
           </div>{" "}
         </div>
       )}{" "}
       <div className="rounded-2xl border border-white/12 bg-white/[0.04] overflow-hidden">
         {" "}
-        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+        <div className="flex items-center px-4 py-3">
           {" "}
           <h3 className="text-sm font-semibold text-white/90 tracking-[0.02em]">
             Calendário semanal
           </h3>{" "}
-          <div className="flex items-center gap-2">
-            {" "}
-            <button
-              type="button"
-              className={cn(CTA_NEUTRAL, "text-[11px]")}
-              onClick={handleTemplateSaveAll}
-              disabled={
-                templateSavingAll || !isDirty || Boolean(pendingChangeSetId)
-              }
-            >
-              {" "}
-              {templateSavingAll ? "A aplicar..." : "Aplicar alterações"}{" "}
-            </button>{" "}
-          </div>{" "}
         </div>{" "}
         <div className="overflow-x-auto px-4 pb-4">
           {" "}
@@ -1273,7 +1208,7 @@ export default function AvailabilityEditor({
                           return (
                             <div
                               key={interval.id}
-                              className="group absolute left-1 right-1 rounded-xl border border-white/25 bg-white/[0.04] px-2.5 py-2 text-[10px] text-white"
+                              className="group absolute left-1 right-1 rounded-xl border border-cyan-300/65 bg-cyan-400/22 px-2.5 py-2 text-[10px] text-cyan-50 shadow-[0_6px_18px_rgba(8,145,178,0.28)] backdrop-blur-[1px]"
                               style={{ top, height }}
                               onPointerDown={(event) =>
                                 startDragMove(dayIdx, interval.id, event)
@@ -1311,7 +1246,7 @@ export default function AvailabilityEditor({
                                   {" "}
                                   <button
                                     type="button"
-                                    className="rounded-full border border-white/20 px-2 text-[10px] text-white/80"
+                                    className="rounded-full border border-cyan-100/45 bg-black/30 px-2 text-[10px] text-cyan-50 transition hover:border-cyan-100/70 hover:bg-black/45"
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       handleSplitInterval(dayIdx, interval.id);
@@ -1322,7 +1257,7 @@ export default function AvailabilityEditor({
                                   </button>{" "}
                                   <button
                                     type="button"
-                                    className="rounded-full border border-white/20 px-2 text-[10px] text-white/80"
+                                    className="rounded-full border border-cyan-100/45 bg-black/30 px-2 text-[10px] text-cyan-50 transition hover:border-cyan-100/70 hover:bg-black/45"
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       handleTemplateRemove(dayIdx, interval.id);
@@ -1347,7 +1282,7 @@ export default function AvailabilityEditor({
       </div>{" "}
       <div className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3">
         {" "}
-        <h3 className="text-sm font-semibold text-white">Excecoes</h3>{" "}
+        <h3 className="text-sm font-semibold text-white">Exceções</h3>{" "}
         <div className="grid gap-3 md:grid-cols-3">
           {" "}
           <div>

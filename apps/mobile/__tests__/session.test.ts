@@ -1,6 +1,7 @@
 const mockGetSession = jest.fn();
 const mockRefreshSession = jest.fn();
 const mockSignOut = jest.fn();
+const mockClearSupabaseAuthStorage = jest.fn();
 
 jest.mock("../lib/supabase", () => ({
   supabase: {
@@ -10,9 +11,15 @@ jest.mock("../lib/supabase", () => ({
       signOut: (...args: unknown[]) => mockSignOut(...args),
     },
   },
+  clearSupabaseAuthStorage: (...args: unknown[]) =>
+    mockClearSupabaseAuthStorage(...args),
 }));
 
-import { getActiveSession, refreshSessionIfPossible } from "../lib/session";
+import {
+  getActiveSession,
+  markSessionHealthy,
+  refreshSessionIfPossible,
+} from "../lib/session";
 
 type SessionLike = {
   access_token: string;
@@ -38,6 +45,10 @@ describe("getActiveSession", () => {
     mockGetSession.mockReset();
     mockRefreshSession.mockReset();
     mockSignOut.mockReset();
+    mockClearSupabaseAuthStorage.mockReset();
+    mockSignOut.mockResolvedValue(undefined);
+    mockClearSupabaseAuthStorage.mockResolvedValue(undefined);
+    markSessionHealthy();
   });
 
   it("não tenta refresh quando não há sessão e refreshIfNearExpiry=false", async () => {
@@ -156,6 +167,7 @@ describe("getActiveSession", () => {
 
     expect(result).toBeNull();
     expect(mockSignOut).toHaveBeenCalledWith({ scope: "local" });
+    expect(mockClearSupabaseAuthStorage).toHaveBeenCalledTimes(1);
   });
 
   it("serializa refresh concorrente para evitar race de refresh token", async () => {
@@ -195,6 +207,7 @@ describe("getActiveSession", () => {
 
     expect(result).toBeNull();
     expect(mockSignOut).toHaveBeenCalledWith({ scope: "local" });
+    expect(mockClearSupabaseAuthStorage).toHaveBeenCalledTimes(1);
   });
 
   it("devolve null em erro inesperado", async () => {

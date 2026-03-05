@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -16,13 +16,17 @@ describe("bookings x calendar boundary guardrails", () => {
     expect(reservasDashboard).not.toContain("calendarView === \"week\"");
   });
 
-  it("mantém disponibilidade canónica no calendário e rota legacy em compatibilidade", () => {
+  it("mantém disponibilidade canónica no calendário sem rota legacy", () => {
     const calendarAvailabilityPage = readLocal("app/org/[orgId]/calendar/availability/page.tsx");
-    const legacyAvailabilityPage = readLocal("app/org/[orgId]/bookings/availability/page.tsx");
+    const legacyAvailabilityPath = resolve(process.cwd(), "app/org/[orgId]/bookings/availability/page.tsx");
+    const legacyConflictsPath = resolve(
+      process.cwd(),
+      "app/org/[orgId]/bookings/availability/conflicts/[changeSetId]/page.tsx",
+    );
 
     expect(calendarAvailabilityPage).toContain("AvailabilityEditor");
-    expect(legacyAvailabilityPage).toContain('buildOrgHref(organizationId, "/calendar/availability")');
-    expect(legacyAvailabilityPage).toContain("redirect(");
+    expect(existsSync(legacyAvailabilityPath)).toBe(false);
+    expect(existsSync(legacyConflictsPath)).toBe(false);
   });
 
   it("keeps classes as canonical bookings home and operations in dedicated route", () => {

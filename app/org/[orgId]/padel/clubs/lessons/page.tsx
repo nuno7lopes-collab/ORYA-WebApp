@@ -6,5 +6,5 @@ export default async function Page({
   params: Promise<{ orgId: string }>;
 }) {
   const { orgId } = await params;
-  redirect(`/org/${orgId}/padel/clubs?tab=manage&section=padel-club&padel=lessons`);
+  redirect(`/org/${orgId}/academy/classes`);
 }

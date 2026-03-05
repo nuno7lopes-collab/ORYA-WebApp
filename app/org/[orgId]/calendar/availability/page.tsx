@@ -1,18 +1,11 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import useSWR from "swr";
 import AvailabilityEditor from "@/app/org/_internal/core/(dashboard)/reservas/_components/AvailabilityEditor";
-import { CTA_PRIMARY } from "@/app/org/_internal/core/dashboardUi";
 import { buildOrgHref, parseOrgIdFromPathnameStrict } from "@/lib/organizationIdUtils";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
-import {
-  CALENDAR_AVAILABILITY_OVERLAY_STORAGE_KEY,
-  parseAvailabilityOverlayPreference,
-  serializeAvailabilityOverlayPreference,
-} from "../_components/availabilityOverlayPreference";
 
 type ProfessionalItem = {
   id: number;
@@ -70,8 +63,6 @@ const SECTION_CARD = "rounded-xl border border-white/10 bg-[rgba(6,10,20,0.9)] p
 const SCOPE_CARD = "rounded-xl border border-white/10 bg-[rgba(8,13,24,0.86)] p-3";
 const SCOPE_SELECT =
   "h-10 w-full rounded-xl border border-white/15 bg-black/35 px-3 text-sm text-white outline-none transition focus:border-cyan-300/50";
-const TOGGLE_CHIP =
-  "rounded-full border border-white/20 bg-black/35 px-3 py-1.5 text-xs text-white/80 transition hover:border-white/35 hover:text-white";
 
 function parsePositiveInt(value: string | null): number | null {
   if (!value) return null;
@@ -119,24 +110,6 @@ export default function OrgCalendarAvailabilityPage() {
     useSWR<BookingConfigResponse>(bookingConfigKey, fetcher);
   const [toggleBusy, setToggleBusy] = useState(false);
   const [toggleError, setToggleError] = useState<string | null>(null);
-  const [calendarOverlayEnabled, setCalendarOverlayEnabled] = useState(true);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const stored = parseAvailabilityOverlayPreference(
-      window.localStorage.getItem(CALENDAR_AVAILABILITY_OVERLAY_STORAGE_KEY),
-    );
-    if (stored !== null) setCalendarOverlayEnabled(stored);
-  }, []);
-
-  const setCalendarOverlayPreference = (enabled: boolean) => {
-    setCalendarOverlayEnabled(enabled);
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(
-      CALENDAR_AVAILABILITY_OVERLAY_STORAGE_KEY,
-      serializeAvailabilityOverlayPreference(enabled),
-    );
-  };
 
   const bookingConfig = useMemo(() => resolveBookingConfigPayload(bookingConfigData), [bookingConfigData]);
   const acceptsNewBookings = bookingConfig?.acceptNewBookings ?? true;
@@ -199,20 +172,6 @@ export default function OrgCalendarAvailabilityPage() {
       title: "Disponibilidade geral",
     };
   }, [selectedProfessional, selectedResource]);
-  const scopeSummaryLabel = useMemo(() => {
-    if (selectedProfessional) return `Profissional: ${selectedProfessional.name}`;
-    if (selectedResource) return `Recurso: ${selectedResource.label}`;
-    return "Escopo geral da organizacao";
-  }, [selectedProfessional, selectedResource]);
-  const calendarHref = useMemo(
-    () =>
-      organizationId
-        ? buildOrgHref(organizationId, "/calendar", {
-            showAvailabilityOverlay: serializeAvailabilityOverlayPreference(calendarOverlayEnabled),
-          })
-        : "/org/calendar",
-    [calendarOverlayEnabled, organizationId],
-  );
   const selectedProfessionalScopeValue =
     resolvedScope.scopeType === "PROFESSIONAL" && resolvedScope.scopeId ? String(resolvedScope.scopeId) : "";
   const selectedResourceScopeValue =
@@ -271,11 +230,11 @@ export default function OrgCalendarAvailabilityPage() {
           }
         | null;
       if (!res.ok || !json?.ok) {
-        throw new Error(json?.message || json?.error || "Nao foi possivel atualizar o estado operacional.");
+        throw new Error(json?.message || json?.error || "Não foi possível atualizar o estado operacional.");
       }
       await mutateBookingConfig();
     } catch (err) {
-      setToggleError(err instanceof Error ? err.message : "Nao foi possivel atualizar o estado operacional.");
+      setToggleError(err instanceof Error ? err.message : "Não foi possível atualizar o estado operacional.");
     } finally {
       setToggleBusy(false);
     }
@@ -284,85 +243,41 @@ export default function OrgCalendarAvailabilityPage() {
   if (!organizationId) {
     return (
       <section className={SECTION_CARD}>
-        <p className="text-sm text-white/82">Organizacao invalida.</p>
+        <p className="text-sm text-white/82">Organização inválida.</p>
       </section>
     );
   }
 
   return (
     <div className="flex min-h-[calc(100dvh-88px)] flex-col gap-3 p-2 md:p-3">
-      <header className={SECTION_CARD}>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-semibold text-white">Disponibilidade de reservas</h1>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={handleOperationalToggle}
-              disabled={toggleBusy || bookingConfigLoading}
-              className={cn(
-                "rounded-full border px-3 py-1.5 text-xs font-semibold transition disabled:opacity-60",
-                acceptsNewBookings
-                  ? "border-rose-300/55 bg-rose-500/15 text-rose-100 hover:border-rose-200/80"
-                  : "border-emerald-300/55 bg-emerald-500/15 text-emerald-100 hover:border-emerald-200/80",
-              )}
-            >
-              {toggleBusy
-                ? "A atualizar..."
-                : bookingConfigLoading
-                  ? "A carregar..."
-                  : acceptsNewBookings
-                    ? "Reservas: ON"
-                    : "Reservas: OFF"}
-            </button>
-            <div className="inline-flex rounded-full border border-white/20 bg-white/5 p-1">
-              <button
-                type="button"
-                onClick={() => setCalendarOverlayPreference(true)}
-                className={cn(
-                  "rounded-full px-3 py-1 text-xs transition",
-                  calendarOverlayEnabled
-                    ? "bg-cyan-400/20 text-cyan-100"
-                    : "text-white/70 hover:bg-white/10 hover:text-white",
-                )}
-              >
-                  Disponibilidade ON
-              </button>
-              <button
-                type="button"
-                onClick={() => setCalendarOverlayPreference(false)}
-                className={cn(
-                  "rounded-full px-3 py-1 text-xs transition",
-                  !calendarOverlayEnabled
-                    ? "bg-cyan-400/20 text-cyan-100"
-                    : "text-white/70 hover:bg-white/10 hover:text-white",
-                )}
-              >
-                  Disponibilidade OFF
-              </button>
-            </div>
-            <Link href={calendarHref} className={CTA_PRIMARY}>
-              Abrir calendario
-            </Link>
-            <Link href={buildOrgHref(organizationId, "/bookings/operations")} className={TOGGLE_CHIP}>
-              Operacoes
-            </Link>
-          </div>
+      <h1 className="sr-only">Disponibilidade</h1>
+      <section className={cn(SECTION_CARD, "space-y-2")}>
+        <div className="flex items-center justify-end">
+          <button
+            type="button"
+            onClick={handleOperationalToggle}
+            disabled={toggleBusy || bookingConfigLoading}
+            className={cn(
+              "rounded-full border px-3 py-1.5 text-xs font-semibold transition disabled:opacity-60",
+              acceptsNewBookings
+                ? "border-rose-300/55 bg-rose-500/15 text-rose-100 hover:border-rose-200/80"
+                : "border-emerald-300/55 bg-emerald-500/15 text-emerald-100 hover:border-emerald-200/80",
+            )}
+          >
+            {toggleBusy
+              ? "A atualizar..."
+              : bookingConfigLoading
+                ? "A carregar..."
+                : acceptsNewBookings
+                  ? "Desligar reservas"
+                  : "Ativar reservas"}
+          </button>
         </div>
         {toggleError ? (
-          <p className="mt-3 rounded-xl border border-rose-300/45 bg-rose-500/14 px-3 py-2 text-xs text-rose-100">
+          <p className="rounded-xl border border-rose-300/45 bg-rose-500/14 px-3 py-2 text-xs text-rose-100">
             {toggleError}
           </p>
         ) : null}
-      </header>
-
-      <section className={cn(SECTION_CARD, "space-y-2")}>
-        <div className="flex items-center">
-          <p className="rounded-full border border-cyan-300/35 bg-cyan-400/10 px-2 py-0.5 text-xs text-cyan-100">
-            {scopeSummaryLabel}
-          </p>
-        </div>
         <div className="grid gap-2 xl:grid-cols-[220px_minmax(0,1fr)_minmax(0,1fr)]">
           <div className={SCOPE_CARD}>
             <button

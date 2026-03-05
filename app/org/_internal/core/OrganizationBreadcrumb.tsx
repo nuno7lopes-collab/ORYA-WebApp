@@ -6,7 +6,7 @@ import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbSeparator, Breadc
 import { buildOrgHref, buildOrgHubHref, parseOrgIdFromPathnameStrict } from "@/lib/organizationIdUtils";
 
 const SECTION_LABELS: Record<string, string> = {
-  overview: "Dashboard do clube",
+  overview: "Visão geral",
   ferramentas: "Ferramentas",
   eventos: "Eventos do clube",
   "padel-club": "Clube de Padel",
@@ -143,8 +143,8 @@ function resolveLabel(
   }
   if (objectiveLabel) return objectiveLabel;
 
-  if (tab === "overview") return "Dashboard do clube";
-  return "Dashboard do clube";
+  if (tab === "overview") return "Visão geral";
+  return "Visão geral";
 }
 
 export function OrganizationBreadcrumb() {
@@ -172,7 +172,7 @@ export function OrganizationBreadcrumb() {
     <Breadcrumb className="text-base md:text-lg font-semibold text-white/80">
         <BreadcrumbList className="gap-3">
         <BreadcrumbItem className="text-white/75 hover:text-white transition">
-          <Link href={dashboardHref}>Dashboard do clube</Link>
+          <Link href={dashboardHref}>Visão geral</Link>
         </BreadcrumbItem>
         <BreadcrumbSeparator className="text-white/50" />
         <BreadcrumbItem>

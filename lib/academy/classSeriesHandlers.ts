@@ -7,6 +7,7 @@ import { respondOk } from "@/lib/http/envelope";
 import { buildClassSessionsForSeries } from "@/lib/reservas/classSeries";
 import { makeUtcDateFromLocal } from "@/lib/reservas/availability";
 import { getOrganizationBookingPolicy, validateStartMinuteAgainstPolicy } from "@/lib/reservas/gridPolicy";
+import { validateClassSessionsAgainstAvailability } from "@/lib/reservas/classSeriesAvailability";
 import { assertTrainerIdsBelongToEligibleTeamMembers } from "@/lib/academy/trainerTeamGuards";
 
 const MINUTES_PER_DAY = 24 * 60;
@@ -203,6 +204,7 @@ export async function handleAcademyClassSeriesPost(req: NextRequest, classIdRaw:
   const hasCourtIdInput = Object.prototype.hasOwnProperty.call(payload ?? {}, "courtId");
   let professionalId: number | null = null;
   let courtId: number | null = null;
+  let resourceScopeId: number | null = null;
 
   if (hasProfessionalIdInput) {
     if (payload?.professionalId == null || payload?.professionalId === "") {
@@ -243,9 +245,44 @@ export async function handleAcademyClassSeriesPost(req: NextRequest, classIdRaw:
   if (courtId) {
     const court = await prisma.padelClubCourt.findFirst({
       where: { id: courtId, club: { organizationId: access.organization.id }, deletedAt: null },
-      select: { id: true },
+      select: { id: true, reservationResource: { select: { id: true } } },
     });
     if (!court) return academyFail(access.ctx, 404, "NOT_FOUND", "Campo inválido.");
+    resourceScopeId = court.reservationResource?.id ?? null;
+  }
+
+  const sessions = isActive
+    ? buildClassSessionsForSeries({
+        timezone,
+        dayOfWeek,
+        startMinute,
+        durationMinutes,
+        validFrom,
+        validUntil,
+        limitYears: 2,
+        startFromToday: true,
+      })
+    : [];
+
+  if (isActive && sessions.length > 0) {
+    const availabilityValidation = await validateClassSessionsAgainstAvailability({
+      tx: prisma,
+      organizationId: access.organization.id,
+      timezone,
+      sessions: sessions.map((session) => ({ startsAt: session.startsAt, endsAt: session.endsAt })),
+      professionalId,
+      resourceScopeId,
+      stepMinutes: bookingPolicy.gridMinutes,
+    });
+    if (!availabilityValidation.ok) {
+      return academyFail(
+        access.ctx,
+        409,
+        "CLASS_SLOT_UNAVAILABLE",
+        "Sessão fora da disponibilidade.",
+        availabilityValidation.conflict,
+      );
+    }
   }
 
   const series = await prisma.$transaction(async (tx) => {
@@ -265,33 +302,21 @@ export async function handleAcademyClassSeriesPost(req: NextRequest, classIdRaw:
       },
     });
 
-    if (isActive) {
-      const sessions = buildClassSessionsForSeries({
-        timezone,
-        dayOfWeek,
-        startMinute,
-        durationMinutes,
-        validFrom,
-        validUntil,
-        limitYears: 2,
-        startFromToday: true,
+    if (isActive && sessions.length > 0) {
+      await tx.classSession.createMany({
+        data: sessions.map((session) => ({
+          seriesId: createdSeries.id,
+          organizationId: access.organization.id,
+          serviceId: service.id,
+          courtId: courtId ?? null,
+          professionalId: professionalId ?? null,
+          startsAt: session.startsAt,
+          endsAt: session.endsAt,
+          capacity,
+          status: "SCHEDULED",
+        })),
+        skipDuplicates: true,
       });
-      if (sessions.length > 0) {
-        await tx.classSession.createMany({
-          data: sessions.map((session) => ({
-            seriesId: createdSeries.id,
-            organizationId: access.organization.id,
-            serviceId: service.id,
-            courtId: courtId ?? null,
-            professionalId: professionalId ?? null,
-            startsAt: session.startsAt,
-            endsAt: session.endsAt,
-            capacity,
-            status: "SCHEDULED",
-          })),
-          skipDuplicates: true,
-        });
-      }
     }
     return createdSeries;
   });
@@ -368,6 +393,7 @@ export async function handleAcademyClassSeriesPatch(
   const hasCourtIdInput = Object.prototype.hasOwnProperty.call(payload ?? {}, "courtId");
   let professionalId: number | null = series.professionalId ?? null;
   let courtId: number | null = series.courtId ?? null;
+  let resourceScopeId: number | null = null;
 
   if (hasProfessionalIdInput) {
     if (payload?.professionalId == null || payload?.professionalId === "") {
@@ -408,12 +434,45 @@ export async function handleAcademyClassSeriesPatch(
   if (courtId != null) {
     const court = await prisma.padelClubCourt.findFirst({
       where: { id: courtId, club: { organizationId: access.organization.id }, deletedAt: null },
-      select: { id: true },
+      select: { id: true, reservationResource: { select: { id: true } } },
     });
     if (!court) return academyFail(access.ctx, 404, "NOT_FOUND", "Campo inválido.");
+    resourceScopeId = court.reservationResource?.id ?? null;
   }
 
   const isActive = typeof payload?.isActive === "boolean" ? payload.isActive : series.isActive;
+  const generatedSessions = isActive
+    ? buildClassSessionsForSeries({
+        timezone,
+        dayOfWeek,
+        startMinute,
+        durationMinutes,
+        validFrom,
+        validUntil,
+        limitYears: 2,
+        startFromToday: true,
+      })
+    : [];
+  if (isActive && generatedSessions.length > 0) {
+    const availabilityValidation = await validateClassSessionsAgainstAvailability({
+      tx: prisma,
+      organizationId: access.organization.id,
+      timezone,
+      sessions: generatedSessions.map((session) => ({ startsAt: session.startsAt, endsAt: session.endsAt })),
+      professionalId,
+      resourceScopeId,
+      stepMinutes: bookingPolicy.gridMinutes,
+    });
+    if (!availabilityValidation.ok) {
+      return academyFail(
+        access.ctx,
+        409,
+        "CLASS_SLOT_UNAVAILABLE",
+        "Sessão fora da disponibilidade.",
+        availabilityValidation.conflict,
+      );
+    }
+  }
   const now = new Date();
 
   const updatedSeries = await prisma.$transaction(async (tx) => {
@@ -440,19 +499,8 @@ export async function handleAcademyClassSeriesPatch(
       return savedSeries;
     }
 
-    const sessions = buildClassSessionsForSeries({
-      timezone,
-      dayOfWeek,
-      startMinute,
-      durationMinutes,
-      validFrom,
-      validUntil,
-      limitYears: 2,
-      startFromToday: true,
-    });
-
     const desiredMap = new Map<number, { startsAt: Date; endsAt: Date }>();
-    sessions.forEach((session) => desiredMap.set(session.startsAt.getTime(), session));
+    generatedSessions.forEach((session) => desiredMap.set(session.startsAt.getTime(), session));
 
     const existingSessions = await tx.classSession.findMany({
       where: { seriesId: series.id, startsAt: { gte: now } },
@@ -482,7 +530,7 @@ export async function handleAcademyClassSeriesPatch(
       }),
     );
 
-    const newSessions = sessions.filter((session) => !existingTimes.has(session.startsAt.getTime()));
+    const newSessions = generatedSessions.filter((session) => !existingTimes.has(session.startsAt.getTime()));
     if (newSessions.length > 0) {
       await tx.classSession.createMany({
         data: newSessions.map((session) => ({

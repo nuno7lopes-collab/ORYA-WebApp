@@ -63,11 +63,13 @@ const resolveMatchEnd = (match: DayGridMatch) => {
   const start = toDate(match.startTime ?? match.plannedStartAt);
   if (!start) return null;
   const duration = Number(match.plannedDurationMinutes ?? 60);
-  const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : 60;
+  const safeDuration =
+    Number.isFinite(duration) && duration > 0 ? duration : 60;
   return new Date(start.getTime() + safeDuration * 60_000);
 };
 
-const resolveMatchStart = (match: DayGridMatch) => toDate(match.startTime ?? match.plannedStartAt);
+const resolveMatchStart = (match: DayGridMatch) =>
+  toDate(match.startTime ?? match.plannedStartAt);
 
 const resolveMatchDurationMinutes = (match: DayGridMatch) => {
   const start = resolveMatchStart(match);
@@ -80,12 +82,20 @@ const resolveMatchDurationMinutes = (match: DayGridMatch) => {
   return Number.isFinite(fallback) && fallback > 0 ? Math.round(fallback) : 60;
 };
 
-const buildDropSlots = (entries: Array<{ start: Date | null; end: Date | null }>) => {
-  const starts = entries.map((entry) => entry.start).filter((value): value is Date => Boolean(value));
-  const ends = entries.map((entry) => entry.end).filter((value): value is Date => Boolean(value));
+const buildDropSlots = (
+  entries: Array<{ start: Date | null; end: Date | null }>,
+) => {
+  const starts = entries
+    .map((entry) => entry.start)
+    .filter((value): value is Date => Boolean(value));
+  const ends = entries
+    .map((entry) => entry.end)
+    .filter((value): value is Date => Boolean(value));
   const anchor = starts[0] ?? ends[0] ?? new Date();
-  const minHour = starts.length > 0 ? Math.min(...starts.map((item) => item.getHours())) : 8;
-  const maxHour = ends.length > 0 ? Math.max(...ends.map((item) => item.getHours())) : 22;
+  const minHour =
+    starts.length > 0 ? Math.min(...starts.map((item) => item.getHours())) : 8;
+  const maxHour =
+    ends.length > 0 ? Math.max(...ends.map((item) => item.getHours())) : 22;
   const fromHour = Math.max(6, minHour - 1);
   const toHour = Math.min(23, maxHour + 2);
   const slots: Date[] = [];
@@ -112,17 +122,24 @@ export function DayFieldGrid(props: {
   onToggleSelectMatch?: (matchId: number) => void;
 }) {
   const [draggedMatchId, setDraggedMatchId] = useState<number | null>(null);
-  const canDragMatches = Boolean(props.onQuickMoveMatch || props.onQuickRescheduleMatch);
+  const canDragMatches = Boolean(
+    props.onQuickMoveMatch || props.onQuickRescheduleMatch,
+  );
 
   if (props.courts.length === 0) {
-    return <p className="text-[12px] text-white/60">Sem campos ativos para mostrar.</p>;
+    return (
+      <p className="text-[12px] text-white/60">
+        Sem campos ativos para mostrar.
+      </p>
+    );
   }
 
   const blocks = props.blocks ?? [];
   const availabilities = props.availabilities ?? [];
   const selected = new Set(props.selectedMatchIds ?? []);
   const resolveBlockTone = (kind?: string | null) => {
-    const normalized = typeof kind === "string" ? kind.trim().toUpperCase() : "";
+    const normalized =
+      typeof kind === "string" ? kind.trim().toUpperCase() : "";
     if (normalized === "CLASS_SESSION") {
       return {
         wrapper: "border-cyan-300/35 bg-cyan-500/10",
@@ -169,16 +186,21 @@ export function DayFieldGrid(props: {
     <div className="space-y-2">
       {globalBlocks.length > 0 ? (
         <div className="rounded-xl border border-amber-300/35 bg-amber-500/10 p-2 text-white">
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-100">Bloqueios globais</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-100">
+            Bloqueios globais
+          </p>
           <div className="mt-2 space-y-1">
             {globalBlocks.slice(0, 6).map((block) => (
               <div
                 key={`day-global-block-${block.id}`}
                 className="rounded-lg border border-amber-200/25 bg-black/20 px-2 py-1 text-[12px]"
               >
-                <span className="font-semibold text-amber-50">{block.label || `Bloqueio #${block.id}`}</span>
+                <span className="font-semibold text-amber-50">
+                  {block.label || `Bloqueio #${block.id}`}
+                </span>
                 <span className="ml-2 text-amber-100/80">
-                  {fmt(block.startAt, props.timezone)} → {fmt(block.endAt, props.timezone)}
+                  {fmt(block.startAt, props.timezone)} →{" "}
+                  {fmt(block.endAt, props.timezone)}
                 </span>
               </div>
             ))}
@@ -188,16 +210,21 @@ export function DayFieldGrid(props: {
 
       {sortedAvailabilities.length > 0 ? (
         <div className="rounded-xl border border-violet-300/35 bg-violet-500/10 p-2 text-white">
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-violet-100">Indisponibilidades</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-violet-100">
+            Indisponibilidades
+          </p>
           <div className="mt-2 space-y-1">
             {sortedAvailabilities.slice(0, 8).map((item) => (
               <div
                 key={`day-availability-${item.id}`}
                 className="rounded-lg border border-violet-200/25 bg-black/20 px-2 py-1 text-[12px]"
               >
-                <span className="font-semibold text-violet-50">{item.playerName || item.playerEmail || `Jogador #${item.id}`}</span>
+                <span className="font-semibold text-violet-50">
+                  {item.playerName || item.playerEmail || `Jogador #${item.id}`}
+                </span>
                 <span className="ml-2 text-violet-100/80">
-                  {fmt(item.startAt, props.timezone)} → {fmt(item.endAt, props.timezone)}
+                  {fmt(item.startAt, props.timezone)} →{" "}
+                  {fmt(item.endAt, props.timezone)}
                 </span>
               </div>
             ))}
@@ -209,8 +236,10 @@ export function DayFieldGrid(props: {
         const courtMatches = props.matches
           .filter((match) => (match.courtId ?? null) === court.id)
           .sort((a, b) => {
-            const aStart = toDate(a.startTime ?? a.plannedStartAt)?.getTime() ?? 0;
-            const bStart = toDate(b.startTime ?? b.plannedStartAt)?.getTime() ?? 0;
+            const aStart =
+              toDate(a.startTime ?? a.plannedStartAt)?.getTime() ?? 0;
+            const bStart =
+              toDate(b.startTime ?? b.plannedStartAt)?.getTime() ?? 0;
             return aStart - bStart;
           });
         const courtBlocks = blocks
@@ -274,14 +303,20 @@ export function DayFieldGrid(props: {
             }}
           >
             <div className="flex items-center justify-between gap-2">
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-white/70">{court.name}</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-white/70">
+                {court.name}
+              </p>
               <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-[10px] text-white/70">
                 {courtMatches.length} jogo{courtMatches.length === 1 ? "" : "s"}
-                {courtBlocks.length > 0 ? ` · ${courtBlocks.length} bloqueio${courtBlocks.length === 1 ? "" : "s"}` : ""}
+                {courtBlocks.length > 0
+                  ? ` · ${courtBlocks.length} bloqueio${courtBlocks.length === 1 ? "" : "s"}`
+                  : ""}
               </span>
             </div>
             {timeline.length === 0 ? (
-              <p className="mt-1 text-[12px] text-white/55">Sem registos neste campo.</p>
+              <p className="mt-1 text-[12px] text-white/55">
+                Sem registos neste campo.
+              </p>
             ) : (
               <div className="mt-2 space-y-1">
                 {timeline.map((entry) =>
@@ -290,11 +325,24 @@ export function DayFieldGrid(props: {
                       key={`day-entry-${entry.key}`}
                       className={`rounded-lg border px-2 py-1 text-[12px] ${resolveBlockTone(entry.blockKind).wrapper}`}
                     >
-                      <span className={`font-semibold ${resolveBlockTone(entry.blockKind).text}`}>{entry.label}</span>
-                      <span className={`ml-2 ${resolveBlockTone(entry.blockKind).meta}`}>
-                        {fmt(entry.start, props.timezone)} → {fmt(entry.end, props.timezone)}
+                      <span
+                        className={`font-semibold ${resolveBlockTone(entry.blockKind).text}`}
+                      >
+                        {entry.label}
                       </span>
-                      {entry.note ? <span className={`ml-2 ${resolveBlockTone(entry.blockKind).meta}`}>{entry.note}</span> : null}
+                      <span
+                        className={`ml-2 ${resolveBlockTone(entry.blockKind).meta}`}
+                      >
+                        {fmt(entry.start, props.timezone)} →{" "}
+                        {fmt(entry.end, props.timezone)}
+                      </span>
+                      {entry.note ? (
+                        <span
+                          className={`ml-2 ${resolveBlockTone(entry.blockKind).meta}`}
+                        >
+                          {entry.note}
+                        </span>
+                      ) : null}
                     </div>
                   ) : (
                     <div
@@ -304,7 +352,10 @@ export function DayFieldGrid(props: {
                         if (!canDragMatches) return;
                         setDraggedMatchId(entry.id);
                         event.dataTransfer.effectAllowed = "move";
-                        event.dataTransfer.setData("text/plain", String(entry.id));
+                        event.dataTransfer.setData(
+                          "text/plain",
+                          String(entry.id),
+                        );
                       }}
                       onDragEnd={() => setDraggedMatchId(null)}
                       className={`rounded-lg border px-2 py-1 text-[12px] ${
@@ -319,25 +370,36 @@ export function DayFieldGrid(props: {
                             <input
                               type="checkbox"
                               checked={entry.selected}
-                              onChange={() => props.onToggleSelectMatch?.(entry.id)}
+                              onChange={() =>
+                                props.onToggleSelectMatch?.(entry.id)
+                              }
                               className="h-3.5 w-3.5 rounded border-white/30 bg-transparent accent-[#22D3EE]"
                             />
                           ) : null}
                           <div>
-                            <span className="font-semibold text-white">#{entry.id}</span>
-                            <span className="ml-2 text-white/70">
-                              {fmt(entry.start, props.timezone)} → {fmt(entry.end, props.timezone)}
+                            <span className="font-semibold text-white">
+                              #{entry.id}
                             </span>
-                            {(entry.roundLabel || entry.groupLabel) ? (
+                            <span className="ml-2 text-white/70">
+                              {fmt(entry.start, props.timezone)} →{" "}
+                              {fmt(entry.end, props.timezone)}
+                            </span>
+                            {entry.roundLabel || entry.groupLabel ? (
                               <span className="ml-2 text-white/60">
                                 {entry.roundLabel ?? ""}
-                                {entry.groupLabel ? ` · ${entry.groupLabel}` : ""}
+                                {entry.groupLabel
+                                  ? ` · ${entry.groupLabel}`
+                                  : ""}
                               </span>
                             ) : null}
                           </div>
                         </div>
                         <div className="flex items-center gap-1">
-                          {canDragMatches ? <span className="text-[10px] text-white/50">Arrasta</span> : null}
+                          {canDragMatches ? (
+                            <span className="text-[10px] text-white/50">
+                              Arrasta
+                            </span>
+                          ) : null}
                           {props.onEditMatch ? (
                             <button
                               type="button"
@@ -356,8 +418,10 @@ export function DayFieldGrid(props: {
             )}
             {draggedMatchId !== null && props.onQuickRescheduleMatch ? (
               <div className="mt-2 rounded-lg border border-white/12 bg-white/[0.03] p-2">
-                <p className="text-[10px] uppercase tracking-[0.12em] text-white/55">Largar para mudar hora</p>
-                <div className="mt-1 grid grid-cols-4 gap-1">
+                <p className="text-[10px] uppercase tracking-[0.12em] text-white/55">
+                  Largar para mudar hora
+                </p>
+                <div className="mt-1 grid grid-cols-2 gap-1 sm:grid-cols-3 xl:grid-cols-4">
                   {dropSlots.map((slot) => (
                     <button
                       key={`drop-slot-${court.id}-${slot.toISOString()}`}
@@ -369,14 +433,19 @@ export function DayFieldGrid(props: {
                       onDrop={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
-                        const dragged = props.matches.find((item) => item.id === draggedMatchId);
+                        const dragged = props.matches.find(
+                          (item) => item.id === draggedMatchId,
+                        );
                         if (!dragged) {
                           setDraggedMatchId(null);
                           return;
                         }
-                        const durationMinutes = resolveMatchDurationMinutes(dragged);
+                        const durationMinutes =
+                          resolveMatchDurationMinutes(dragged);
                         const targetStart = new Date(slot);
-                        const targetEnd = new Date(targetStart.getTime() + durationMinutes * 60_000);
+                        const targetEnd = new Date(
+                          targetStart.getTime() + durationMinutes * 60_000,
+                        );
                         props.onQuickRescheduleMatch?.({
                           matchId: dragged.id,
                           targetCourtId: court.id,

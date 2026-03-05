@@ -1,32 +1,6 @@
-import { getDateParts, makeUtcDateFromLocal, normalizeIntervals, resolveIntervalsForDate, resolveScheduleForDate } from "@/lib/reservas/availability";
-import type {
-  ActiveFilterChip,
-  AgendaItem,
-  CalendarBookingType,
-  CalendarChannel,
-  CalendarEvent,
-  CalendarFilters,
-  CalendarPaymentStatus,
-  PositionedEvent,
-  ReservationBooking,
-  TimeInterval,
-  AvailabilityResponse,
-} from "./types";
+import { getDateParts, makeUtcDateFromLocal } from "@/lib/reservas/availability";
 
-export { getDateParts };
-
-export const SLOT_MINUTES = 15;
-export const DAY_MINUTES = 24 * 60;
-export const HOUR_START = 0;
-export const HOUR_END = 24;
-export const DEFAULT_HOUR_HEIGHT = 56;
-
-export type NormalizedAvailability = {
-  schedules: Array<{ id: number; startDate: Date; endDate: Date | null; createdAt?: Date }>;
-  templatesBySchedule: Map<number, Map<number, TimeInterval[]>>;
-  overridesByDate: Map<string, Array<{ kind: string; intervals: TimeInterval[] }>>;
-  inheritsOrganization: boolean;
-};
+const DAY_MINUTES = 24 * 60;
 
 export async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url, { cache: "no-store" });
@@ -115,15 +89,6 @@ export function getDayKey(date: Date, timezone: string) {
   return `${parts.year}-${pad2(parts.month)}-${pad2(parts.day)}`;
 }
 
-function getOverrideKey(value: string, timezone: string) {
-  if (!value) return null;
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (match) return `${match[1]}-${match[2]}-${match[3]}`;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return getDayKey(parsed, timezone);
-}
-
 export function isSameDay(a: Date, b: Date, timezone: string) {
   const aa = getDateParts(a, timezone);
   const bb = getDateParts(b, timezone);
@@ -139,22 +104,6 @@ export function getTimeParts(date: Date, timezone: string) {
   }).formatToParts(date);
   const map = new Map(parts.map((part) => [part.type, part.value]));
   return { hour: Number(map.get("hour") || 0), minute: Number(map.get("minute") || 0) };
-}
-
-export function minuteToLabel(minute: number) {
-  const normalized = Math.max(0, Math.min(DAY_MINUTES, minute));
-  const hours = Math.floor(normalized / 60);
-  const mins = normalized % 60;
-  return `${pad2(hours)}:${pad2(mins)}`;
-}
-
-export function formatHeaderDate(date: Date, timezone: string) {
-  return new Intl.DateTimeFormat("pt-PT", {
-    weekday: "long",
-    day: "2-digit",
-    month: "short",
-    timeZone: timezone,
-  }).format(date);
 }
 
 export function formatMonthLabel(parts: { year: number; month: number }) {
@@ -187,101 +136,6 @@ export function buildMonthCells(parts: { year: number; month: number }) {
   return rows;
 }
 
-function normalizeStatus(status: string) {
-  return status.trim().toUpperCase();
-}
-
-function resolveBookingType(agendaItem: AgendaItem, booking: ReservationBooking | undefined): CalendarBookingType {
-  if (agendaItem.kind === "CLASS") return "GROUP";
-  if (agendaItem.kind !== "RESERVATION") return "BLOCK";
-  const serviceKind = booking?.service?.kind?.trim().toUpperCase();
-  if (serviceKind === "CLASS") return "GROUP";
-  if ((booking?.partySize ?? 1) > 1) return "GROUP";
-  return "INDIVIDUAL";
-}
-
-export function enrichAgendaItems(items: AgendaItem[], bookings: ReservationBooking[]) {
-  const bookingsById = new Map(bookings.map((booking) => [booking.id, booking]));
-  return items.map((item, index) => {
-    const reservationId = item.kind === "RESERVATION" ? item.reservationId ?? null : null;
-    const classSessionId = item.kind === "CLASS" ? item.classSessionId ?? null : null;
-    const booking = reservationId ? bookingsById.get(reservationId) : undefined;
-    const startsAt = item.startsAt;
-    const endsAt = item.endsAt;
-    return {
-      id: `${item.kind}-${reservationId ?? classSessionId ?? item.eventId ?? item.tournamentId ?? index}-${startsAt}`,
-      kind: item.kind,
-      title: item.title,
-      startsAt,
-      endsAt,
-      status: item.status,
-      reservationId,
-      classSessionId,
-      eventId: item.kind === "EVENT" ? item.eventId ?? null : null,
-      tournamentId: item.kind === "TOURNAMENT" ? item.tournamentId ?? null : null,
-      courtId: item.courtId ?? booking?.court?.id ?? null,
-      professionalId: item.professionalId ?? booking?.professional?.id ?? null,
-      resourceId: item.resourceId ?? booking?.resource?.id ?? null,
-      serviceId: booking?.service?.id ?? null,
-      serviceTitle: booking?.service?.title ?? null,
-      serviceKind: booking?.service?.kind ?? null,
-      bookingType: resolveBookingType(item, booking),
-      channel: item.kind === "RESERVATION" ? booking?.channel ?? "UNKNOWN" : "BACKOFFICE",
-      paymentStatus: item.kind === "RESERVATION" ? booking?.paymentStatus ?? "UNKNOWN" : "UNKNOWN",
-      createdAt: booking?.createdAt ?? null,
-      requestedProfessionalId: booking?.changeRequest?.proposedProfessionalId ?? null,
-      requestedResourceId: booking?.changeRequest?.proposedResourceId ?? null,
-    } satisfies CalendarEvent;
-  });
-}
-
-function isWithinCreatedRange(
-  createdAt: string | null,
-  createdFrom: string | null,
-  createdTo: string | null,
-  timezone: string,
-) {
-  if (!createdFrom && !createdTo) return true;
-  if (!createdAt) return false;
-  const createdDate = new Date(createdAt);
-  if (Number.isNaN(createdDate.getTime())) return false;
-  const createdKey = getDayKey(createdDate, timezone);
-  if (createdFrom && createdKey < createdFrom) return false;
-  if (createdTo && createdKey > createdTo) return false;
-  return true;
-}
-
-export function filterEvents(events: CalendarEvent[], filters: CalendarFilters, timezone: string) {
-  const normalizedStatuses = filters.statuses.map((status) => normalizeStatus(status));
-  return events.filter((event) => {
-    if (normalizedStatuses.length > 0 && !normalizedStatuses.includes(normalizeStatus(event.status))) {
-      return false;
-    }
-    if (filters.bookingTypes.length > 0 && !filters.bookingTypes.includes(event.bookingType)) {
-      return false;
-    }
-    if (filters.channels.length > 0 && !filters.channels.includes(event.channel)) {
-      return false;
-    }
-    if (filters.paymentStatuses.length > 0 && !filters.paymentStatuses.includes(event.paymentStatus)) {
-      return false;
-    }
-    if (filters.serviceIds.length > 0) {
-      if (!event.serviceId || !filters.serviceIds.includes(event.serviceId)) return false;
-    }
-    if (!isWithinCreatedRange(event.createdAt, filters.createdFrom, filters.createdTo, timezone)) {
-      return false;
-    }
-    if (filters.requestedProfessionalIds.length > 0) {
-      const requestedProfessional = event.requestedProfessionalId ?? event.professionalId;
-      if (!requestedProfessional || !filters.requestedProfessionalIds.includes(requestedProfessional)) {
-        return false;
-      }
-    }
-    return true;
-  });
-}
-
 function clampMinute(value: number) {
   return Math.max(0, Math.min(DAY_MINUTES, value));
 }
@@ -291,16 +145,16 @@ function getMinuteOfDay(date: Date, timezone: string) {
   return parts.hour * 60 + parts.minute;
 }
 
-export type ProjectedDayEvent = {
-  event: CalendarEvent;
+export type ProjectedDayEvent<T extends { startsAt: string; endsAt: string }> = {
+  event: T;
   start: Date;
   end: Date;
   startMinute: number;
   endMinute: number;
 };
 
-export function buildProjectedEvents(params: {
-  events: CalendarEvent[];
+export function buildProjectedEvents<T extends { startsAt: string; endsAt: string }>(params: {
+  events: T[];
   day: Date;
   timezone: string;
 }) {
@@ -328,214 +182,10 @@ export function buildProjectedEvents(params: {
         endMinute,
       };
     })
-    .filter(Boolean) as ProjectedDayEvent[];
+    .filter(Boolean) as ProjectedDayEvent<T>[];
 
   return projected.sort((left, right) => {
     if (left.startMinute !== right.startMinute) return left.startMinute - right.startMinute;
     return left.endMinute - right.endMinute;
   });
-}
-
-export function buildPositionedEvents(params: {
-  events: CalendarEvent[];
-  day: Date;
-  timezone: string;
-  minuteHeight: number;
-}) {
-  const projected = buildProjectedEvents(params);
-
-  const clusterLaneCount = new Map<number, number>();
-  let clusterId = -1;
-  let active: Array<{ endMinute: number; lane: number }> = [];
-  const positioned: Array<PositionedEvent & { clusterId: number }> = [];
-
-  projected.forEach((entry) => {
-    active = active.filter((item) => item.endMinute > entry.startMinute);
-    if (active.length === 0) clusterId += 1;
-    const usedLanes = new Set(active.map((item) => item.lane));
-    let lane = 0;
-    while (usedLanes.has(lane)) lane += 1;
-
-    active.push({ endMinute: entry.endMinute, lane });
-    const laneCount = Math.max(clusterLaneCount.get(clusterId) ?? 0, lane + 1);
-    clusterLaneCount.set(clusterId, laneCount);
-
-    positioned.push({
-      clusterId,
-      event: entry.event,
-      lane,
-      laneCount: 1,
-      top: entry.startMinute * params.minuteHeight,
-      height: Math.max((entry.endMinute - entry.startMinute) * params.minuteHeight, 12),
-    });
-  });
-
-  return positioned.map((entry) => ({
-    event: entry.event,
-    lane: entry.lane,
-    laneCount: clusterLaneCount.get(entry.clusterId) ?? 1,
-    top: entry.top,
-    height: entry.height,
-  }));
-}
-
-export function normalizeAvailability(payload: AvailabilityResponse, timezone: string): NormalizedAvailability {
-  const templatesBySchedule = new Map<number, Map<number, TimeInterval[]>>();
-  const overridesByDate = new Map<string, Array<{ kind: string; intervals: TimeInterval[] }>>();
-
-  (payload.templates ?? []).forEach((template) => {
-    if (!Number.isFinite(template.dayOfWeek) || !Number.isFinite(template.availabilityId)) return;
-    const byDay = templatesBySchedule.get(template.availabilityId) ?? new Map<number, TimeInterval[]>();
-    byDay.set(template.dayOfWeek, normalizeIntervals(template.intervals));
-    templatesBySchedule.set(template.availabilityId, byDay);
-  });
-
-  (payload.overrides ?? []).forEach((override) => {
-    const key = getOverrideKey(override.date, timezone);
-    if (!key) return;
-    const existing = overridesByDate.get(key) ?? [];
-    existing.push({
-      kind: typeof override.kind === "string" ? override.kind.toUpperCase() : "OPEN",
-      intervals: normalizeIntervals(override.intervals),
-    });
-    overridesByDate.set(key, existing);
-  });
-
-  return {
-    schedules: (payload.schedules ?? [])
-      .map((schedule) => ({
-        id: schedule.id,
-        startDate: new Date(schedule.startDate),
-        endDate: schedule.endDate ? new Date(schedule.endDate) : null,
-        createdAt: schedule.createdAt ? new Date(schedule.createdAt) : undefined,
-      }))
-      .filter((schedule) => Number.isFinite(schedule.id) && !Number.isNaN(schedule.startDate.getTime())),
-    templatesBySchedule,
-    overridesByDate,
-    inheritsOrganization: Boolean(payload.inheritsOrganization),
-  };
-}
-
-export function resolveIntervalsForDay(
-  normalized: NormalizedAvailability | undefined,
-  day: Date,
-  timezone: string,
-): TimeInterval[] {
-  const dayParts = getDateParts(day, timezone);
-  const dayOfWeek = new Date(Date.UTC(dayParts.year, dayParts.month - 1, dayParts.day)).getUTCDay();
-  if (!normalized) return [];
-  const schedule = resolveScheduleForDate(normalized.schedules, day, timezone);
-  const templatesByDay = schedule ? normalized.templatesBySchedule.get(schedule.id) ?? new Map() : new Map();
-  const overrides = normalized.overridesByDate.get(getDayKey(day, timezone)) ?? [];
-  const resolved = resolveIntervalsForDate({
-    dayOfWeek,
-    templatesByDay,
-    overrides,
-    fallbackToDefault: false,
-  });
-  return resolved;
-}
-
-export function invertIntervals(intervals: TimeInterval[]) {
-  if (intervals.length === 0) return [{ startMinute: 0, endMinute: DAY_MINUTES }];
-  const sorted = [...intervals]
-    .map((interval) => ({
-      startMinute: clampMinute(interval.startMinute),
-      endMinute: clampMinute(interval.endMinute),
-    }))
-    .filter((interval) => interval.endMinute > interval.startMinute)
-    .sort((a, b) => a.startMinute - b.startMinute);
-
-  const outside: TimeInterval[] = [];
-  let cursor = 0;
-  sorted.forEach((interval) => {
-    if (interval.startMinute > cursor) {
-      outside.push({ startMinute: cursor, endMinute: interval.startMinute });
-    }
-    cursor = Math.max(cursor, interval.endMinute);
-  });
-  if (cursor < DAY_MINUTES) {
-    outside.push({ startMinute: cursor, endMinute: DAY_MINUTES });
-  }
-  return outside;
-}
-
-export function buildActiveFilterChips(params: {
-  filters: CalendarFilters;
-  serviceLabels: Map<number, string>;
-  professionalLabels: Map<number, string>;
-}): ActiveFilterChip[] {
-  const statusLabel: Record<string, string> = {
-    CONFIRMED: "Confirmado",
-    PENDING_CONFIRMATION: "Pendente confirmação",
-    PENDING: "Pendente",
-    COMPLETED: "Concluído",
-    CANCELLED: "Cancelado",
-    CANCELLED_BY_CLIENT: "Cancelado pelo cliente",
-    CANCELLED_BY_ORG: "Cancelado pela organização",
-    NO_SHOW: "No-show",
-    DISPUTED: "Disputa",
-  };
-  const typeLabel: Record<string, string> = {
-    INDIVIDUAL: "Individual",
-    GROUP: "Grupo",
-    BLOCK: "Bloqueio",
-  };
-  const channelLabel: Record<string, string> = {
-    ONLINE: "Online",
-    PRESENTIAL: "Presencial",
-    BACKOFFICE: "Backoffice",
-    UNKNOWN: "Indefinido",
-  };
-  const paymentLabel: Record<string, string> = {
-    PAID: "Pago",
-    PARTIAL: "Parcial",
-    PROCESSING: "Em processamento",
-    PENDING: "Pendente",
-    UNKNOWN: "Indefinido",
-  };
-
-  const chips: ActiveFilterChip[] = [];
-  params.filters.statuses.forEach((status) => {
-    chips.push({ id: `status-${status}`, label: `Estado: ${statusLabel[status] ?? status}` });
-  });
-  params.filters.bookingTypes.forEach((type) => {
-    chips.push({ id: `type-${type}`, label: `Tipo: ${typeLabel[type] ?? type}` });
-  });
-  params.filters.channels.forEach((channel) => {
-    chips.push({ id: `channel-${channel}`, label: `Canal: ${channelLabel[channel] ?? channel}` });
-  });
-  params.filters.paymentStatuses.forEach((status) => {
-    chips.push({ id: `payment-${status}`, label: `Pagamento: ${paymentLabel[status] ?? status}` });
-  });
-  params.filters.serviceIds.forEach((serviceId) => {
-    chips.push({
-      id: `service-${serviceId}`,
-      label: `Serviço: ${params.serviceLabels.get(serviceId) ?? `#${serviceId}`}`,
-    });
-  });
-  if (params.filters.createdFrom || params.filters.createdTo) {
-    const from = params.filters.createdFrom ?? "…";
-    const to = params.filters.createdTo ?? "…";
-    chips.push({ id: "created", label: `Criado: ${from} → ${to}` });
-  }
-  params.filters.requestedProfessionalIds.forEach((professionalId) => {
-    chips.push({
-      id: `requested-${professionalId}`,
-      label: `Colaborador solicitado: ${params.professionalLabels.get(professionalId) ?? `#${professionalId}`}`,
-    });
-  });
-  return chips;
-}
-
-export function countAppliedFilters(filters: CalendarFilters) {
-  return (
-    filters.statuses.length +
-    filters.bookingTypes.length +
-    filters.channels.length +
-    filters.paymentStatuses.length +
-    filters.serviceIds.length +
-    filters.requestedProfessionalIds.length +
-    (filters.createdFrom || filters.createdTo ? 1 : 0)
-  );
 }

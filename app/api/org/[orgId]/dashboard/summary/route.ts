@@ -462,9 +462,9 @@ async function _GET(req: NextRequest) {
           activeServices: activeServicesKpi,
           upcomingTournaments: upcomingTournamentsKpi,
         },
-        aiPlaceholder: {
-          previousDayDate: isoDateOnly(previousDay, timezone),
-          placeholder: true,
+        ai: {
+          referenceDate: isoDateOnly(previousDay, timezone),
+          mode: "PREVIEW" as const,
         },
       },
       { status: 200 },

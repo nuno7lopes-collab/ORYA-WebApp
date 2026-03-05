@@ -183,6 +183,78 @@
       "text": "Al continuar, aceptas los <terms>Términos</terms> y la <privacy>Política de Privacidad</privacy>."
     }
   },
+  "home": {
+    "title": "Inicio",
+    "greeting": {
+      "morning": "Buenos días",
+      "afternoon": "Buenas tardes",
+      "evening": "Buenas noches"
+    },
+    "defaults": {
+      "playerName": "jugador",
+      "bookingTitle": "Reserva",
+      "organization": "Organización",
+      "dateUndefined": "Fecha por definir"
+    },
+    "hero": {
+      "title": "¿Listo para jugar pádel?",
+      "subtitle": "Estamos preparando el modo de entrada inmediata en juego.",
+      "cta": "Quiero jugar",
+      "hint": "Función en preparación"
+    },
+    "placeholder": {
+      "title": "Quiero jugar",
+      "body": "Estamos preparando este modo. Pronto podrás entrar directamente en partidos."
+    },
+    "guest": {
+      "title": "Personaliza tu experiencia",
+      "body": "Inicia sesión para ver reservas, estado del perfil y accesos directos personalizados.",
+      "cta": "Iniciar sesión"
+    },
+    "stats": {
+      "upcomingBookings": "Próximas reservas",
+      "padelLevel": "Nivel de pádel",
+      "profile": "Perfil",
+      "levelUnset": "Sin definir"
+    },
+    "profileStatus": {
+      "guest": "Invitado",
+      "checking": "Validando",
+      "pending": "Por completar",
+      "complete": "Completo"
+    },
+    "relative": {
+      "today": "Hoy",
+      "tomorrow": "Mañana",
+      "inDays": "En {count} días"
+    },
+    "agenda": {
+      "nextBooking": "Próxima reserva",
+      "nextBookingCta": "Ver detalles de la reserva",
+      "errorTitle": "No se pudo cargar tu agenda.",
+      "errorBody": "Puedes seguir usando el resto de la app con normalidad.",
+      "retry": "Reintentar",
+      "emptyTitle": "Sin reservas programadas",
+      "emptyBody": "Reserva tu próxima clase o una pista para mantenerte activo.",
+      "emptyCta": "Ver clases"
+    },
+    "profilePrompt": {
+      "title": "Completa tu perfil competitivo",
+      "body": "Añade tu nivel y datos de juego para mejorar invitaciones, emparejamientos y recomendaciones.",
+      "cta": "Completar perfil"
+    },
+    "classes": {
+      "title": "Clases",
+      "subtitle": "Encuentra clases y entrenamientos con reserva inmediata.",
+      "cta": "Ver clases"
+    },
+    "quickActions": {
+      "title": "Acciones rápidas",
+      "compete": "Competir",
+      "reservations": "Reservas",
+      "community": "Comunidad"
+    }
+  },
   "discover": {
     "title": "Descubrir",
     "subtitle": "Eventos para hoy y los próximos días",

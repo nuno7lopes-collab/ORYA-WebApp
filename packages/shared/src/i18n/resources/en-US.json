@@ -183,6 +183,78 @@
       "text": "By continuing, you agree to the <terms>Terms</terms> and <privacy>Privacy Policy</privacy>."
     }
   },
+  "home": {
+    "title": "Home",
+    "greeting": {
+      "morning": "Good morning",
+      "afternoon": "Good afternoon",
+      "evening": "Good evening"
+    },
+    "defaults": {
+      "playerName": "player",
+      "bookingTitle": "Booking",
+      "organization": "Organization",
+      "dateUndefined": "Date to be defined"
+    },
+    "hero": {
+      "title": "Ready to play padel?",
+      "subtitle": "We're preparing instant match entry mode.",
+      "cta": "I want to play",
+      "hint": "Feature in progress"
+    },
+    "placeholder": {
+      "title": "I want to play",
+      "body": "We're preparing this mode. Soon you'll be able to jump straight into matches."
+    },
+    "guest": {
+      "title": "Personalize your experience",
+      "body": "Sign in to see bookings, profile status, and personalized shortcuts.",
+      "cta": "Sign in"
+    },
+    "stats": {
+      "upcomingBookings": "Upcoming bookings",
+      "padelLevel": "Padel level",
+      "profile": "Profile",
+      "levelUnset": "Not set"
+    },
+    "profileStatus": {
+      "guest": "Guest",
+      "checking": "Checking",
+      "pending": "Incomplete",
+      "complete": "Complete"
+    },
+    "relative": {
+      "today": "Today",
+      "tomorrow": "Tomorrow",
+      "inDays": "In {count} days"
+    },
+    "agenda": {
+      "nextBooking": "Next booking",
+      "nextBookingCta": "View booking details",
+      "errorTitle": "Couldn't load your schedule.",
+      "errorBody": "You can keep using the rest of the app normally.",
+      "retry": "Try again",
+      "emptyTitle": "No bookings scheduled",
+      "emptyBody": "Book your next class or reserve a court to stay active.",
+      "emptyCta": "See classes"
+    },
+    "profilePrompt": {
+      "title": "Complete your competitive profile",
+      "body": "Add your level and playing details to improve invites, pairings, and recommendations.",
+      "cta": "Complete profile"
+    },
+    "classes": {
+      "title": "Classes",
+      "subtitle": "Find classes and training sessions with instant booking.",
+      "cta": "See classes"
+    },
+    "quickActions": {
+      "title": "Quick actions",
+      "compete": "Compete",
+      "reservations": "Bookings",
+      "community": "Community"
+    }
+  },
   "discover": {
     "title": "Discover",
     "subtitle": "Events for today and the next days",

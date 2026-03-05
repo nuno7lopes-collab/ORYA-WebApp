@@ -204,7 +204,7 @@ export default function MonthCalendarReadClient() {
                 : "border-white/20 bg-black/35 text-white/80 hover:border-white/35 hover:text-white",
             )}
           >
-            Tipos e resumo
+            Tipos
           </button>
         }
       />

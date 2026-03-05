@@ -439,7 +439,7 @@ type DashboardSummaryResponse = {
       reason?: string;
     };
   };
-  aiPlaceholder: { previousDayDate: string; placeholder: true };
+  ai: { referenceDate: string; mode: "PREVIEW" };
 };
 type OrganizationStatus = {
   paymentsStatus?: "NO_STRIPE" | "PENDING" | "READY";
@@ -498,32 +498,6 @@ type MarketingSectionKey = (typeof MARKETING_TABS)[number]["key"];
 const MARKETING_TAB_KEYS = MARKETING_TABS.map(
   (tab) => tab.key,
 ) as MarketingSectionKey[];
-type DashboardToolId =
-  | "calendar"
-  | "academia"
-  | "checkin"
-  | "padel-tournaments"
-  | "eventos"
-  | "padel-club"
-  | "inscricoes"
-  | "mensagens"
-  | "crm"
-  | "analytics"
-  | "financeiro"
-  | "marketing"
-  | "loja"
-  | "staff"
-  | "politicas"
-  | "settings";
-type DashboardToolCard = {
-  id: DashboardToolId;
-  moduleKey: string;
-  iconKey: string;
-  title: string;
-  summary: string;
-  bullets: string[];
-  href?: string;
-};
 const OPERATION_MODULES = ["EVENTOS", "RESERVAS", "TORNEIOS"] as const;
 type OperationModule = (typeof OPERATION_MODULES)[number];
 const PADEL_CLUB_SECTION = "padel-club";
@@ -532,24 +506,6 @@ const PADEL_MANAGE_SECTIONS = [
   PADEL_CLUB_SECTION,
   PADEL_TOURNAMENTS_SECTION,
 ] as const;
-const TOOL_DISPLAY_ORDER: DashboardToolId[] = [
-  "calendar",
-  "academia",
-  "checkin",
-  "padel-tournaments",
-  "eventos",
-  "padel-club",
-  "inscricoes",
-  "mensagens",
-  "crm",
-  "analytics",
-  "financeiro",
-  "marketing",
-  "loja",
-  "staff",
-  "politicas",
-  "settings",
-];
 const MODULE_ICON_GRADIENTS: Record<string, string> = {
   EVENTOS: " ",
   RESERVAS: " ",
@@ -1313,8 +1269,7 @@ function OrganizacaoPageInner({
     fetcher,
     swrOptions,
   );
-  const aiPlaceholderDate =
-    dashboardSummary?.aiPlaceholder?.previousDayDate ?? yesterdayDateLabel;
+  const aiReferenceDateRaw = dashboardSummary?.ai.referenceDate ?? yesterdayDateLabel;
   const {
     data: events,
     error: eventsError,
@@ -1821,50 +1776,50 @@ function OrganizacaoPageInner({
     return [
       {
         id: "ocupacao-campos",
-        label: "Taxa de ocupação dos campos",
+        label: "Ocupação dos campos",
         value: rateValue(courtKpi?.value),
         hint:
           courtKpi?.status === "AVAILABLE"
-            ? `Janela operacional de ${dashboardSummary?.windows.fieldOccupancy.days ?? 7} dias.`
+            ? `${dashboardSummary?.windows.fieldOccupancy.days ?? 7} dias`
             : fallbackHint(courtKpi?.reason),
       },
       {
         id: "ocupacao-clube",
-        label: "Taxa de ocupação do clube",
+        label: "Ocupação do clube",
         value: rateValue(clubKpi?.value),
         hint:
           clubKpi?.status === "AVAILABLE"
-            ? `Próximos ${dashboardSummary?.windows.clubOccupancy.days ?? 30} dias.`
+            ? `${dashboardSummary?.windows.clubOccupancy.days ?? 30} dias`
             : fallbackHint(clubKpi?.reason),
       },
       {
         id: "media-plataforma",
-        label: "Média da plataforma",
+        label: "Benchmark da plataforma",
         value: rateValue(platformKpi?.value),
         hint:
           platformKpi?.status === "AVAILABLE"
-            ? `Delta do clube: ${deltaValue}.`
+            ? `Delta ${deltaValue}`
             : fallbackHint(platformKpi?.reason),
       },
       {
         id: "tickets-30d",
-        label: "Inscrições (30 dias)",
+        label: "Inscrições (30d)",
         value:
           typeof ticketsKpi?.value === "number"
             ? String(ticketsKpi.value)
             : "—",
         hint:
           ticketsKpi?.status === "AVAILABLE"
-            ? `Últimos ${dashboardSummary?.windows.commercial.days ?? 30} dias.`
+            ? `${dashboardSummary?.windows.commercial.days ?? 30} dias`
             : fallbackHint(ticketsKpi?.reason),
       },
       {
         id: "receita-liquida-30d",
-        label: "Receita líquida (30 dias)",
+        label: "Receita líquida (30d)",
         value: formatCurrencyCents(netRevenueKpi?.value),
         hint:
           netRevenueKpi?.status === "AVAILABLE"
-            ? "Valor líquido recebido pelo clube."
+            ? ""
             : fallbackHint(netRevenueKpi?.reason),
       },
       {
@@ -1879,13 +1834,159 @@ function OrganizacaoPageInner({
             : "—",
         hint: isReservasOrg
           ? activeServicesKpi?.status === "AVAILABLE"
-            ? "Serviços de reservas ativos no clube."
+            ? "Ativos"
             : fallbackHint(activeServicesKpi?.reason)
           : upcomingTournamentsKpi?.status === "AVAILABLE"
-            ? `Próximos ${dashboardSummary?.windows.clubOccupancy.days ?? 30} dias.`
+            ? `${dashboardSummary?.windows.clubOccupancy.days ?? 30} dias`
             : fallbackHint(upcomingTournamentsKpi?.reason),
       },
     ];
+  }, [dashboardSummary, isReservasOrg]);
+  const aiReferenceDateLabel = useMemo(() => {
+    const rawDate = aiReferenceDateRaw?.trim() ?? "";
+    if (!rawDate) return yesterdayDateLabel;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+      const parsed = new Date(`${rawDate}T00:00:00`);
+      return formatDateOnly(parsed, {
+        day: "2-digit",
+        month: "long",
+        year: "numeric",
+      });
+    }
+    return rawDate;
+  }, [aiReferenceDateRaw, yesterdayDateLabel]);
+  const aiPreview = useMemo(() => {
+    const alerts: string[] = [];
+    const opportunities: string[] = [];
+    let hasCriticalAlert = false;
+    const addAlert = (message: string, critical = true) => {
+      const normalized = message.trim();
+      if (!normalized || alerts.includes(normalized)) return;
+      alerts.push(normalized);
+      if (critical) hasCriticalAlert = true;
+    };
+    const addOpportunity = (message: string) => {
+      const normalized = message.trim();
+      if (!normalized || opportunities.includes(normalized)) return;
+      opportunities.push(normalized);
+    };
+    const summaryKpis = dashboardSummary?.kpis;
+    const fieldKpi = summaryKpis?.fieldOccupancyRate;
+    const clubKpi = summaryKpis?.clubOccupancyRate;
+    const deltaKpi = summaryKpis?.clubVsPlatformDeltaRate;
+    const ticketsKpi = summaryKpis?.ticketsLast30Days;
+    const revenueKpi = summaryKpis?.netRevenueLast30DaysCents;
+    const activeServicesKpi = summaryKpis?.activeServices;
+    const upcomingTournamentsKpi = summaryKpis?.upcomingTournaments;
+    const fieldWindowDays = dashboardSummary?.windows.fieldOccupancy.days ?? 7;
+    const commercialWindowDays = dashboardSummary?.windows.commercial.days ?? 30;
+    const clubWindowDays = dashboardSummary?.windows.clubOccupancy.days ?? 30;
+    if (clubKpi?.status === "AVAILABLE" && typeof clubKpi.value === "number") {
+      const clubRateLabel = formatPercent(clubKpi.value);
+      if (deltaKpi?.status === "AVAILABLE" && typeof deltaKpi.value === "number") {
+        const deltaPp = Math.round(deltaKpi.value * 100);
+        if (deltaPp <= -5) {
+          addAlert(
+            `Ocupação do clube em ${clubRateLabel}, ${Math.abs(deltaPp)} pp abaixo da média da plataforma.`,
+          );
+        } else if (deltaPp >= 5) {
+          addOpportunity(
+            `Ocupação do clube em ${clubRateLabel}, ${deltaPp} pp acima da média da plataforma.`,
+          );
+        } else {
+          addOpportunity(`Ocupação do clube em ${clubRateLabel}, alinhada com a média da plataforma.`);
+        }
+      } else {
+        addOpportunity(`Ocupação do clube em ${clubRateLabel}.`);
+      }
+    } else if (clubKpi?.reason) {
+      addAlert(clubKpi.reason);
+    }
+    if (fieldKpi?.status === "AVAILABLE" && typeof fieldKpi.value === "number") {
+      const fieldRateLabel = formatPercent(fieldKpi.value);
+      if (fieldKpi.value < 0.35) {
+        addAlert(
+          `Ocupação de campos baixa (${fieldRateLabel}) na janela de ${fieldWindowDays} dias.`,
+        );
+      } else if (fieldKpi.value > 0.75) {
+        addOpportunity(`Procura forte nos campos (${fieldRateLabel}); faz sentido abrir mais slots.`);
+      } else {
+        addOpportunity(`Ocupação de campos estável em ${fieldRateLabel}.`);
+      }
+    } else if (fieldKpi?.reason) {
+      addAlert(fieldKpi.reason);
+    }
+    if (ticketsKpi?.status === "AVAILABLE" && typeof ticketsKpi.value === "number") {
+      if (ticketsKpi.value === 0) {
+        addAlert(`Sem inscrições novas nos últimos ${commercialWindowDays} dias.`);
+      } else {
+        addOpportunity(
+          `${ticketsKpi.value} inscrições nos últimos ${commercialWindowDays} dias.`,
+        );
+      }
+    } else if (ticketsKpi?.reason) {
+      addAlert(ticketsKpi.reason);
+    }
+    if (revenueKpi?.status === "AVAILABLE" && typeof revenueKpi.value === "number") {
+      if (revenueKpi.value <= 0) {
+        addAlert(`Receita líquida dos últimos ${commercialWindowDays} dias está a zero.`);
+      } else {
+        addOpportunity(
+          `Receita líquida de ${formatCurrencyCents(revenueKpi.value)} nos últimos ${commercialWindowDays} dias.`,
+        );
+      }
+    } else if (revenueKpi?.reason) {
+      addAlert(revenueKpi.reason);
+    }
+    if (isReservasOrg) {
+      if (activeServicesKpi?.status === "AVAILABLE" && typeof activeServicesKpi.value === "number") {
+        if (activeServicesKpi.value === 0) {
+          addAlert("Sem serviços ativos publicados.");
+        } else {
+          addOpportunity(`${activeServicesKpi.value} serviços ativos com reservas disponíveis.`);
+        }
+      } else if (activeServicesKpi?.reason) {
+        addAlert(activeServicesKpi.reason);
+      }
+    } else if (
+      upcomingTournamentsKpi?.status === "AVAILABLE" &&
+      typeof upcomingTournamentsKpi.value === "number"
+    ) {
+      if (upcomingTournamentsKpi.value === 0) {
+        addAlert(`Sem torneios publicados para os próximos ${clubWindowDays} dias.`);
+      } else {
+        addOpportunity(
+          `${upcomingTournamentsKpi.value} torneios previstos para os próximos ${clubWindowDays} dias.`,
+        );
+      }
+    } else if (upcomingTournamentsKpi?.reason) {
+      addAlert(upcomingTournamentsKpi.reason);
+    }
+    if (!alerts.length) {
+      addAlert("Sem alertas críticos.", false);
+    }
+    if (!opportunities.length) {
+      addOpportunity("Sem oportunidade clara com os dados atuais.");
+    }
+    const recommendation = hasCriticalAlert
+      ? `Prioridade: ${alerts[0]}`
+      : `Foco: ${opportunities[0]}`;
+    return {
+      primaryAlert: alerts[0],
+      primaryOpportunity: opportunities[0],
+      recommendation,
+      generatedAtLabel: formatDateTime(
+        dashboardSummary?.generatedAt
+          ? new Date(dashboardSummary.generatedAt)
+          : null,
+        {
+          day: "2-digit",
+          month: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        },
+      ),
+    };
   }, [dashboardSummary, isReservasOrg]);
   const eventsListLoading =
     shouldLoadEvents && activeObjective === "manage" && !events;
@@ -2542,273 +2643,36 @@ function OrganizacaoPageInner({
   const checklistVisible =
     activeObjective === "create" &&
     (!checklistDismissed || !canDismissChecklist);
-  const canUseCrm = canAccessCrm;
-  const canUseChatInterno = canAccessMensagens;
-  const canUseCheckin = canAccessTorneios;
-  const canUseCalendar = canAccessReservas || canAccessTorneios;
-  const calendarModuleKey = canAccessReservas ? "RESERVAS" : "TORNEIOS";
-  const dashboardTools = useMemo<DashboardToolCard[]>(() => {
-    const toolsById: Record<DashboardToolId, DashboardToolCard | null> = {
-      calendar: canUseCalendar
-        ? {
-            id: "calendar",
-            moduleKey: calendarModuleKey,
-            iconKey: "TOOL_CALENDARIO",
-            title: "Calendário",
-            summary: "Operação diária em vista semanal e diária.",
-            bullets: ["Semana", "Dia", "Disponibilidade", "Conflitos"],
-            href: scopedOrganizationId
-              ? `/org/${scopedOrganizationId}/calendar`
-              : undefined,
-          }
-        : null,
-      academia: canAccessReservas
-        ? {
-            id: "academia",
-            moduleKey: "RESERVAS",
-            iconKey: "TOOL_RESERVAS",
-            title: "Academia",
-            summary: "Aulas, treinadores e alunos.",
-            bullets: ["Aulas", "Treinadores", "Alunos"],
-            href: scopedOrganizationId
-              ? `/org/${scopedOrganizationId}/academy/classes`
-              : undefined,
-          }
-        : null,
-      checkin: canUseCheckin
-        ? {
-            id: "checkin",
-            moduleKey: "CHECKIN",
-            iconKey: "TOOL_CHECKIN",
-            title: "Check-in",
-            summary: "Controlo de entradas e sessões.",
-            bullets: ["Scanner", "Lista", "Sessões", "Registos"],
-            href: scopedOrganizationId
-              ? `/org/${scopedOrganizationId}/check-in`
-              : undefined,
-          }
-        : null,
-      "padel-tournaments": canAccessTorneios
-        ? {
-            id: "padel-tournaments",
-            moduleKey: "TORNEIOS",
-            iconKey: "TOOL_PADEL_TORNEIOS",
-            title: "Torneios",
-            summary: "Gestão competitiva completa.",
-            bullets: [
-              "Torneios",
-              "Criar",
-              "Categorias",
-              "Equipas",
-              "Jogadores",
-            ],
-            href: scopedOrganizationId
-              ? `/org/${scopedOrganizationId}/padel/tournaments`
-              : undefined,
-          }
-        : null,
-      eventos: canAccessEventos
-        ? {
-            id: "eventos",
-            moduleKey: "EVENTOS",
-            iconKey: "TOOL_EVENTOS",
-            title: "Eventos",
-            summary: "Lista e criação de eventos.",
-            bullets: ["Lista", "Novo"],
-            href: scopedOrganizationId
-              ? `/org/${scopedOrganizationId}/events`
-              : undefined,
-          }
-        : null,
-      "padel-club": canAccessTorneios
-        ? {
-            id: "padel-club",
-            moduleKey: "TORNEIOS",
-            iconKey: "TOOL_PADEL_CLUBE",
-            title: "Clube",
-            summary: "Estrutura desportiva e gestão de clubes.",
-            bullets: [
-              "Clubes",
-              "Parcerias",
-              "Jogadores",
-              "Treinadores",
-              "Aulas",
-            ],
-            href: scopedOrganizationId
-              ? `/org/${scopedOrganizationId}/padel/clubs`
-              : undefined,
-          }
-        : null,
-      inscricoes: canAccessInscricoes
-        ? {
-            id: "inscricoes",
-            moduleKey: "INSCRICOES",
-            iconKey: "TOOL_FORMULARIOS",
-            title: "Formulários",
-            summary: "Recolha de dados e respostas.",
-            bullets: ["Formulários", "Respostas", "Definições"],
-            href: scopedOrganizationId
-              ? `/org/${scopedOrganizationId}/forms`
-              : undefined,
-          }
-        : null,
-      mensagens: canUseChatInterno
-        ? {
-            id: "mensagens",
-            moduleKey: "MENSAGENS",
-            iconKey: "TOOL_CHAT_INTERNO",
-            title: "Chat",
-            summary: "Comunicação interna e comunidades.",
-            bullets: ["Caixa de entrada", "Comunidades"],
-            href: scopedOrganizationId
-              ? `/org/${scopedOrganizationId}/chat`
-              : undefined,
-          }
-        : null,
-      crm: canUseCrm
-        ? {
-            id: "crm",
-            moduleKey: "CRM",
-            iconKey: "TOOL_CRM",
-            title: "CRM",
-            summary: "Clientes, segmentos e campanhas.",
-            bullets: [
-              "Clientes",
-              "Segmentos",
-              "Campanhas",
-              "Relatórios",
-              "Fidelização",
-            ],
-            href: scopedOrganizationId
-              ? `/org/${scopedOrganizationId}/crm/customers`
-              : undefined,
-          }
-        : null,
-      analytics: canUseAnalytics
-        ? {
-            id: "analytics",
-            moduleKey: "ANALYTICS",
-            iconKey: "TOOL_ANALYTICS",
-            title: "Analytics",
-            summary: "Análise de performance e conversão.",
-            bullets: ["Resumo", "Conversão", "Coortes", "Telemetria"],
-            href: scopedOrganizationId
-              ? `/org/${scopedOrganizationId}/analytics`
-              : undefined,
-          }
-        : null,
-      financeiro: canViewFinance
-        ? {
-            id: "financeiro",
-            moduleKey: "FINANCEIRO",
-            iconKey: "TOOL_FINANCAS",
-            title: "Finanças",
-            summary: "Faturação, reconciliação e operações.",
-            bullets: [
-              "Resumo",
-              "Faturação",
-              "Transferências",
-              "Ledger",
-              "Exportações",
-            ],
-            href: scopedOrganizationId
-              ? `/org/${scopedOrganizationId}/finance`
-              : undefined,
-          }
-        : null,
-      marketing: canPromote
-        ? {
-            id: "marketing",
-            moduleKey: "MARKETING",
-            iconKey: "TOOL_PROMOCOES",
-            title: "Marketing",
-            summary: "Promoções e conteúdos.",
-            bullets: ["Resumo", "Promoções", "Conteúdo"],
-            href: scopedOrganizationId
-              ? `/org/${scopedOrganizationId}/marketing`
-              : undefined,
-          }
-        : null,
-      loja: canAccessLoja
-        ? {
-            id: "loja",
-            moduleKey: "LOJA",
-            iconKey: "TOOL_LOJA",
-            title: "Loja",
-            summary: "Catálogo, encomendas e envios.",
-            bullets: ["Visão geral", "Catálogo", "Encomendas", "Envios"],
-            href: scopedOrganizationId
-              ? `/org/${scopedOrganizationId}/store`
-              : undefined,
-          }
-        : null,
-      staff: canManageMembers
-        ? {
-            id: "staff",
-            moduleKey: "STAFF",
-            iconKey: "TOOL_EQUIPA",
-            title: "Equipa",
-            summary: "Membros, permissões e auditoria.",
-            bullets: ["Membros", "Permissões", "Auditoria"],
-            href: scopedOrganizationId
-              ? `/org/${scopedOrganizationId}/team`
-              : undefined,
-          }
-        : null,
-      politicas: canEditOrgSettings
-        ? {
-            id: "politicas",
-            moduleKey: "DEFINICOES",
-            iconKey: "TOOL_POLITICAS",
-            title: "Políticas",
-            summary: "Regras e limites operacionais.",
-            bullets: [
-              "Reservas",
-              "Financeiro",
-              "CRM",
-              "Padel",
-              "Termos",
-              "Loja",
-            ],
-            href: scopedOrganizationId
-              ? `/org/${scopedOrganizationId}/policies`
-              : undefined,
-          }
-        : null,
-      settings: canEditOrgSettings
-        ? {
-            id: "settings",
-            moduleKey: "DEFINICOES",
-            iconKey: "TOOL_DEFINICOES",
-            title: "Definições",
-            summary: "Configuração geral da organização.",
-            bullets: ["Geral"],
-            href: scopedOrganizationId
-              ? `/org/${scopedOrganizationId}/settings`
-              : undefined,
-          }
-        : null,
-    };
-    return TOOL_DISPLAY_ORDER.map((toolId) => toolsById[toolId]).filter(
-      (tool): tool is DashboardToolCard => tool !== null,
-    );
+  const activeToolCount = useMemo(() => {
+    let count = 0;
+    if (canAccessReservas || canAccessTorneios) count += 1; // Calendário
+    if (canAccessReservas) count += 1; // Academia
+    if (canAccessTorneios) count += 1; // Check-in
+    if (canAccessTorneios) count += 2; // Torneios + Clube
+    if (canAccessEventos) count += 1; // Eventos
+    if (canAccessInscricoes) count += 1; // Formulários
+    if (canAccessMensagens) count += 1; // Chat
+    if (canAccessCrm) count += 1; // CRM
+    if (canUseAnalytics) count += 1; // Analytics
+    if (canViewFinance) count += 1; // Finanças
+    if (canPromote) count += 1; // Marketing
+    if (canAccessLoja) count += 1; // Loja
+    if (canManageMembers) count += 1; // Equipa
+    if (canEditOrgSettings) count += 2; // Políticas + Definições
+    return count;
   }, [
     canAccessReservas,
     canAccessTorneios,
     canAccessEventos,
-    canUseCalendar,
-    canUseCheckin,
     canAccessInscricoes,
-    canUseChatInterno,
-    canViewFinance,
+    canAccessMensagens,
+    canAccessCrm,
     canUseAnalytics,
+    canViewFinance,
     canPromote,
-    canUseCrm,
     canAccessLoja,
     canManageMembers,
     canEditOrgSettings,
-    calendarModuleKey,
-    scopedOrganizationId,
   ]);
   useEffect(() => {
     const params = new URLSearchParams(currentQuery);
@@ -3186,11 +3050,8 @@ function OrganizacaoPageInner({
             {" "}
             <div className="space-y-1">
               {" "}
-              <p className="text-[11px] uppercase tracking-[0.26em] text-white/60">
-                Clube de Padel
-              </p>{" "}
               <h1 className="text-2xl sm:text-3xl font-semibold text-white">
-                Dashboard do clube
+                Visão geral
               </h1>{" "}
               <p className="text-sm text-white/70"> {orgDisplayName} </p>{" "}
             </div>{" "}
@@ -3211,24 +3072,14 @@ function OrganizacaoPageInner({
               {" "}
               <div className="space-y-3">
                 {" "}
-                <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">
-                  Resumo do dia
-                </p>{" "}
-                <h2 className="text-lg font-semibold text-white">
-                  Olá, {userFirstName}. Equipa do {orgDisplayName}.
-                </h2>{" "}
-                <p className="text-[13px] text-white/70">
-                  {" "}
-                  Indicadores principais do clube para começares o dia com
-                  contexto operacional e comercial.{" "}
-                </p>{" "}
-                <p className="rounded-2xl border border-white/12 bg-white/5 px-3 py-2 text-[12px] text-white/70">
-                  {" "}
-                  Ferramentas ativas para o teu perfil:{" "}
-                  <span className="font-semibold text-white">
-                    {dashboardTools.length}
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-lg font-semibold text-white">
+                    {userFirstName}, ponto de situação
+                  </h2>{" "}
+                  <span className="rounded-full border border-white/12 bg-white/5 px-3 py-1 text-[11px] text-white/75">
+                    {activeToolCount} módulos
                   </span>{" "}
-                </p>{" "}
+                </div>{" "}
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                   {" "}
                   {dailySummaryKpis.map((kpi) => (
@@ -3243,9 +3094,11 @@ function OrganizacaoPageInner({
                       <p className="mt-1 text-xl font-semibold text-white">
                         {kpi.value}
                       </p>{" "}
-                      <p className="mt-1 text-[11px] text-white/55">
-                        {kpi.hint}
-                      </p>{" "}
+                      {kpi.hint ? (
+                        <p className="mt-1 text-[11px] text-white/55">
+                          {kpi.hint}
+                        </p>
+                      ) : null}{" "}
                     </article>
                   ))}{" "}
                 </div>{" "}
@@ -3255,21 +3108,42 @@ function OrganizacaoPageInner({
               {" "}
               <div className="space-y-2">
                 {" "}
-                <p className="text-[11px] uppercase tracking-[0.24em] text-[#7FE0FF]/80">
-                  Inteligência artificial
-                </p>{" "}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-[11px] uppercase tracking-[0.24em] text-[#7FE0FF]/80">
+                    Inteligência artificial
+                  </p>{" "}
+                </div>{" "}
                 <h3 className="text-lg font-semibold text-white">
-                  Resumo inteligente do dia anterior
+                  Resumo automático de {aiReferenceDateLabel}
                 </h3>{" "}
-                <p className="text-[13px] text-white/70">
-                  {" "}
-                  Placeholder: aqui vai surgir o resumo automático com alertas,
-                  oportunidades e comparação com a média da plataforma.{" "}
-                </p>{" "}
-                <div className="rounded-2xl border border-dashed border-[#7FE0FF]/30 bg-[#7FE0FF]/8 px-3 py-3 text-[12px] text-[#C9F6FF]">
-                  {" "}
-                  Resumo de IA para {aiPlaceholderDate}: disponível em
-                  breve.{" "}
+                <div className="grid gap-2 md:grid-cols-3">
+                  <article className="rounded-2xl border border-white/12 bg-white/5 p-3">
+                    <p className="text-[11px] uppercase tracking-[0.14em] text-white/60">
+                      Alerta
+                    </p>{" "}
+                    <p className="mt-1 text-[13px] text-white/90">
+                      {aiPreview.primaryAlert}
+                    </p>{" "}
+                  </article>{" "}
+                  <article className="rounded-2xl border border-white/12 bg-white/5 p-3">
+                    <p className="text-[11px] uppercase tracking-[0.14em] text-white/60">
+                      Oportunidade
+                    </p>{" "}
+                    <p className="mt-1 text-[13px] text-white/90">
+                      {aiPreview.primaryOpportunity}
+                    </p>{" "}
+                  </article>{" "}
+                  <article className="rounded-2xl border border-[#7FE0FF]/30 bg-[#7FE0FF]/10 p-3">
+                    <p className="text-[11px] uppercase tracking-[0.14em] text-[#C9F6FF]">
+                      Próxima ação
+                    </p>{" "}
+                    <p className="mt-1 text-[13px] text-white">
+                      {aiPreview.recommendation}
+                    </p>{" "}
+                    <p className="mt-2 text-[11px] text-[#C9F6FF]/90">
+                      Atualizado: {aiPreview.generatedAtLabel}
+                    </p>{" "}
+                  </article>{" "}
                 </div>{" "}
               </div>{" "}
             </div>{" "}
@@ -3294,7 +3168,7 @@ function OrganizacaoPageInner({
                   <p className="text-[11px] uppercase tracking-[0.26em] text-white/70">
                     {managePrimaryLabel}
                   </p>{" "}
-                  <h2 className="text-2xl font-semibold text-white drop-">
+                  <h2 className="text-2xl font-semibold text-white">
                     {" "}
                     Gestão de {managePrimaryLabel.toLowerCase()}{" "}
                   </h2>{" "}
@@ -4551,7 +4425,7 @@ function OrganizacaoPageInner({
               {" "}
               <div>
                 {" "}
-                <h2 className="text-2xl sm:text-3xl font-semibold text-white drop-">
+                <h2 className="text-2xl sm:text-3xl font-semibold text-white">
                   {" "}
                   {activeSection === "overview"
                     ? "Resumo financeiro"
@@ -4602,7 +4476,7 @@ function OrganizacaoPageInner({
                   >
                     {" "}
                     <p className="text-white/70 text-xs">{card.label}</p>{" "}
-                    <p className="text-2xl font-bold text-white mt-1 drop-">
+                    <p className="text-2xl font-bold text-white mt-1">
                       {card.value}
                     </p>{" "}
                     <p className="text-[11px] text-white/60">{card.hint}</p>{" "}
@@ -5449,7 +5323,7 @@ function OrganizacaoPageInner({
                   <p className="text-[11px] uppercase tracking-[0.18em] text-white/70">
                     {card.label}
                   </p>{" "}
-                  <p className="mt-1 text-2xl font-bold text-white drop-">
+                  <p className="mt-1 text-2xl font-bold text-white">
                     {card.value}
                   </p>{" "}
                 </div>
@@ -5786,7 +5660,7 @@ function OrganizacaoPageInner({
               {" "}
               <div>
                 {" "}
-                <h2 className="text-3xl font-semibold text-white drop-">
+                <h2 className="text-3xl font-semibold text-white">
                   Feed operacional
                 </h2>{" "}
                 <p className="text-sm text-white/70">
@@ -5873,7 +5747,7 @@ function OrganizacaoPageInner({
               {" "}
               <div className="space-y-1">
                 {" "}
-                <h2 className="text-2xl sm:text-3xl font-semibold text-white drop-">
+                <h2 className="text-2xl sm:text-3xl font-semibold text-white">
                   {" "}
                   Promoções{" "}
                 </h2>{" "}
@@ -5931,7 +5805,7 @@ function OrganizacaoPageInner({
                         <p className="text-[11px] text-white/60">
                           {card.label}
                         </p>{" "}
-                        <p className="mt-1 text-2xl font-bold text-white drop-">
+                        <p className="mt-1 text-2xl font-bold text-white">
                           {card.value}
                         </p>{" "}
                         <p className="text-[11px] text-white/50">
@@ -5957,7 +5831,7 @@ function OrganizacaoPageInner({
                   {" "}
                   <div>
                     {" "}
-                    <h3 className="text-lg font-semibold text-white drop-">
+                    <h3 className="text-lg font-semibold text-white">
                       Encher a casa
                     </h3>{" "}
                     <p className="text-[12px] text-white/65">

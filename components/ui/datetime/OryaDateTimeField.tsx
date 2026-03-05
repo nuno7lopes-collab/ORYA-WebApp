@@ -13,7 +13,10 @@ import {
 } from "@/lib/datetime/localInput";
 import { OryaDateField } from "./OryaDateField";
 import { OryaTimeField } from "./OryaTimeField";
-import { ORYA_DATETIME_DATE_BUTTON_SSOT_CLASS, ORYA_DATETIME_TIME_BUTTON_SSOT_CLASS } from "./ssot";
+import {
+  ORYA_DATETIME_DATE_BUTTON_SSOT_CLASS,
+  ORYA_DATETIME_TIME_BUTTON_SSOT_CLASS,
+} from "./ssot";
 
 type OryaDateTimeFieldProps = {
   value: string;
@@ -52,9 +55,15 @@ export function OryaDateTimeField({
   timePlaceholder = "Hora",
   onOpenChange,
 }: OryaDateTimeFieldProps) {
-  const normalizedValue = isValidLocalDateTime(value) ? value : isoToLocalInput(value);
-  const normalizedMinDateTime = isValidLocalDateTime(minDateTime) ? (minDateTime as string) : isoToLocalInput(minDateTime);
-  const normalizedMaxDateTime = isValidLocalDateTime(maxDateTime) ? (maxDateTime as string) : isoToLocalInput(maxDateTime);
+  const normalizedValue = isValidLocalDateTime(value)
+    ? value
+    : isoToLocalInput(value);
+  const normalizedMinDateTime = isValidLocalDateTime(minDateTime)
+    ? (minDateTime as string)
+    : isoToLocalInput(minDateTime);
+  const normalizedMaxDateTime = isValidLocalDateTime(maxDateTime)
+    ? (maxDateTime as string)
+    : isoToLocalInput(maxDateTime);
 
   const current = splitLocalDateTime(normalizedValue);
   const minParts = splitLocalDateTime(normalizedMinDateTime);
@@ -67,16 +76,34 @@ export function OryaDateTimeField({
   const resolvedTime = isValidLocalTime(current.time) ? current.time : "";
 
   const minTimeForDate =
-    resolvedDate && minDate && resolvedDate === minDate && isValidLocalTime(minParts.time) ? minParts.time : undefined;
+    resolvedDate &&
+    minDate &&
+    resolvedDate === minDate &&
+    isValidLocalTime(minParts.time)
+      ? minParts.time
+      : undefined;
   const maxTimeForDate =
-    resolvedDate && maxDate && resolvedDate === maxDate && isValidLocalTime(maxParts.time) ? maxParts.time : undefined;
+    resolvedDate &&
+    maxDate &&
+    resolvedDate === maxDate &&
+    isValidLocalTime(maxParts.time)
+      ? maxParts.time
+      : undefined;
 
   const coerceInsideDateTimeBounds = (nextDate: string, nextTime: string) => {
     if (!isValidLocalDate(nextDate) || !isValidLocalTime(nextTime)) return "";
     const next = `${nextDate}T${nextTime}`;
 
-    if (isValidLocalDateTime(normalizedMinDateTime) && next < normalizedMinDateTime) return normalizedMinDateTime;
-    if (isValidLocalDateTime(normalizedMaxDateTime) && next > normalizedMaxDateTime) return normalizedMaxDateTime;
+    if (
+      isValidLocalDateTime(normalizedMinDateTime) &&
+      next < normalizedMinDateTime
+    )
+      return normalizedMinDateTime;
+    if (
+      isValidLocalDateTime(normalizedMaxDateTime) &&
+      next > normalizedMaxDateTime
+    )
+      return normalizedMaxDateTime;
     return next;
   };
 
@@ -88,11 +115,21 @@ export function OryaDateTimeField({
 
     let nextTime = resolvedTime || "00:00";
 
-    if (minDate && nextDate === minDate && isValidLocalTime(minParts.time) && compareLocalTime(nextTime, minParts.time) < 0) {
+    if (
+      minDate &&
+      nextDate === minDate &&
+      isValidLocalTime(minParts.time) &&
+      compareLocalTime(nextTime, minParts.time) < 0
+    ) {
       nextTime = minParts.time;
     }
 
-    if (maxDate && nextDate === maxDate && isValidLocalTime(maxParts.time) && compareLocalTime(nextTime, maxParts.time) > 0) {
+    if (
+      maxDate &&
+      nextDate === maxDate &&
+      isValidLocalTime(maxParts.time) &&
+      compareLocalTime(nextTime, maxParts.time) > 0
+    ) {
       nextTime = maxParts.time;
     }
 
@@ -122,17 +159,25 @@ export function OryaDateTimeField({
   };
 
   const disabledTime =
-    !!maxDate && !!minDate && compareLocalDate(maxDate, minDate) === 0 && !!minTimeForDate && !!maxTimeForDate && minTimeForDate === maxTimeForDate;
+    !!maxDate &&
+    !!minDate &&
+    compareLocalDate(maxDate, minDate) === 0 &&
+    !!minTimeForDate &&
+    !!maxTimeForDate &&
+    minTimeForDate === maxTimeForDate;
 
   return (
-    <div className={cn("flex items-center gap-2", className)}>
+    <div className={cn("flex flex-wrap items-center gap-2", className)}>
       <OryaDateField
         value={resolvedDate}
         onChange={handleDateChange}
         minDate={minDate}
         maxDate={maxDate}
         placeholder={datePlaceholder}
-        buttonClassName={cn(ORYA_DATETIME_DATE_BUTTON_SSOT_CLASS, dateButtonClassName)}
+        buttonClassName={cn(
+          ORYA_DATETIME_DATE_BUTTON_SSOT_CLASS,
+          dateButtonClassName,
+        )}
         disabled={disabled}
         onOpenChange={onOpenChange}
       />
@@ -143,7 +188,10 @@ export function OryaDateTimeField({
         minTime={minTimeForDate}
         maxTime={maxTimeForDate}
         placeholder={timePlaceholder}
-        buttonClassName={cn(ORYA_DATETIME_TIME_BUTTON_SSOT_CLASS, timeButtonClassName)}
+        buttonClassName={cn(
+          ORYA_DATETIME_TIME_BUTTON_SSOT_CLASS,
+          timeButtonClassName,
+        )}
         disabled={disabled || disabledTime}
         onOpenChange={onOpenChange}
       />

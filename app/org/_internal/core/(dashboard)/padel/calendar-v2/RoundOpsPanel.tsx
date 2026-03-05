@@ -1,12 +1,5 @@
-type RoundOpsOption = {
-  key: string;
-  label: string;
-};
-
 export function RoundOpsPanel(props: {
-  categoryKey: string;
-  categoryOptions: RoundOpsOption[];
-  onCategoryChange: (next: string) => void;
+  categoryLabel: string;
   formatLabel: string;
   roundLabel: string;
   note?: string | null;
@@ -24,29 +17,31 @@ export function RoundOpsPanel(props: {
   return (
     <div className="rounded-2xl border border-white/12 bg-white/5 p-3 text-white">
       <p className="text-sm font-semibold">Operação por rondas</p>
-      <p className="mt-1 text-xs text-white/70">Avanço incremental com validação de runtime.</p>
+      <p className="mt-1 text-xs text-white/70">
+        Avanço incremental com validação de runtime.
+      </p>
 
       <div className="mt-2 grid gap-2">
-        <select
-          value={props.categoryKey}
-          onChange={(event) => props.onCategoryChange(event.target.value)}
-          className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
-          disabled={disabled}
-        >
-          {props.categoryOptions.map((option) => (
-            <option key={`v2-round-ops-${option.key}`} value={option.key}>
-              {option.label}
-            </option>
-          ))}
-        </select>
         <div className="rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-[11px] text-white/75">
           <p>
-            Formato: <span className="font-semibold text-white">{props.formatLabel}</span>
+            Categoria:{" "}
+            <span className="font-semibold text-white">
+              {props.categoryLabel}
+            </span>
+          </p>
+          <p>
+            Formato:{" "}
+            <span className="font-semibold text-white">
+              {props.formatLabel}
+            </span>
           </p>
           <p className="mt-1">
-            Ronda atual: <span className="font-semibold text-white">{props.roundLabel}</span>
+            Ronda atual:{" "}
+            <span className="font-semibold text-white">{props.roundLabel}</span>
           </p>
-          {props.note ? <p className="mt-1 text-white/65">{props.note}</p> : null}
+          {props.note ? (
+            <p className="mt-1 text-white/65">{props.note}</p>
+          ) : null}
         </div>
       </div>
 

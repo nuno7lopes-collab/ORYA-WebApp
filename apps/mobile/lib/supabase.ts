@@ -13,6 +13,18 @@ type AuthStorageAdapter = {
 const shared = getMobileEnv();
 const supabaseUrl = shared.supabaseUrl;
 const supabaseAnonKey = shared.supabaseAnonKey;
+const resolveProjectRef = (url: string | undefined) => {
+  try {
+    const hostname = new URL(url ?? "").hostname;
+    const projectRef = hostname.split(".")[0]?.trim();
+    return projectRef || "local";
+  } catch {
+    return "local";
+  }
+};
+const SUPABASE_PROJECT_REF = resolveProjectRef(supabaseUrl ?? "");
+export const SUPABASE_AUTH_STORAGE_KEY = `sb-${SUPABASE_PROJECT_REF}-auth-token`;
+const SUPABASE_CODE_VERIFIER_STORAGE_KEY = `${SUPABASE_AUTH_STORAGE_KEY}-code-verifier`;
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.warn(
@@ -91,9 +103,15 @@ const secureStorage: AuthStorageAdapter = {
   },
 };
 
+export const clearSupabaseAuthStorage = async () => {
+  const keys = [SUPABASE_AUTH_STORAGE_KEY, SUPABASE_CODE_VERIFIER_STORAGE_KEY];
+  await Promise.all(keys.map((key) => secureStorage.removeItem(key).catch(() => undefined)));
+};
+
 export const supabase = createClient(supabaseUrl ?? "", supabaseAnonKey ?? "", {
   auth: {
     storage: secureStorage,
+    storageKey: SUPABASE_AUTH_STORAGE_KEY,
     persistSession: true,
     // Refresh manual para evitar corridas de token no cliente mobile.
     autoRefreshToken: false,

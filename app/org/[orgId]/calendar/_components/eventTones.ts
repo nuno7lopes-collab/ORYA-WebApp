@@ -24,18 +24,18 @@ export function resolveAggregateToneBucket(
 }
 export function resolveBucketToneClass(bucket: ToneBucket) {
   if (bucket === "confirmed") {
-    return "border-sky-300/60 bg-white/[0.04]";
+    return "border-sky-300/70 bg-sky-400/20";
   }
   if (bucket === "pending") {
-    return "border-amber-200/60 bg-white/[0.04]";
+    return "border-amber-300/75 bg-amber-400/22";
   }
   if (bucket === "disputed") {
-    return "border-fuchsia-200/60 bg-white/[0.04]";
+    return "border-fuchsia-300/75 bg-fuchsia-400/20";
   }
   if (bucket === "cancelled") {
-    return "border-rose-300/60 bg-white/[0.04]";
+    return "border-rose-300/70 bg-rose-500/20";
   }
-  return "border-white/25 bg-white/[0.04]";
+  return "border-white/35 bg-slate-400/18";
 }
 export function resolveEventToneClass(params: {
   status: string;
@@ -46,13 +46,13 @@ export function resolveEventToneClass(params: {
     return resolveBucketToneClass(bucket);
   }
   if (params.kind === "TOURNAMENT") {
-    return "border-cyan-200/55 bg-white/[0.04]";
+    return "border-cyan-300/70 bg-cyan-400/20";
   }
   if (params.kind === "EVENT") {
-    return "border-indigo-200/55 bg-white/[0.04]";
+    return "border-indigo-300/70 bg-indigo-400/20";
   }
   if (params.kind === "CLASS") {
-    return "border-sky-200/55 bg-white/[0.04]";
+    return "border-violet-300/70 bg-violet-400/20";
   }
   return resolveBucketToneClass("confirmed");
 }

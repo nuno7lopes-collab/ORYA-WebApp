@@ -68,7 +68,7 @@ describe("calendar ux guardrails", () => {
     expect(sharedDateField).toContain('event.key === "Escape"');
   });
 
-  it("mantem o toggle de disponibilidade fora da agenda e no modulo de disponibilidade", () => {
+  it("mantem controlos de disponibilidade fora da agenda e simplifica a pagina de escopo", () => {
     const weekClient = readLocal("app/org/[orgId]/calendar/_components/WeekCalendarReadClient.tsx");
     const commandBar = readLocal("app/org/[orgId]/calendar/_components/CalendarCommandBar.tsx");
     const availabilityPage = readLocal("app/org/[orgId]/calendar/availability/page.tsx");
@@ -76,8 +76,9 @@ describe("calendar ux guardrails", () => {
     expect(weekClient).not.toContain("Disponibilidade ON");
     expect(weekClient).not.toContain("Disponibilidade OFF");
     expect(commandBar).not.toContain("overlayControl");
-    expect(availabilityPage).toContain("Disponibilidade ON");
-    expect(availabilityPage).toContain("Disponibilidade OFF");
+    expect(availabilityPage).toContain("Desligar reservas");
+    expect(availabilityPage).not.toContain("Disponibilidade ON");
+    expect(availabilityPage).not.toContain("Disponibilidade OFF");
   });
 
   it("usa calendário single-page com switch de vista e redirect canónico de /calendar/day", () => {

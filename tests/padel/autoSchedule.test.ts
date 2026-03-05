@@ -29,7 +29,11 @@ describe("padel auto-schedule", () => {
       courts: [{ id: 1 }, { id: 2 }],
       availabilities: [],
       courtBlocks: [
-        { courtId: 1, startAt: new Date("2025-01-01T10:00:00Z"), endAt: new Date("2025-01-01T12:00:00Z") },
+        {
+          courtId: 1,
+          startAt: new Date("2025-01-01T10:00:00Z"),
+          endAt: new Date("2025-01-01T12:00:00Z"),
+        },
       ],
       config: {
         windowStart,
@@ -69,7 +73,12 @@ describe("padel auto-schedule", () => {
       scheduledMatches: [],
       courts: [{ id: 1 }],
       availabilities: [
-        { playerProfileId: 401, playerEmail: null, startAt: new Date("2025-01-01T10:00:00Z"), endAt: new Date("2025-01-01T12:30:00Z") },
+        {
+          playerProfileId: 401,
+          playerEmail: null,
+          startAt: new Date("2025-01-01T10:00:00Z"),
+          endAt: new Date("2025-01-01T12:30:00Z"),
+        },
       ],
       courtBlocks: [],
       config: {
@@ -84,7 +93,9 @@ describe("padel auto-schedule", () => {
     });
 
     expect(result.scheduled.length).toBe(1);
-    expect(result.scheduled[0].start.toISOString()).toBe("2025-01-01T12:30:00.000Z");
+    expect(result.scheduled[0].start.toISOString()).toBe(
+      "2025-01-01T12:30:00.000Z",
+    );
   });
 
   it("respeita múltiplas janelas sem atravessar períodos fechados", () => {
@@ -115,8 +126,14 @@ describe("padel auto-schedule", () => {
         windowStart: new Date("2025-01-01T09:00:00Z"),
         windowEnd: new Date("2025-01-01T17:00:00Z"),
         timeWindows: [
-          { start: new Date("2025-01-01T09:00:00Z"), end: new Date("2025-01-01T11:00:00Z") },
-          { start: new Date("2025-01-01T13:00:00Z"), end: new Date("2025-01-01T15:00:00Z") },
+          {
+            start: new Date("2025-01-01T09:00:00Z"),
+            end: new Date("2025-01-01T11:00:00Z"),
+          },
+          {
+            start: new Date("2025-01-01T13:00:00Z"),
+            end: new Date("2025-01-01T15:00:00Z"),
+          },
         ],
         durationMinutes: 90,
         slotMinutes: 30,
@@ -127,8 +144,12 @@ describe("padel auto-schedule", () => {
     });
 
     expect(result.scheduled.length).toBe(2);
-    expect(result.scheduled[0].start.toISOString()).toBe("2025-01-01T09:00:00.000Z");
-    expect(result.scheduled[1].start.toISOString()).toBe("2025-01-01T13:00:00.000Z");
+    expect(result.scheduled[0].start.toISOString()).toBe(
+      "2025-01-01T09:00:00.000Z",
+    );
+    expect(result.scheduled[1].start.toISOString()).toBe(
+      "2025-01-01T13:00:00.000Z",
+    );
   });
 
   it("prefere campo menos carregado quando o melhor horário empata", () => {
@@ -171,7 +192,120 @@ describe("padel auto-schedule", () => {
 
     expect(result.scheduled).toHaveLength(1);
     expect(result.scheduled[0]?.courtId).toBe(2);
-    expect(result.scheduled[0]?.start.toISOString()).toBe("2025-01-01T10:00:00.000Z");
+    expect(result.scheduled[0]?.start.toISOString()).toBe(
+      "2025-01-01T10:00:00.000Z",
+    );
+  });
+
+  it("usa fallback de campo quando o campo preferido não tem janela", () => {
+    const result = computeAutoSchedulePlan({
+      unscheduledMatches: [
+        {
+          id: 40,
+          sideAProfileIds: [2101],
+          sideBProfileIds: [2102],
+          plannedDurationMinutes: null,
+          courtId: 1,
+          roundType: "GROUPS",
+        },
+      ],
+      scheduledMatches: [],
+      courts: [{ id: 1 }, { id: 2 }],
+      availabilities: [],
+      courtBlocks: [
+        {
+          courtId: 1,
+          startAt: new Date("2025-01-01T09:00:00Z"),
+          endAt: new Date("2025-01-01T12:00:00Z"),
+        },
+      ],
+      config: {
+        windowStart: new Date("2025-01-01T09:00:00Z"),
+        windowEnd: new Date("2025-01-01T12:00:00Z"),
+        durationMinutes: 60,
+        slotMinutes: 30,
+        bufferMinutes: 0,
+        minRestMinutes: 0,
+        priority: "GROUPS_FIRST",
+      },
+    });
+
+    expect(result.scheduled).toHaveLength(1);
+    expect(result.scheduled[0]?.courtId).toBe(2);
+    expect(result.skipped).toHaveLength(0);
+  });
+
+  it("mantém o campo preferido quando existe janela válida", () => {
+    const result = computeAutoSchedulePlan({
+      unscheduledMatches: [
+        {
+          id: 401,
+          sideAProfileIds: [2201],
+          sideBProfileIds: [2202],
+          plannedDurationMinutes: null,
+          courtId: 1,
+          roundType: "GROUPS",
+        },
+      ],
+      scheduledMatches: [],
+      courts: [{ id: 1 }, { id: 2 }],
+      availabilities: [],
+      courtBlocks: [
+        {
+          courtId: 1,
+          startAt: new Date("2025-01-01T09:00:00Z"),
+          endAt: new Date("2025-01-01T10:00:00Z"),
+        },
+      ],
+      config: {
+        windowStart: new Date("2025-01-01T09:00:00Z"),
+        windowEnd: new Date("2025-01-01T12:00:00Z"),
+        durationMinutes: 60,
+        slotMinutes: 30,
+        bufferMinutes: 0,
+        minRestMinutes: 0,
+        priority: "GROUPS_FIRST",
+      },
+    });
+
+    expect(result.scheduled).toHaveLength(1);
+    expect(result.scheduled[0]?.courtId).toBe(1);
+    expect(result.scheduled[0]?.start.toISOString()).toBe(
+      "2025-01-01T10:00:00.000Z",
+    );
+  });
+
+  it("aceita participantes identificados apenas por email", () => {
+    const result = computeAutoSchedulePlan({
+      unscheduledMatches: [
+        {
+          id: 402,
+          sideAProfileIds: [],
+          sideBProfileIds: [],
+          sideAEmails: ["a@example.com"],
+          sideBEmails: ["b@example.com"],
+          plannedDurationMinutes: null,
+          courtId: null,
+          roundType: "GROUPS",
+        },
+      ],
+      scheduledMatches: [],
+      courts: [{ id: 1 }],
+      availabilities: [],
+      courtBlocks: [],
+      config: {
+        windowStart: new Date("2025-01-01T09:00:00Z"),
+        windowEnd: new Date("2025-01-01T11:00:00Z"),
+        durationMinutes: 60,
+        slotMinutes: 30,
+        bufferMinutes: 0,
+        minRestMinutes: 0,
+        priority: "GROUPS_FIRST",
+      },
+    });
+
+    expect(result.scheduled).toHaveLength(1);
+    expect(result.skipped).toHaveLength(0);
   });
 
   it("devolve motivo detalhado quando jogadores não têm janela", () => {
@@ -189,7 +323,12 @@ describe("padel auto-schedule", () => {
       scheduledMatches: [],
       courts: [{ id: 1 }],
       availabilities: [
-        { playerProfileId: 3001, playerEmail: null, startAt: new Date("2025-01-01T10:00:00Z"), endAt: new Date("2025-01-01T14:00:00Z") },
+        {
+          playerProfileId: 3001,
+          playerEmail: null,
+          startAt: new Date("2025-01-01T10:00:00Z"),
+          endAt: new Date("2025-01-01T14:00:00Z"),
+        },
       ],
       courtBlocks: [],
       config: {

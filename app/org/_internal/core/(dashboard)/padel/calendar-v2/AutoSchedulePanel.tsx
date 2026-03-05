@@ -3,12 +3,11 @@ export function AutoSchedulePanel(props: {
   onGenerate?: () => void;
   onSimulate: () => void;
   onApply: () => void;
-  onReplan?: () => void;
   onUndo?: () => void;
 }) {
   return (
     <div className="rounded-2xl border border-white/12 bg-white/5 p-3 text-white">
-      <p className="text-sm font-semibold">Ações rápidas</p>
+      <p className="text-sm font-semibold">Agendamento</p>
       <div className="mt-2 grid gap-2">
         {props.onGenerate ? (
           <button
@@ -26,7 +25,7 @@ export function AutoSchedulePanel(props: {
           disabled={props.busy}
           className="rounded-full border border-white/20 px-3 py-2 text-sm text-white hover:border-white/35 disabled:opacity-50"
         >
-          Simular agendamento
+          Simular
         </button>
         <button
           type="button"
@@ -34,18 +33,8 @@ export function AutoSchedulePanel(props: {
           disabled={props.busy}
           className="rounded-full bg-white px-3 py-2 text-sm font-semibold text-black disabled:opacity-50"
         >
-          Aplicar agendamento
+          Aplicar
         </button>
-        {props.onReplan ? (
-          <button
-            type="button"
-            onClick={props.onReplan}
-            disabled={props.busy}
-            className="rounded-full border border-white/20 px-3 py-2 text-sm text-white hover:border-white/35 disabled:opacity-50"
-          >
-            Reagendar pendentes
-          </button>
-        ) : null}
         {props.onUndo ? (
           <button
             type="button"

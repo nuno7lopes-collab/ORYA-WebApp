@@ -1,5 +1,5 @@
 import type { Session } from "@supabase/supabase-js";
-import { supabase } from "./supabase";
+import { clearSupabaseAuthStorage, supabase } from "./supabase";
 
 type GetActiveSessionOptions = {
   minTtlMs?: number;
@@ -33,17 +33,29 @@ export const isInvalidRefreshTokenError = (error: unknown) => {
   );
 };
 
+let sessionMarkedInvalid = false;
+
+export const markSessionHealthy = () => {
+  sessionMarkedInvalid = false;
+};
+
 let clearSessionInFlight: Promise<void> | null = null;
 const clearLocalSession = async () => {
   if (clearSessionInFlight) return clearSessionInFlight;
-  clearSessionInFlight = supabase.auth
-    .signOut({ scope: "local" })
-    .catch(() => undefined)
-    .then(() => undefined)
-    .finally(() => {
-      clearSessionInFlight = null;
-    });
+  clearSessionInFlight = (async () => {
+    await Promise.resolve(supabase.auth.signOut({ scope: "local" })).catch(
+      () => undefined,
+    );
+    await clearSupabaseAuthStorage().catch(() => undefined);
+  })().finally(() => {
+    clearSessionInFlight = null;
+  });
   return clearSessionInFlight;
+};
+
+const invalidateLocalSession = async () => {
+  sessionMarkedInvalid = true;
+  await clearLocalSession();
 };
 
 export const clearLocalSessionSafely = async () => {
@@ -55,8 +67,18 @@ const hasRefreshToken = (session: Session | null | undefined) => {
   return typeof refreshToken === "string" && refreshToken.trim().length > 0;
 };
 
+let refreshInFlight: Promise<Session | null> | null = null;
 let getSessionInFlight: Promise<Session | null> | null = null;
 const readSession = async (): Promise<Session | null> => {
+  if (sessionMarkedInvalid) return null;
+  if (refreshInFlight) {
+    const refreshed = await refreshInFlight.catch(() => null);
+    if (refreshed) {
+      sessionMarkedInvalid = false;
+      return refreshed;
+    }
+    if (sessionMarkedInvalid) return null;
+  }
   if (getSessionInFlight) return getSessionInFlight;
 
   getSessionInFlight = (async () => {
@@ -64,14 +86,18 @@ const readSession = async (): Promise<Session | null> => {
       const { data, error } = await supabase.auth.getSession();
       if (error) {
         if (isInvalidRefreshTokenError(error)) {
-          await clearLocalSession();
+          await invalidateLocalSession();
         }
         return null;
       }
-      return data.session ?? null;
+      const session = data.session ?? null;
+      if (session) {
+        sessionMarkedInvalid = false;
+      }
+      return session;
     } catch (error) {
       if (isInvalidRefreshTokenError(error)) {
-        await clearLocalSession();
+        await invalidateLocalSession();
       }
       return null;
     }
@@ -82,15 +108,15 @@ const readSession = async (): Promise<Session | null> => {
   return getSessionInFlight;
 };
 
-let refreshInFlight: Promise<Session | null> | null = null;
-
 export const refreshSessionIfPossible = async (
   currentSession?: Session | null,
 ): Promise<Session | null> => {
+  if (sessionMarkedInvalid) return null;
   if (refreshInFlight) return refreshInFlight;
 
   refreshInFlight = (async () => {
     try {
+      if (sessionMarkedInvalid) return null;
       let sessionCandidate = currentSession;
 
       if (sessionCandidate === undefined) {
@@ -104,14 +130,18 @@ export const refreshSessionIfPossible = async (
       const { data, error } = await supabase.auth.refreshSession();
       if (error) {
         if (isInvalidRefreshTokenError(error)) {
-          await clearLocalSession();
+          await invalidateLocalSession();
         }
         return null;
       }
-      return data.session ?? null;
+      const session = data.session ?? null;
+      if (session) {
+        sessionMarkedInvalid = false;
+      }
+      return session;
     } catch (error) {
       if (isInvalidRefreshTokenError(error)) {
-        await clearLocalSession();
+        await invalidateLocalSession();
       }
       return null;
     }
@@ -150,7 +180,7 @@ export const getActiveSession = async (
     return session;
   } catch (error) {
     if (isInvalidRefreshTokenError(error)) {
-      await clearLocalSession();
+      await invalidateLocalSession();
     }
     return null;
   }

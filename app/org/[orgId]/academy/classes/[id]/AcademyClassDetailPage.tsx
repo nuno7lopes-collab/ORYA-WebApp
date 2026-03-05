@@ -26,6 +26,7 @@ const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 const DURATION_OPTIONS = [30, 60, 90, 120];
 const DAY_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+type SeriesDraftMode = "RECURRING" | "SINGLE";
 
 type Service = {
   id: number;
@@ -78,13 +79,6 @@ type ResourceItem = {
   clubName?: string | null;
 };
 
-type CourtItem = {
-  id: number;
-  name: string | null;
-  isActive: boolean;
-  padelClubId?: number;
-};
-
 type ClassSeriesItem = {
   id: number;
   dayOfWeek: number;
@@ -130,6 +124,45 @@ function resolveResourceLinkId(resource: ResourceItem): number | null {
   return null;
 }
 
+function parseDateInput(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [yearRaw, monthRaw, dayRaw] = value.split("-");
+  const year = Number(yearRaw);
+  const month = Number(monthRaw);
+  const day = Number(dayRaw);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+  const parsed = new Date(year, month - 1, day, 0, 0, 0, 0);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+function resolveScheduleScopeLabel(scopeTypeRaw: unknown) {
+  const scopeType = typeof scopeTypeRaw === "string" ? scopeTypeRaw.toUpperCase() : "";
+  if (scopeType === "PROFESSIONAL") return "treinador";
+  if (scopeType === "RESOURCE") return "campo";
+  return "agenda geral";
+}
+
+function mapSeriesApiErrorToMessage(parsedError: {
+  errorCode: string | null;
+  message: string;
+  details: Record<string, unknown> | null;
+}) {
+  if (parsedError.errorCode === "CLASS_SLOT_UNAVAILABLE") {
+    const date = typeof parsedError.details?.date === "string" ? parsedError.details.date : null;
+    const start = typeof parsedError.details?.start === "string" ? parsedError.details.start : null;
+    const end = typeof parsedError.details?.end === "string" ? parsedError.details.end : null;
+    const scopeLabel = resolveScheduleScopeLabel(parsedError.details?.scopeType);
+
+    if (date && start && end) {
+      return `Sem disponibilidade de ${scopeLabel} para ${date} entre ${start} e ${end}.`;
+    }
+    return `O horário escolhido está fora da disponibilidade de ${scopeLabel}.`;
+  }
+
+  return parsedError.message;
+}
+
 
 export default function AcademyClassDetailPage() {
   const params = useParams();
@@ -155,7 +188,6 @@ export default function AcademyClassDetailPage() {
   const classSessionsKey = serviceId
     ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/academy/classes/${serviceId}/sessions`)
     : null;
-  const clubsKey = "/api/padel/clubs?includeInactive=1";
 
   const { data: serviceData, mutate: mutateService } = useSWR<{ ok: boolean; service: Service }>(
     serviceKey,
@@ -181,15 +213,10 @@ export default function AcademyClassDetailPage() {
     classSessionsKey,
     fetcher,
   );
-  const { data: clubsData } = useSWR<{ ok: boolean; items: { id: number; name: string; isActive: boolean }[] }>(
-    clubsKey,
-    fetcher,
-  );
 
   const service = serviceData?.service ?? null;
   const classSeries = classSeriesData?.items ?? [];
   const classSessions = classSessionsData?.items ?? [];
-  const clubs = clubsData?.items ?? [];
   const policies = policiesData?.items ?? [];
   const professionals = professionalsData?.items ?? [];
   const resources = resourcesData?.items ?? [];
@@ -213,23 +240,27 @@ export default function AcademyClassDetailPage() {
     (resource): resource is (typeof resourceOptions)[number] & { linkId: number } =>
       resource.isActive && resource.linkId != null,
   );
+  const seriesCourtOptions = useMemo(
+    () =>
+      resourceOptions
+        .filter((resource): resource is (typeof resourceOptions)[number] & { courtId: number } =>
+          resource.isCourt && resource.courtId != null,
+        )
+        .map((resource) => ({
+          id: resource.courtId,
+          label: resource.scopeLabel,
+          isActive: resource.isActive,
+        })),
+    [resourceOptions],
+  );
   const hasUnlinkedCourtOptions = resourceOptions.some((resource) => resource.isCourt && resource.linkId == null);
-  const [selectedClubId, setSelectedClubId] = useState<number | null>(null);
-  const courtsKey = selectedClubId ? `/api/padel/clubs/${selectedClubId}/courts` : null;
-  const { data: courtsData } = useSWR<{ ok: boolean; items: CourtItem[] }>(courtsKey, fetcher);
-  const courts = courtsData?.items ?? [];
   const entityLabel = "aula";
   const entityLabelTitle = "Aula";
   const teamHeading = "Treinadores e campos";
   const professionalLabelPlural = "Treinadores";
   const professionalLabelSingular = "Treinador";
   const resourceLabelPlural = "Campos";
-
-  useEffect(() => {
-    if (selectedClubId || clubs.length === 0) return;
-    const preferred = clubs.find((club) => club.isActive) ?? clubs[0];
-    if (preferred) setSelectedClubId(preferred.id);
-  }, [clubs, selectedClubId]);
+  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
   const [formTitle, setFormTitle] = useState("");
   const [formDescription, setFormDescription] = useState("");
@@ -255,12 +286,14 @@ export default function AcademyClassDetailPage() {
 
 
   const [seriesEditingId, setSeriesEditingId] = useState<number | null>(null);
+  const [seriesDraftMode, setSeriesDraftMode] = useState<SeriesDraftMode>("RECURRING");
   const [seriesDay, setSeriesDay] = useState("1");
   const [seriesStartTime, setSeriesStartTime] = useState("18:00");
   const [seriesDuration, setSeriesDuration] = useState("60");
   const [seriesCapacity, setSeriesCapacity] = useState("4");
   const [seriesValidFrom, setSeriesValidFrom] = useState("");
   const [seriesValidUntil, setSeriesValidUntil] = useState("");
+  const [seriesSingleDate, setSeriesSingleDate] = useState("");
   const [seriesProfessionalId, setSeriesProfessionalId] = useState("");
   const [seriesCourtId, setSeriesCourtId] = useState("");
   const [seriesActive, setSeriesActive] = useState(true);
@@ -286,9 +319,9 @@ export default function AcademyClassDetailPage() {
   }, [service]);
 
   useEffect(() => {
-    if (seriesValidFrom) return;
-    setSeriesValidFrom(new Date().toISOString().slice(0, 10));
-  }, [seriesValidFrom]);
+    if (!seriesValidFrom) setSeriesValidFrom(todayIso);
+    if (!seriesSingleDate) setSeriesSingleDate(todayIso);
+  }, [seriesSingleDate, seriesValidFrom, todayIso]);
 
 
   const toggleService = async () => {
@@ -447,12 +480,14 @@ export default function AcademyClassDetailPage() {
 
   const resetSeriesForm = () => {
     setSeriesEditingId(null);
+    setSeriesDraftMode("RECURRING");
     setSeriesDay("1");
     setSeriesStartTime("18:00");
     setSeriesDuration("60");
     setSeriesCapacity("4");
-    setSeriesValidFrom(new Date().toISOString().slice(0, 10));
+    setSeriesValidFrom(todayIso);
     setSeriesValidUntil("");
+    setSeriesSingleDate(todayIso);
     setSeriesProfessionalId("");
     setSeriesCourtId("");
     setSeriesActive(true);
@@ -463,13 +498,19 @@ export default function AcademyClassDetailPage() {
     const hour = Math.floor(series.startMinute / 60);
     const minute = series.startMinute % 60;
     const pad = (value: number) => String(value).padStart(2, "0");
+    const validFromDate = series.validFrom?.slice(0, 10) ?? todayIso;
+    const validUntilDate = series.validUntil ? series.validUntil.slice(0, 10) : "";
+    const isSingleSession = Boolean(validUntilDate && validUntilDate === validFromDate);
+    const singleDateDay = parseDateInput(validFromDate)?.getDay();
     setSeriesEditingId(series.id);
-    setSeriesDay(String(series.dayOfWeek));
+    setSeriesDraftMode(isSingleSession ? "SINGLE" : "RECURRING");
+    setSeriesDay(String(isSingleSession && Number.isFinite(singleDateDay) ? singleDateDay : series.dayOfWeek));
     setSeriesStartTime(`${pad(hour)}:${pad(minute)}`);
     setSeriesDuration(String(series.durationMinutes));
     setSeriesCapacity(String(series.capacity));
-    setSeriesValidFrom(series.validFrom?.slice(0, 10) ?? new Date().toISOString().slice(0, 10));
-    setSeriesValidUntil(series.validUntil ? series.validUntil.slice(0, 10) : "");
+    setSeriesValidFrom(validFromDate);
+    setSeriesValidUntil(isSingleSession ? "" : validUntilDate);
+    setSeriesSingleDate(validFromDate);
     setSeriesProfessionalId(series.professional?.id ? String(series.professional.id) : "");
     setSeriesCourtId(series.court?.id ? String(series.court.id) : "");
     setSeriesActive(series.isActive);
@@ -485,20 +526,78 @@ export default function AcademyClassDetailPage() {
       setSeriesError("Hora inválida.");
       return;
     }
-    if (!seriesValidFrom) {
-      setSeriesError("Seleciona a data inicial.");
+    const startMinute = hour * 60 + minute;
+    const durationValue = Number(seriesDuration);
+    const capacityValue = Number(seriesCapacity);
+    if (!Number.isFinite(durationValue) || durationValue <= 0) {
+      setSeriesError("Duração inválida.");
       return;
     }
-    const startMinute = hour * 60 + minute;
+    if (!Number.isFinite(capacityValue) || capacityValue <= 0) {
+      setSeriesError("Capacidade inválida.");
+      return;
+    }
+
+    let dayOfWeekValue: number | null = null;
+    let validFromValue: string | null = null;
+    let validUntilValue: string | null = null;
+
+    if (seriesDraftMode === "SINGLE") {
+      if (!seriesSingleDate) {
+        setSeriesError("Seleciona a data da sessão única.");
+        return;
+      }
+      const singleDate = parseDateInput(seriesSingleDate);
+      if (!singleDate) {
+        setSeriesError("Data da sessão única inválida.");
+        return;
+      }
+      dayOfWeekValue = singleDate.getDay();
+      validFromValue = seriesSingleDate;
+      validUntilValue = seriesSingleDate;
+    } else {
+      if (!seriesValidFrom) {
+        setSeriesError("Seleciona a data inicial.");
+        return;
+      }
+      const dayOfWeek = Number(seriesDay);
+      if (!Number.isFinite(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6) {
+        setSeriesError("Seleciona o dia da semana.");
+        return;
+      }
+      if (seriesValidUntil && seriesValidUntil < seriesValidFrom) {
+        setSeriesError("A data final não pode ser anterior à inicial.");
+        return;
+      }
+      dayOfWeekValue = dayOfWeek;
+      validFromValue = seriesValidFrom;
+      validUntilValue = seriesValidUntil || null;
+    }
+
+    const professionalValue = seriesProfessionalId ? Number(seriesProfessionalId) : null;
+    if (professionalValue != null && (!Number.isFinite(professionalValue) || professionalValue <= 0)) {
+      setSeriesError("Treinador inválido.");
+      return;
+    }
+    const courtValue = seriesCourtId ? Number(seriesCourtId) : null;
+    if (courtValue != null && (!Number.isFinite(courtValue) || courtValue <= 0)) {
+      setSeriesError("Campo inválido.");
+      return;
+    }
+    if (dayOfWeekValue == null || !validFromValue) {
+      setSeriesError("Dados de agenda inválidos.");
+      return;
+    }
+
     const payload = {
-      dayOfWeek: Number(seriesDay),
+      dayOfWeek: dayOfWeekValue,
       startMinute,
-      durationMinutes: Number(seriesDuration),
-      capacity: Number(seriesCapacity),
-      validFrom: seriesValidFrom,
-      validUntil: seriesValidUntil || null,
-      professionalId: seriesProfessionalId ? Number(seriesProfessionalId) : null,
-      courtId: seriesCourtId ? Number(seriesCourtId) : null,
+      durationMinutes: durationValue,
+      capacity: Math.floor(capacityValue),
+      validFrom: validFromValue,
+      validUntil: validUntilValue,
+      professionalId: professionalValue,
+      courtId: courtValue,
       isActive: seriesActive,
     };
 
@@ -515,7 +614,9 @@ export default function AcademyClassDetailPage() {
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        throw new Error(json?.message || json?.error || "Erro ao guardar série.");
+        const parsedError = parseApiError(json, "Erro ao guardar série.");
+        setSeriesError(mapSeriesApiErrorToMessage(parsedError));
+        return;
       }
       mutateClassSeries();
       mutateClassSessions();
@@ -540,7 +641,9 @@ export default function AcademyClassDetailPage() {
       );
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        throw new Error(json?.message || json?.error || "Erro ao atualizar série.");
+        const parsedError = parseApiError(json, "Erro ao atualizar série.");
+        setSeriesError(mapSeriesApiErrorToMessage(parsedError));
+        return;
       }
       mutateClassSeries();
       mutateClassSessions();
@@ -885,8 +988,8 @@ export default function AcademyClassDetailPage() {
         <section className={cn(DASHBOARD_CARD, "p-5 space-y-4")}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-base font-semibold text-white">Aulas recorrentes</h2>
-              <p className={DASHBOARD_MUTED}>Cria séries e gere sessões automaticamente.</p>
+              <h2 className="text-base font-semibold text-white">Agenda de aulas</h2>
+              <p className={DASHBOARD_MUTED}>Cria séries recorrentes e sessões únicas no mesmo fluxo.</p>
             </div>
             {seriesEditingId && (
               <button type="button" className={CTA_SECONDARY} onClick={resetSeriesForm}>
@@ -895,21 +998,36 @@ export default function AcademyClassDetailPage() {
             )}
           </div>
 
+          <div className="grid gap-2 md:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => setSeriesDraftMode("RECURRING")}
+              className={cn(
+                "rounded-xl border px-3 py-2 text-left transition",
+                seriesDraftMode === "RECURRING"
+                  ? "border-cyan-300/60 bg-cyan-300/10 text-white"
+                  : "border-white/12 bg-white/[0.04] text-white/70 hover:border-white/35",
+              )}
+            >
+              <p className="text-sm font-semibold">Série recorrente</p>
+              <p className="text-[11px] text-white/55">Repete semanalmente entre datas.</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSeriesDraftMode("SINGLE")}
+              className={cn(
+                "rounded-xl border px-3 py-2 text-left transition",
+                seriesDraftMode === "SINGLE"
+                  ? "border-cyan-300/60 bg-cyan-300/10 text-white"
+                  : "border-white/12 bg-white/[0.04] text-white/70 hover:border-white/35",
+              )}
+            >
+              <p className="text-sm font-semibold">Sessão única</p>
+              <p className="text-[11px] text-white/55">Cria apenas uma aula numa data específica.</p>
+            </button>
+          </div>
+
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-            <label className="text-[12px] text-white/70">
-              Dia da semana
-              <select
-                className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-                value={seriesDay}
-                onChange={(e) => setSeriesDay(e.target.value)}
-              >
-                {DAY_LABELS.map((label, idx) => (
-                  <option key={label} value={idx}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
             <label className="text-[12px] text-white/70">
               Hora
               <OryaTimeField
@@ -944,28 +1062,6 @@ export default function AcademyClassDetailPage() {
                 onChange={(e) => setSeriesCapacity(e.target.value)}
               />
             </label>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-            <label className="text-[12px] text-white/70">
-              Válido desde
-              <OryaDateField
-                value={seriesValidFrom}
-                onChange={setSeriesValidFrom}
-                className="mt-1 w-full"
-                buttonClassName="h-10 rounded-xl"
-              />
-            </label>
-            <label className="text-[12px] text-white/70">
-              Válido até
-              <OryaDateField
-                value={seriesValidUntil}
-                onChange={setSeriesValidUntil}
-                minDate={seriesValidFrom || undefined}
-                className="mt-1 w-full"
-                buttonClassName="h-10 rounded-xl"
-              />
-            </label>
             <label className="text-[12px] text-white/70">
               {professionalLabelSingular}
               <select
@@ -981,49 +1077,81 @@ export default function AcademyClassDetailPage() {
                 ))}
               </select>
             </label>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+            {seriesDraftMode === "RECURRING" ? (
+              <>
+                <label className="text-[12px] text-white/70">
+                  Dia da semana
+                  <select
+                    className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                    value={seriesDay}
+                    onChange={(e) => setSeriesDay(e.target.value)}
+                  >
+                    {DAY_LABELS.map((label, idx) => (
+                      <option key={label} value={idx}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-[12px] text-white/70">
+                  Válido desde
+                  <OryaDateField
+                    value={seriesValidFrom}
+                    onChange={setSeriesValidFrom}
+                    className="mt-1 w-full"
+                    buttonClassName="h-10 rounded-xl"
+                  />
+                </label>
+                <label className="text-[12px] text-white/70">
+                  Válido até
+                  <OryaDateField
+                    value={seriesValidUntil}
+                    onChange={setSeriesValidUntil}
+                    minDate={seriesValidFrom || undefined}
+                    className="mt-1 w-full"
+                    buttonClassName="h-10 rounded-xl"
+                  />
+                </label>
+              </>
+            ) : (
+              <label className="text-[12px] text-white/70">
+                Data da sessão
+                <OryaDateField
+                  value={seriesSingleDate}
+                  onChange={setSeriesSingleDate}
+                  minDate={todayIso}
+                  className="mt-1 w-full"
+                  buttonClassName="h-10 rounded-xl"
+                />
+              </label>
+            )}
             <label className="text-[12px] text-white/70">
               Campo (opcional)
               <select
                 className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
                 value={seriesCourtId}
                 onChange={(e) => setSeriesCourtId(e.target.value)}
-                disabled={courts.length === 0}
+                disabled={seriesCourtOptions.length === 0}
               >
                 <option value="">Sem campo</option>
-                {courts.map((court) => (
+                {seriesCourtOptions.map((court) => (
                   <option key={court.id} value={court.id}>
-                    {court.name || `Campo ${court.id}`}{court.isActive ? "" : " (inativo)"}
+                    {court.label || `Campo ${court.id}`}{court.isActive ? "" : " (inativo)"}
                   </option>
                 ))}
               </select>
             </label>
           </div>
-
-          {clubs.length > 0 && (
-            <div className="grid gap-3 md:grid-cols-2">
-              <label className="text-[12px] text-white/70">
-                Clube
-                <select
-                  className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-                  value={selectedClubId ?? ""}
-                  onChange={(e) => setSelectedClubId(Number(e.target.value))}
-                >
-                  {clubs.map((club) => (
-                    <option key={club.id} value={club.id}>
-                      {club.name}{club.isActive ? "" : " (inativo)"}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          )}
           <label className="flex items-center gap-2 text-[12px] text-white/70">
             <input
               type="checkbox"
               checked={seriesActive}
               onChange={(e) => setSeriesActive(e.target.checked)}
             />
-            Série ativa
+            {seriesDraftMode === "SINGLE" ? "Sessão ativa" : "Série ativa"}
           </label>
 
           {seriesError && (
@@ -1033,17 +1161,25 @@ export default function AcademyClassDetailPage() {
           )}
 
           <button type="button" className={CTA_PRIMARY} onClick={handleSeriesSubmit} disabled={seriesSaving}>
-            {seriesSaving ? "A guardar..." : seriesEditingId ? "Guardar série" : "Criar série"}
+            {seriesSaving
+              ? "A guardar..."
+              : seriesEditingId
+                ? "Guardar agenda"
+                : seriesDraftMode === "SINGLE"
+                  ? "Criar sessão única"
+                  : "Criar série"}
           </button>
 
           <div className="space-y-3">
             {classSeries.length === 0 && (
-              <p className="text-[12px] text-white/60">Sem séries criadas.</p>
+              <p className="text-[12px] text-white/60">Sem agenda criada.</p>
             )}
             {classSeries.map((series) => {
               const hour = Math.floor(series.startMinute / 60);
               const minute = series.startMinute % 60;
               const pad = (value: number) => String(value).padStart(2, "0");
+              const isSingleSession =
+                Boolean(series.validUntil) && series.validUntil?.slice(0, 10) === series.validFrom.slice(0, 10);
               return (
                 <div key={series.id} className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-2">
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1057,8 +1193,9 @@ export default function AcademyClassDetailPage() {
                         {series.court?.name ? ` · ${series.court.name}${series.court.isActive === false ? " (inativo)" : ""}` : ""}
                       </p>
                       <p className="text-[11px] text-white/45">
-                        Válido: {series.validFrom.slice(0, 10)}
-                        {series.validUntil ? ` → ${series.validUntil.slice(0, 10)}` : ""}
+                        {isSingleSession
+                          ? `Sessão única: ${series.validFrom.slice(0, 10)}`
+                          : `Válido: ${series.validFrom.slice(0, 10)}${series.validUntil ? ` → ${series.validUntil.slice(0, 10)}` : ""}`}
                       </p>
                       <p className="text-[11px] text-white/45">
                         Sessões: {series._count?.sessions ?? 0}

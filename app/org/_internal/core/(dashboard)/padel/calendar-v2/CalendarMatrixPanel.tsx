@@ -56,11 +56,6 @@ type OccupancyLegendItem = {
   description?: string | null;
 };
 
-type RoundOpsCategoryOption = {
-  key: string;
-  label: string;
-};
-
 export function CalendarMatrixPanel(props: {
   eventId: number | null;
   isCalendarLoading: boolean;
@@ -75,7 +70,6 @@ export function CalendarMatrixPanel(props: {
   calendarScope: "week" | "day";
   selectedDay: string;
   selectedDayLabel: string | null;
-  onCalendarScopeChange: (scope: "week" | "day") => void;
   weekStart: Date | null;
   calendarCourts: CalendarCourt[];
   calendarMatches: CalendarMatch[];
@@ -88,7 +82,9 @@ export function CalendarMatrixPanel(props: {
   arbitrationPolicy?: {
     algorithm?: string | null;
     priorityRuleVersion?: string | null;
-    priorityOrder?: Array<"HARD_BLOCK" | "CLASS_SESSION" | "MATCH" | "BOOKING" | "SOFT_BLOCK">;
+    priorityOrder?: Array<
+      "HARD_BLOCK" | "CLASS_SESSION" | "MATCH" | "BOOKING" | "SOFT_BLOCK"
+    >;
     tieBreak?: string | null;
     note?: string | null;
   } | null;
@@ -110,27 +106,23 @@ export function CalendarMatrixPanel(props: {
   }) => void;
   selectedMatchIds?: number[];
   onToggleSelectMatch?: (matchId: number) => void;
-  latestRun?:
-    | {
-        id: string;
-        status: string;
-        scheduledCount: number;
-        skippedCount: number;
-        applied?: boolean;
-        queued?: boolean;
-        errorCode?: string | null;
-        byCategory?: Array<{
-          categoryId: number | null;
-          categoryLabel?: string | null;
-          scheduledCount: number;
-          skippedCount: number;
-        }>;
-      }
-    | null;
+  latestRun?: {
+    id: string;
+    status: string;
+    scheduledCount: number;
+    skippedCount: number;
+    applied?: boolean;
+    queued?: boolean;
+    errorCode?: string | null;
+    byCategory?: Array<{
+      categoryId: number | null;
+      categoryLabel?: string | null;
+      scheduledCount: number;
+      skippedCount: number;
+    }>;
+  } | null;
   roundOps: {
-    categoryKey: string;
-    categoryOptions: RoundOpsCategoryOption[];
-    onCategoryChange: (next: string) => void;
+    categoryLabel: string;
     formatLabel: string;
     roundLabel: string;
     note?: string | null;
@@ -147,33 +139,58 @@ export function CalendarMatrixPanel(props: {
   return (
     <div className="min-h-[420px] rounded-2xl border border-dashed border-white/15 bg-black/25 p-4 text-white/70">
       <div className="flex items-center justify-between">
-        <p className="text-sm font-semibold text-white">Matriz por dia e campo</p>
-        {props.isCalendarLoading ? <span className="text-[11px] text-white/60 animate-pulse">A carregar…</span> : null}
+        <p className="text-sm font-semibold text-white">
+          Matriz por dia e campo
+        </p>
+        {props.isCalendarLoading ? (
+          <span className="text-[11px] text-white/60 animate-pulse">
+            A carregar…
+          </span>
+        ) : null}
       </div>
       {!props.eventId ? (
         <div className="mt-2 space-y-1 text-[12px] text-white/60">
           <p>Seleciona um torneio para carregar o calendário.</p>
           {!props.padelEventsLoading && props.padelEventsCount === 0 ? (
             <p className="text-white/50">
-              Ainda não tens torneios de padel. <Link href={props.tournamentsCreateHref} className="text-white underline">Criar torneio</Link>.
+              Ainda não tens torneios de padel.{" "}
+              <Link
+                href={props.tournamentsCreateHref}
+                className="text-white underline"
+              >
+                Criar torneio
+              </Link>
+              .
             </p>
           ) : null}
-          {props.padelEventsError ? <p className="text-red-200">{props.padelEventsError}</p> : null}
+          {props.padelEventsError ? (
+            <p className="text-red-200">{props.padelEventsError}</p>
+          ) : null}
         </div>
       ) : null}
       {props.eventId && !props.padelEventsLoading && !props.hasSelectedEvent ? (
-        <p className="mt-2 text-[12px] text-amber-200">Torneio indisponível para esta organização.</p>
+        <p className="mt-2 text-[12px] text-amber-200">
+          Torneio indisponível para esta organização.
+        </p>
       ) : null}
       {props.eventId && !props.isCalendarLoading && props.calendarError ? (
         <p className="mt-2 text-[12px] text-red-200">{props.calendarError}</p>
       ) : null}
       {props.eventId && !props.isCalendarLoading && props.calendarWarning ? (
-        <p className="mt-2 text-[12px] text-amber-200">{props.calendarWarning}</p>
+        <p className="mt-2 text-[12px] text-amber-200">
+          {props.calendarWarning}
+        </p>
       ) : null}
       {props.eventId && !props.isCalendarLoading && props.calendarMessage ? (
-        <p className="mt-2 text-[12px] text-emerald-200">{props.calendarMessage}</p>
+        <p className="mt-2 text-[12px] text-emerald-200">
+          {props.calendarMessage}
+        </p>
       ) : null}
-      {props.eventId && props.calendarScope === "day" && !props.isCalendarLoading && !props.calendarError && props.selectedDayLabel ? (
+      {props.eventId &&
+      props.calendarScope === "day" &&
+      !props.isCalendarLoading &&
+      !props.calendarError &&
+      props.selectedDayLabel ? (
         <p className="mt-2 text-[12px] text-white/60">
           A mostrar registos de {props.selectedDay} ({props.selectedDayLabel}).
         </p>
@@ -183,30 +200,8 @@ export function CalendarMatrixPanel(props: {
           <ScheduleShell
             toolbar={
               <ScheduleToolbar
-                title="Agendamento por dia e campo"
+                title="Agenda"
                 subtitle={`Fuso ${props.calendarTimezone} · ${props.calendarScope === "week" ? "Semana" : "Dia"}`}
-                actions={
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => props.onCalendarScopeChange("day")}
-                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                        props.calendarScope === "day" ? "bg-white text-black" : "border border-white/25 text-white/80"
-                      }`}
-                    >
-                      Dia
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => props.onCalendarScopeChange("week")}
-                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                        props.calendarScope === "week" ? "bg-white text-black" : "border border-white/25 text-white/80"
-                      }`}
-                    >
-                      Semana
-                    </button>
-                  </div>
-                }
               />
             }
             main={
@@ -255,13 +250,10 @@ export function CalendarMatrixPanel(props: {
                   onGenerate={props.onGenerate}
                   onSimulate={props.onSimulate}
                   onApply={props.onApply}
-                  onReplan={props.onApply}
                   onUndo={props.onUndoLastRun}
                 />
                 <RoundOpsPanel
-                  categoryKey={props.roundOps.categoryKey}
-                  categoryOptions={props.roundOps.categoryOptions}
-                  onCategoryChange={props.roundOps.onCategoryChange}
+                  categoryLabel={props.roundOps.categoryLabel}
                   formatLabel={props.roundOps.formatLabel}
                   roundLabel={props.roundOps.roundLabel}
                   note={props.roundOps.note}

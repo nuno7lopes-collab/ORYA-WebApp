@@ -70,10 +70,9 @@ export function buildCalendarOperationalGuidance(input: {
       mode: "EVENT_DRIVEN",
       badge: "Modo eventos",
       title: "Agenda por evento/torneio",
-      description:
-        "Sem setup semanal obrigatório. A ocupação entra no calendário quando crias cada evento ou torneio.",
-      selectionHint: "Modo eventos: a agenda nasce quando crias cada evento ou torneio.",
-      footerHint: "Para adicionar ocupação neste calendário, cria um evento ou torneio.",
+      description: "A ocupação entra no calendário quando crias eventos ou torneios.",
+      selectionHint: "Modo eventos: vista geral por evento e torneio.",
+      footerHint: "Para adicionar ocupação, cria um evento ou torneio.",
       actions,
     };
   }
@@ -97,8 +96,7 @@ export function buildCalendarOperationalGuidance(input: {
       mode: "SLOT_DRIVEN",
       badge: "Modo reservas",
       title: "Agenda por slots",
-      description:
-        "A disponibilidade semanal é a base da operação. Usa escopos para profissionais e recursos quando precisares.",
+      description: "A disponibilidade semanal é a base da operação de reservas.",
       selectionHint: "Sem seleção ativa: vista geral consolidada de reservas.",
       footerHint: "A disponibilidade semanal é a fonte de verdade para serviços com slots.",
       actions,
@@ -140,11 +138,9 @@ export function buildCalendarOperationalGuidance(input: {
       mode: "HYBRID",
       badge: "Modo híbrido",
       title: "Eventos e reservas",
-      description:
-        "Eventos entram diretamente no calendário; disponibilidade aplica-se apenas a serviços com reservas por slots.",
-      selectionHint: "Sem seleção ativa: vista geral consolidada de eventos e reservas.",
-      footerHint:
-        "Configura disponibilidade apenas para serviços com reservas. Eventos e torneios pontuais não dependem dela.",
+      description: "Combina eventos pontuais com serviços baseados em disponibilidade.",
+      selectionHint: "Sem seleção ativa: vista geral de eventos e reservas.",
+      footerHint: "Configura disponibilidade para serviços com slots; eventos não dependem dela.",
       actions,
     };
   }
@@ -170,9 +166,9 @@ export function buildCalendarOperationalGuidance(input: {
     mode: "UNKNOWN",
     badge: "Modo operacional",
     title: "Agenda consolidada",
-    description: "Ajusta os filtros e o tipo de operação para visualizar a tua agenda de forma clara.",
+    description: "Ajusta filtros e escopos para ver a operação com clareza.",
     selectionHint: "Sem seleção ativa: vista geral consolidada.",
-    footerHint: "Ativa as ferramentas necessarias para desbloquear acoes contextuais nesta agenda.",
+    footerHint: "Ativa ferramentas de contexto para desbloquear ações operacionais.",
     actions,
   };
 }

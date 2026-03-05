@@ -49,7 +49,7 @@ function resolveDashboardItems(orgId: number): OrganizationNavSubItem[] {
   return [
     {
       id: "daily-summary",
-      label: "Resumo do dia",
+      label: "Visão geral",
       href: buildOrgHref(orgId, "/overview"),
       isActive: ({ normalizedPathname }) => normalizedPathname === basePath,
     },

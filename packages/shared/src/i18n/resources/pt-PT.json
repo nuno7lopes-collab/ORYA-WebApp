@@ -183,6 +183,78 @@
       "text": "Ao continuar, aceitas os <terms>Termos</terms> e a <privacy>Privacidade</privacy>."
     }
   },
+  "home": {
+    "title": "Início",
+    "greeting": {
+      "morning": "Bom dia",
+      "afternoon": "Boa tarde",
+      "evening": "Boa noite"
+    },
+    "defaults": {
+      "playerName": "jogador",
+      "bookingTitle": "Reserva",
+      "organization": "Organização",
+      "dateUndefined": "Data por definir"
+    },
+    "hero": {
+      "title": "Pronto para jogar padel?",
+      "subtitle": "Estamos a preparar o modo de entrada imediata em jogo.",
+      "cta": "Quero jogar",
+      "hint": "Função em preparação"
+    },
+    "placeholder": {
+      "title": "Quero jogar",
+      "body": "Estamos a preparar este modo. Em breve vais poder entrar diretamente em jogos."
+    },
+    "guest": {
+      "title": "Personaliza a tua experiência",
+      "body": "Inicia sessão para veres reservas, estado do perfil e atalhos personalizados.",
+      "cta": "Iniciar sessão"
+    },
+    "stats": {
+      "upcomingBookings": "Próximas reservas",
+      "padelLevel": "Nível padel",
+      "profile": "Perfil",
+      "levelUnset": "Por definir"
+    },
+    "profileStatus": {
+      "guest": "Convidado",
+      "checking": "A validar",
+      "pending": "Por concluir",
+      "complete": "Completo"
+    },
+    "relative": {
+      "today": "Hoje",
+      "tomorrow": "Amanhã",
+      "inDays": "Em {count} dias"
+    },
+    "agenda": {
+      "nextBooking": "Próxima reserva",
+      "nextBookingCta": "Ver detalhes da reserva",
+      "errorTitle": "Não foi possível carregar a tua agenda.",
+      "errorBody": "Podes continuar a usar o resto da app normalmente.",
+      "retry": "Tentar novamente",
+      "emptyTitle": "Sem reservas marcadas",
+      "emptyBody": "Agenda a tua próxima aula ou reserva um campo para continuares ativo.",
+      "emptyCta": "Ver aulas"
+    },
+    "profilePrompt": {
+      "title": "Completa o teu perfil competitivo",
+      "body": "Adiciona o teu nível e dados de jogo para melhorar convites, emparelhamentos e recomendações.",
+      "cta": "Completar perfil"
+    },
+    "classes": {
+      "title": "Aulas",
+      "subtitle": "Encontra aulas e treinos com reserva imediata.",
+      "cta": "Ver aulas"
+    },
+    "quickActions": {
+      "title": "Ações rápidas",
+      "compete": "Competir",
+      "reservations": "Reservas",
+      "community": "Comunidade"
+    }
+  },
   "discover": {
     "title": "Descobrir",
     "subtitle": "Eventos para hoje e próximos dias",

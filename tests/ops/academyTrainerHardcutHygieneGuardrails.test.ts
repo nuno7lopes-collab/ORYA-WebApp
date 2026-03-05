@@ -24,6 +24,8 @@ describe("academy trainer hard-cut hygiene guardrails", () => {
       expect(content).toContain("assertTrainerIdsBelongToEligibleTeamMembers");
       expect(content).toContain("TRAINER_NOT_TEAM_MEMBER");
     }
+    expect(classSeriesHandlers).toContain("validateClassSessionsAgainstAvailability");
+    expect(classSeriesHandlers).toContain("CLASS_SLOT_UNAVAILABLE");
   });
 
   it("mantém rotas academy/classes, academy/students e academy/enrollments sem bridge direta para legado", () => {
@@ -59,13 +61,14 @@ describe("academy trainer hard-cut hygiene guardrails", () => {
     const classDetailPage = readLocal("app/org/[orgId]/academy/classes/[id]/AcademyClassDetailPage.tsx");
     const academyClassesPage = readLocal("app/org/[orgId]/academy/classes/page.tsx");
     const academyClassCreatePage = readLocal("app/org/[orgId]/academy/classes/new/page.tsx");
+    const academyClassCreateWizard = readLocal("app/org/[orgId]/academy/classes/new/ClassCreationWizard.tsx");
     const academyTrainersPage = readLocal("app/org/[orgId]/academy/trainers/page.tsx");
     const academyStudentsPage = readLocal("app/org/[orgId]/academy/students/page.tsx");
     expect(classDetailPage).not.toContain("/servicos/");
     expect(classDetailPage).toContain("/api/org/[orgId]/academy/resources?includeCourts=1");
     expect(classDetailPage).not.toContain("/api/org/[orgId]/reservas/recursos");
-    expect(academyClassCreatePage).toContain("/api/org/[orgId]/academy/resources?includeCourts=1");
-    expect(academyClassCreatePage).not.toContain("/api/org/[orgId]/reservas/recursos");
+    expect(academyClassCreateWizard).toContain("/api/org/[orgId]/academy/resources?includeCourts=1");
+    expect(academyClassCreateWizard).not.toContain("/api/org/[orgId]/reservas/recursos");
 
     for (const content of [academyClassesPage, academyClassCreatePage, academyTrainersPage, academyStudentsPage]) {
       expect(content).not.toContain('export { default } from "@/app/org/_internal/core/(dashboard)/reservas');
@@ -76,7 +79,6 @@ describe("academy trainer hard-cut hygiene guardrails", () => {
   it("mantém criação de aulas no Padel Hub via endpoints canónicos Academy", () => {
     const padelHubClient = readLocal("app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx");
     expect(padelHubClient).toContain('buildOrgApiPath("/academy/classes")');
-    expect(padelHubClient).toContain("/academy/classes/${serviceId}/series");
     expect(padelHubClient).not.toContain('buildOrgApiPath("/servicos")');
     expect(padelHubClient).not.toContain("/servicos/${serviceId}/class-series");
   });
