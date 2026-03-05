@@ -537,6 +537,14 @@ const MODULE_ICON_GRADIENTS: Record<string, string> = {
   TOOL_DEFINICOES: " ",
   TOOL_POLITICAS: " ",
 };
+const KPI_CARD_STYLE_BY_ID: Record<string, string> = {
+  "ocupacao-campos": "border-cyan-300/20 bg-cyan-300/[0.07]",
+  "ocupacao-clube": "border-sky-300/20 bg-sky-300/[0.07]",
+  "media-plataforma": "border-blue-300/20 bg-blue-300/[0.07]",
+  "tickets-30d": "border-emerald-300/20 bg-emerald-300/[0.07]",
+  "receita-liquida-30d": "border-teal-300/20 bg-teal-300/[0.07]",
+  "atividade-clube": "border-amber-300/20 bg-amber-300/[0.07]",
+};
 const OBJECTIVE_TABS: ObjectiveTab[] = [
   "create",
   "manage",
@@ -3085,7 +3093,11 @@ function OrganizacaoPageInner({
                   {dailySummaryKpis.map((kpi) => (
                     <article
                       key={kpi.id}
-                      className="rounded-2xl border border-white/12 bg-white/5 px-3 py-3 "
+                      className={cn(
+                        "rounded-2xl border px-3 py-3 transition-colors duration-200",
+                        KPI_CARD_STYLE_BY_ID[kpi.id] ??
+                          "border-white/12 bg-white/5",
+                      )}
                     >
                       {" "}
                       <p className="text-[11px] text-white/65">

@@ -17,10 +17,7 @@ export type CalendarOperationalAction = {
 export type CalendarOperationalGuidance = {
   mode: OrganizationOperationalMode | "UNKNOWN";
   badge: string;
-  title: string;
-  description: string;
   selectionHint: string;
-  footerHint: string;
   actions: CalendarOperationalAction[];
 };
 
@@ -69,10 +66,7 @@ export function buildCalendarOperationalGuidance(input: {
     return {
       mode: "EVENT_DRIVEN",
       badge: "Modo eventos",
-      title: "Agenda por evento/torneio",
-      description: "A ocupação entra no calendário quando crias eventos ou torneios.",
-      selectionHint: "Modo eventos: vista geral por evento e torneio.",
-      footerHint: "Para adicionar ocupação, cria um evento ou torneio.",
+      selectionHint: "Sem escopo: visão global de eventos e torneios.",
       actions,
     };
   }
@@ -95,10 +89,7 @@ export function buildCalendarOperationalGuidance(input: {
     return {
       mode: "SLOT_DRIVEN",
       badge: "Modo reservas",
-      title: "Agenda por slots",
-      description: "A disponibilidade semanal é a base da operação de reservas.",
-      selectionHint: "Sem seleção ativa: vista geral consolidada de reservas.",
-      footerHint: "A disponibilidade semanal é a fonte de verdade para serviços com slots.",
+      selectionHint: "Sem escopo: visão global de reservas.",
       actions,
     };
   }
@@ -137,10 +128,7 @@ export function buildCalendarOperationalGuidance(input: {
     return {
       mode: "HYBRID",
       badge: "Modo híbrido",
-      title: "Eventos e reservas",
-      description: "Combina eventos pontuais com serviços baseados em disponibilidade.",
-      selectionHint: "Sem seleção ativa: vista geral de eventos e reservas.",
-      footerHint: "Configura disponibilidade para serviços com slots; eventos não dependem dela.",
+      selectionHint: "Sem escopo: visão global de eventos e reservas.",
       actions,
     };
   }
@@ -165,10 +153,7 @@ export function buildCalendarOperationalGuidance(input: {
   return {
     mode: "UNKNOWN",
     badge: "Modo operacional",
-    title: "Agenda consolidada",
-    description: "Ajusta filtros e escopos para ver a operação com clareza.",
-    selectionHint: "Sem seleção ativa: vista geral consolidada.",
-    footerHint: "Ativa ferramentas de contexto para desbloquear ações operacionais.",
+    selectionHint: "Sem escopo: visão global consolidada.",
     actions,
   };
 }

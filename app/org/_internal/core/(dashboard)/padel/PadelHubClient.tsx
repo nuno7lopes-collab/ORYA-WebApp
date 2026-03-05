@@ -7987,7 +7987,7 @@ export default function PadelHubClient({
                             event.target.value.toUpperCase(),
                           )
                         }
-                        placeholder="TOURNAMENT_BLOCK"
+                        placeholder="BLOQUEIO_TORNEIO"
                         className="w-full rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-white"
                       />
                     </label>
@@ -8091,7 +8091,7 @@ export default function PadelHubClient({
                             event.target.value.toUpperCase(),
                           )
                         }
-                        placeholder="MANUAL_OVERRIDE"
+                        placeholder="OVERRIDE_MANUAL"
                         className="w-full rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-white"
                       />
                     </label>

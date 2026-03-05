@@ -55,35 +55,8 @@ import {
 } from "@/lib/reservas/availability";
 import { normalizeCalendarTimezone } from "./timezones";
 import { summarizeAgendaItemsByStatus } from "./statusSummary";
-import {
-  resolveAggregateItemsToneClass,
-} from "./eventTones";
-import type { OrganizationOperationalMode } from "@/lib/organizationOperationalMode";
-type AgendaItem = {
-  kind: "EVENT" | "TOURNAMENT" | "RESERVATION" | "CLASS";
-  eventId?: number | null;
-  tournamentId?: number | null;
-  reservationId?: number | null;
-  classSessionId?: number | null;
-  courtId?: number | null;
-  resourceId?: number | null;
-  professionalId?: number | null;
-  title: string;
-  startsAt: string;
-  endsAt: string;
-  status: string;
-};
-type AgendaCapabilities = {
-  reservas: boolean;
-  eventos: boolean;
-  torneios: boolean;
-};
-type AgendaResponse = {
-  ok: boolean;
-  items: AgendaItem[];
-  capabilities?: AgendaCapabilities;
-  operationalMode?: OrganizationOperationalMode;
-};
+import { resolveAggregateItemsToneClass } from "./eventTones";
+import type { AgendaItem, AgendaResponse } from "./day/types";
 type CollectionResponse<T> = {
   ok: boolean;
   items: T[];
@@ -1174,7 +1147,7 @@ export default function WeekCalendarReadClient({
     [agendaCapabilities, operationalMode, organizationId],
   );
   const commandBarHint = hasActiveSelection
-    ? `Escopo ativo (${selectedScopesCount}): ${selectedScopesLabel}.`
+    ? `Escopo: ${selectedScopesLabel}`
     : operationalGuidance.selectionHint;
   const commandBarActions = operationalGuidance.actions
     .slice(0, 2)
@@ -1394,7 +1367,7 @@ export default function WeekCalendarReadClient({
             )}
           >
             {" "}
-            Tipos e resumo{" "}
+            Tipos{" "}
           </button>
         }
         actions={commandBarActions}
@@ -1435,28 +1408,29 @@ export default function WeekCalendarReadClient({
             {" "}
             <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-white/75">
               {" "}
-              Total {statusSummary.total}{" "}
+              {statusSummary.total}{" "}
+              {statusSummary.total === 1 ? "ocupação" : "ocupações"}{" "}
             </span>{" "}
             {statusSummary.confirmed > 0 ? (
-              <span className="rounded-full border border-sky-300/45 bg-sky-400/12 px-2 py-0.5 text-sky-100">
+              <span className="rounded-full border border-emerald-300/45 bg-emerald-400/14 px-2 py-0.5 text-emerald-100">
                 {" "}
                 Confirmado {statusSummary.confirmed}{" "}
               </span>
             ) : null}{" "}
             {statusSummary.pending > 0 ? (
-              <span className="rounded-full border border-amber-300/45 bg-amber-400/12 px-2 py-0.5 text-amber-100">
+              <span className="rounded-full border border-amber-300/45 bg-amber-400/14 px-2 py-0.5 text-amber-100">
                 {" "}
                 Pendente {statusSummary.pending}{" "}
               </span>
             ) : null}{" "}
             {statusSummary.cancelled > 0 ? (
-              <span className="rounded-full border border-rose-300/45 bg-rose-400/12 px-2 py-0.5 text-rose-100">
+              <span className="rounded-full border border-rose-300/45 bg-rose-400/14 px-2 py-0.5 text-rose-100">
                 {" "}
                 Cancelado/No-show {statusSummary.cancelled}{" "}
               </span>
             ) : null}{" "}
             {statusSummary.disputed > 0 ? (
-              <span className="rounded-full border border-fuchsia-300/45 bg-fuchsia-400/12 px-2 py-0.5 text-fuchsia-100">
+              <span className="rounded-full border border-fuchsia-300/45 bg-fuchsia-400/14 px-2 py-0.5 text-fuchsia-100">
                 {" "}
                 Disputa {statusSummary.disputed}{" "}
               </span>

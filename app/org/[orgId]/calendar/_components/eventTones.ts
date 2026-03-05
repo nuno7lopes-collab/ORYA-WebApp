@@ -24,18 +24,18 @@ export function resolveAggregateToneBucket(
 }
 export function resolveBucketToneClass(bucket: ToneBucket) {
   if (bucket === "confirmed") {
-    return "border-sky-300/70 bg-sky-400/20";
+    return "border-emerald-300/85 bg-emerald-400/30 shadow-[0_8px_20px_rgba(16,185,129,0.24)]";
   }
   if (bucket === "pending") {
-    return "border-amber-300/75 bg-amber-400/22";
+    return "border-amber-300/85 bg-amber-400/30 shadow-[0_8px_20px_rgba(245,158,11,0.22)]";
   }
   if (bucket === "disputed") {
-    return "border-fuchsia-300/75 bg-fuchsia-400/20";
+    return "border-fuchsia-300/85 bg-fuchsia-400/28 shadow-[0_8px_20px_rgba(232,121,249,0.22)]";
   }
   if (bucket === "cancelled") {
-    return "border-rose-300/70 bg-rose-500/20";
+    return "border-rose-300/85 bg-rose-500/28 shadow-[0_8px_20px_rgba(244,63,94,0.2)]";
   }
-  return "border-white/35 bg-slate-400/18";
+  return "border-white/45 bg-slate-400/24 shadow-[0_8px_20px_rgba(148,163,184,0.18)]";
 }
 export function resolveEventToneClass(params: {
   status: string;
@@ -46,15 +46,18 @@ export function resolveEventToneClass(params: {
     return resolveBucketToneClass(bucket);
   }
   if (params.kind === "TOURNAMENT") {
-    return "border-cyan-300/70 bg-cyan-400/20";
+    return "border-cyan-300/80 bg-cyan-400/26 shadow-[0_8px_20px_rgba(34,211,238,0.2)]";
   }
   if (params.kind === "EVENT") {
-    return "border-indigo-300/70 bg-indigo-400/20";
+    return "border-indigo-300/80 bg-indigo-400/26 shadow-[0_8px_20px_rgba(129,140,248,0.2)]";
   }
   if (params.kind === "CLASS") {
-    return "border-violet-300/70 bg-violet-400/20";
+    return "border-violet-300/80 bg-violet-400/26 shadow-[0_8px_20px_rgba(167,139,250,0.2)]";
   }
-  return resolveBucketToneClass("confirmed");
+  if (params.kind === "RESERVATION") {
+    return "border-cyan-300/85 bg-cyan-400/30 shadow-[0_8px_20px_rgba(34,211,238,0.22)]";
+  }
+  return resolveBucketToneClass("other");
 }
 export function resolveAggregateItemsToneClass(
   items: Array<{ status: string; kind: CalendarKind }>,

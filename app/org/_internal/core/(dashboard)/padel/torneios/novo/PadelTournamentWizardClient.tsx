@@ -1254,18 +1254,20 @@ export default function PadelTournamentWizardClient({
   const renderSectionIssues = (issues: string[]) => {
     const uniqueIssues = Array.from(new Set(issues.filter(Boolean)));
     return uniqueIssues.length > 0 ? (
-      <div className="rounded-2xl border border-amber-300/40 bg-amber-500/10 px-4 py-3 text-[12px] text-amber-100">
-        {" "}
-        <p className="font-semibold">Avisos</p>{" "}
+      <div
+        role="status"
+        aria-live="polite"
+        className="rounded-2xl border border-amber-300/40 bg-amber-500/10 px-4 py-3 text-[12px] text-amber-100"
+      >
+        <p className="font-semibold">Avisos</p>
         <div className="mt-1 space-y-1">
-          {" "}
           {uniqueIssues.slice(0, 3).map((issue, idx) => (
             <p key={`${issue}-${idx}`}>• {issue}</p>
-          ))}{" "}
+          ))}
           {uniqueIssues.length > 3 ? (
             <p>• +{uniqueIssues.length - 3} aviso(s) adicional(is)</p>
-          ) : null}{" "}
-        </div>{" "}
+          ) : null}
+        </div>
       </div>
     ) : null;
   };
@@ -1288,7 +1290,6 @@ export default function PadelTournamentWizardClient({
       tabs={tabs}
       leftColumn={
         <div>
-          {" "}
           <EventCoverLibraryPicker
             value={coverImageUrl}
             onChange={setCoverImageUrl}
@@ -1296,168 +1297,144 @@ export default function PadelTournamentWizardClient({
             templateType="PADEL"
             title="Capa"
             subtitle="Abrir biblioteca de capas"
-          />{" "}
+          />
         </div>
       }
       rightColumn={
         <div className="space-y-5">
-          {" "}
           <section
             id="wizard-identity"
             className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4"
           >
-            {" "}
             <div className="space-y-1 border-b border-white/10 pb-3">
-              {" "}
               <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">
                 Identidade
-              </p>{" "}
-              <p className="text-sm text-white/75">
-                Nome do torneio, clube e localização.
-              </p>{" "}
-            </div>{" "}
+              </p>
+            </div>
             <div className="grid gap-3 md:grid-cols-2">
-              {" "}
               <label className="space-y-1 text-sm text-white/70">
-                {" "}
                 <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">
                   Título
-                </span>{" "}
+                </span>
                 <input
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
-                />{" "}
-              </label>{" "}
+                />
+              </label>
               <label className="space-y-1 text-sm text-white/70">
-                {" "}
                 <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">
                   Clube
-                </span>{" "}
+                </span>
                 <select
                   value={selectedClubId}
                   onChange={(e) => setSelectedClubId(e.target.value)}
                   className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
                 >
-                  {" "}
-                  <option value="">Seleciona...</option>{" "}
+                  <option value="">Seleciona...</option>
                   {selectableClubs.map((club) => (
                     <option key={`club-${club.id}`} value={club.id}>
-                      {" "}
-                      {club.name}{" "}
+                      {club.name}
                     </option>
-                  ))}{" "}
-                </select>{" "}
-              </label>{" "}
+                  ))}
+                </select>
+              </label>
               <label className="space-y-1 text-sm text-white/70">
-                {" "}
                 <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">
                   Início oficial
-                </span>{" "}
+                </span>
                 <input
                   value={startsAt ? startsAt.replace("T", "") : ""}
                   disabled
                   placeholder="Derivado dos dias configurados"
                   className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-white/80 outline-none disabled:cursor-not-allowed"
-                />{" "}
-              </label>{" "}
+                />
+              </label>
               <label className="space-y-1 text-sm text-white/70">
-                {" "}
                 <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">
                   Fim oficial
-                </span>{" "}
+                </span>
                 <input
                   value={endsAt ? endsAt.replace("T", "") : ""}
                   disabled
                   placeholder="Derivado dos dias configurados"
                   className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-white/80 outline-none disabled:cursor-not-allowed"
-                />{" "}
-              </label>{" "}
-            </div>{" "}
+                />
+              </label>
+            </div>
             <label className="space-y-1 text-sm text-white/70">
-              {" "}
               <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">
                 Descrição
-              </span>{" "}
+              </span>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 className="min-h-[120px] w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
-              />{" "}
-            </label>{" "}
+              />
+            </label>
             <div className="grid gap-3 rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-white/70">
-              {" "}
               <p className="text-[12px] uppercase tracking-[0.18em] text-white/50">
                 Localização
-              </p>{" "}
+              </p>
               {selectedClub ? (
                 <div>
-                  {" "}
                   <p className="font-semibold text-white">
                     {selectedClub.name}
-                  </p>{" "}
+                  </p>
                   <p className="text-[12px] text-white/60">
                     {location.formatted || "Morada por definir"}
-                  </p>{" "}
+                  </p>
                 </div>
               ) : (
                 <p className="text-[12px] text-white/60">
                   Seleciona um clube para carregar a morada.
                 </p>
-              )}{" "}
-            </div>{" "}
-            {renderSectionIssues(identityIssues)}{" "}
-          </section>{" "}
+              )}
+            </div>
+            {renderSectionIssues(identityIssues)}
+          </section>
           <section
             id="wizard-registration"
             className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4"
           >
-            {" "}
             <div className="space-y-1 border-b border-white/10 pb-3">
-              {" "}
               <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">
                 Inscrições e agenda
-              </p>{" "}
-            </div>{" "}
+              </p>
+            </div>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {" "}
               <label className="space-y-1 text-sm text-white/70">
-                {" "}
                 <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">
                   Fuso horário
-                </span>{" "}
+                </span>
                 <select
                   value={timezone}
                   onChange={(e) => setTimezone(e.target.value)}
                   className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
                 >
-                  {" "}
                   {TIMEZONE_OPTIONS.map((tz) => (
                     <option key={`tz-${tz}`} value={tz}>
-                      {" "}
-                      {tz}{" "}
+                      {tz}
                     </option>
-                  ))}{" "}
-                </select>{" "}
-              </label>{" "}
+                  ))}
+                </select>
+              </label>
               <label className="space-y-1 text-sm text-white/70">
-                {" "}
                 <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">
                   Inscrições abrem
-                </span>{" "}
+                </span>
                 <OryaDateTimeField
                   value={registrationStartsAt}
                   onChange={setRegistrationStartsAt}
                   className="w-full flex-col items-stretch gap-2 xl:flex-row xl:items-center"
                   dateButtonClassName="h-10 w-full min-w-0 rounded-xl xl:flex-1"
                   timeButtonClassName="h-10 w-full min-w-0 rounded-xl xl:w-[112px] xl:flex-none"
-                />{" "}
-              </label>{" "}
+                />
+              </label>
               <label className="space-y-1 text-sm text-white/70">
-                {" "}
                 <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">
                   Inscrições fecham
-                </span>{" "}
+                </span>
                 <OryaDateTimeField
                   value={registrationEndsAt}
                   onChange={setRegistrationEndsAt}
@@ -1465,29 +1442,28 @@ export default function PadelTournamentWizardClient({
                   className="w-full flex-col items-stretch gap-2 xl:flex-row xl:items-center"
                   dateButtonClassName="h-10 w-full min-w-0 rounded-xl xl:flex-1"
                   timeButtonClassName="h-10 w-full min-w-0 rounded-xl xl:w-[112px] xl:flex-none"
-                />{" "}
-              </label>{" "}
-            </div>{" "}
+                />
+              </label>
+            </div>
             {registrationWarnings.length > 0 && (
-              <div className="rounded-2xl border border-amber-300/40 bg-amber-500/10 px-4 py-3 text-[12px] text-amber-100">
-                {" "}
+              <div
+                role="status"
+                aria-live="polite"
+                className="rounded-2xl border border-amber-300/40 bg-amber-500/10 px-4 py-3 text-[12px] text-amber-100"
+              >
                 {registrationWarnings.map((warning) => (
                   <p key={`reg-warning-${warning}`}>{warning}</p>
-                ))}{" "}
+                ))}
               </div>
-            )}{" "}
+            )}
             <div className="space-y-3 rounded-2xl border border-white/10 bg-black/30 p-4">
-              {" "}
               <div className="flex flex-wrap items-center justify-between gap-3">
-                {" "}
                 <div>
-                  {" "}
                   <p className="text-[12px] uppercase tracking-[0.18em] text-white/60">
                     Dias e horários
-                  </p>{" "}
-                </div>{" "}
+                  </p>
+                </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  {" "}
                   <button
                     type="button"
                     onClick={() =>
@@ -1523,9 +1499,8 @@ export default function PadelTournamentWizardClient({
                     }
                     className="rounded-lg border border-white/15 px-3 py-1.5 text-[12px] text-white/80 transition hover:border-white/30 hover:text-white"
                   >
-                    {" "}
-                    Adicionar dia seguinte{" "}
-                  </button>{" "}
+                    Adicionar dia seguinte
+                  </button>
                   <button
                     type="button"
                     disabled={dailyWindows.length < 2}
@@ -1546,27 +1521,23 @@ export default function PadelTournamentWizardClient({
                     }
                     className="rounded-lg border border-white/15 px-3 py-1.5 text-[12px] text-white/70 transition hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
                   >
-                    {" "}
-                    Aplicar 1.º horário a todos{" "}
-                  </button>{" "}
-                </div>{" "}
-              </div>{" "}
+                    Aplicar 1.º horário a todos
+                  </button>
+                </div>
+              </div>
               <div className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-[12px] text-white/70">
-                {" "}
                 <p>
-                  {" "}
-                  Dias válidos: {scheduleSummary.validDays} · Tempo útil:{" "}
-                  {scheduleSummary.totalLabel}.{" "}
-                </p>{" "}
+                  Dias válidos: {scheduleSummary.validDays} · Tempo útil:
+                  {scheduleSummary.totalLabel}.
+                </p>
                 {scheduleSummary.invalidDays > 0 ? (
                   <p className="text-amber-100">
                     Existem {scheduleSummary.invalidDays} dia(s) com horário
                     inválido.
                   </p>
-                ) : null}{" "}
-              </div>{" "}
+                ) : null}
+              </div>
               <div className="space-y-2">
-                {" "}
                 {dailyWindows.map((windowItem, idx) => {
                   const windowDurationMinutes =
                     resolveDailyWindowDurationMinutes(windowItem);
@@ -1575,12 +1546,10 @@ export default function PadelTournamentWizardClient({
                       key={windowItem.id}
                       className="grid gap-2 rounded-xl border border-white/10 bg-black/25 p-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_160px_160px_auto]"
                     >
-                      {" "}
                       <label className="space-y-1 text-[12px] text-white/70">
-                        {" "}
                         <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">
                           Dia {idx + 1}
-                        </span>{" "}
+                        </span>
                         <OryaDateField
                           value={windowItem.date}
                           onChange={(next) =>
@@ -1594,28 +1563,24 @@ export default function PadelTournamentWizardClient({
                           }
                           buttonClassName="h-10 w-full min-w-0 rounded-xl justify-between"
                           className="w-full"
-                        />{" "}
+                        />
                         {windowDurationMinutes ? (
                           <p className="text-[10px] text-white/55">
-                            {" "}
-                            Duração: {Math.floor(
-                              windowDurationMinutes / 60,
-                            )}h{" "}
+                            Duração: {Math.floor(windowDurationMinutes / 60)}h
                             {windowDurationMinutes % 60 > 0
                               ? ` ${windowDurationMinutes % 60}m`
-                              : ""}{" "}
+                              : ""}
                           </p>
                         ) : (
                           <p className="text-[10px] text-amber-100">
                             Horário inválido
                           </p>
-                        )}{" "}
-                      </label>{" "}
+                        )}
+                      </label>
                       <label className="space-y-1 text-[12px] text-white/70">
-                        {" "}
                         <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">
                           Início
-                        </span>{" "}
+                        </span>
                         <OryaTimeField
                           value={windowItem.startTime}
                           onChange={(next) =>
@@ -1630,13 +1595,12 @@ export default function PadelTournamentWizardClient({
                           maxTime={windowItem.endTime || undefined}
                           buttonClassName="h-10 w-full min-w-0 rounded-xl justify-between"
                           className="w-full"
-                        />{" "}
-                      </label>{" "}
+                        />
+                      </label>
                       <label className="space-y-1 text-[12px] text-white/70">
-                        {" "}
                         <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">
                           Fim
-                        </span>{" "}
+                        </span>
                         <OryaTimeField
                           value={windowItem.endTime}
                           onChange={(next) =>
@@ -1651,10 +1615,9 @@ export default function PadelTournamentWizardClient({
                           minTime={windowItem.startTime || undefined}
                           buttonClassName="h-10 w-full min-w-0 rounded-xl justify-between"
                           className="w-full"
-                        />{" "}
-                      </label>{" "}
+                        />
+                      </label>
                       <div className="flex flex-wrap items-end justify-end gap-2 md:col-span-2 xl:col-span-1 xl:flex-col">
-                        {" "}
                         <button
                           type="button"
                           disabled={idx === 0}
@@ -1679,9 +1642,8 @@ export default function PadelTournamentWizardClient({
                           }
                           className="rounded-lg border border-white/15 px-3 py-2 text-[11px] text-white/70 transition hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
                         >
-                          {" "}
-                          Copiar horário{" "}
-                        </button>{" "}
+                          Copiar horário
+                        </button>
                         <button
                           type="button"
                           disabled={dailyWindows.length <= 1}
@@ -1694,123 +1656,95 @@ export default function PadelTournamentWizardClient({
                           }
                           className="rounded-lg border border-white/15 px-3 py-2 text-[12px] text-white/70 transition hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
                         >
-                          {" "}
-                          Remover{" "}
-                        </button>{" "}
-                      </div>{" "}
+                          Remover
+                        </button>
+                      </div>
                     </div>
                   );
-                })}{" "}
-              </div>{" "}
-            </div>{" "}
+                })}
+              </div>
+            </div>
             <div className="grid gap-3 md:grid-cols-2">
-              {" "}
               <label className="space-y-1 text-sm text-white/70">
-                {" "}
                 <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">
                   Duração do jogo (min)
-                </span>{" "}
+                </span>
                 <input
                   type="number"
                   min={10}
                   value={durationMinutes}
                   onChange={(e) => setDurationMinutes(e.target.value)}
                   className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
-                />{" "}
-              </label>{" "}
+                />
+              </label>
               <label className="space-y-1 text-sm text-white/70">
-                {" "}
                 <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">
                   Intervalo entre jogos (min)
-                </span>{" "}
+                </span>
                 <input
                   type="number"
                   min={0}
                   value={minRestMinutes}
                   onChange={(e) => setMinRestMinutes(e.target.value)}
                   className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
-                />{" "}
-              </label>{" "}
-            </div>{" "}
+                />
+              </label>
+            </div>
             <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-[12px] text-white/80">
-              {" "}
               <div className="flex flex-wrap items-center justify-between gap-3">
-                {" "}
                 <div>
-                  {" "}
                   <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">
                     Políticas avançadas
-                  </p>{" "}
-                  <p className="text-[12px] text-white/70">
-                    Elegibilidade, regras e prioridade.
-                  </p>{" "}
-                </div>{" "}
+                  </p>
+                </div>
                 <button
                   type="button"
                   onClick={() => setShowAdvancedPolicies((prev) => !prev)}
                   className="rounded-lg border border-white/15 px-3 py-2 text-[12px] text-white/80 transition hover:border-white/30 hover:text-white"
                 >
-                  {" "}
-                  {showAdvancedPolicies ? "Ocultar" : "Mostrar"}{" "}
-                </button>{" "}
-              </div>{" "}
+                  {showAdvancedPolicies ? "Ocultar" : "Mostrar"}
+                </button>
+              </div>
               {showAdvancedPolicies && (
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  {" "}
                   <label className="space-y-1 text-sm text-white/70">
-                    {" "}
                     <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">
                       Elegibilidade
-                    </span>{" "}
+                    </span>
                     <select
                       value={eligibility}
                       onChange={(e) => setEligibility(e.target.value)}
                       className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
                     >
-                      {" "}
                       {ELIGIBILITY_OPTIONS.map((opt) => (
                         <option key={`elig-${opt.value}`} value={opt.value}>
-                          {" "}
-                          {opt.label}{" "}
+                          {opt.label}
                         </option>
-                      ))}{" "}
-                    </select>{" "}
-                  </label>{" "}
-                  <div className="space-y-1 rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm text-white/70">
-                    {" "}
-                    <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">
-                      Split de pagamento
-                    </span>{" "}
-                    <p className="text-white">
-                      Fixo em 24h antes do início.
-                    </p>{" "}
-                  </div>{" "}
+                      ))}
+                    </select>
+                  </label>
                   <label className="space-y-1 text-sm text-white/70">
-                    {" "}
                     <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">
                       Conjunto de regras
-                    </span>{" "}
+                    </span>
                     <select
                       value={ruleSetId}
                       onChange={(e) => setRuleSetId(e.target.value)}
                       className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
                     >
-                      {" "}
-                      <option value="">Padrão</option>{" "}
+                      <option value="">Padrão</option>
                       {rulesets.map((set) => (
                         <option key={`ruleset-${set.id}`} value={set.id}>
-                          {" "}
-                          {set.name} {set.season ? ` · ${set.season}` : ""}{" "}
+                          {set.name} {set.season ? ` · ${set.season}` : ""}
                         </option>
-                      ))}{" "}
-                    </select>{" "}
-                  </label>{" "}
+                      ))}
+                    </select>
+                  </label>
                   {!isNonStopFormat(format) && (
                     <label className="space-y-1 text-sm text-white/70">
-                      {" "}
                       <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">
                         Prioridade agenda
-                      </span>{" "}
+                      </span>
                       <select
                         value={schedulePriority}
                         onChange={(e) =>
@@ -1822,44 +1756,38 @@ export default function PadelTournamentWizardClient({
                         }
                         className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
                       >
-                        {" "}
-                        <option value="GROUPS_FIRST">
-                          Grupos primeiro
-                        </option>{" "}
+                        <option value="GROUPS_FIRST">Grupos primeiro</option>
                         <option value="KNOCKOUT_FIRST">
                           Eliminatórias primeiro
-                        </option>{" "}
-                      </select>{" "}
+                        </option>
+                      </select>
                     </label>
-                  )}{" "}
+                  )}
                   <label className="space-y-1 text-sm text-white/70">
-                    {" "}
                     <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">
                       Buffer técnico (min)
-                    </span>{" "}
+                    </span>
                     <input
                       type="number"
                       min={0}
                       value={bufferMinutes}
                       onChange={(e) => setBufferMinutes(e.target.value)}
                       className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
-                    />{" "}
-                  </label>{" "}
+                    />
+                  </label>
                   <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/80">
-                    {" "}
                     <input
                       type="checkbox"
                       checked={waitlistEnabled}
                       onChange={(e) => setWaitlistEnabled(e.target.checked)}
                       className="h-4 w-4 rounded border-white/30 bg-black/40 text-[#22D3EE]"
-                    />{" "}
-                    Lista de espera ativa{" "}
-                  </label>{" "}
+                    />
+                    Lista de espera ativa
+                  </label>
                   <label className="space-y-1 text-sm text-white/70">
-                    {" "}
                     <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">
                       Modo de planeamento
-                    </span>{" "}
+                    </span>
                     <select
                       value={plannerMode}
                       onChange={(e) =>
@@ -1869,102 +1797,91 @@ export default function PadelTournamentWizardClient({
                       }
                       className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
                     >
-                      {" "}
-                      <option value="capacity">
-                        Capacidade declarada
-                      </option>{" "}
-                      <option value="minimum">Mínimo técnico</option>{" "}
-                    </select>{" "}
-                  </label>{" "}
+                      <option value="capacity">Capacidade declarada</option>
+                      <option value="minimum">Mínimo técnico</option>
+                    </select>
+                  </label>
                 </div>
-              )}{" "}
-            </div>{" "}
+              )}
+            </div>
             {scheduleWarnings.length > 0 && (
-              <div className="rounded-2xl border border-amber-300/40 bg-amber-500/10 px-4 py-3 text-[12px] text-amber-100">
-                {" "}
+              <div
+                role="status"
+                aria-live="polite"
+                className="rounded-2xl border border-amber-300/40 bg-amber-500/10 px-4 py-3 text-[12px] text-amber-100"
+              >
                 {scheduleWarnings.map((warning) => (
                   <p key={`schedule-warning-${warning}`}>{warning}</p>
-                ))}{" "}
+                ))}
               </div>
-            )}{" "}
+            )}
             {capacityPlanLoading && (
               <div className="rounded-2xl border border-white/15 bg-black/25 px-4 py-3 text-[12px] text-white/70">
-                {" "}
-                A calcular viabilidade por formato/campos...{" "}
+                A calcular viabilidade por formato/campos...
               </div>
-            )}{" "}
+            )}
             {capacityPlanError && (
-              <div className="rounded-2xl border border-amber-300/40 bg-amber-500/10 px-4 py-3 text-[12px] text-amber-100">
-                {" "}
-                {capacityPlanError}{" "}
+              <div
+                role="status"
+                aria-live="polite"
+                className="rounded-2xl border border-amber-300/40 bg-amber-500/10 px-4 py-3 text-[12px] text-amber-100"
+              >
+                {capacityPlanError}
               </div>
-            )}{" "}
+            )}
             {capacityPlan && (
               <div
                 className={`rounded-2xl border px-4 py-3 text-[12px] ${capacityPlan.feasible ? "border-emerald-300/35 bg-emerald-500/10 text-emerald-100" : "border-amber-300/40 bg-amber-500/10 text-amber-100"}`}
               >
-                {" "}
-                <p className="font-semibold">Viabilidade por formato</p>{" "}
+                <p className="font-semibold">Viabilidade por formato</p>
                 <p className="text-[11px] opacity-90">
-                  {" "}
-                  Slots {capacityPlan.totalSlots} · Jogos{" "}
-                  {capacityPlan.matchesNeeded} · Em falta{" "}
-                  {Math.max(0, capacityPlan.unscheduledMatches)} · Campos{" "}
-                  {capacityPlan.courtsUsed}.{" "}
-                </p>{" "}
+                  Slots {capacityPlan.totalSlots} · Jogos
+                  {capacityPlan.matchesNeeded} · Em falta
+                  {Math.max(0, capacityPlan.unscheduledMatches)} · Campos
+                  {capacityPlan.courtsUsed}.
+                </p>
                 {(capacityPlan.warnings.length > 0 ||
                   capacityPlan.blockingReasons.length > 0) && (
                   <p className="mt-2 text-[11px] opacity-90">
-                    {" "}
                     {capacityPlan.warnings.length > 0
                       ? `Avisos: ${capacityPlan.warnings.slice(0, 2).join(" ·")}.`
-                      : ""}{" "}
+                      : ""}
                     {capacityPlan.blockingReasons.length > 0
                       ? `Bloqueios técnicos: ${capacityPlan.blockingReasons.join(" ·")}.`
-                      : ""}{" "}
+                      : ""}
                   </p>
-                )}{" "}
+                )}
               </div>
-            )}{" "}
-            {renderSectionIssues(registrationIssues)}{" "}
-          </section>{" "}
+            )}
+            {renderSectionIssues(registrationIssues)}
+          </section>
           <section
             id="wizard-categories"
             className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4"
           >
-            {" "}
             <div className="space-y-1 border-b border-white/10 pb-3">
-              {" "}
               <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">
                 Categorias
-              </p>{" "}
-              <p className="text-sm text-white/75">
-                Cada categoria pode ter o seu próprio formato e regras.
-              </p>{" "}
-            </div>{" "}
+              </p>
+            </div>
             <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
-              {" "}
               <label className="space-y-1 text-sm text-white/70">
-                {" "}
                 <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">
                   Formato base
-                </span>{" "}
+                </span>
                 <select
                   value={format}
                   onChange={(e) => setFormat(e.target.value)}
                   className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#22D3EE]"
                 >
-                  {" "}
                   {PADEL_FORMATS.map((opt) => (
                     <option key={`format-${opt.value}`} value={opt.value}>
-                      {" "}
-                      {opt.label}{" "}
+                      {opt.label}
                     </option>
-                  ))}{" "}
-                </select>{" "}
-              </label>{" "}
+                  ))}
+                </select>
+              </label>
               <div className="flex items-end">
-                {" "}
                 <Link
                   href={appendOrganizationIdToHref(
                     "/org/padel/tournaments?section=padel-tournaments&padel=categories",
@@ -1972,30 +1889,25 @@ export default function PadelTournamentWizardClient({
                   )}
                   className="text-[12px] text-white/70 underline"
                 >
-                  {" "}
-                  Gerir categorias{" "}
-                </Link>{" "}
-              </div>{" "}
-            </div>{" "}
+                  Gerir categorias
+                </Link>
+              </div>
+            </div>
             {(isAmMxFormat(format) || isNonStopFormat(format)) && (
               <div className="grid gap-3 rounded-2xl border border-white/10 bg-black/30 p-3 md:grid-cols-3">
-                {" "}
                 <div className="md:col-span-3">
-                  {" "}
                   <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">
                     Parâmetros base do formato
-                  </p>{" "}
+                  </p>
                   <p className="text-[12px] text-white/65">
-                    {" "}
-                    Aplicados apenas em categorias sem personalização.{" "}
-                  </p>{" "}
-                </div>{" "}
+                    Aplicados apenas em categorias sem personalização.
+                  </p>
+                </div>
                 {isAmMxFormat(format) && (
                   <label className="space-y-1 text-[12px] text-white/70">
-                    {" "}
                     <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">
                       Modo AM/MX
-                    </span>{" "}
+                    </span>
                     <select
                       value={globalAmMxMode}
                       onChange={(e) =>
@@ -2007,29 +1919,26 @@ export default function PadelTournamentWizardClient({
                       }
                       className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
                     >
-                      {" "}
                       <option value="INDIVIDUAL_ROTATION">
                         Rotação individual
-                      </option>{" "}
-                      <option value="FIXED_PAIR">Duplas fixas</option>{" "}
-                    </select>{" "}
+                      </option>
+                      <option value="FIXED_PAIR">Duplas fixas</option>
+                    </select>
                   </label>
-                )}{" "}
+                )}
                 {isAmMxFormat(format) && (
                   <div className="space-y-1 rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-[12px] text-white/70">
-                    {" "}
                     <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">
                       Progressão
-                    </span>{" "}
-                    <p>Ronda a ronda (fixo)</p>{" "}
+                    </span>
+                    <p>Ronda a ronda (fixo)</p>
                   </div>
-                )}{" "}
+                )}
                 {isNonStopFormat(format) && (
                   <label className="space-y-1 text-[12px] text-white/70">
-                    {" "}
                     <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">
                       Modo NON_STOP
-                    </span>{" "}
+                    </span>
                     <select
                       value={globalNonStopMode}
                       onChange={(e) =>
@@ -2041,46 +1950,40 @@ export default function PadelTournamentWizardClient({
                       }
                       className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
                     >
-                      {" "}
-                      <option value="ACTIVE_QUEUE">Fila ativa</option>{" "}
+                      <option value="ACTIVE_QUEUE">Fila ativa</option>
                       <option value="HARD_CAP_WAITLIST">
                         Limite rígido + lista de espera
-                      </option>{" "}
-                    </select>{" "}
+                      </option>
+                    </select>
                   </label>
-                )}{" "}
+                )}
                 {isNonStopFormat(format) && (
                   <label className="space-y-1 text-[12px] text-white/70">
-                    {" "}
                     <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">
                       Rondas base
-                    </span>{" "}
+                    </span>
                     <input
                       type="number"
                       min={1}
                       value={globalNonStopRounds}
                       onChange={(e) => setGlobalNonStopRounds(e.target.value)}
                       className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
-                    />{" "}
+                    />
                   </label>
-                )}{" "}
+                )}
               </div>
-            )}{" "}
+            )}
             <div className="flex flex-wrap items-center justify-between gap-3">
-              {" "}
               <p className="text-[12px] text-white/70">
                 {selectedCategories.length} selecionada(s)
-              </p>{" "}
-            </div>{" "}
+              </p>
+            </div>
             {categories.length === 0 ? (
               <div className="rounded-2xl border border-white/10 bg-black/30 p-4 text-[12px] text-white/60">
-                {" "}
-                Ainda não tens categorias. Cria pelo menos uma antes de
-                avançar.{" "}
+                Ainda não tens categorias. Cria pelo menos uma antes de avançar.
               </div>
             ) : (
               <div className="grid max-h-[280px] gap-2 overflow-y-auto rounded-2xl border border-white/10 bg-black/25 p-3 md:grid-cols-2">
-                {" "}
                 {categories.map((cat) => {
                   const draft = categoryDrafts[cat.id];
                   return (
@@ -2088,34 +1991,30 @@ export default function PadelTournamentWizardClient({
                       key={`cat-${cat.id}`}
                       className="flex items-center justify-between rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white/80"
                     >
-                      {" "}
                       <span className="flex items-center gap-2">
-                        {" "}
                         <input
                           type="checkbox"
                           checked={Boolean(draft?.selected)}
                           onChange={() => toggleCategory(cat.id)}
                           className="h-4 w-4 rounded border-white/30 bg-black/40 text-[#22D3EE]"
-                        />{" "}
-                        <span className="font-semibold">{cat.label}</span>{" "}
-                      </span>{" "}
+                        />
+                        <span className="font-semibold">{cat.label}</span>
+                      </span>
                       <span className="text-[11px] text-white/55">
-                        {" "}
                         {[cat.genderRestriction, cat.minLevel, cat.maxLevel]
                           .filter(Boolean)
-                          .join(" ·")}{" "}
-                      </span>{" "}
+                          .join(" ·")}
+                      </span>
                     </label>
                   );
-                })}{" "}
+                })}
               </div>
-            )}{" "}
+            )}
             {selectedCategories.length > 0 && (
               <div className="space-y-2 rounded-2xl border border-white/10 bg-black/30 p-3">
-                {" "}
                 <p className="text-[12px] uppercase tracking-[0.16em] text-white/60">
                   Edição das selecionadas
-                </p>{" "}
+                </p>
                 {selectedCategories.map((cat) => {
                   const draft = categoryDrafts[cat.id] ?? {
                     selected: true,
@@ -2130,12 +2029,10 @@ export default function PadelTournamentWizardClient({
                       key={`selected-cat-${cat.id}`}
                       className="space-y-3 rounded-xl border border-white/10 bg-black/25 p-3"
                     >
-                      {" "}
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        {" "}
                         <p className="text-sm font-semibold text-white">
                           {cat.label}
-                        </p>{" "}
+                        </p>
                         {hasCustomFormat ? (
                           <button
                             type="button"
@@ -2150,22 +2047,19 @@ export default function PadelTournamentWizardClient({
                             }
                             className="rounded-lg border border-white/15 px-2 py-1 text-[11px] text-white/70 transition hover:border-white/30 hover:text-white"
                           >
-                            {" "}
-                            Usar base{" "}
+                            Usar base
                           </button>
                         ) : (
                           <span className="text-[11px] text-white/55">
                             A usar base ({resolveFormatLabel(format)})
                           </span>
-                        )}{" "}
-                      </div>{" "}
+                        )}
+                      </div>
                       <div className="grid gap-2 md:grid-cols-3">
-                        {" "}
                         <label className="space-y-1 text-[12px] text-white/70">
-                          {" "}
                           <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">
                             Preço / jogador (€)
-                          </span>{" "}
+                          </span>
                           <input
                             value={draft.price}
                             onChange={(e) =>
@@ -2174,13 +2068,12 @@ export default function PadelTournamentWizardClient({
                               })
                             }
                             className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
-                          />{" "}
-                        </label>{" "}
+                          />
+                        </label>
                         <label className="space-y-1 text-[12px] text-white/70">
-                          {" "}
                           <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">
                             Capacidade (equipas)
-                          </span>{" "}
+                          </span>
                           <input
                             value={draft.capacityTeams}
                             onChange={(e) =>
@@ -2189,13 +2082,12 @@ export default function PadelTournamentWizardClient({
                               })
                             }
                             className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
-                          />{" "}
-                        </label>{" "}
+                          />
+                        </label>
                         <label className="space-y-1 text-[12px] text-white/70">
-                          {" "}
                           <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">
                             Formato da categoria
-                          </span>{" "}
+                          </span>
                           <select
                             value={draft.format ?? format}
                             onChange={(e) =>
@@ -2205,27 +2097,23 @@ export default function PadelTournamentWizardClient({
                             }
                             className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
                           >
-                            {" "}
                             {PADEL_FORMATS.map((opt) => (
                               <option
                                 key={`cat-format-${cat.id}-${opt.value}`}
                                 value={opt.value}
                               >
-                                {" "}
-                                {opt.label}{" "}
+                                {opt.label}
                               </option>
-                            ))}{" "}
-                          </select>{" "}
-                        </label>{" "}
-                      </div>{" "}
+                            ))}
+                          </select>
+                        </label>
+                      </div>
                       {isAmMxFormat(categoryFormat) && (
                         <div className="grid gap-2 md:grid-cols-2">
-                          {" "}
                           <label className="space-y-1 text-[12px] text-white/70">
-                            {" "}
                             <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">
                               Modo AM/MX
-                            </span>{" "}
+                            </span>
                             <select
                               value={draft.amMxMode ?? globalAmMxMode}
                               onChange={(e) =>
@@ -2239,32 +2127,26 @@ export default function PadelTournamentWizardClient({
                               }
                               className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
                             >
-                              {" "}
                               <option value="INDIVIDUAL_ROTATION">
                                 Rotação individual
-                              </option>{" "}
-                              <option value="FIXED_PAIR">
-                                Duplas fixas
-                              </option>{" "}
-                            </select>{" "}
-                          </label>{" "}
+                              </option>
+                              <option value="FIXED_PAIR">Duplas fixas</option>
+                            </select>
+                          </label>
                           <div className="space-y-1 rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-[12px] text-white/70">
-                            {" "}
                             <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">
                               Progressão
-                            </span>{" "}
-                            <p>Ronda a ronda</p>{" "}
-                          </div>{" "}
+                            </span>
+                            <p>Ronda a ronda</p>
+                          </div>
                         </div>
-                      )}{" "}
+                      )}
                       {isNonStopFormat(categoryFormat) && (
                         <div className="grid gap-2 md:grid-cols-2">
-                          {" "}
                           <label className="space-y-1 text-[12px] text-white/70">
-                            {" "}
                             <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">
                               Modo NON_STOP
-                            </span>{" "}
+                            </span>
                             <select
                               value={draft.nonStopMode ?? globalNonStopMode}
                               onChange={(e) =>
@@ -2277,20 +2159,16 @@ export default function PadelTournamentWizardClient({
                               }
                               className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
                             >
-                              {" "}
-                              <option value="ACTIVE_QUEUE">
-                                Fila ativa
-                              </option>{" "}
+                              <option value="ACTIVE_QUEUE">Fila ativa</option>
                               <option value="HARD_CAP_WAITLIST">
                                 Limite rígido + lista de espera
-                              </option>{" "}
-                            </select>{" "}
-                          </label>{" "}
+                              </option>
+                            </select>
+                          </label>
                           <label className="space-y-1 text-[12px] text-white/70">
-                            {" "}
                             <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">
                               Rondas NON_STOP
-                            </span>{" "}
+                            </span>
                             <input
                               type="number"
                               min={1}
@@ -2301,14 +2179,12 @@ export default function PadelTournamentWizardClient({
                                 })
                               }
                               className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
-                            />{" "}
-                          </label>{" "}
+                            />
+                          </label>
                         </div>
-                      )}{" "}
+                      )}
                       <div className="space-y-2 rounded-lg border border-white/10 bg-black/20 px-3 py-2">
-                        {" "}
                         <label className="flex items-center gap-2 text-[12px] text-white/75">
-                          {" "}
                           <input
                             type="checkbox"
                             checked={draft.scoreRulesOverride === true}
@@ -2321,17 +2197,15 @@ export default function PadelTournamentWizardClient({
                               })
                             }
                             className="h-4 w-4 rounded border-white/30 bg-black/40 text-[#22D3EE]"
-                          />{" "}
-                          Personalizar regras de pontuação nesta categoria{" "}
-                        </label>{" "}
+                          />
+                          Personalizar regras de pontuação nesta categoria
+                        </label>
                         {draft.scoreRulesOverride === true && (
                           <div className="grid gap-2 md:grid-cols-2">
-                            {" "}
                             <label className="space-y-1 text-[12px] text-white/70">
-                              {" "}
                               <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">
                                 Pré-definição de pontuação
-                              </span>{" "}
+                              </span>
                               <select
                                 value={draft.scoreRulesPresetId ?? "STANDARD"}
                                 onChange={(e) =>
@@ -2344,23 +2218,20 @@ export default function PadelTournamentWizardClient({
                                 }
                                 className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
                               >
-                                {" "}
                                 {PADEL_SCORE_RULE_PRESETS.map((preset) => (
                                   <option
                                     key={`cat-score-preset-${cat.id}-${preset.id}`}
                                     value={preset.id}
                                   >
-                                    {" "}
-                                    {preset.label}{" "}
+                                    {preset.label}
                                   </option>
-                                ))}{" "}
-                              </select>{" "}
-                            </label>{" "}
+                                ))}
+                              </select>
+                            </label>
                             <label className="space-y-1 text-[12px] text-white/70">
-                              {" "}
                               <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">
                                 Deuce
-                              </span>{" "}
+                              </span>
                               <select
                                 value={draft.deuceMode ?? globalDeuceMode}
                                 onChange={(e) =>
@@ -2373,22 +2244,19 @@ export default function PadelTournamentWizardClient({
                                 }
                                 className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
                               >
-                                {" "}
                                 {PADEL_DEUCE_MODE_OPTIONS.map((option) => (
                                   <option
                                     key={`cat-score-deuce-${cat.id}-${option.value}`}
                                     value={option.value}
                                   >
-                                    {" "}
-                                    {option.label}{" "}
+                                    {option.label}
                                   </option>
-                                ))}{" "}
-                              </select>{" "}
-                            </label>{" "}
+                                ))}
+                              </select>
+                            </label>
                           </div>
-                        )}{" "}
+                        )}
                         <p className="text-[11px] text-white/60">
-                          {" "}
                           Regra efetiva:{" "}
                           {draft.scoreRulesOverride === true
                             ? buildScoreRulesFromPreset(
@@ -2401,39 +2269,31 @@ export default function PadelTournamentWizardClient({
                             : globalScoreRulesPreview.deuceMode ===
                                 "GOLDEN_POINT"
                               ? "Ponto de ouro (global)"
-                              : "Vantagens (global)"}{" "}
-                        </p>{" "}
-                      </div>{" "}
+                              : "Vantagens (global)"}
+                        </p>
+                      </div>
                     </div>
                   );
-                })}{" "}
+                })}
               </div>
-            )}{" "}
-            {renderSectionIssues(categoriesIssues)}{" "}
-          </section>{" "}
+            )}
+            {renderSectionIssues(categoriesIssues)}
+          </section>
           <section
             id="wizard-operation"
             className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4"
           >
-            {" "}
             <div className="space-y-1 border-b border-white/10 pb-3">
-              {" "}
               <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">
                 Operação
-              </p>{" "}
-              <p className="text-sm text-white/75">
-                Campos e equipa operacional.
-              </p>{" "}
-            </div>{" "}
+              </p>
+            </div>
             <div className="grid gap-3 md:grid-cols-2">
-              {" "}
               <div className="rounded-2xl border border-white/10 bg-black/30 p-4 space-y-3">
-                {" "}
                 <p className="text-[12px] uppercase tracking-[0.18em] text-white/60">
                   Operação em direto
-                </p>{" "}
+                </p>
                 <label className="flex items-center gap-2 text-[12px] text-white/75">
-                  {" "}
                   <input
                     type="checkbox"
                     checked={playerResultSubmissionEnabled}
@@ -2441,14 +2301,13 @@ export default function PadelTournamentWizardClient({
                       setPlayerResultSubmissionEnabled(e.target.checked)
                     }
                     className="h-4 w-4 rounded border-white/30 bg-black/40 text-[#22D3EE]"
-                  />{" "}
-                  Jogador pode submeter resultado{" "}
-                </label>{" "}
+                  />
+                  Jogador pode submeter resultado
+                </label>
                 <label className="space-y-1 text-[12px] text-white/70">
-                  {" "}
                   <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">
                     Validação
-                  </span>{" "}
+                  </span>
                   <select
                     value={resultValidationMode}
                     onChange={(e) =>
@@ -2460,20 +2319,18 @@ export default function PadelTournamentWizardClient({
                     }
                     className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
                   >
-                    {" "}
                     <option value="IMMEDIATE_OFFICIAL">
                       Staff oficial imediato
-                    </option>{" "}
+                    </option>
                     <option value="IMMEDIATE_PENDING_THEN_OFFICIAL">
                       Staff pendente + confirmação
-                    </option>{" "}
-                  </select>{" "}
-                </label>{" "}
+                    </option>
+                  </select>
+                </label>
                 <label className="space-y-1 text-[12px] text-white/70">
-                  {" "}
                   <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">
                     Janela pendente (min)
-                  </span>{" "}
+                  </span>
                   <input
                     type="number"
                     min={1}
@@ -2483,19 +2340,17 @@ export default function PadelTournamentWizardClient({
                       setPendingConfirmationWindowMinutes(e.target.value)
                     }
                     className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
-                  />{" "}
-                </label>{" "}
-              </div>{" "}
+                  />
+                </label>
+              </div>
               <div className="rounded-2xl border border-white/10 bg-black/30 p-4 space-y-3">
-                {" "}
                 <p className="text-[12px] uppercase tracking-[0.18em] text-white/60">
                   Regras de pontuação (global)
-                </p>{" "}
+                </p>
                 <label className="space-y-1 text-[12px] text-white/70">
-                  {" "}
                   <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">
                     Pré-definição
-                  </span>{" "}
+                  </span>
                   <select
                     value={globalScorePresetId}
                     onChange={(e) =>
@@ -2506,23 +2361,20 @@ export default function PadelTournamentWizardClient({
                     }
                     className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
                   >
-                    {" "}
                     {PADEL_SCORE_RULE_PRESETS.map((preset) => (
                       <option
                         key={`global-score-preset-${preset.id}`}
                         value={preset.id}
                       >
-                        {" "}
-                        {preset.label}{" "}
+                        {preset.label}
                       </option>
-                    ))}{" "}
-                  </select>{" "}
-                </label>{" "}
+                    ))}
+                  </select>
+                </label>
                 <label className="space-y-1 text-[12px] text-white/70">
-                  {" "}
                   <span className="text-[10px] uppercase tracking-[0.16em] text-white/50">
                     Deuce
-                  </span>{" "}
+                  </span>
                   <select
                     value={globalDeuceMode}
                     onChange={(e) =>
@@ -2534,38 +2386,32 @@ export default function PadelTournamentWizardClient({
                     }
                     className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white"
                   >
-                    {" "}
                     {PADEL_DEUCE_MODE_OPTIONS.map((option) => (
                       <option
                         key={`global-score-deuce-${option.value}`}
                         value={option.value}
                       >
-                        {" "}
-                        {option.label}{" "}
+                        {option.label}
                       </option>
-                    ))}{" "}
-                  </select>{" "}
-                </label>{" "}
+                    ))}
+                  </select>
+                </label>
                 <p className="text-[11px] text-white/60">
-                  {" "}
                   Regra global ativa:{" "}
                   {globalScoreRulesPreview.deuceMode === "GOLDEN_POINT"
                     ? "Ponto de ouro"
                     : "Vantagens"}
-                  .{" "}
-                </p>{" "}
-              </div>{" "}
-            </div>{" "}
+                  .
+                </p>
+              </div>
+            </div>
             {selectedClub && courts.length > 0 && (
               <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-                {" "}
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  {" "}
                   <p className="text-[12px] uppercase tracking-[0.18em] text-white/60">
                     Campos
-                  </p>{" "}
+                  </p>
                   <label className="flex items-center gap-2 text-[12px] text-white/70">
-                    {" "}
                     <input
                       type="checkbox"
                       checked={useAllCourts}
@@ -2581,38 +2427,34 @@ export default function PadelTournamentWizardClient({
                         });
                       }}
                       className="h-4 w-4 rounded border-white/30 bg-black/40 text-[#22D3EE]"
-                    />{" "}
-                    Usar todos{" "}
-                  </label>{" "}
-                </div>{" "}
+                    />
+                    Usar todos
+                  </label>
+                </div>
                 {!useAllCourts && (
                   <div className="mt-3 grid gap-2 md:grid-cols-2">
-                    {" "}
                     {courts.map((court) => (
                       <label
                         key={`court-${court.id}`}
                         className="flex items-center gap-2 text-sm text-white/70"
                       >
-                        {" "}
                         <input
                           type="checkbox"
                           checked={selectedCourtIds.includes(court.id)}
                           onChange={() => toggleCourt(court.id)}
                           className="h-4 w-4 rounded border-white/30 bg-black/40 text-[#22D3EE]"
-                        />{" "}
-                        {court.name}{" "}
+                        />
+                        {court.name}
                       </label>
-                    ))}{" "}
+                    ))}
                   </div>
-                )}{" "}
+                )}
                 {resolvedCourts.length > 0 && (
                   <div className="mt-3 rounded-xl border border-white/10 bg-black/25 p-3">
-                    {" "}
                     <div className="mb-2 flex items-center justify-between gap-2">
-                      {" "}
                       <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">
                         Prioridade de campos
-                      </p>{" "}
+                      </p>
                       <button
                         type="button"
                         onClick={() =>
@@ -2622,114 +2464,100 @@ export default function PadelTournamentWizardClient({
                         }
                         className="rounded-lg border border-white/15 px-2 py-1 text-[11px] text-white/70 transition hover:border-white/30 hover:text-white"
                       >
-                        {" "}
-                        Repor ordem{" "}
-                      </button>{" "}
-                    </div>{" "}
+                        Repor ordem
+                      </button>
+                    </div>
                     <div className="space-y-2">
-                      {" "}
                       {resolvedCourts.map((court, idx) => (
                         <div
                           key={`priority-court-${court.id}`}
                           className="flex items-center justify-between rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/75"
                         >
-                          {" "}
                           <span>
-                            {" "}
-                            #{idx + 1} · {court.name}{" "}
-                          </span>{" "}
+                            #{idx + 1} · {court.name}
+                          </span>
                           <div className="flex items-center gap-2">
-                            {" "}
                             <button
                               type="button"
                               disabled={idx === 0}
                               onClick={() => moveCourtPriority(court.id, -1)}
                               className="rounded-lg border border-white/15 px-2 py-1 text-[11px] text-white/70 transition hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                              {" "}
-                              Subir{" "}
-                            </button>{" "}
+                              Subir
+                            </button>
                             <button
                               type="button"
                               disabled={idx === resolvedCourts.length - 1}
                               onClick={() => moveCourtPriority(court.id, 1)}
                               className="rounded-lg border border-white/15 px-2 py-1 text-[11px] text-white/70 transition hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                              {" "}
-                              Descer{" "}
-                            </button>{" "}
-                          </div>{" "}
+                              Descer
+                            </button>
+                          </div>
                         </div>
-                      ))}{" "}
-                    </div>{" "}
+                      ))}
+                    </div>
                   </div>
-                )}{" "}
+                )}
               </div>
-            )}{" "}
+            )}
             {selectedClub && staffMembers.length > 0 && (
               <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-                {" "}
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  {" "}
                   <p className="text-[12px] uppercase tracking-[0.18em] text-white/60">
                     Staff operacional
-                  </p>{" "}
+                  </p>
                   <span className="text-[11px] text-white/60">
                     Selecionados: {selectedStaffIds.length}
-                  </span>{" "}
-                </div>{" "}
+                  </span>
+                </div>
                 <div className="mt-3 grid gap-2 md:grid-cols-2">
-                  {" "}
                   {staffMembers.map((staff) => (
                     <label
                       key={`staff-${staff.id}`}
                       className="flex items-center gap-2 text-sm text-white/70"
                     >
-                      {" "}
                       <input
                         type="checkbox"
                         checked={selectedStaffIds.includes(staff.id)}
                         onChange={() => toggleStaff(staff.id)}
                         className="h-4 w-4 rounded border-white/30 bg-black/40 text-[#22D3EE]"
-                      />{" "}
+                      />
                       <span>
-                        {" "}
                         {staff.fullName ||
                           staff.email ||
                           staff.username ||
-                          `Staff #${staff.id}`}{" "}
-                        {staff.role ? ` · ${staff.role}` : ""}{" "}
-                      </span>{" "}
+                          `Staff #${staff.id}`}
+                        {staff.role ? ` · ${staff.role}` : ""}
+                      </span>
                     </label>
-                  ))}{" "}
-                </div>{" "}
+                  ))}
+                </div>
               </div>
-            )}{" "}
-            {renderSectionIssues(operationIssues)}{" "}
-          </section>{" "}
+            )}
+            {renderSectionIssues(operationIssues)}
+          </section>
           {error && (
-            <div className="rounded-2xl border border-rose-300/45 bg-rose-500/10 px-4 py-3 text-[12px] text-rose-100">
-              {" "}
-              {error}{" "}
+            <div
+              role="alert"
+              className="rounded-2xl border border-rose-300/45 bg-rose-500/10 px-4 py-3 text-[12px] text-rose-100"
+            >
+              {error}
             </div>
-          )}{" "}
+          )}
         </div>
       }
       footer={
         <div className="flex flex-wrap items-center gap-3">
-          {" "}
           <button
             type="button"
             onClick={handleSubmit}
             disabled={saving}
+            aria-busy={isSubmitting}
             className={`${CTA_PRIMARY} disabled:opacity-60`}
           >
-            {" "}
-            {isSubmitting ? "A criar torneio..." : "Criar torneio"}{" "}
-          </button>{" "}
-          <span className="text-[12px] text-white/60">
-            O torneio é criado em rascunho.
-          </span>{" "}
+            {isSubmitting ? "A criar torneio..." : "Criar torneio"}
+          </button>
         </div>
       }
     />

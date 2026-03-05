@@ -14,7 +14,7 @@ export function CalendarExportPanel(props: {
       <p className="text-[12px] text-white/65">
         Partilha a agenda com equipas e árbitros.
       </p>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {props.links.map((link) => {
           const disabled = !props.eventId;
           return (

@@ -24,7 +24,7 @@ import {
   DASHBOARD_MUTED,
 } from "@/app/org/_internal/core/dashboardUi";
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
-const DAY_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"] as const;
+const DAY_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"] as const;
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
 const DEFAULT_SLOT_MINUTES = 30;
 const DAY_MINUTES = 24 * 60;
@@ -962,8 +962,10 @@ export default function AvailabilityEditor({
               <div
                 key={`schedule-${schedule.id}`}
                 className={cn(
-                  "rounded-xl border border-white/10 bg-black/20 p-3 transition",
-                  isSelected ? "border-cyan-300/60" : "hover:border-white/25",
+                  "rounded-xl border p-3 transition",
+                  isSelected
+                    ? "border-cyan-300/75 bg-cyan-500/10 shadow-[0_8px_20px_rgba(34,211,238,0.18)]"
+                    : "border-white/10 bg-black/20 hover:border-white/25",
                 )}
               >
                 {" "}
@@ -991,6 +993,12 @@ export default function AvailabilityEditor({
                     </p>{" "}
                   </button>{" "}
                   <div className="flex items-center gap-2">
+                    {" "}
+                    {isSelected ? (
+                      <span className="rounded-full border border-cyan-300/50 bg-cyan-400/14 px-2 py-0.5 text-[10px] text-cyan-100">
+                        Selecionada
+                      </span>
+                    ) : null}
                     {" "}
                     <button
                       type="button"
@@ -1208,7 +1216,7 @@ export default function AvailabilityEditor({
                           return (
                             <div
                               key={interval.id}
-                              className="group absolute left-1 right-1 rounded-xl border border-cyan-300/65 bg-cyan-400/22 px-2.5 py-2 text-[10px] text-cyan-50 shadow-[0_6px_18px_rgba(8,145,178,0.28)] backdrop-blur-[1px]"
+                              className="group absolute left-1 right-1 rounded-xl border border-cyan-200/85 bg-cyan-400/32 px-2.5 py-2 text-[10px] text-cyan-50 shadow-[0_10px_24px_rgba(8,145,178,0.34)] backdrop-blur-[1px]"
                               style={{ top, height }}
                               onPointerDown={(event) =>
                                 startDragMove(dayIdx, interval.id, event)

@@ -255,18 +255,23 @@ export default function MonthCalendarReadClient() {
             {statusSummary.total} {statusSummary.total === 1 ? "ocupação" : "ocupações"}
           </span>
           {statusSummary.confirmed > 0 ? (
-            <span className="rounded-full border border-sky-300/45 bg-sky-400/12 px-2 py-1 text-sky-100">
+            <span className="rounded-full border border-emerald-300/45 bg-emerald-400/14 px-2 py-1 text-emerald-100">
               Confirmado {statusSummary.confirmed}
             </span>
           ) : null}
           {statusSummary.pending > 0 ? (
-            <span className="rounded-full border border-amber-300/45 bg-amber-400/12 px-2 py-1 text-amber-100">
+            <span className="rounded-full border border-amber-300/45 bg-amber-400/14 px-2 py-1 text-amber-100">
               Pendente {statusSummary.pending}
             </span>
           ) : null}
           {statusSummary.cancelled > 0 ? (
-            <span className="rounded-full border border-rose-300/45 bg-rose-400/12 px-2 py-1 text-rose-100">
+            <span className="rounded-full border border-rose-300/45 bg-rose-400/14 px-2 py-1 text-rose-100">
               Cancelado/No-show {statusSummary.cancelled}
+            </span>
+          ) : null}
+          {statusSummary.disputed > 0 ? (
+            <span className="rounded-full border border-fuchsia-300/45 bg-fuchsia-400/14 px-2 py-1 text-fuchsia-100">
+              Disputa {statusSummary.disputed}
             </span>
           ) : null}
         </div>

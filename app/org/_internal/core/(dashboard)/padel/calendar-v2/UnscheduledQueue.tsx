@@ -10,8 +10,11 @@ export function UnscheduledQueue(props: {
       ) : (
         <div className="mt-2 space-y-1 text-[12px] text-white/75">
           {props.rows.map((row) => (
-            <div key={row.label} className="flex items-center justify-between rounded-lg border border-white/10 px-2 py-1">
-              <span>{row.label}</span>
+            <div
+              key={row.label}
+              className="flex items-center justify-between gap-2 rounded-lg border border-white/10 px-2 py-1"
+            >
+              <span className="truncate">{row.label}</span>
               <span className="font-semibold text-white">{row.value}</span>
             </div>
           ))}
