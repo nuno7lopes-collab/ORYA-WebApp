@@ -68,6 +68,7 @@ Data de referencia: 2026-02-24
 | `scripts/audit_padel_category_ticket_links.ts` | `audit:padel-category-ticket-links` | `ci,dev` |
 | `scripts/audit_public_events.ts` | `audit:public-events` | `ci,dev` |
 | `scripts/backfill_booking_confirmation_snapshots.ts` | `reservas:backfill-confirmation-snapshots:dry` | `dev,local` |
+| `scripts/backfill_booking_court_snapshots.ts` | `reservas:backfill-court-snapshots:dry` | `dev,local` |
 | `scripts/codemods/enforce-verified-auth.mjs` | `auth:codemod:enforce-verified` | `dev,local` |
 | `scripts/convert_test_orgs_to_platform.ts` | `orgs:convert-test-platform` | `dev,local` |
 | `scripts/crm/backfillPadelInteractions.ts` | `crm:backfill-padel:dry` | `dev,local` |
@@ -223,6 +224,13 @@ Data de referencia: 2026-02-24
 - Script: `scripts/backfill_booking_confirmation_snapshots.ts`
 - Owner: `platform-architecture`
 - Comando npm oficial: `npm run reservas:backfill-confirmation-snapshots:dry`
+- Ambientes: `dev,local`
+
+### backfill-booking-court-snapshots-ts
+
+- Script: `scripts/backfill_booking_court_snapshots.ts`
+- Owner: `platform-architecture`
+- Comando npm oficial: `npm run reservas:backfill-court-snapshots:dry`
 - Ambientes: `dev,local`
 
 ### build-and-push-sh

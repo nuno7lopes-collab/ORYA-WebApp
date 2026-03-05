@@ -41,6 +41,7 @@
     "local": [
       "scripts/academy_hardcut_trainer_hygiene.ts",
       "scripts/backfill_booking_confirmation_snapshots.ts",
+      "scripts/backfill_booking_court_snapshots.ts",
       "scripts/chat-realtime-doctor.js",
       "scripts/check-db-env.js",
       "scripts/codespaces-bootstrap.sh",
@@ -95,6 +96,7 @@
       "scripts/aws/redis-stop.sh",
       "scripts/aws/start-prod.sh",
       "scripts/backfill_booking_confirmation_snapshots.ts",
+      "scripts/backfill_booking_court_snapshots.ts",
       "scripts/build-and-push.sh",
       "scripts/chat-realtime-doctor.js",
       "scripts/chat-ws-server.js",

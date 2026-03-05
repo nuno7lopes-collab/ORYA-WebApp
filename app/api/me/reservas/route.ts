@@ -53,10 +53,40 @@ type ClassBookingMeta = {
   } | null;
 };
 
+type ClassMetaEnrollmentRow = {
+  bookingId: number | null;
+  status: string;
+  classSessionId: number;
+  classSession: {
+    id: number;
+    status: string;
+    capacity: number;
+    service: {
+      id: number;
+      title: string;
+      coverImageUrl: string | null;
+    };
+    professional: {
+      id: number;
+      name: string;
+      user: {
+        avatarUrl: string | null;
+        username: string | null;
+        fullName: string | null;
+      } | null;
+    } | null;
+    court: {
+      id: number;
+      name: string | null;
+      isActive: boolean;
+    } | null;
+  } | null;
+};
+
 async function loadClassBookingMeta(bookingIds: number[]) {
   if (bookingIds.length === 0) return new Map<number, ClassBookingMeta>();
 
-  const enrollments = await prisma.academyEnrollment.findMany({
+  const enrollments = (await prisma.academyEnrollment.findMany({
     where: {
       bookingId: { in: bookingIds },
     },
@@ -87,7 +117,7 @@ async function loadClassBookingMeta(bookingIds: number[]) {
         },
       },
     },
-  } as any);
+  })) as ClassMetaEnrollmentRow[];
 
   const sessionIds = Array.from(
     new Set(

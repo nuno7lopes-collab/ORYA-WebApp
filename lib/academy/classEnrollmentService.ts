@@ -50,6 +50,37 @@ type EnrollmentSessionRow = {
   professional: { id: number; isActive: boolean } | null;
 };
 
+type ExistingEnrollmentRow = {
+  id: number;
+  bookingId: number | null;
+  classSessionId: number;
+  userId: string | null;
+  status: string;
+  createdAt: Date;
+  updatedAt: Date;
+  booking: {
+    id: number;
+    status: BookingStatus;
+    pendingExpiresAt: Date | null;
+    startsAt: Date;
+    durationMinutes: number;
+    professionalId: number | null;
+    resourceId: number | null;
+    courtId: number | null;
+  } | null;
+};
+
+type EnrollmentBookingSnapshot = {
+  id: number;
+  status: BookingStatus | string;
+  pendingExpiresAt: Date | null;
+  startsAt: Date;
+  durationMinutes: number;
+  professionalId: number | null;
+  resourceId: number | null;
+  courtId: number | null;
+};
+
 function mapAssignmentMode(
   assignmentMode: ReservationAssignmentMode,
   resourceId: number | null,
@@ -72,6 +103,35 @@ function resolveSessionDurationMinutes(params: {
   const diffMinutes = Math.round(diffMs / 60_000);
   if (Number.isFinite(diffMinutes) && diffMinutes > 0) return diffMinutes;
   return params.serviceDurationMinutes;
+}
+
+function toEnrollmentBookingSnapshot(
+  booking:
+    | {
+        id: number;
+        status: BookingStatus | string;
+        startsAt: Date;
+        durationMinutes: number;
+        professionalId: number | null;
+        resourceId: number | null;
+        courtId: number | null;
+        pendingExpiresAt?: Date | null;
+      }
+    | null,
+  fallbackPendingExpiresAt: Date | null = null,
+): EnrollmentBookingSnapshot | null {
+  if (!booking) return null;
+
+  return {
+    id: booking.id,
+    status: booking.status,
+    pendingExpiresAt: booking.pendingExpiresAt ?? fallbackPendingExpiresAt,
+    startsAt: booking.startsAt,
+    durationMinutes: booking.durationMinutes,
+    professionalId: booking.professionalId,
+    resourceId: booking.resourceId,
+    courtId: booking.courtId,
+  };
 }
 
 function normalizeUserId(userIdRaw: string | null | undefined) {
@@ -245,7 +305,7 @@ export async function enrollUserIntoClassSession(params: {
     const lockKey = `academy_enrollment:${params.organizationId}:${session.id}`;
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
 
-    const existingEnrollment = await tx.academyEnrollment.findFirst({
+    const existingEnrollment = (await tx.academyEnrollment.findFirst({
       where: {
         organizationId: params.organizationId,
         classSessionId: session.id,
@@ -273,7 +333,7 @@ export async function enrollUserIntoClassSession(params: {
           },
         },
       },
-    } as any);
+    })) as ExistingEnrollmentRow | null;
 
     if (existingEnrollment) {
       return {
@@ -281,7 +341,7 @@ export async function enrollUserIntoClassSession(params: {
         bridgeUsed: !params.sessionId,
         sessionId: session.id,
         enrollment: existingEnrollment,
-        booking: existingEnrollment.booking,
+        booking: toEnrollmentBookingSnapshot(existingEnrollment.booking),
       };
     }
 
@@ -423,7 +483,7 @@ export async function enrollUserIntoClassSession(params: {
       bridgeUsed: !params.sessionId,
       sessionId: session.id,
       enrollment,
-      booking,
+      booking: toEnrollmentBookingSnapshot(booking, pendingExpiresAt),
     };
   });
 }

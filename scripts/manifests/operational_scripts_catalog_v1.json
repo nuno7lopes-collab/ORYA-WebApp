@@ -118,6 +118,17 @@
       "status": "active"
     },
     {
+      "script": "scripts/backfill_booking_court_snapshots.ts",
+      "owner": "platform-architecture",
+      "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#backfill-booking-court-snapshots-ts",
+      "npmCommand": "reservas:backfill-court-snapshots:dry",
+      "environments": [
+        "dev",
+        "local"
+      ],
+      "status": "active"
+    },
+    {
       "script": "scripts/build-and-push.sh",
       "owner": "platform-infra",
       "runbook": "docs/runbooks/scripts_operacionais_catalogo_v1.md#build-and-push-sh",

@@ -15,6 +15,7 @@ describe("booking payload helpers", () => {
       selectedAddons: [{ addonId: 5, quantity: 1 }],
     });
     expect(payload).toEqual({
+      sessionId: null,
       startsAt: "2026-02-08T10:00:00.000Z",
       durationMinutes: null,
       professionalId: null,

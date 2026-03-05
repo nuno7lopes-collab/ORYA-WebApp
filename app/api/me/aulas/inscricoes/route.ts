@@ -7,6 +7,55 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { resolveEffectiveBookingStatus, resolvePendingBookingState } from "@/lib/reservas/pendingBookingState";
 
+type EnrollmentListItem = {
+  id: number;
+  status: string;
+  classSessionId: number;
+  bookingId: number | null;
+  createdAt: Date;
+  updatedAt: Date;
+  classSession: {
+    id: number;
+    startsAt: Date;
+    endsAt: Date;
+    capacity: number;
+    status: string;
+    service: {
+      id: number;
+      title: string;
+      coverImageUrl: string | null;
+      organization: {
+        id: number;
+        username: string | null;
+        publicName: string | null;
+        businessName: string | null;
+      };
+    };
+    professional: {
+      id: number;
+      name: string;
+      user: {
+        avatarUrl: string | null;
+        username: string | null;
+        fullName: string | null;
+      } | null;
+    } | null;
+    court: {
+      id: number;
+      name: string;
+      isActive: boolean;
+    } | null;
+  } | null;
+  booking: {
+    id: number;
+    status: string;
+    startsAt: Date;
+    durationMinutes: number;
+    pendingExpiresAt: Date | null;
+    createdAt: Date;
+  } | null;
+};
+
 async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
 
@@ -15,7 +64,7 @@ async function _GET(req: NextRequest) {
     const user = await ensureAuthenticated(supabase);
     const now = new Date();
 
-    const enrollments = await prisma.academyEnrollment.findMany({
+    const enrollments = (await prisma.academyEnrollment.findMany({
       where: {
         userId: user.id,
       },
@@ -70,7 +119,7 @@ async function _GET(req: NextRequest) {
           },
         },
       },
-    } as any);
+    })) as EnrollmentListItem[];
 
     const sessionIds = Array.from(
       new Set(

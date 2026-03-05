@@ -13,6 +13,7 @@ describe("services/bookingPayload", () => {
     });
 
     expect(payload).toEqual({
+      sessionId: null,
       startsAt: "2026-03-03T10:00:00.000Z",
       durationMinutes: 90,
       professionalId: 7,
@@ -29,6 +30,7 @@ describe("services/bookingPayload", () => {
     });
 
     expect(payload).toEqual({
+      sessionId: null,
       startsAt: "2026-03-03T10:00:00.000Z",
       durationMinutes: null,
       professionalId: null,
