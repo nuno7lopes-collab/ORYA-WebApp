@@ -466,14 +466,22 @@ async function _DELETE(req: NextRequest) {
 
     const targetProfile = await prisma.trainerProfile.findUnique({
       where: { organizationId_userId: { organizationId: organization.id, userId } },
-      select: { id: true },
+      select: { id: true, userId: true },
     });
     if (!targetProfile) {
       return fail(ctx, 404, "Treinador não encontrado.");
     }
 
-    await prisma.trainerProfile.delete({ where: { id: targetProfile.id } });
-    return respondOk(ctx, { deleted: true, userId }, { status: 200 });
+    await prisma.$transaction(async (tx) => {
+      await tx.trainerProfile.delete({ where: { id: targetProfile.id } });
+      await tx.reservationProfessional.deleteMany({
+        where: {
+          organizationId: organization.id,
+          userId: targetProfile.userId,
+        },
+      });
+    });
+    return respondOk(ctx, { deleted: true, userId: targetProfile.userId }, { status: 200 });
   } catch (err) {
     console.error("[org/padel/coaches][DELETE]", err);
     return fail(ctx, 500, "Não foi possível remover o treinador.");

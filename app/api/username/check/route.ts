@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { checkUsernameAvailability } from "@/lib/globalUsernames";
+import { checkUsernameAvailability, type UsernameOwnerType } from "@/lib/globalUsernames";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { isSameOriginOrApp } from "@/lib/auth/requestValidation";
 import { rateLimit } from "@/lib/auth/rateLimit";
@@ -38,15 +38,27 @@ async function _GET(req: NextRequest) {
 
     const ownerType = req.nextUrl.searchParams.get("ownerType");
     let allowReservedForEmail: string | null = null;
+    let ignoreOwner:
+      | {
+          ownerType: UsernameOwnerType;
+          ownerId: string;
+        }
+      | undefined;
     try {
       const supabase = await createSupabaseServer();
       const { data } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
       if (ownerType !== "organization") {
         allowReservedForEmail = data?.user?.email ?? null;
+        if (data?.user?.id) {
+          ignoreOwner = { ownerType: "user", ownerId: data.user.id };
+        }
       }
     } catch {}
 
-    const result = await checkUsernameAvailability(username, undefined, { allowReservedForEmail });
+    const result = await checkUsernameAvailability(username, undefined, {
+      allowReservedForEmail,
+      ...(ignoreOwner ? { ignoreOwner } : {}),
+    });
     if (!result.ok) {
       return jsonWrap({ ok: false, error: result.error }, { status: 400 });
     }

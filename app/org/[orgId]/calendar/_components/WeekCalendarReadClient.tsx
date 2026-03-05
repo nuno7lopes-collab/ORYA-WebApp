@@ -778,7 +778,7 @@ export default function WeekCalendarReadClient({
       : null;
   const professionalsUrl =
     reservationsEnabled && Number.isFinite(organizationId) && organizationId > 0
-      ? `/api/org/${organizationId}/reservas/profissionais`
+      ? `/api/org/${organizationId}/academy/trainers`
       : null;
   const { data: resourcesData } = useSWR<CollectionResponse<ResourceItem>>(
     resourcesUrl,

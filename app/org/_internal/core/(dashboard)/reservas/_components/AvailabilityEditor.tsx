@@ -175,11 +175,6 @@ export default function AvailabilityEditor({
     ) ?? null;
   const templates = availabilityData?.templates ?? [];
   const inheritsOrganization = availabilityData?.inheritsOrganization ?? false;
-  const hasAvailability = availabilityData
-    ? templates.some(
-        (template) => normalizeIntervals(template.intervals ?? []).length > 0,
-      )
-    : true;
   const minuteHeight = hourHeight / 60;
   const gridHeight = hourHeight * 24;
   const resolvedGridMinutes =
@@ -942,19 +937,11 @@ export default function AvailabilityEditor({
       <div>
         {" "}
         <h2 className="text-base font-semibold text-white">{title}</h2>{" "}
-        <p className={DASHBOARD_MUTED}>{subtitle}</p>{" "}
-        {inheritsOrganization && (
-          <p className="mt-2 text-[12px] text-white/60">
-            {" "}
-            Sem horários próprios. A usar disponibilidade base da
-            organização.{" "}
-          </p>
-        )}{" "}
+        {subtitle ? <p className={DASHBOARD_MUTED}>{subtitle}</p> : null}{" "}
         {pendingChangeSetId && pendingChangeSetHref && (
           <div className="mt-3 rounded-xl border border-amber-300/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
             {" "}
-            Existe um pedido pendente para este escopo (#{pendingChangeSetId}).
-            Resolve primeiro em{""}{" "}
+            Pedido pendente #{pendingChangeSetId} ·{" "}
             <Link
               href={pendingChangeSetHref}
               className="underline underline-offset-2"
@@ -970,17 +957,7 @@ export default function AvailabilityEditor({
         {" "}
         <div className="flex flex-wrap items-center justify-between gap-2">
           {" "}
-          <div>
-            {" "}
-            <h3 className="text-sm font-semibold text-white">
-              Disponibilidade base
-            </h3>{" "}
-            <p className="text-[12px] text-white/60">
-              {" "}
-              Cada disponibilidade aplica-se a partir da data de início e pode
-              ter fim.{" "}
-            </p>{" "}
-          </div>{" "}
+          <h3 className="text-sm font-semibold text-white">Disponibilidade base</h3>{" "}
           <button
             type="button"
             className={CTA_NEUTRAL}
@@ -995,17 +972,10 @@ export default function AvailabilityEditor({
           {schedules.length === 0 && (
             <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-white/60">
               {" "}
-              Sem disponibilidades criadas. Cria uma para começares.{" "}
+              Sem disponibilidades criadas.{" "}
             </div>
           )}{" "}
           {schedules.map((schedule) => {
-            const startKey = toDateInput(schedule.startDate);
-            const endKey = toDateInput(schedule.endDate);
-            const isActive =
-              Boolean(startKey) &&
-              startKey <= minScheduleDate &&
-              (!endKey || minScheduleDate <= endKey);
-            const isFuture = Boolean(startKey) && startKey > minScheduleDate;
             const isSelected = selectedScheduleId === schedule.id;
             const labelStart = schedule.startDate
               ? new Date(schedule.startDate).toLocaleDateString("pt-PT", {
@@ -1053,15 +1023,6 @@ export default function AvailabilityEditor({
                     <p className="text-sm font-semibold text-white">
                       {" "}
                       {labelStart} → {labelEnd}{" "}
-                    </p>{" "}
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/50">
-                      {" "}
-                      {isActive
-                        ? "Ativo"
-                        : isFuture
-                          ? "Futuro"
-                          : "Terminado"}{" "}
-                      {schedule.id === activeScheduleId ? " · Atual" : ""}{" "}
                     </p>{" "}
                   </button>{" "}
                   <div className="flex items-center gap-2">
@@ -1146,12 +1107,6 @@ export default function AvailabilityEditor({
           </div>{" "}
         </div>{" "}
       </div>{" "}
-      {!hasAvailability && !inheritsOrganization && (
-        <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
-          {" "}
-          Define horários para permitir marcações.{" "}
-        </div>
-      )}{" "}
       {isDirty && !hasUnsavedBarDismissed && (
         <div className="rounded-xl border border-amber-300/35 bg-amber-500/10 p-3">
           {" "}
@@ -1195,17 +1150,9 @@ export default function AvailabilityEditor({
         {" "}
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
           {" "}
-          <div>
-            {" "}
-            <h3 className="text-sm font-semibold text-white/90 tracking-[0.02em]">
-              Calendário semanal
-            </h3>{" "}
-            <p className="text-[12px] text-white/60">
-              {" "}
-              Arrasta para criar blocos. Visível 09:00–19:00 (scroll para o
-              resto do dia).{" "}
-            </p>{" "}
-          </div>{" "}
+          <h3 className="text-sm font-semibold text-white/90 tracking-[0.02em]">
+            Calendário semanal
+          </h3>{" "}
           <div className="flex items-center gap-2">
             {" "}
             <button
@@ -1219,9 +1166,6 @@ export default function AvailabilityEditor({
               {" "}
               {templateSavingAll ? "A aplicar..." : "Aplicar alterações"}{" "}
             </button>{" "}
-            <div className="text-[10px] uppercase tracking-[0.22em] text-white/45">
-              Grelha {slotMinutes} min
-            </div>{" "}
           </div>{" "}
         </div>{" "}
         <div className="overflow-x-auto px-4 pb-4">
@@ -1318,12 +1262,6 @@ export default function AvailabilityEditor({
                         }
                       >
                         {" "}
-                        {dayDrafts.length === 0 && (
-                          <div className="absolute inset-x-0 top-3 text-center text-[11px] text-white/40">
-                            {" "}
-                            Dia fechado{" "}
-                          </div>
-                        )}{" "}
                         {dayDrafts.map((interval) => {
                           const top = interval.startMinute * minuteHeight;
                           const height = Math.max(
@@ -1409,15 +1347,7 @@ export default function AvailabilityEditor({
       </div>{" "}
       <div className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3">
         {" "}
-        <div>
-          {" "}
-          <h3 className="text-sm font-semibold text-white">
-            Override por data
-          </h3>{" "}
-          <p className="text-[12px] text-white/60">
-            Excecoes: fechado, aberto ou bloqueio parcial.
-          </p>{" "}
-        </div>{" "}
+        <h3 className="text-sm font-semibold text-white">Excecoes</h3>{" "}
         <div className="grid gap-3 md:grid-cols-3">
           {" "}
           <div>
@@ -1463,8 +1393,6 @@ export default function AvailabilityEditor({
           <div className="space-y-2">
             {" "}
             <div className="flex flex-wrap items-center gap-2">
-              {" "}
-              <p className="text-[12px] text-white/60">Intervalos</p>{" "}
               <button
                 type="button"
                 className={CTA_SECONDARY}
@@ -1474,11 +1402,6 @@ export default function AvailabilityEditor({
                 Adicionar intervalo{" "}
               </button>{" "}
             </div>{" "}
-            {overrideIntervals.length === 0 && (
-              <p className="text-[12px] text-white/50">
-                Sem intervalos definidos.
-              </p>
-            )}{" "}
             {overrideIntervals.map((interval, idx) => (
               <div
                 key={`override-${idx}`}
@@ -1516,9 +1439,6 @@ export default function AvailabilityEditor({
         )}{" "}
         <div className="space-y-2">
           {" "}
-          {overrideDrafts.length === 0 && (
-            <p className="text-[12px] text-white/50">Sem exceções.</p>
-          )}{" "}
           {overrideDrafts.map((override) => {
             const dateLabel = new Date(override.date).toLocaleDateString(
               "pt-PT",

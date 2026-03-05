@@ -272,7 +272,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     fetcher,
   );
   const { data: professionalsData } = useSWR<{ ok?: boolean; items?: ReservasProfessionalItem[] }>(
-    organizationId ? `/api/org/${organizationId}/reservas/profissionais` : null,
+    organizationId ? `/api/org/${organizationId}/academy/trainers` : null,
     fetcher,
   );
   const resourceOptions = Array.isArray(resourcesData?.items) ? resourcesData.items.filter((item) => item.isActive !== false) : [];

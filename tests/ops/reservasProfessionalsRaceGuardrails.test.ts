@@ -11,11 +11,15 @@ describe("reservas professionals race guardrails", () => {
     const academyHandlers = readLocal("lib/academy/trainersHandlers.ts");
     const legacyListRoute = readLocal("app/api/org/[orgId]/reservas/profissionais/route.ts");
     const legacyDetailRoute = readLocal("app/api/org/[orgId]/reservas/profissionais/[id]/route.ts");
+    const padelCoachesRoute = readLocal("app/api/org/[orgId]/padel/coaches/route.ts");
 
     expect(academyHandlers).not.toContain("reservationProfessional.upsert");
     expect(academyHandlers).toContain("TRAINER_PROFILE_MANAGED_BY_TEAM");
     expect(academyHandlers).toContain("TRAINER_ROLE_NOT_ELIGIBLE");
     expect(academyHandlers).toContain("runAcademyTrainerHardCutHygiene");
+    expect(academyHandlers).toContain("syncTrainerProfileLink");
+    expect(academyHandlers).toContain("trainerProfile.upsert");
+    expect(academyHandlers).toContain("trainerProfile.deleteMany");
     expect(academyHandlers).toContain("code === \"P2002\"");
     expect(academyHandlers).toContain("PROFESSIONAL_EXISTS");
 
@@ -27,5 +31,8 @@ describe("reservas professionals race guardrails", () => {
     expect(legacyDetailRoute).toContain("handleAcademyTrainerPatch");
     expect(legacyDetailRoute).toContain("handleAcademyTrainerDelete");
     expect(legacyDetailRoute).not.toContain("prisma.");
+
+    expect(padelCoachesRoute).toContain("trainerProfile.delete");
+    expect(padelCoachesRoute).toContain("reservationProfessional.deleteMany");
   });
 });

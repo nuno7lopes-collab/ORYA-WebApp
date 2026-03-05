@@ -217,7 +217,7 @@ export default function ProfissionaisPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" className={CTA_SECONDARY} onClick={handleHygiene} disabled={hygieneRunning}>
-            {hygieneRunning ? "A higienizar..." : "Higienizar legacy"}
+            {hygieneRunning ? "A higienizar..." : "Higienizar Academia"}
           </button>
           <Link href={appendOrganizationIdToHref("/org/academy/classes", canonicalOrganizationId)} className={CTA_SECONDARY}>
             Aulas

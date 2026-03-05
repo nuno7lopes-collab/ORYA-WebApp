@@ -2,7 +2,7 @@
 
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import useSWR from "swr";
@@ -231,6 +231,9 @@ export default function CrmClientesPage() {
   const [manageTagColor, setManageTagColor] = useState("#22D3EE");
   const [manageTagSaving, setManageTagSaving] = useState(false);
   const [archiveTagSaving, setArchiveTagSaving] = useState(false);
+  const [tagDropdownOpen, setTagDropdownOpen] = useState(false);
+  const [tagSearchTerm, setTagSearchTerm] = useState("");
+  const tagDropdownRef = useRef<HTMLDivElement | null>(null);
 
   const savedViewsUrl = resolveCanonicalOrgApiPath("/api/org/[orgId]/crm/saved-views?scope=CUSTOMERS");
   const {
@@ -292,6 +295,7 @@ export default function CrmClientesPage() {
     setFilters(next);
     setPage(1);
     setActiveSavedViewId(sourceSavedViewId ?? null);
+    setTagDropdownOpen(false);
   };
 
   useEffect(() => {
@@ -348,6 +352,7 @@ export default function CrmClientesPage() {
       tags: stringifyTagTokens(parseTagTokens(draftFilters.tags)),
     });
     setActiveSavedViewId(null);
+    setTagDropdownOpen(false);
   };
 
   const clearFilters = () => {
@@ -448,7 +453,49 @@ export default function CrmClientesPage() {
     };
 
   const draftSelectedTags = useMemo(() => parseTagTokens(draftFilters.tags), [draftFilters.tags]);
+  const selectedTagCount = draftSelectedTags.length;
+  const selectedTagSummary = useMemo(() => {
+    if (!selectedTagCount) return "Todas as tags";
+    if (selectedTagCount <= 2) return draftSelectedTags.join(", ");
+    return `${draftSelectedTags.slice(0, 2).join(", ")} +${selectedTagCount - 2}`;
+  }, [draftSelectedTags, selectedTagCount]);
+  const normalizedTagSearch = tagSearchTerm.trim().toLocaleLowerCase("pt-PT");
+  const filteredTagOptions = useMemo(() => {
+    if (!normalizedTagSearch) return availableTags;
+    return availableTags.filter((tag) => tag.name.toLocaleLowerCase("pt-PT").includes(normalizedTagSearch));
+  }, [availableTags, normalizedTagSearch]);
+  const missingSelectedTags = useMemo(
+    () =>
+      draftSelectedTags.filter((tagName) => !tagByNormalizedName.has(tagName.toLocaleLowerCase("pt-PT"))),
+    [draftSelectedTags, tagByNormalizedName],
+  );
   const isAllVisibleSelected = items.length > 0 && items.every((item) => selectedContactIds.includes(item.id));
+
+  useEffect(() => {
+    if (!tagDropdownOpen) {
+      setTagSearchTerm("");
+      return;
+    }
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (!tagDropdownRef.current?.contains(target)) {
+        setTagDropdownOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setTagDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [tagDropdownOpen]);
 
   const toggleDraftTag = (tagName: string) => {
     setDraftFilters((prev) => {
@@ -457,6 +504,9 @@ export default function CrmClientesPage() {
       const next = exists ? selected.filter((tag) => tag !== tagName) : [...selected, tagName];
       return { ...prev, tags: stringifyTagTokens(next) };
     });
+  };
+  const clearDraftTags = () => {
+    setDraftFilters((prev) => ({ ...prev, tags: "" }));
   };
 
   const toggleContactSelection = (contactId: string) => {
@@ -731,36 +781,101 @@ export default function CrmClientesPage() {
             </label>
             <div className="text-[12px] text-white/70">
               Tags (filtro)
-              <input
-                className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-                placeholder="Pesquisar tags"
-                value={draftFilters.tags}
-                onChange={(event) => handleDraftChange("tags")(event.target.value)}
-              />
-              <div className="mt-2 flex flex-wrap gap-2">
-                {availableTags.map((tag) => {
-                  const active = draftSelectedTags.includes(tag.name);
-                  return (
-                    <button
-                      key={tag.id}
-                      type="button"
-                      onClick={() => toggleDraftTag(tag.name)}
-                      className={cn(
-                        "inline-flex items-center gap-2 rounded-full border px-2 py-1 text-[10px] tracking-[0.16em]",
-                        active ? "border-white/35 bg-white/15 text-white" : "border-white/15 bg-white/5 text-white/70",
-                      )}
-                    >
-                      <span
-                        className="h-2 w-2 rounded-full"
-                        style={{ backgroundColor: tag.color }}
-                        aria-hidden
-                      />
-                      {tag.name}
-                    </button>
-                  );
-                })}
-                {!availableTags.length && !isLoadingTags ? (
-                  <span className="text-[11px] text-white/50">Sem tags criadas.</span>
+              <div ref={tagDropdownRef} className="relative mt-1">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between gap-3 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-left text-sm text-white outline-none transition hover:border-white/30 focus:border-white/40"
+                  onClick={() => setTagDropdownOpen((prev) => !prev)}
+                  aria-expanded={tagDropdownOpen}
+                  aria-label="Abrir seleção de tags"
+                >
+                  <span className="min-w-0 truncate">{selectedTagSummary}</span>
+                  <span className="shrink-0 text-[10px] uppercase tracking-[0.16em] text-white/60">
+                    {selectedTagCount > 0 ? `${selectedTagCount} selecionadas` : "Todas"}
+                  </span>
+                </button>
+                {tagDropdownOpen ? (
+                  <div className="absolute z-30 mt-2 w-full rounded-2xl border border-white/15 bg-[#041229]/95 p-3 shadow-[0_16px_32px_rgba(1,8,20,0.55)] backdrop-blur">
+                    <input
+                      className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                      placeholder="Pesquisar tags"
+                      value={tagSearchTerm}
+                      onChange={(event) => setTagSearchTerm(event.target.value)}
+                      autoFocus
+                    />
+                    {missingSelectedTags.length ? (
+                      <div className="mt-2 rounded-xl border border-amber-200/30 bg-amber-200/10 px-2 py-2">
+                        <p className="text-[10px] uppercase tracking-[0.16em] text-amber-100/90">Tags em falta</p>
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          {missingSelectedTags.map((tagName) => (
+                            <button
+                              key={`missing-${tagName}`}
+                              type="button"
+                              onClick={() => toggleDraftTag(tagName)}
+                              className="inline-flex items-center gap-1 rounded-full border border-amber-100/40 px-2 py-1 text-[10px] text-amber-100"
+                              title="Remover tag do filtro"
+                            >
+                              {tagName} ×
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    <div className="mt-2 max-h-56 space-y-1 overflow-y-auto pr-1">
+                      {filteredTagOptions.map((tag) => {
+                        const active = draftSelectedTags.includes(tag.name);
+                        return (
+                          <button
+                            key={tag.id}
+                            type="button"
+                            onClick={() => toggleDraftTag(tag.name)}
+                            className={cn(
+                              "flex w-full items-center justify-between gap-2 rounded-lg border px-2 py-1.5 text-left text-xs",
+                              active
+                                ? "border-white/35 bg-white/15 text-white"
+                                : "border-white/10 bg-white/5 text-white/75 hover:border-white/25",
+                            )}
+                          >
+                            <span className="inline-flex min-w-0 items-center gap-2">
+                              <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: tag.color }} aria-hidden />
+                              <span className="truncate">{tag.name}</span>
+                            </span>
+                            {active ? (
+                              <span className="text-[10px] uppercase tracking-[0.14em] text-cyan-200/90">Ativa</span>
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                      {!filteredTagOptions.length ? (
+                        <span className="block px-1 py-1 text-[11px] text-white/50">
+                          {availableTags.length ? "Sem resultados para a pesquisa." : "Sem tags criadas."}
+                        </span>
+                      ) : null}
+                      {isLoadingTags ? <span className="block px-1 py-1 text-[11px] text-white/50">A carregar tags…</span> : null}
+                    </div>
+                    <div className="mt-3 flex items-center justify-between gap-2">
+                      <span className="text-[11px] text-white/55">
+                        {selectedTagCount > 0 ? `${selectedTagCount} tags selecionadas` : "Sem tags selecionadas"}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          className="rounded-full border border-white/15 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-white/70 hover:border-white/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                          onClick={clearDraftTags}
+                          disabled={!selectedTagCount}
+                        >
+                          Limpar
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-full border border-white/25 bg-white/10 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-white hover:border-white/40"
+                          onClick={() => setTagDropdownOpen(false)}
+                        >
+                          Fechar
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 ) : null}
               </div>
             </div>

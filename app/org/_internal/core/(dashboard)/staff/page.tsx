@@ -587,7 +587,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   const reservasProfessionalsKey = useMemo(() => {
     if (!user || !resolvedOrganizationId || !canManagePermissions) return null;
     if (activeStaffTab !== "permissoes") return null;
-    return `/api/org/${resolvedOrganizationId}/reservas/profissionais`;
+    return `/api/org/${resolvedOrganizationId}/academy/trainers`;
   }, [activeStaffTab, canManagePermissions, resolvedOrganizationId, user]);
   const communitiesKey = useMemo(() => {
     if (!user || !resolvedOrganizationId || !canManagePermissions) return null;

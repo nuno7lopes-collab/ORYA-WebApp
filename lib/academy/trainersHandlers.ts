@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { OrganizationMemberRole, OrganizationRolePack } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationRolePack, TrainerProfileReviewStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -53,6 +53,41 @@ function isTrainerEligibleRole(role: OrganizationMemberRole) {
 function parseTrainerId(value: string) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+async function syncTrainerProfileLink(params: {
+  organizationId: number;
+  userId: string;
+  reservationProfessionalId: number;
+}) {
+  const now = new Date();
+  await prisma.trainerProfile.upsert({
+    where: {
+      organizationId_userId: {
+        organizationId: params.organizationId,
+        userId: params.userId,
+      },
+    },
+    update: {
+      reservationProfessionalId: params.reservationProfessionalId,
+      isPublished: true,
+      reviewStatus: TrainerProfileReviewStatus.APPROVED,
+      reviewNote: null,
+      reviewRequestedAt: null,
+      reviewedAt: now,
+      reviewedByUserId: null,
+    },
+    create: {
+      organizationId: params.organizationId,
+      userId: params.userId,
+      reservationProfessionalId: params.reservationProfessionalId,
+      isPublished: true,
+      reviewStatus: TrainerProfileReviewStatus.APPROVED,
+      reviewRequestedAt: now,
+      reviewedAt: now,
+    },
+    select: { id: true },
+  });
 }
 
 export async function handleAcademyTrainersGet(req: NextRequest) {
@@ -241,6 +276,11 @@ export async function handleAcademyTrainersPost(req: NextRequest) {
         user: { select: { id: true, fullName: true, username: true, avatarUrl: true } },
       },
     });
+    await syncTrainerProfileLink({
+      organizationId: organization.id,
+      userId: userIdRaw,
+      reservationProfessionalId: professional.id,
+    });
 
     const trainer = {
       ...professional,
@@ -376,6 +416,11 @@ export async function handleAcademyTrainerPatch(req: NextRequest, trainerIdRaw: 
       membershipRole: member.role,
       membershipRolePack: member.rolePack ?? null,
     };
+    await syncTrainerProfileLink({
+      organizationId: organization.id,
+      userId: trainer.userId,
+      reservationProfessionalId: updated.id,
+    });
 
     return respondOk(ctx, {
       trainer: trainerPayload,
@@ -425,14 +470,24 @@ export async function handleAcademyTrainerDelete(req: NextRequest, trainerIdRaw:
 
     const trainer = await prisma.reservationProfessional.findFirst({
       where: { id: trainerId, organizationId: organization.id },
-      select: { id: true },
+      select: { id: true, userId: true },
     });
 
     if (!trainer) {
       return fail(ctx, 404, "PROFESSIONAL_NOT_FOUND", "Profissional não encontrado.");
     }
 
-    await prisma.reservationProfessional.delete({ where: { id: trainer.id } });
+    await prisma.$transaction(async (tx) => {
+      await tx.reservationProfessional.delete({ where: { id: trainer.id } });
+      if (trainer.userId) {
+        await tx.trainerProfile.deleteMany({
+          where: {
+            organizationId: organization.id,
+            userId: trainer.userId,
+          },
+        });
+      }
+    });
 
     return respondOk(ctx, { deleted: true });
   } catch (err) {

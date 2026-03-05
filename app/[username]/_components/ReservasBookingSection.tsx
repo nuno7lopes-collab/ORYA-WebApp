@@ -342,12 +342,28 @@ export default function ReservasBookingSection({
       format: "webp",
     });
     const isSelected = service.id === selectedServiceId;
-    const priceLabel =
-      service.unitPriceCents > 0
-        ? `Preço: ${formatMoney(service.unitPriceCents, service.currency)}`
-        : "Preço: Grátis";
     const vertical = resolveServiceVertical(service);
-    const badgeLabel = vertical === "COURT" ? "Campo" : vertical === "CLASS" ? "Aula" : "Serviço";
+    const durationPrices = (service.durationPrices ?? [])
+      .filter((item) => item.isActive !== false)
+      .slice()
+      .sort((a, b) => a.durationMinutes - b.durationMinutes || a.priceCents - b.priceCents);
+    const cheapestDurationPrice = durationPrices[0] ?? null;
+    const durationLabel =
+      vertical === "COURT" && durationPrices.length > 0
+        ? durationPrices.slice(0, 3).map((item) => `${item.durationMinutes}m`).join(" · ")
+        : `${service.durationMinutes} min`;
+    const priceLabel =
+      vertical === "COURT" && cheapestDurationPrice
+        ? `Desde ${formatMoney(cheapestDurationPrice.priceCents, service.currency)}`
+        : service.unitPriceCents > 0
+          ? `Preço: ${formatMoney(service.unitPriceCents, service.currency)}`
+          : "Preço: Grátis";
+    const badgeLabel =
+      vertical === "COURT"
+        ? "Ver horários"
+        : vertical === "CLASS"
+          ? "Reservar aula"
+          : "Reservar serviço";
     const categoryLabel = service.category?.label ?? service.categoryTag ?? null;
     return (
       <button
@@ -372,16 +388,28 @@ export default function ReservasBookingSection({
             <div>
               <p className="text-sm font-semibold text-white">{service.title}</p>
               <p className="mt-1 text-[12px] text-white/70">
-                {service.durationMinutes} min · {priceLabel}
+                {durationLabel} · {priceLabel}
               </p>
             </div>
             <span className="rounded-full border border-white/20 bg-white/10 px-2 py-1 text-[10px] text-white/70">
-              {acceptNewBookings ? `Reservar ${badgeLabel.toLowerCase()}` : "Indisponível"}
+              {acceptNewBookings ? badgeLabel : "Indisponível"}
             </span>
           </div>
           <div className="space-y-2">
             {service.description && (
               <p className="text-[12px] text-white/70 line-clamp-2">{service.description}</p>
+            )}
+            {vertical === "COURT" && durationPrices.length > 1 && (
+              <div className="flex flex-wrap gap-1.5">
+                {durationPrices.slice(0, 3).map((item) => (
+                  <span
+                    key={`duration-${service.id}-${item.durationMinutes}`}
+                    className="inline-flex rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[10px] text-white/70"
+                  >
+                    {item.durationMinutes} min
+                  </span>
+                ))}
+              </div>
             )}
             {categoryLabel && (
               <span className="inline-flex rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[10px] text-white/70">

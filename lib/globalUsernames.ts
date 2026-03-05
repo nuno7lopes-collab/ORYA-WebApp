@@ -5,6 +5,10 @@ import { isReservedAllowlistEntry } from "@/lib/reservedUsernames";
 
 type Tx = Prisma.TransactionClient | PrismaClient;
 export type UsernameOwnerType = "user" | "organization";
+type UsernameOwnerIdentity = { ownerType: UsernameOwnerType; ownerId: string | number };
+type CheckUsernameAvailabilityOptions = UsernameValidationOptions & {
+  ignoreOwner?: UsernameOwnerIdentity;
+};
 
 const USER_OWNER_TYPE_ALIASES = ["user", "USER"] as const;
 const ORGANIZATION_OWNER_TYPE_ALIASES = ["organization", "ORG"] as const;
@@ -44,10 +48,15 @@ export function normalizeAndValidateUsername(raw: string, options?: UsernameVali
 export async function checkUsernameAvailability(
   username: string,
   tx?: Tx,
-  options?: UsernameValidationOptions,
+  options?: CheckUsernameAvailabilityOptions,
 ) {
   const client = tx ?? prisma;
-  const normalizedResult = normalizeAndValidateUsername(username, options);
+  const { ignoreOwner, ...validationOptions } = options ?? {};
+  const ignoreOwnerId = ignoreOwner ? String(ignoreOwner.ownerId) : null;
+  const ignoreOrganizationId =
+    ignoreOwner?.ownerType === "organization" ? Number(ignoreOwner.ownerId) : null;
+
+  const normalizedResult = normalizeAndValidateUsername(username, validationOptions);
   if (!normalizedResult.ok) {
     if (normalizedResult.code === "USERNAME_RESERVED") {
       if (isReservedAllowlistEntry(normalizedResult.username)) {
@@ -72,11 +81,21 @@ export async function checkUsernameAvailability(
   const checkLocalAvailability = async (client: Tx) => {
     const [profile, organization] = await Promise.all([
       client.profile.findFirst({
-        where: { username: { equals: normalized, mode: "insensitive" } },
+        where: {
+          username: { equals: normalized, mode: "insensitive" },
+          ...(ignoreOwner?.ownerType === "user" && ignoreOwnerId ? { NOT: { id: ignoreOwnerId } } : {}),
+        },
         select: { id: true },
       }),
       client.organization.findFirst({
-        where: { username: { equals: normalized, mode: "insensitive" } },
+        where: {
+          username: { equals: normalized, mode: "insensitive" },
+          ...(ignoreOwner?.ownerType === "organization" &&
+          ignoreOrganizationId !== null &&
+          Number.isFinite(ignoreOrganizationId)
+            ? { NOT: { id: ignoreOrganizationId } }
+            : {}),
+        },
         select: { id: true },
       }),
     ]);
@@ -87,7 +106,15 @@ export async function checkUsernameAvailability(
     where: { username: normalized },
     select: { ownerType: true, ownerId: true },
   });
-  if (existing) {
+  const existingOwnerType = canonicalizeUsernameOwnerType(existing?.ownerType);
+  const existingBelongsToIgnoredOwner = Boolean(
+    existing &&
+      ignoreOwner &&
+      existingOwnerType === ignoreOwner.ownerType &&
+      String(existing.ownerId) === ignoreOwnerId,
+  );
+
+  if (existing && !existingBelongsToIgnoredOwner) {
     return { ok: true as const, available: false, username: normalized };
   }
   const available = await checkLocalAvailability(client);

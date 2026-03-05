@@ -194,9 +194,11 @@ type LessonService = {
   unitPriceCents: number | null;
   currency: string | null;
   isActive: boolean;
-  kind: string | null;
-  categoryTag: string | null;
+  kind?: string | null;
+  categoryTag?: string | null;
   instructor?: { id: string; fullName: string | null; username: string | null; avatarUrl: string | null } | null;
+  professionalLinks?: Array<{ professionalId: number }> | null;
+  resourceLinks?: Array<{ resourceId: number }> | null;
   _count?: { bookings?: number; availabilities?: number } | null;
 };
 
@@ -1539,7 +1541,7 @@ export default function PadelHubClient({
     { revalidateOnFocus: false },
   );
   const { data: servicesRes, isLoading: servicesLoading, mutate: mutateServices } = useSWR<ServicesResponse>(
-    buildOrgApiPath("/servicos"),
+    buildOrgApiPath("/academy/classes"),
     fetcher,
     { revalidateOnFocus: false },
   );
@@ -2085,13 +2087,7 @@ export default function PadelHubClient({
   }, [organizationStaff?.items, coachUserIds]);
   const services = servicesRes?.items ?? [];
   const lessonsError = servicesRes?.ok === false ? sanitizeUiErrorMessage(servicesRes.error, "Erro ao carregar aulas.") : null;
-  const lessonServices = useMemo(() => {
-    return services.filter((service) => {
-      const kind = (service.kind ?? "").trim().toUpperCase();
-      const tag = (service.categoryTag ?? "").trim().toLowerCase();
-      return kind === "CLASS" || tag.includes("aula") || tag.includes("treino");
-    });
-  }, [services]);
+  const lessonServices = useMemo(() => services, [services]);
   const coachErrorLabel = useMemo(() => {
     if (!coachesError) return null;
     if (coachesError === "FORBIDDEN") return "Sem permissões para gerir treinadores.";
@@ -2607,7 +2603,7 @@ export default function PadelHubClient({
     setLessonError(null);
     setLessonMessage(null);
     try {
-      const servicesApiPath = buildOrgApiPath("/servicos");
+      const servicesApiPath = buildOrgApiPath("/academy/classes");
       if (!servicesApiPath) throw new Error("Organização indisponível.");
       const res = await fetch(servicesApiPath, {
         method: "POST",
@@ -2618,8 +2614,6 @@ export default function PadelHubClient({
           durationMinutes: durationValue,
           unitPriceCents: Math.round(priceValue * 100),
           currency: "EUR",
-          kind: "CLASS",
-          instructorId: lessonCoachUserId,
           assignmentMode: "PROFESSIONAL_ONLY",
           professionalIds,
           categoryTag: LESSON_TAG,
@@ -2635,7 +2629,7 @@ export default function PadelHubClient({
         throw new Error("A API não devolveu o serviço criado.");
       }
 
-      const classSeriesApiPath = buildOrgApiPath(`/servicos/${serviceId}/class-series`);
+      const classSeriesApiPath = buildOrgApiPath(`/academy/classes/${serviceId}/series`);
       if (!classSeriesApiPath) throw new Error("Organização indisponível.");
       const classSeriesRes = await fetch(classSeriesApiPath, {
         method: "POST",
@@ -2654,7 +2648,7 @@ export default function PadelHubClient({
       });
       const classSeriesJson = await classSeriesRes.json().catch(() => null);
       if (!classSeriesRes.ok || classSeriesJson?.ok === false) {
-        const rollbackPath = buildOrgApiPath(`/servicos/${serviceId}`);
+        const rollbackPath = buildOrgApiPath(`/academy/classes/${serviceId}`);
         if (rollbackPath) {
           await fetch(rollbackPath, { method: "DELETE" }).catch(() => null);
         }
@@ -8136,13 +8130,13 @@ export default function PadelHubClient({
                 Ver treinadores
               </button>
               <Link
-                href={organizationId ? buildOrgHref(organizationId, "/bookings") : buildOrgHubHref("/organizations")}
+                href={organizationId ? buildOrgHref(organizationId, "/academy/classes") : buildOrgHubHref("/organizations")}
                 className="rounded-full border border-white/20 px-4 py-2 text-[12px] font-semibold text-white/80 hover:border-white/35"
               >
                 Agenda avançada
               </Link>
               <Link
-                href={organizationId ? buildOrgHref(organizationId, "/bookings") : buildOrgHubHref("/organizations")}
+                href={organizationId ? buildOrgHref(organizationId, "/academy/classes") : buildOrgHubHref("/organizations")}
                 className="rounded-full border border-white/15 px-4 py-2 text-[12px] font-semibold text-white/70 hover:border-white/30"
               >
                 Catálogo completo
@@ -8172,7 +8166,11 @@ export default function PadelHubClient({
                 return (
                   <Link
                     key={service.id}
-                    href={organizationId ? buildOrgHref(organizationId, `/bookings/${service.id}`) : buildOrgHubHref("/organizations")}
+                    href={
+                      organizationId
+                        ? buildOrgHref(organizationId, `/academy/classes/${service.id}`)
+                        : buildOrgHubHref("/organizations")
+                    }
                     className="rounded-2xl border border-white/12 bg-white/5 p-4  transition hover:border-white/30"
                   >
                     <div className="flex items-start justify-between gap-2">

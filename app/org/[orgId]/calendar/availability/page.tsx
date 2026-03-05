@@ -4,14 +4,10 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import AvailabilityEditor from "@/app/org/_internal/core/(dashboard)/reservas/_components/AvailabilityEditor";
-import { CTA_PRIMARY, DASHBOARD_LABEL, DASHBOARD_MUTED } from "@/app/org/_internal/core/dashboardUi";
+import { CTA_PRIMARY } from "@/app/org/_internal/core/dashboardUi";
 import { buildOrgHref, parseOrgIdFromPathnameStrict } from "@/lib/organizationIdUtils";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
-import {
-  resolveOrganizationOperationalMode,
-  type OrganizationOperationalMode,
-} from "@/lib/organizationOperationalMode";
 import {
   CALENDAR_AVAILABILITY_OVERLAY_STORAGE_KEY,
   parseAvailabilityOverlayPreference,
@@ -40,14 +36,6 @@ type ResourceScopeOption = {
 };
 
 type ScopeType = "ORGANIZATION" | "PROFESSIONAL" | "RESOURCE";
-
-type OrganizationMeResponse = {
-  ok: boolean;
-  organization?: {
-    primaryModule?: string | null;
-    tools?: string[] | null;
-  } | null;
-};
 
 type BookingConfigPayload = {
   acceptNewBookings?: boolean;
@@ -81,7 +69,9 @@ const fetcher = (url: string) => fetch(url).then((res) => res.json());
 const SECTION_CARD = "rounded-xl border border-white/10 bg-[rgba(6,10,20,0.9)] p-4";
 const SCOPE_CARD = "rounded-xl border border-white/10 bg-[rgba(8,13,24,0.86)] p-3";
 const SCOPE_SELECT =
-  "mt-1 h-10 w-full rounded-xl border border-white/15 bg-black/35 px-3 text-sm text-white outline-none transition focus:border-cyan-300/50";
+  "h-10 w-full rounded-xl border border-white/15 bg-black/35 px-3 text-sm text-white outline-none transition focus:border-cyan-300/50";
+const TOGGLE_CHIP =
+  "rounded-full border border-white/20 bg-black/35 px-3 py-1.5 text-xs text-white/80 transition hover:border-white/35 hover:text-white";
 
 function parsePositiveInt(value: string | null): number | null {
   if (!value) return null;
@@ -119,14 +109,12 @@ export default function OrgCalendarAvailabilityPage() {
   const scopeTypeParam = (searchParams.get("scopeType") || "").trim().toUpperCase();
   const scopeIdParam = parsePositiveInt(searchParams.get("scopeId"));
 
-  const professionalsKey = organizationId ? `/api/org/${organizationId}/reservas/profissionais` : null;
+  const professionalsKey = organizationId ? `/api/org/${organizationId}/academy/trainers` : null;
   const resourcesKey = organizationId ? `/api/org/${organizationId}/reservas/recursos?includeCourts=1` : null;
-  const organizationMeKey = organizationId ? `/api/org/${organizationId}/me` : null;
   const bookingConfigKey = organizationId ? `/api/org/${organizationId}/reservas/config` : null;
 
   const { data: professionalsData } = useSWR<{ ok: boolean; items?: ProfessionalItem[] }>(professionalsKey, fetcher);
   const { data: resourcesData } = useSWR<{ ok: boolean; items?: ResourceItem[] }>(resourcesKey, fetcher);
-  const { data: organizationMeData } = useSWR<OrganizationMeResponse>(organizationMeKey, fetcher);
   const { data: bookingConfigData, mutate: mutateBookingConfig, isLoading: bookingConfigLoading } =
     useSWR<BookingConfigResponse>(bookingConfigKey, fetcher);
   const [toggleBusy, setToggleBusy] = useState(false);
@@ -178,41 +166,6 @@ export default function OrgCalendarAvailabilityPage() {
     });
     return [...byScopeId.values()].sort((a, b) => a.label.localeCompare(b.label, "pt-PT"));
   }, [resources]);
-  const organizationOperationalMode = useMemo<OrganizationOperationalMode>(() => {
-    const organizationPayload = organizationMeData?.organization;
-    if (!organizationPayload) return "SLOT_DRIVEN";
-    return resolveOrganizationOperationalMode({
-      primaryModule: organizationPayload.primaryModule ?? null,
-      tools: organizationPayload.tools ?? [],
-    });
-  }, [organizationMeData?.organization]);
-  const activeToolSet = useMemo(
-    () =>
-      new Set(
-        (organizationMeData?.organization?.tools ?? [])
-          .map((tool) => (typeof tool === "string" ? tool.trim().toUpperCase() : ""))
-          .filter(Boolean),
-      ),
-    [organizationMeData?.organization?.tools],
-  );
-  const canCreateEvent = activeToolSet.has("EVENTOS");
-  const canCreateTournament = activeToolSet.has("TORNEIOS");
-  const availabilityGuidance = useMemo(() => {
-    if (organizationOperationalMode === "HYBRID") {
-      return {
-        badge: "Modo híbrido",
-        title: "Disponibilidade apenas para reservas",
-        body:
-          "Nesta organização, eventos/torneios continuam a entrar diretamente na agenda. Configura disponibilidade apenas para serviços por slots.",
-      };
-    }
-    return {
-      badge: "Modo reservas",
-      title: "Disponibilidade como fonte de verdade",
-      body:
-        "A disponibilidade semanal define quando os teus serviços de reserva podem ser vendidos e operados.",
-    };
-  }, [organizationOperationalMode]);
 
   const resolvedScope = useMemo(() => {
     if (scopeTypeParam === "PROFESSIONAL" && scopeIdParam) {
@@ -234,19 +187,16 @@ export default function OrgCalendarAvailabilityPage() {
   const scopeMeta = useMemo(() => {
     if (selectedProfessional) {
       return {
-        title: "Disponibilidade do profissional",
-        subtitle: `Ajusta os blocos semanais e excecoes de ${selectedProfessional.name}.`,
+        title: `Profissional · ${selectedProfessional.name}`,
       };
     }
     if (selectedResource) {
       return {
-        title: "Disponibilidade do recurso",
-        subtitle: `Ajusta os blocos semanais e excecoes de ${selectedResource.label}.`,
+        title: `Recurso · ${selectedResource.label}`,
       };
     }
     return {
       title: "Disponibilidade geral",
-      subtitle: "Define o default de disponibilidade usado pelos servicos com reservas.",
     };
   }, [selectedProfessional, selectedResource]);
   const scopeSummaryLabel = useMemo(() => {
@@ -297,8 +247,6 @@ export default function OrgCalendarAvailabilityPage() {
     fetcher,
   );
   const pendingScopeChangeSet = pendingScopeChangesetsData?.data?.items?.[0] ?? null;
-  const linkedResourcesCount = resourceScopeOptions.length;
-  const unlinkedResourcesCount = Math.max(0, resources.length - linkedResourcesCount);
 
   const handleOperationalToggle = async () => {
     if (!organizationId || toggleBusy) return;
@@ -344,117 +292,31 @@ export default function OrgCalendarAvailabilityPage() {
   return (
     <div className="flex min-h-[calc(100dvh-88px)] flex-col gap-3 p-2 md:p-3">
       <header className={SECTION_CARD}>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="max-w-3xl">
-            <p className={DASHBOARD_LABEL}>Calendario</p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
             <h1 className="text-xl font-semibold text-white">Disponibilidade de reservas</h1>
-            <p className={DASHBOARD_MUTED}>
-              Esta pagina define janelas de reserva por escopo. Eventos e torneios continuam a ser geridos na agenda
-              operacional.
-            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Link href={calendarHref} className={CTA_PRIMARY}>
-              Abrir calendario operacional
-            </Link>
-            <Link
-              href={buildOrgHref(organizationId, "/bookings/operations")}
-              className="rounded-full border border-white/20 bg-black/35 px-3 py-1.5 text-xs text-white/80 transition hover:border-white/35 hover:text-white"
+            <button
+              type="button"
+              onClick={handleOperationalToggle}
+              disabled={toggleBusy || bookingConfigLoading}
+              className={cn(
+                "rounded-full border px-3 py-1.5 text-xs font-semibold transition disabled:opacity-60",
+                acceptsNewBookings
+                  ? "border-rose-300/55 bg-rose-500/15 text-rose-100 hover:border-rose-200/80"
+                  : "border-emerald-300/55 bg-emerald-500/15 text-emerald-100 hover:border-emerald-200/80",
+              )}
             >
-              Abrir operacoes
-            </Link>
-            {organizationOperationalMode === "HYBRID" && canCreateEvent ? (
-              <Link
-                href={buildOrgHref(organizationId, "/events/new")}
-                className="rounded-full border border-white/20 bg-black/35 px-3 py-1.5 text-xs text-white/80 transition hover:border-white/35 hover:text-white"
-              >
-                Criar evento
-              </Link>
-            ) : null}
-            {organizationOperationalMode === "HYBRID" && !canCreateEvent && canCreateTournament ? (
-              <Link
-                href={buildOrgHref(organizationId, "/padel/tournaments/create")}
-                className="rounded-full border border-white/20 bg-black/35 px-3 py-1.5 text-xs text-white/80 transition hover:border-white/35 hover:text-white"
-              >
-                Criar torneio
-              </Link>
-            ) : null}
-          </div>
-        </div>
-        <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px]">
-          <span className="rounded-full border border-cyan-300/45 bg-cyan-400/14 px-2 py-0.5 text-cyan-100">
-            {availabilityGuidance.badge}
-          </span>
-          <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-white/75">
-            {scopeSummaryLabel}
-          </span>
-          <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-white/75">
-            Profissionais {professionals.length}
-          </span>
-          <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-white/75">
-            Recursos ligados {linkedResourcesCount}/{resources.length}
-          </span>
-          {pendingScopeChangeSet ? (
-            <span className="rounded-full border border-amber-300/45 bg-amber-400/12 px-2 py-0.5 text-amber-100">
-              Pedido pendente #{pendingScopeChangeSet.id}
-            </span>
-          ) : null}
-        </div>
-      </header>
-
-      <section className={SECTION_CARD}>
-        <div className="grid gap-3 lg:grid-cols-2">
-          <article
-            className={cn(
-              "rounded-xl border p-3",
-              acceptsNewBookings ? "border-emerald-300/35 bg-emerald-500/10" : "border-rose-300/35 bg-rose-500/10",
-            )}
-          >
-            <p className="text-[11px] uppercase tracking-[0.18em] text-white/70">Estado de reservas</p>
-            <h2 className="mt-1 text-base font-semibold text-white">
-              {acceptsNewBookings ? "Novas reservas ativas" : "Novas reservas bloqueadas"}
-            </h2>
-            <p className="mt-2 text-sm text-white/80">
-              {acceptsNewBookings
-                ? "Permite novas reservas, sempre limitadas pela disponibilidade configurada."
-                : "Bloqueia novas reservas e checkout de novas pre-reservas. Historico e reservas ja confirmadas mantem-se."}
-            </p>
-            <div className="mt-3">
-              <button
-                type="button"
-                onClick={handleOperationalToggle}
-                disabled={toggleBusy || bookingConfigLoading}
-                className={cn(
-                  "rounded-full border px-3 py-1.5 text-xs font-semibold transition disabled:opacity-60",
-                  acceptsNewBookings
-                    ? "border-rose-300/55 bg-rose-500/15 text-rose-100 hover:border-rose-200/80"
-                    : "border-emerald-300/55 bg-emerald-500/15 text-emerald-100 hover:border-emerald-200/80",
-                )}
-              >
-                {toggleBusy
-                  ? "A atualizar..."
-                  : bookingConfigLoading
-                    ? "A carregar..."
-                    : acceptsNewBookings
-                      ? "Desligar reservas"
-                      : "Ligar reservas"}
-              </button>
-            </div>
-            {toggleError ? (
-              <p className="mt-3 rounded-xl border border-rose-300/45 bg-rose-500/14 px-3 py-2 text-xs text-rose-100">
-                {toggleError}
-              </p>
-            ) : null}
-          </article>
-
-          <article className="rounded-xl border border-white/10 bg-[rgba(8,13,24,0.8)] p-3">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-white/70">Visualizacao na agenda</p>
-            <h2 className="mt-1 text-base font-semibold text-white">Disponibilidade ON/OFF</h2>
-            <p className="mt-2 text-sm text-white/80">
-              Controla a sobreposicao de disponibilidade no calendario (grelha de dia/semana). Esta opcao fica guardada
-              para a tua sessao.
-            </p>
-            <div className="mt-3 inline-flex rounded-full border border-white/20 bg-white/5 p-1">
+              {toggleBusy
+                ? "A atualizar..."
+                : bookingConfigLoading
+                  ? "A carregar..."
+                  : acceptsNewBookings
+                    ? "Reservas: ON"
+                    : "Reservas: OFF"}
+            </button>
+            <div className="inline-flex rounded-full border border-white/20 bg-white/5 p-1">
               <button
                 type="button"
                 onClick={() => setCalendarOverlayPreference(true)}
@@ -465,7 +327,7 @@ export default function OrgCalendarAvailabilityPage() {
                     : "text-white/70 hover:bg-white/10 hover:text-white",
                 )}
               >
-                Disponibilidade ON
+                  Disponibilidade ON
               </button>
               <button
                 type="button"
@@ -477,44 +339,37 @@ export default function OrgCalendarAvailabilityPage() {
                     : "text-white/70 hover:bg-white/10 hover:text-white",
                 )}
               >
-                Disponibilidade OFF
+                  Disponibilidade OFF
               </button>
             </div>
-            <div className="mt-3">
-              <Link
-                href={calendarHref}
-                className="rounded-full border border-white/20 bg-black/35 px-3 py-1.5 text-xs text-white/80 transition hover:border-white/35 hover:text-white"
-              >
-                Abrir calendario com este estado
-              </Link>
-            </div>
-          </article>
-        </div>
-        <div className="mt-3 rounded-xl border border-cyan-300/25 bg-cyan-400/8 p-3">
-          <p className="text-[11px] uppercase tracking-[0.18em] text-cyan-100/75">{availabilityGuidance.badge}</p>
-          <p className="mt-1 text-sm font-semibold text-white">{availabilityGuidance.title}</p>
-          <p className="mt-1 text-sm text-white/75">{availabilityGuidance.body}</p>
-        </div>
-      </section>
-
-      <section className={cn(SECTION_CARD, "space-y-4")}>
-        <div className="flex flex-wrap items-end justify-between gap-2">
-          <div>
-            <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Escopo</p>
-            <p className="mt-1 text-sm text-white/75">
-              Seleciona o escopo que queres editar: geral, profissional ou recurso/campo.
-            </p>
+            <Link href={calendarHref} className={CTA_PRIMARY}>
+              Abrir calendario
+            </Link>
+            <Link href={buildOrgHref(organizationId, "/bookings/operations")} className={TOGGLE_CHIP}>
+              Operacoes
+            </Link>
           </div>
-          <p className="text-xs text-white/55">{scopeSummaryLabel}</p>
         </div>
-        <div className="grid gap-3 xl:grid-cols-[220px_minmax(0,1fr)_minmax(0,1fr)]">
-          <article className={SCOPE_CARD}>
-            <p className="text-[11px] uppercase tracking-[0.16em] text-white/58">Escopo base</p>
+        {toggleError ? (
+          <p className="mt-3 rounded-xl border border-rose-300/45 bg-rose-500/14 px-3 py-2 text-xs text-rose-100">
+            {toggleError}
+          </p>
+        ) : null}
+      </header>
+
+      <section className={cn(SECTION_CARD, "space-y-2")}>
+        <div className="flex items-center">
+          <p className="rounded-full border border-cyan-300/35 bg-cyan-400/10 px-2 py-0.5 text-xs text-cyan-100">
+            {scopeSummaryLabel}
+          </p>
+        </div>
+        <div className="grid gap-2 xl:grid-cols-[220px_minmax(0,1fr)_minmax(0,1fr)]">
+          <div className={SCOPE_CARD}>
             <button
               type="button"
               onClick={() => navigateToScope("ORGANIZATION")}
               className={cn(
-                "mt-2 inline-flex w-full items-center justify-center rounded-full border px-3 py-2 text-xs transition",
+                "inline-flex w-full items-center justify-center rounded-full border px-3 py-2 text-xs transition",
                 resolvedScope.scopeType === "ORGANIZATION"
                   ? "border-cyan-300/45 bg-cyan-400/14 text-cyan-100"
                   : "border-white/20 bg-black/35 text-white/78 hover:border-white/35 hover:text-white",
@@ -522,17 +377,12 @@ export default function OrgCalendarAvailabilityPage() {
             >
               Disponibilidade geral
             </button>
-            <p className="mt-2 text-xs text-white/58">
-              Base de referencia para servicos de reserva sem ajuste dedicado.
-            </p>
-          </article>
+          </div>
 
-          <article className={SCOPE_CARD}>
-            <label htmlFor="availability-scope-professional" className="text-[11px] uppercase tracking-[0.16em] text-white/58">
-              Profissional
-            </label>
+          <div className={SCOPE_CARD}>
             <select
               id="availability-scope-professional"
+              aria-label="Selecionar profissional"
               value={selectedProfessionalScopeValue}
               onChange={(event) => {
                 const nextScopeId = parsePositiveInt(event.target.value);
@@ -541,22 +391,19 @@ export default function OrgCalendarAvailabilityPage() {
               }}
               className={SCOPE_SELECT}
             >
-              <option value="">Selecionar profissional</option>
+              <option value="">Profissional</option>
               {professionals.map((professional) => (
                 <option key={`scope-professional-${professional.id}`} value={professional.id}>
                   {professional.name}
                 </option>
               ))}
             </select>
-            <p className="mt-2 text-xs text-white/58">{professionals.length} profissionais ativos.</p>
-          </article>
+          </div>
 
-          <article className={SCOPE_CARD}>
-            <label htmlFor="availability-scope-resource" className="text-[11px] uppercase tracking-[0.16em] text-white/58">
-              Recurso ou campo
-            </label>
+          <div className={SCOPE_CARD}>
             <select
               id="availability-scope-resource"
+              aria-label="Selecionar recurso ou campo"
               value={selectedResourceScopeValue}
               onChange={(event) => {
                 const nextScopeId = parsePositiveInt(event.target.value);
@@ -565,47 +412,16 @@ export default function OrgCalendarAvailabilityPage() {
               }}
               className={SCOPE_SELECT}
             >
-              <option value="">Selecionar recurso/campo</option>
+              <option value="">Recurso/Campo</option>
               {resourceScopeOptions.map((resource) => (
                 <option key={`scope-resource-${resource.scopeId}`} value={resource.scopeId}>
                   {resource.sourceType === "COURT" ? "Campo" : "Recurso"} · {resource.label}
                 </option>
               ))}
             </select>
-            <p className="mt-2 text-xs text-white/58">
-              {linkedResourcesCount} escopos ligados.
-              {unlinkedResourcesCount > 0
-                ? ` ${unlinkedResourcesCount} recursos/campos ainda sem ligacao.`
-                : " Todos os recursos visiveis ja estao ligados."}
-            </p>
-          </article>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 text-[11px]">
-          <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-white/65">Escopo ativo</span>
-          <span className="rounded-full border border-cyan-300/35 bg-cyan-400/10 px-2 py-0.5 text-cyan-100">
-            {scopeSummaryLabel}
-          </span>
+          </div>
         </div>
       </section>
-
-      {pendingScopeChangeSet ? (
-        <section className="rounded-xl border border-amber-300/35 bg-amber-400/10 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.18em] text-amber-100/75">Pedido pendente</p>
-              <p className="mt-1 text-sm text-amber-100">
-                Existe um pedido neste escopo (#{pendingScopeChangeSet.id}) com {pendingScopeChangeSet.conflictsOpen}{" "}
-                conflitos abertos.
-              </p>
-              <p className="text-xs text-amber-50/80">Resolve os conflitos antes de criar ou aplicar novas alteracoes.</p>
-            </div>
-            <Link href={buildOrgHref(organizationId, `/calendar/conflicts/${pendingScopeChangeSet.id}`)} className={CTA_PRIMARY}>
-              Abrir conflitos
-            </Link>
-          </div>
-        </section>
-      ) : null}
 
       <AvailabilityEditor
         orgId={organizationId}
@@ -613,7 +429,7 @@ export default function OrgCalendarAvailabilityPage() {
         scopeId={resolvedScope.scopeId}
         pendingChangeSetId={pendingScopeChangeSet?.id ?? null}
         title={scopeMeta.title}
-        subtitle={scopeMeta.subtitle}
+        subtitle=""
       />
     </div>
   );

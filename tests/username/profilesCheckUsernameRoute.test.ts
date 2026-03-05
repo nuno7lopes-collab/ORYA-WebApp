@@ -46,7 +46,7 @@ beforeEach(async () => {
     Boolean(options?.allowMissing),
   );
   enforceMobileVersionGate.mockReturnValue(null);
-  getUser.mockResolvedValue({ data: { user: { email: "joao@example.com" } }, error: null });
+  getUser.mockResolvedValue({ data: { user: { id: "user-1", email: "joao@example.com" } }, error: null });
 
   POST = (await import("@/app/api/profiles/check-username/route")).POST;
 });
@@ -76,7 +76,10 @@ describe("POST /api/profiles/check-username", () => {
     expect(checkUsernameAvailability).toHaveBeenCalledWith(
       "joao",
       undefined,
-      expect.objectContaining({ allowReservedForEmail: "joao@example.com" }),
+      expect.objectContaining({
+        allowReservedForEmail: "joao@example.com",
+        ignoreOwner: { ownerType: "user", ownerId: "user-1" },
+      }),
     );
   });
 

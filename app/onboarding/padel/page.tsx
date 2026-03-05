@@ -75,6 +75,11 @@ function PadelOnboardingContent() {
   const [clubName, setClubName] = useState("");
   const [context, setContext] = useState<PadelOnboardingResponse | null>(null);
 
+  const existingUsernameNormalized = useMemo(
+    () => sanitizeUsername(context?.profile?.username ?? ""),
+    [context?.profile?.username],
+  );
+
   const onboardingPath = useMemo(() => {
     const qs = searchParams?.toString();
     return `/onboarding/padel${qs ? `?${qs}` : ""}`;
@@ -183,6 +188,12 @@ function PadelOnboardingContent() {
       setUsernameHint(validation.error);
       setUsernameStatus("error");
       return "invalid" as const;
+    }
+
+    if (existingUsernameNormalized && normalized === existingUsernameNormalized) {
+      setUsernameStatus("available");
+      setUsernameHint(null);
+      return "available" as const;
     }
 
     setUsernameHint(null);

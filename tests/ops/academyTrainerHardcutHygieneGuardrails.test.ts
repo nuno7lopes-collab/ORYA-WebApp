@@ -72,4 +72,12 @@ describe("academy trainer hard-cut hygiene guardrails", () => {
       expect(content).not.toContain("/_internal/core/(dashboard)/reservas/");
     }
   });
+
+  it("mantém criação de aulas no Padel Hub via endpoints canónicos Academy", () => {
+    const padelHubClient = readLocal("app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx");
+    expect(padelHubClient).toContain('buildOrgApiPath("/academy/classes")');
+    expect(padelHubClient).toContain("/academy/classes/${serviceId}/series");
+    expect(padelHubClient).not.toContain('buildOrgApiPath("/servicos")');
+    expect(padelHubClient).not.toContain("/servicos/${serviceId}/class-series");
+  });
 });

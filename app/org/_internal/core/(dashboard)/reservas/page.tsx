@@ -1030,7 +1030,7 @@ export default function ReservasDashboardPage() {
     items: ProfessionalItem[];
   }>(
     shouldLoadProfessionals
-      ? resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/profissionais")
+      ? resolveCanonicalOrgApiPath("/api/org/[orgId]/academy/trainers")
       : null,
     fetcher,
   );

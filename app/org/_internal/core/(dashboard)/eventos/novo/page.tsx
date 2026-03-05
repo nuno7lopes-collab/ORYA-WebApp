@@ -698,7 +698,7 @@ export function NewOrganizationEventPage({
     items?: ReservasProfessionalItem[];
   }>(
     organizationIdFromStatus
-      ? `/api/org/${organizationIdFromStatus}/reservas/profissionais`
+      ? `/api/org/${organizationIdFromStatus}/academy/trainers`
       : null,
     fetcher,
     { revalidateOnFocus: false },

@@ -218,15 +218,40 @@ const DEFAULT_BOOKING_POLICY: BookingPolicy = {
   presetDurations: [60, 90],
 };
 
+const BOOKING_ERROR_MESSAGES: Record<string, string> = {
+  RESERVAS_OPERATIONAL_OFF: "Reservas temporariamente indisponíveis.",
+  SLOT_NOT_AVAILABLE: "Este horário já não está disponível. Escolhe outro.",
+  PENDING_LIMIT_REACHED: "Já tens uma pré-reserva ativa. Termina-a antes de avançar.",
+  PHONE_REQUIRED: "Precisas de adicionar telemóvel para concluir a reserva.",
+  RANGE_NOT_ALLOWED: "A disponibilidade só está aberta para os próximos meses.",
+  DURATION_NOT_PRICED: "Esta duração não está disponível para este campo.",
+  INVALID_COURT: "Campo inválido para esta reserva.",
+  AUTH_REQUIRED: "Inicia sessão para reservar.",
+  PAYMENTS_NOT_READY: "Pagamentos indisponíveis neste momento.",
+  RESERVA_EXPIRADA: "A pré-reserva expirou. Escolhe novo horário.",
+};
+
 function resolveBookingApiErrorMessage(
   payload: { error?: string; errorCode?: string; message?: string } | null,
   fallback: string,
 ) {
-  const code = payload?.errorCode ?? payload?.error;
-  if (code === "RESERVAS_OPERATIONAL_OFF") {
-    return payload?.message || "Reservas temporariamente indisponíveis.";
+  const codeRaw = payload?.errorCode ?? payload?.error;
+  const code =
+    typeof codeRaw === "string"
+      ? codeRaw
+          .trim()
+          .toUpperCase()
+      : null;
+  if (payload?.message) {
+    return payload.message;
   }
-  return payload?.message || payload?.error || fallback;
+  if (code && BOOKING_ERROR_MESSAGES[code]) {
+    return BOOKING_ERROR_MESSAGES[code];
+  }
+  if (payload?.error) {
+    return payload.error;
+  }
+  return fallback;
 }
 
 function formatMoney(cents: number, currency: string) {
@@ -337,6 +362,13 @@ function formatDayLabel(iso: string, _timezone: string) {
     month: "short",
     weekday: "short",
   });
+}
+
+function isWeekendIsoDate(iso: string) {
+  const date = new Date(`${iso}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return false;
+  const day = date.getDay();
+  return day === 0 || day === 6;
 }
 
 function getSlotHour(date: Date, timeZone: string) {
@@ -533,6 +565,8 @@ export default function ReservasBookingClient({
   const holdExpiredHandledRef = useRef(false);
   const skipServiceResetRef = useRef(true);
   const skipSelectionResetRef = useRef(true);
+  const autoSelectedDayRef = useRef(false);
+  const autoAdvanceResourceStepRef = useRef(false);
 
   const selectedService = activeServices.find((service) => service.id === selectedServiceId) ?? null;
   const selectedServiceVertical = resolveServiceVertical(selectedService);
@@ -976,12 +1010,16 @@ export default function ReservasBookingClient({
       setSelectedPackageId(null);
       setDurationOverrideMinutes(null);
       setCustomDurationDraft("");
+      autoSelectedDayRef.current = false;
+      autoAdvanceResourceStepRef.current = false;
       return;
     }
     setSelectedAddons({});
     setSelectedPackageId(null);
     setDurationOverrideMinutes(null);
     setCustomDurationDraft("");
+    autoSelectedDayRef.current = false;
+    autoAdvanceResourceStepRef.current = false;
   }, [selectedServiceId]);
 
   useEffect(() => {
@@ -1090,6 +1128,7 @@ export default function ReservasBookingClient({
     setBookingSuccess(null);
     setPendingSlot(null);
     setSlotSubmittingKey(null);
+    autoSelectedDayRef.current = false;
     void releaseHoldSession(checkoutHold, false);
   }, [assignmentConfig.assignmentMode, selectedProfessionalId, selectedPartySize, addonsParam, durationOverrideMinutes]);
 
@@ -1109,6 +1148,39 @@ export default function ReservasBookingClient({
       setSelectedPartySize(null);
     }
   }, [selectedPartySize, partySizeRules]);
+
+  useEffect(() => {
+    if (!requiresResource || !partySizeRules.partySizeRequired) return;
+    if (!isCourtService) return;
+    if (selectedPartySize != null) return;
+    if (!partySizeOptions.length) return;
+    const preferred = partySizeOptions.includes(4) ? 4 : partySizeOptions[0] ?? null;
+    if (preferred == null) return;
+    setSelectedPartySize(preferred);
+  }, [
+    requiresResource,
+    partySizeRules.partySizeRequired,
+    isCourtService,
+    selectedPartySize,
+    partySizeOptions,
+  ]);
+
+  useEffect(() => {
+    if (allowServiceSelection) return;
+    if (activeStep !== 2) return;
+    if (!isCourtService) return;
+    if (!requiresResource || !partySizeRules.partySizeRequired || !selectedPartySize) return;
+    if (autoAdvanceResourceStepRef.current) return;
+    autoAdvanceResourceStepRef.current = true;
+    setActiveStep(3);
+  }, [
+    allowServiceSelection,
+    activeStep,
+    isCourtService,
+    requiresResource,
+    partySizeRules.partySizeRequired,
+    selectedPartySize,
+  ]);
 
   useEffect(() => {
     if (activeStep === 4 && !canAccessStep4) {
@@ -1156,7 +1228,7 @@ export default function ReservasBookingClient({
       .then((data) => {
         if (calendarRequestRef.current !== requestId) return;
         if (!data?.ok) {
-          throw new Error(data?.message || data?.error || "Erro ao carregar calendário.");
+          throw new Error(resolveBookingApiErrorMessage(data, "Erro ao carregar calendário."));
         }
         applyBookingPolicyFromPayload(data?.bookingPolicy);
         setAvailabilityDays(Array.isArray(data.days) ? data.days : []);
@@ -1205,12 +1277,47 @@ export default function ReservasBookingClient({
     [availabilityDays],
   );
   const firstAvailableDayIso = availableDays[0]?.date ?? null;
+  const weekendAvailableDayIso = useMemo(
+    () => availableDays.find((day) => isWeekendIsoDate(day.date))?.date ?? null,
+    [availableDays],
+  );
   const availableDaysCount = availableDays.length;
   const availableSlotsCount = useMemo(
     () => availableDays.reduce((total, day) => total + Math.max(0, day.slots ?? 0), 0),
     [availableDays],
   );
   const selectedDayAvailability = selectedDay ? availabilityMap.get(selectedDay) ?? null : null;
+  const recommendedDayPills = useMemo(
+    () =>
+      availableDays.slice(0, 7).map((day) => {
+        const shortLabel =
+          day.date === todayIso
+            ? "Hoje"
+            : day.date === tomorrowIso
+              ? "Amanhã"
+              : formatDayLabel(day.date, timezone);
+        return {
+          date: day.date,
+          shortLabel,
+          slots: Math.max(0, day.slots ?? 0),
+        };
+      }),
+    [availableDays, timezone, todayIso, tomorrowIso],
+  );
+  const firstDaySlot = daySlots[0] ?? null;
+  const afterWorkSlot =
+    daySlots.find((slot) => {
+      const hour = getSlotHour(new Date(slot.startsAt), timezone);
+      return hour >= 18;
+    }) ?? null;
+  const highlightedSlotKeys = useMemo(
+    () =>
+      ({
+        first: firstDaySlot?.slotKey ?? null,
+        afterWork: afterWorkSlot?.slotKey ?? null,
+      }) as const,
+    [afterWorkSlot?.slotKey, firstDaySlot?.slotKey],
+  );
 
   const loadDaySlots = (iso: string, options?: { force?: boolean }) => {
     if (!selectedServiceApiId) return;
@@ -1258,7 +1365,7 @@ export default function ReservasBookingClient({
       .then((data) => {
         if (slotsRequestRef.current !== requestId) return;
         if (!data?.ok) {
-          throw new Error(data?.message || data?.error || "Erro ao carregar horários.");
+          throw new Error(resolveBookingApiErrorMessage(data, "Erro ao carregar horários."));
         }
         applyBookingPolicyFromPayload(data?.bookingPolicy);
         setDaySlots(Array.isArray(data.items) ? data.items : []);
@@ -1288,7 +1395,17 @@ export default function ReservasBookingClient({
     loadDaySlots(iso, { force: true });
   };
 
+  useEffect(() => {
+    if (activeStep !== 3) return;
+    if (selectedDay) return;
+    if (!firstAvailableDayIso) return;
+    if (autoSelectedDayRef.current) return;
+    autoSelectedDayRef.current = true;
+    loadDaySlots(firstAvailableDayIso, { force: true });
+  }, [activeStep, selectedDay, firstAvailableDayIso, loadDaySlots]);
+
   const clearDaySelection = () => {
+    autoSelectedDayRef.current = true;
     setSelectedDay(null);
     setDaySlots([]);
     setSlotsError(null);
@@ -1617,6 +1734,10 @@ export default function ReservasBookingClient({
       return;
     }
     setActiveStep(step);
+    if (step === 3 && !selectedDay && firstAvailableDayIso) {
+      autoSelectedDayRef.current = true;
+      loadDaySlots(firstAvailableDayIso, { force: true });
+    }
   };
 
   const resumeCheckoutFromHold = async () => {
@@ -1770,7 +1891,14 @@ export default function ReservasBookingClient({
       await startBookingCheckout(json.booking.id, paymentMethod);
     } catch (err) {
       setSelectedSlot(null);
-      setBookingError(err instanceof Error ? err.message : "Não foi possível criar a pré-reserva.");
+      const message = err instanceof Error ? err.message : "Não foi possível criar a pré-reserva.";
+      setBookingError(message);
+      if (message.toLowerCase().includes("indispon")) {
+        const slotDay = slot.startsAt.slice(0, 10);
+        if (slotDay) {
+          loadDaySlots(slotDay, { force: true });
+        }
+      }
     } finally {
       setSlotSubmittingKey(null);
     }
@@ -1875,6 +2003,14 @@ export default function ReservasBookingClient({
     : selectedDay
       ? `${formatDayLabel(selectedDay, timezone)} · escolhe um horário`
       : "Escolhe um dia para ver horários";
+  const firstDaySlotLabel = firstDaySlot
+    ? new Date(firstDaySlot.startsAt).toLocaleTimeString("pt-PT", {
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: timezone,
+      })
+    : null;
+  const weekendDayLabel = weekendAvailableDayIso ? formatDayLabel(weekendAvailableDayIso, timezone) : null;
   const step3LiveMessage = selectedDateLabel && selectedTimeLabel
     ? `Horário selecionado: ${selectedDateLabel} às ${selectedTimeLabel}.`
     : selectedDay
@@ -2428,6 +2564,11 @@ export default function ReservasBookingClient({
                     Escolhe a capacidade ({partySizeRules.partySizeMin}-{partySizeRules.partySizeMax}) para ver horários.
                   </p>
                 )}
+                {partySizeRules.partySizeRequired && selectedPartySize && (
+                  <p className="mt-3 text-[12px] text-emerald-100/90">
+                    Capacidade recomendada selecionada: {selectedPartySize} pessoas.
+                  </p>
+                )}
                 {hasServiceResourceLinks && availableResources.length === 0 && (
                   <p className="mt-3 text-[12px] text-white/60">Sem recursos disponíveis para este serviço.</p>
                 )}
@@ -2487,6 +2628,14 @@ export default function ReservasBookingClient({
                     >
                       Primeiro disponível
                     </button>
+                    <button
+                      type="button"
+                      className={ghostButtonClass}
+                      onClick={() => weekendAvailableDayIso && jumpToDay(weekendAvailableDayIso)}
+                      disabled={!weekendAvailableDayIso}
+                    >
+                      Fim de semana
+                    </button>
                     {selectedDay ? (
                       <button
                         type="button"
@@ -2500,9 +2649,35 @@ export default function ReservasBookingClient({
                   <p className="text-[11px] text-white/60">
                     {selectedDay
                       ? `${formatDayLabel(selectedDay, timezone)} · ${selectedDayAvailability?.slots ?? 0} horários`
-                      : `${availableDaysCount} dias com disponibilidade · ${availableSlotsCount} horários`}
+                      : `${availableDaysCount} dias com disponibilidade · ${availableSlotsCount} horários${
+                          weekendDayLabel ? ` · fim de semana: ${weekendDayLabel}` : ""
+                        }`}
                   </p>
                 </div>
+                {recommendedDayPills.length > 0 && (
+                  <div className="mt-3 -mx-1 overflow-x-auto pb-2">
+                    <div className="flex min-w-max gap-2 px-1">
+                      {recommendedDayPills.map((pill) => {
+                        const active = selectedDay === pill.date;
+                        return (
+                          <button
+                            key={`pill-${pill.date}`}
+                            type="button"
+                            onClick={() => jumpToDay(pill.date)}
+                            className={`rounded-2xl border px-3 py-2 text-left transition ${
+                              active
+                                ? "border-white/45 bg-white/15 text-white"
+                                : "border-white/15 bg-white/5 text-white/75 hover:border-white/30 hover:bg-white/10"
+                            }`}
+                          >
+                            <p className="text-[11px] font-semibold">{pill.shortLabel}</p>
+                            <p className="text-[10px] text-white/60">{pill.slots} horários</p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
                   <div>
@@ -2555,16 +2730,29 @@ export default function ReservasBookingClient({
                           : "Escolhe um dia"}
                       </h4>
                       {selectedDay && daySlots.length > 0 && !slotsLoading ? (
-                        <div className="mt-2 flex items-center justify-between gap-2">
-                          <p className="text-[11px] text-white/60">{daySlots.length} horários carregados.</p>
-                          <button
-                            type="button"
-                            className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 transition hover:border-white/35 hover:text-white"
-                            onClick={() => reserveSlot(daySlots[0])}
-                            disabled={Boolean(slotSubmittingKey)}
-                          >
-                            Escolher primeiro horário
-                          </button>
+                        <div className="mt-2 space-y-2">
+                          <p className="text-[11px] text-white/60">
+                            {daySlots.length} horários carregados
+                            {firstDaySlotLabel ? ` · primeiro às ${firstDaySlotLabel}` : ""}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 transition hover:border-white/35 hover:text-white disabled:opacity-50"
+                              onClick={() => firstDaySlot && reserveSlot(firstDaySlot)}
+                              disabled={Boolean(slotSubmittingKey) || !firstDaySlot}
+                            >
+                              Primeiro disponível
+                            </button>
+                            <button
+                              type="button"
+                              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 transition hover:border-white/35 hover:text-white disabled:opacity-50"
+                              onClick={() => afterWorkSlot && reserveSlot(afterWorkSlot)}
+                              disabled={Boolean(slotSubmittingKey) || !afterWorkSlot}
+                            >
+                              Depois das 18h
+                            </button>
+                          </div>
                         </div>
                       ) : null}
                     </div>
@@ -2613,19 +2801,27 @@ export default function ReservasBookingClient({
                                   timeZone: timezone,
                                 });
                                 const isSelected = selectedSlot?.slotKey === slot.slotKey;
+                                const isFirst = highlightedSlotKeys.first === slot.slotKey;
+                                const isAfterWork = highlightedSlotKeys.afterWork === slot.slotKey && !isFirst;
+                                const slotBadge = isFirst ? "Mais cedo" : isAfterWork ? "Pós-laboral" : null;
                                 return (
                                   <button
                                     key={slot.slotKey}
                                     type="button"
                                     onClick={() => reserveSlot(slot)}
                                     disabled={Boolean(slotSubmittingKey)}
-                                    className={`snap-start rounded-full border px-4 py-2 text-[12px] font-semibold text-white/85 transition ${
+                                    className={`snap-start inline-flex items-center gap-1 rounded-full border px-4 py-2 text-[12px] font-semibold text-white/85 transition ${
                                       isSelected
                                         ? "border-white/60 bg-white/15"
                                         : "border-white/15 bg-white/5 hover:border-white/35 hover:bg-white/10"
                                     }`}
                                   >
                                     {timeLabel}
+                                    {slotBadge && (
+                                      <span className="rounded-full border border-white/20 bg-white/10 px-1.5 py-0.5 text-[9px] font-medium text-white/75">
+                                        {slotBadge}
+                                      </span>
+                                    )}
                                   </button>
                                 );
                               })}
