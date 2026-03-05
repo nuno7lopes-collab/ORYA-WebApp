@@ -13,7 +13,10 @@ import { isPadelOfficialStatus } from "@/domain/padel/liveStatus";
 import { parsePadelFormat } from "@/domain/padel/formatCatalog";
 import { computeSchedulerV2Plan } from "@/domain/padel/schedulerV2/planner";
 import type { PadelExecutionMode, PadelPartialMode, PadelScheduleStrategy } from "@/domain/padel/schedulerV2/types";
-import { resolveAllowPlaceholderMatches } from "@/domain/padel/schedulerV2/formatAdapters";
+import {
+  resolveAllowPlaceholderMatches,
+  resolveMinParticipantsPerSide,
+} from "@/domain/padel/schedulerV2/formatAdapters";
 import { buildExistingByCourt, evaluateMatchBatchAgainstAgenda } from "@/domain/agenda/scheduleWriteGateway";
 import { applyMatchSlotUpdate } from "@/domain/padel/matchSlots/commands";
 import {
@@ -358,6 +361,10 @@ async function tryAutoScheduleGenerated(params: {
     tournamentFormat: event.padelTournamentConfig?.format ?? null,
     unscheduledMatches,
   });
+  const minParticipantsPerSide = resolveMinParticipantsPerSide({
+    tournamentFormat: event.padelTournamentConfig?.format ?? null,
+    allowPlaceholderMatches,
+  });
 
   const scheduleResult = computeSchedulerV2Plan({
     strategy,
@@ -378,6 +385,7 @@ async function tryAutoScheduleGenerated(params: {
       minRestMinutes,
       priority,
       allowPlaceholderMatches,
+      minParticipantsPerSide,
     },
   });
 

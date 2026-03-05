@@ -198,7 +198,6 @@
     },
     "hero": {
       "title": "Ready to play padel?",
-      "subtitle": "We're preparing instant match entry mode.",
       "cta": "I want to play",
       "hint": "Feature in progress"
     },
@@ -208,20 +207,7 @@
     },
     "guest": {
       "title": "Personalize your experience",
-      "body": "Sign in to see bookings, profile status, and personalized shortcuts.",
       "cta": "Sign in"
-    },
-    "stats": {
-      "upcomingBookings": "Upcoming bookings",
-      "padelLevel": "Padel level",
-      "profile": "Profile",
-      "levelUnset": "Not set"
-    },
-    "profileStatus": {
-      "guest": "Guest",
-      "checking": "Checking",
-      "pending": "Incomplete",
-      "complete": "Complete"
     },
     "relative": {
       "today": "Today",
@@ -232,24 +218,17 @@
       "nextBooking": "Next booking",
       "nextBookingCta": "View booking details",
       "errorTitle": "Couldn't load your schedule.",
-      "errorBody": "You can keep using the rest of the app normally.",
       "retry": "Try again",
       "emptyTitle": "No bookings scheduled",
-      "emptyBody": "Book your next class or reserve a court to stay active.",
       "emptyCta": "See classes"
     },
     "profilePrompt": {
       "title": "Complete your competitive profile",
-      "body": "Add your level and playing details to improve invites, pairings, and recommendations.",
       "cta": "Complete profile"
-    },
-    "classes": {
-      "title": "Classes",
-      "subtitle": "Find classes and training sessions with instant booking.",
-      "cta": "See classes"
     },
     "quickActions": {
       "title": "Quick actions",
+      "classes": "Classes",
       "compete": "Compete",
       "reservations": "Bookings",
       "community": "Community"

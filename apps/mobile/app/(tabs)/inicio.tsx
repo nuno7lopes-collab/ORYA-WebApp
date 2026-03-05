@@ -33,33 +33,6 @@ import {
   resolveRelativeDayMeta,
 } from "../../features/home/formatters";
 
-type HomeStatChipProps = {
-  label: string;
-  value: string;
-  tone?: "default" | "accent";
-};
-
-function HomeStatChip({ label, value, tone = "default" }: HomeStatChipProps) {
-  const accent = tone === "accent";
-  return (
-    <View
-      className="rounded-full px-3 py-1.5"
-      style={{
-        borderWidth: 1,
-        borderColor: accent ? "rgba(145,236,255,0.4)" : "rgba(255,255,255,0.18)",
-        backgroundColor: accent ? "rgba(101,215,255,0.16)" : "rgba(255,255,255,0.08)",
-      }}
-    >
-      <Text className="text-[10px] uppercase tracking-[0.08em]" style={{ color: "rgba(230,241,255,0.74)" }}>
-        {label}
-      </Text>
-      <Text className="text-xs font-semibold mt-0.5" style={{ color: "#ffffff" }}>
-        {value}
-      </Text>
-    </View>
-  );
-}
-
 type QuickActionProps = {
   label: string;
   icon: ComponentProps<typeof Ionicons>["name"];
@@ -74,14 +47,13 @@ function QuickAction({ label, icon, accessibilityLabel, onPress }: QuickActionPr
       className="flex-1 rounded-2xl border border-white/14 bg-white/6 px-3 py-3"
       style={({ pressed }) => [
         { minHeight: tokens.layout.touchTarget },
-        pressed ? { opacity: 0.84 } : null,
+        pressed ? { opacity: 0.86 } : null,
       ]}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
-      accessibilityHint={label}
     >
       <View className="items-center justify-center gap-1.5">
-        <Ionicons name={icon} size={16} color="rgba(238,247,255,0.92)" />
+        <Ionicons name={icon} size={17} color="rgba(238,247,255,0.95)" />
         <Text className="text-white text-xs font-semibold text-center">{label}</Text>
       </View>
     </Pressable>
@@ -97,6 +69,7 @@ export default function InicioScreen() {
   const tabBarPadding = useTabBarPadding();
   const [refreshing, setRefreshing] = useState(false);
   const { session } = useAuth();
+
   const accessToken = session?.access_token ?? null;
   const userId = session?.user?.id ?? null;
   const isAuthenticated = Boolean(userId && accessToken);
@@ -152,18 +125,6 @@ export default function InicioScreen() {
     typeof onboardingDone === "boolean" &&
     onboardingDone === false;
 
-  const padelLevel =
-    profileQuery.data?.padelLevel?.trim() || t("home:stats.levelUnset");
-
-  const profileStatusLabel =
-    !isAuthenticated
-      ? t("home:profileStatus.guest")
-      : typeof onboardingDone !== "boolean"
-        ? t("home:profileStatus.checking")
-        : shouldPromptProfile
-          ? t("home:profileStatus.pending")
-          : t("home:profileStatus.complete");
-
   const onRefresh = useCallback(async () => {
     if (!isAuthenticated || refreshing) return;
     setRefreshing(true);
@@ -175,10 +136,7 @@ export default function InicioScreen() {
   }, [bookingsQuery, isAuthenticated, profileQuery, refreshing]);
 
   const openPlaceholderQueroJogar = useCallback(() => {
-    Alert.alert(
-      t("home:placeholder.title"),
-      t("home:placeholder.body"),
-    );
+    Alert.alert(t("home:placeholder.title"), t("home:placeholder.body"));
   }, [t]);
 
   const openAuthFromHome = useCallback(() => {
@@ -198,12 +156,13 @@ export default function InicioScreen() {
         showNotifications
         showMessages={false}
       />
+
       <ScrollView
         contentContainerStyle={{
           paddingTop: topPadding,
           paddingBottom: tabBarPadding,
           paddingHorizontal: 20,
-          gap: 14,
+          gap: 12,
         }}
         refreshControl={
           <RefreshControl
@@ -222,13 +181,12 @@ export default function InicioScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View className="rounded-3xl border border-white/16 bg-white/8 px-5 py-5">
-          <View className="flex-row items-center justify-between gap-3">
+          <View className="flex-row items-start justify-between gap-3">
             <View style={{ flex: 1 }}>
               <Text className="text-white/80 text-sm">{greetingLabel}</Text>
               <Text className="mt-2 text-white text-[34px] leading-[38px] font-semibold">
                 {t("home:hero.title")}
               </Text>
-              <Text className="mt-2 text-white/65 text-xs">{t("home:hero.subtitle")}</Text>
             </View>
             <View className="rounded-2xl border border-cyan-200/35 bg-cyan-300/14 px-2.5 py-2">
               <Ionicons name="flash-outline" size={20} color="rgba(228,248,255,0.96)" />
@@ -252,7 +210,6 @@ export default function InicioScreen() {
         {!isAuthenticated ? (
           <View className="rounded-3xl border border-cyan-200/35 bg-cyan-300/10 px-4 py-4">
             <Text className="text-cyan-50 text-sm font-semibold">{t("home:guest.title")}</Text>
-            <Text className="mt-1 text-cyan-50/85 text-xs">{t("home:guest.body")}</Text>
             <Pressable
               onPress={openAuthFromHome}
               className="mt-3 self-start rounded-full bg-white px-3 py-2"
@@ -266,39 +223,28 @@ export default function InicioScreen() {
               <Text className="text-[#0b1014] text-xs font-semibold">{t("home:guest.cta")}</Text>
             </Pressable>
           </View>
+        ) : bookingsQuery.isLoading && !bookingsQuery.data ? (
+          <GlassSkeleton height={126} />
+        ) : bookingsQuery.isError ? (
+          <View className="rounded-3xl border border-rose-200/30 bg-rose-400/10 px-4 py-4">
+            <Text className="text-rose-100 text-sm font-semibold">{t("home:agenda.errorTitle")}</Text>
+            <Pressable
+              onPress={() => bookingsQuery.refetch()}
+              className="mt-3 self-start rounded-full border border-white/20 bg-white/10 px-3 py-2"
+              style={({ pressed }) => [
+                { minHeight: tokens.layout.touchTarget },
+                pressed ? { opacity: 0.88 } : null,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={t("home:agenda.retry")}
+            >
+              <Text className="text-white text-xs font-semibold">{t("home:agenda.retry")}</Text>
+            </Pressable>
+          </View>
         ) : (
-          <>
-            <View className="flex-row flex-wrap gap-2">
-              <HomeStatChip
-                label={t("home:stats.upcomingBookings")}
-                value={String(bookingTimeline.active.length)}
-                tone="accent"
-              />
-              <HomeStatChip label={t("home:stats.padelLevel")} value={padelLevel} />
-              <HomeStatChip label={t("home:stats.profile")} value={profileStatusLabel} />
-            </View>
-
-            {bookingsQuery.isLoading && !bookingsQuery.data ? (
-              <GlassSkeleton height={134} />
-            ) : bookingsQuery.isError ? (
-              <View className="rounded-3xl border border-rose-200/30 bg-rose-400/10 px-4 py-4">
-                <Text className="text-rose-100 text-sm font-semibold">{t("home:agenda.errorTitle")}</Text>
-                <Text className="mt-1 text-rose-100/85 text-xs">{t("home:agenda.errorBody")}</Text>
-                <Pressable
-                  onPress={() => bookingsQuery.refetch()}
-                  className="mt-3 self-start rounded-full border border-white/20 bg-white/10 px-3 py-2"
-                  style={({ pressed }) => [
-                    { minHeight: tokens.layout.touchTarget },
-                    pressed ? { opacity: 0.88 } : null,
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel={t("home:agenda.retry")}
-                >
-                  <Text className="text-white text-xs font-semibold">{t("home:agenda.retry")}</Text>
-                </Pressable>
-              </View>
-            ) : nextBooking ? (
-              <View className="rounded-3xl border border-white/14 bg-white/6 px-4 py-4">
+          <View className="rounded-3xl border border-white/14 bg-white/6 px-4 py-4">
+            {nextBooking ? (
+              <>
                 <View className="flex-row items-start justify-between gap-2">
                   <View style={{ flex: 1 }}>
                     <Text className="text-white/75 text-[11px] uppercase tracking-[0.08em]">
@@ -335,11 +281,10 @@ export default function InicioScreen() {
                 >
                   <Text className="text-white text-xs font-semibold text-center">{t("home:agenda.nextBookingCta")}</Text>
                 </Pressable>
-              </View>
+              </>
             ) : (
-              <View className="rounded-3xl border border-white/14 bg-white/6 px-4 py-4">
+              <>
                 <Text className="text-white text-sm font-semibold">{t("home:agenda.emptyTitle")}</Text>
-                <Text className="mt-1 text-white/70 text-xs">{t("home:agenda.emptyBody")}</Text>
                 <Pressable
                   onPress={() => safePush(router, "/aulas")}
                   className="mt-3 rounded-xl border border-white/20 bg-white/8 px-4 py-3"
@@ -352,64 +297,59 @@ export default function InicioScreen() {
                 >
                   <Text className="text-white text-xs font-semibold text-center">{t("home:agenda.emptyCta")}</Text>
                 </Pressable>
-              </View>
+              </>
             )}
-
-            {shouldPromptProfile ? (
-              <View className="rounded-3xl border border-amber-200/34 bg-amber-300/10 px-4 py-4">
-                <Text className="text-amber-100 text-sm font-semibold">{t("home:profilePrompt.title")}</Text>
-                <Text className="mt-1 text-amber-100/85 text-xs">{t("home:profilePrompt.body")}</Text>
-                <Pressable
-                  onPress={() => safePush(router, TAB_PATHNAMES.perfil)}
-                  className="mt-3 self-start rounded-full border border-white/20 bg-white/15 px-3 py-2"
-                  style={({ pressed }) => [
-                    { minHeight: tokens.layout.touchTarget },
-                    pressed ? { opacity: 0.88 } : null,
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel={t("home:profilePrompt.cta")}
-                >
-                  <Text className="text-white text-xs font-semibold">{t("home:profilePrompt.cta")}</Text>
-                </Pressable>
-              </View>
-            ) : null}
-          </>
+          </View>
         )}
 
-        <View className="rounded-3xl border border-white/12 bg-white/5 px-4 py-4">
-          <View className="flex-row items-center gap-2">
-            <Ionicons name="fitness-outline" size={16} color="rgba(234,245,255,0.9)" />
-            <Text className="text-white text-sm font-semibold">{t("home:classes.title")}</Text>
+        {isAuthenticated && shouldPromptProfile ? (
+          <View className="rounded-3xl border border-amber-200/34 bg-amber-300/10 px-4 py-3.5">
+            <View className="flex-row items-center justify-between gap-2">
+              <Text className="text-amber-100 text-xs font-semibold" style={{ flex: 1 }}>
+                {t("home:profilePrompt.title")}
+              </Text>
+              <Pressable
+                onPress={() => safePush(router, TAB_PATHNAMES.perfil)}
+                className="rounded-full border border-white/20 bg-white/15 px-3 py-1.5"
+                style={({ pressed }) => [
+                  { minHeight: tokens.layout.touchTarget },
+                  pressed ? { opacity: 0.88 } : null,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={t("home:profilePrompt.cta")}
+              >
+                <Text className="text-white text-xs font-semibold">{t("home:profilePrompt.cta")}</Text>
+              </Pressable>
+            </View>
           </View>
-          <Text className="mt-1 text-white/70 text-xs">{t("home:classes.subtitle")}</Text>
-          <Pressable
-            onPress={() => safePush(router, "/aulas")}
-            className="mt-3 rounded-xl border border-white/20 bg-white/8 px-4 py-3"
-            style={({ pressed }) => [
-              { minHeight: tokens.layout.touchTarget },
-              pressed ? { opacity: 0.88 } : null,
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel={t("home:classes.cta")}
-          >
-            <Text className="text-white text-xs font-semibold text-center">{t("home:classes.cta")}</Text>
-          </Pressable>
-        </View>
+        ) : null}
 
-        <View>
-          <Text className="mb-2 text-white/75 text-xs uppercase tracking-[0.08em]">{t("home:quickActions.title")}</Text>
+        <View className="rounded-3xl border border-white/12 bg-white/5 px-4 py-4">
+          <Text className="mb-2 text-white/72 text-xs uppercase tracking-[0.08em]">
+            {t("home:quickActions.title")}
+          </Text>
+
           <View className="flex-row gap-2">
             <QuickAction
-              label={t("home:quickActions.compete")}
-              icon="trophy-outline"
-              accessibilityLabel={t("home:quickActions.compete")}
-              onPress={() => safePush(router, TAB_PATHNAMES.competir)}
+              label={t("home:quickActions.classes")}
+              icon="fitness-outline"
+              accessibilityLabel={t("home:quickActions.classes")}
+              onPress={() => safePush(router, "/aulas")}
             />
             <QuickAction
               label={t("home:quickActions.reservations")}
               icon="calendar-outline"
               accessibilityLabel={t("home:quickActions.reservations")}
               onPress={() => safePush(router, TAB_PATHNAMES.reservas)}
+            />
+          </View>
+
+          <View className="flex-row gap-2 mt-2">
+            <QuickAction
+              label={t("home:quickActions.compete")}
+              icon="trophy-outline"
+              accessibilityLabel={t("home:quickActions.compete")}
+              onPress={() => safePush(router, TAB_PATHNAMES.competir)}
             />
             <QuickAction
               label={t("home:quickActions.community")}
@@ -420,7 +360,7 @@ export default function InicioScreen() {
           </View>
         </View>
 
-        {isAuthenticated && (profileQuery.isFetching || bookingsQuery.isFetching) ? (
+        {isAuthenticated && (profileQuery.isFetching || bookingsQuery.isFetching) && !refreshing ? (
           <View className="py-1">
             <ActivityIndicator color="rgba(228,243,255,0.75)" />
           </View>

@@ -713,6 +713,11 @@ export default function WeekCalendarReadClient({
       return current;
     });
   }, [availableKindOptions]);
+  const kindsButtonLabel = useMemo(() => {
+    if (availableKindOptions.length === 0) return "Tipos";
+    if (visibleKinds.length === availableKindOptions.length) return "Tipos";
+    return `Tipos ${visibleKinds.length}/${availableKindOptions.length}`;
+  }, [availableKindOptions.length, visibleKinds.length]);
   const resourcesById = useMemo(
     () => new Map(activeResources.map((resource) => [resource.id, resource])),
     [activeResources],
@@ -1148,7 +1153,7 @@ export default function WeekCalendarReadClient({
   );
   const commandBarHint = hasActiveSelection
     ? `Escopo: ${selectedScopesLabel}`
-    : operationalGuidance.selectionHint;
+    : undefined;
   const commandBarActions = operationalGuidance.actions
     .slice(0, 2)
     .map((action) => ({
@@ -1350,7 +1355,7 @@ export default function WeekCalendarReadClient({
                 )}
               >
                 {" "}
-                {hasActiveSelection ? "Limpar escopo" : "Sem escopo"}{" "}
+                {hasActiveSelection ? "Limpar" : "Todos"}{" "}
               </button>{" "}
             </div>
           ) : null
@@ -1367,7 +1372,7 @@ export default function WeekCalendarReadClient({
             )}
           >
             {" "}
-            Tipos{" "}
+            {kindsButtonLabel}{" "}
           </button>
         }
         actions={commandBarActions}
@@ -1378,9 +1383,6 @@ export default function WeekCalendarReadClient({
           {" "}
           <div className="flex flex-wrap items-center gap-2">
             {" "}
-            <span className="text-[11px] uppercase tracking-[0.14em] text-white/55">
-              Tipo
-            </span>{" "}
             {availableKindOptions.map((option) => {
               const isActive = visibleKinds.includes(option.value);
               return (
@@ -1400,6 +1402,23 @@ export default function WeekCalendarReadClient({
                 </button>
               );
             })}{" "}
+            <button
+              type="button"
+              onClick={() =>
+                setVisibleKinds(
+                  availableKindOptions.map((option) => option.value),
+                )
+              }
+              disabled={visibleKinds.length === availableKindOptions.length}
+              className={cn(
+                "rounded-full border px-3 py-1 text-xs transition disabled:opacity-50",
+                visibleKinds.length === availableKindOptions.length
+                  ? "border-white/10 bg-white/5 text-white/50"
+                  : "border-white/20 bg-black/35 text-white/80 hover:border-white/35 hover:text-white",
+              )}
+            >
+              Todos
+            </button>{" "}
           </div>{" "}
           <div
             className="mt-2 flex flex-wrap items-center gap-2 text-[11px]"
@@ -1476,7 +1495,7 @@ export default function WeekCalendarReadClient({
               className="rounded-full border border-white/20 px-3 py-1 text-xs text-white/80 transition hover:border-white/35 hover:text-white"
             >
               {" "}
-              Ir para agora{" "}
+              Agora{" "}
             </button>{" "}
             {reservationsEnabled ? (
               <Link
@@ -1484,7 +1503,7 @@ export default function WeekCalendarReadClient({
                 className="rounded-full border border-cyan-300/40 px-3 py-1 text-xs text-cyan-100 transition hover:border-cyan-300/75"
               >
                 {" "}
-                Gerir disponibilidade{" "}
+                Disponibilidade{" "}
               </Link>
             ) : null}{" "}
           </div>{" "}
@@ -1649,9 +1668,9 @@ export default function WeekCalendarReadClient({
                                 tabIndex={0}
                                 title={summaryTitle}
                                 className={cn(
-                                  "absolute cursor-pointer rounded-xl border px-3 py-2 text-left text-[11px] text-white",
+                                  "absolute cursor-pointer rounded-xl border px-3 py-2 text-left text-[11px] text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/85",
                                   resolveAggregateTone(aggregate.items),
-                                  isSelected && "ring-1 ring-cyan-200/80",
+                                  isSelected && "ring-2 ring-cyan-200/85",
                                 )}
                                 style={{
                                   top: aggregate.top,
@@ -1734,23 +1753,21 @@ export default function WeekCalendarReadClient({
         {error && !showSoftAgendaError && (
           <p role="alert" className="mt-3 text-sm text-red-200">
             {" "}
-            Falha ao carregar agenda: {error.message}{" "}
+            Não foi possível carregar a agenda.{" "}
           </p>
         )}{" "}
         {!isLoading && !error && filteredItems.length === 0 && (
           <p className="mt-3 text-sm text-white/55">
             {" "}
-            {isDayMode
-              ? "Sem ocupação para os filtros e data selecionados."
-              : "Sem ocupação para os filtros e intervalo selecionados."}{" "}
+            Sem ocupações para os filtros ativos.{" "}
           </p>
         )}{" "}
       </section>{" "}
       <ContextDrawer
         open={Boolean(selectedAggregate)}
         onClose={() => setSelectedAggregateKey(null)}
-        eyebrow={isDayMode ? "Agenda diária" : "Agenda semanal"}
-        title="Detalhe da ocupação"
+        eyebrow="Detalhe"
+        title="Ocupação"
         widthClassName="max-w-xl"
       >
         {" "}

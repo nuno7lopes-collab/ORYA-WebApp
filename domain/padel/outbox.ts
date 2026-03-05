@@ -1,6 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { computeSchedulerV2Plan } from "@/domain/padel/schedulerV2/planner";
-import { resolveAllowPlaceholderMatches } from "@/domain/padel/schedulerV2/formatAdapters";
+import {
+  resolveAllowPlaceholderMatches,
+  resolveMinParticipantsPerSide,
+} from "@/domain/padel/schedulerV2/formatAdapters";
 import { queueMatchChanged, queueMatchResult, queueNextOpponent, queueChampion, queueEliminated } from "@/domain/notifications/tournament";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { createNotification, shouldNotify } from "@/lib/notifications";
@@ -772,6 +775,10 @@ async function handleMatchDelayRequested(payload: MatchDelayRequestedPayload) {
           groupLabel: entry.groupLabel,
         })),
       });
+      const minParticipantsPerSide = resolveMinParticipantsPerSide({
+        tournamentFormat: match.event.padelTournamentConfig?.format ?? null,
+        allowPlaceholderMatches,
+      });
 
       const bookingPlannerBlocks = bookings
         .filter((booking) => booking.courtId && isActiveBooking(booking))
@@ -846,6 +853,7 @@ async function handleMatchDelayRequested(payload: MatchDelayRequestedPayload) {
           minRestMinutes,
           priority,
           allowPlaceholderMatches,
+          minParticipantsPerSide,
         },
       });
 

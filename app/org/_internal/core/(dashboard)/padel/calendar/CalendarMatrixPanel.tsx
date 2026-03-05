@@ -140,7 +140,7 @@ export function CalendarMatrixPanel(props: {
     <div className="min-h-[420px] rounded-2xl border border-dashed border-white/15 bg-black/25 p-4 text-white/70">
       <div className="flex items-center justify-between">
         <p className="text-sm font-semibold text-white">
-          Matriz por dia e campo
+          Agenda por campo
         </p>
         {props.isCalendarLoading ? (
           <span className="text-[11px] text-white/60 animate-pulse">
@@ -150,10 +150,10 @@ export function CalendarMatrixPanel(props: {
       </div>
       {!props.eventId ? (
         <div className="mt-2 space-y-1 text-[12px] text-white/60">
-          <p>Seleciona um torneio para carregar o calendário.</p>
+          <p>Seleciona um torneio.</p>
           {!props.padelEventsLoading && props.padelEventsCount === 0 ? (
             <p className="text-white/50">
-              Ainda não tens torneios de padel.{" "}
+              Ainda não existem torneios de padel.{" "}
               <Link
                 href={props.tournamentsCreateHref}
                 className="text-white underline"
@@ -192,7 +192,7 @@ export function CalendarMatrixPanel(props: {
       !props.calendarError &&
       props.selectedDayLabel ? (
         <p className="mt-2 text-[12px] text-white/60">
-          A mostrar registos de {props.selectedDay} ({props.selectedDayLabel}).
+          Dia: {props.selectedDayLabel}
         </p>
       ) : null}
       {props.eventId && !props.isCalendarLoading && !props.calendarError ? (
@@ -201,7 +201,7 @@ export function CalendarMatrixPanel(props: {
             toolbar={
               <ScheduleToolbar
                 title="Agenda"
-                subtitle={`Fuso ${props.calendarTimezone} · ${props.calendarScope === "week" ? "Semana" : "Dia"}`}
+                subtitle={`${props.calendarScope === "week" ? "Semana" : "Dia"} · ${props.calendarTimezone}`}
               />
             }
             main={

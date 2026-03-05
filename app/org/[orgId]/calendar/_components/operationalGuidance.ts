@@ -17,7 +17,6 @@ export type CalendarOperationalAction = {
 export type CalendarOperationalGuidance = {
   mode: OrganizationOperationalMode | "UNKNOWN";
   badge: string;
-  selectionHint: string;
   actions: CalendarOperationalAction[];
 };
 
@@ -66,7 +65,6 @@ export function buildCalendarOperationalGuidance(input: {
     return {
       mode: "EVENT_DRIVEN",
       badge: "Modo eventos",
-      selectionHint: "Sem escopo: visão global de eventos e torneios.",
       actions,
     };
   }
@@ -75,13 +73,13 @@ export function buildCalendarOperationalGuidance(input: {
     if (allowReservas) {
       pushAction(actions, {
         id: "manage-availability",
-        label: "Gerir disponibilidade",
+        label: "Disponibilidade",
         href: buildOrgHref(organizationId, "/calendar/availability"),
         tone: "primary",
       });
       pushAction(actions, {
         id: "open-operations",
-        label: "Abrir operações",
+        label: "Operações",
         href: buildOrgHref(organizationId, "/bookings/operations"),
         tone: "secondary",
       });
@@ -89,7 +87,6 @@ export function buildCalendarOperationalGuidance(input: {
     return {
       mode: "SLOT_DRIVEN",
       badge: "Modo reservas",
-      selectionHint: "Sem escopo: visão global de reservas.",
       actions,
     };
   }
@@ -98,7 +95,7 @@ export function buildCalendarOperationalGuidance(input: {
     if (allowReservas) {
       pushAction(actions, {
         id: "manage-availability",
-        label: "Gerir disponibilidade",
+        label: "Disponibilidade",
         href: buildOrgHref(organizationId, "/calendar/availability"),
         tone: "primary",
       });
@@ -120,7 +117,7 @@ export function buildCalendarOperationalGuidance(input: {
     } else if (allowReservas) {
       pushAction(actions, {
         id: "open-operations",
-        label: "Abrir operações",
+        label: "Operações",
         href: buildOrgHref(organizationId, "/bookings/operations"),
         tone: "secondary",
       });
@@ -128,7 +125,6 @@ export function buildCalendarOperationalGuidance(input: {
     return {
       mode: "HYBRID",
       badge: "Modo híbrido",
-      selectionHint: "Sem escopo: visão global de eventos e reservas.",
       actions,
     };
   }
@@ -136,7 +132,7 @@ export function buildCalendarOperationalGuidance(input: {
   if (allowReservas) {
     pushAction(actions, {
       id: "manage-availability",
-      label: "Gerir disponibilidade",
+      label: "Disponibilidade",
       href: buildOrgHref(organizationId, "/calendar/availability"),
       tone: "primary",
     });
@@ -153,7 +149,6 @@ export function buildCalendarOperationalGuidance(input: {
   return {
     mode: "UNKNOWN",
     badge: "Modo operacional",
-    selectionHint: "Sem escopo: visão global consolidada.",
     actions,
   };
 }

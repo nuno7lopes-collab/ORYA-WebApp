@@ -308,6 +308,40 @@ describe("padel auto-schedule", () => {
     expect(result.skipped).toHaveLength(0);
   });
 
+  it("exige duplas completas quando minParticipantsPerSide=2", () => {
+    const result = computeAutoSchedulePlan({
+      unscheduledMatches: [
+        {
+          id: 403,
+          sideAProfileIds: [5001],
+          sideBProfileIds: [5002],
+          plannedDurationMinutes: null,
+          courtId: null,
+          roundType: "GROUPS",
+        },
+      ],
+      scheduledMatches: [],
+      courts: [{ id: 1 }],
+      availabilities: [],
+      courtBlocks: [],
+      config: {
+        windowStart: new Date("2025-01-01T09:00:00Z"),
+        windowEnd: new Date("2025-01-01T11:00:00Z"),
+        durationMinutes: 60,
+        slotMinutes: 30,
+        bufferMinutes: 0,
+        minRestMinutes: 0,
+        minParticipantsPerSide: 2,
+        priority: "GROUPS_FIRST",
+      },
+    });
+
+    expect(result.scheduled).toHaveLength(0);
+    expect(result.skipped).toEqual([
+      { matchId: 403, reason: "MISSING_PARTICIPANTS" },
+    ]);
+  });
+
   it("devolve motivo detalhado quando jogadores não têm janela", () => {
     const result = computeAutoSchedulePlan({
       unscheduledMatches: [

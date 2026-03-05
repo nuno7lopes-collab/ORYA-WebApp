@@ -57,6 +57,7 @@ export function CalendarManualAdjustmentsPanel(props: {
   onEditAvailability: (id: number) => void;
   onDeleteAvailability: (id: number) => void;
 }) {
+  const hasEvent = Boolean(props.eventId);
   const sortedBlocks = [...props.blocks]
     .sort(
       (a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime(),
@@ -71,10 +72,12 @@ export function CalendarManualAdjustmentsPanel(props: {
     <div className="space-y-3 rounded-2xl border border-white/12 bg-white/[0.04] p-4 text-white">
       <div className="space-y-1">
         <p className="text-sm font-semibold text-white">Correções manuais</p>
-        <p className="text-[12px] text-white/65">
-          Ajusta bloqueios e indisponibilidades sem sair da agenda.
-        </p>
       </div>
+      {!hasEvent ? (
+        <p className="rounded-lg border border-amber-300/35 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-100">
+          Seleciona um torneio para editar bloqueios e indisponibilidades.
+        </p>
+      ) : null}
       <div className="grid gap-3 xl:grid-cols-2">
         <div className="space-y-3 rounded-xl border border-white/12 bg-white/[0.04] p-3">
           <div className="flex items-center justify-between gap-2">
@@ -344,9 +347,6 @@ export function CalendarManualAdjustmentsPanel(props: {
           </div>
         </div>
       </div>
-      {!props.eventId ? (
-        <p className="text-[12px] text-white/55">Precisas de eventId no URL.</p>
-      ) : null}
     </div>
   );
 }

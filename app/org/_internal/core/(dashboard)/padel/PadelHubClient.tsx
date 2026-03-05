@@ -6553,7 +6553,7 @@ export default function PadelHubClient({
 
   const runAutoSchedule = async () => {
     if (!eventId) {
-      setCalendarError("Abre a partir de um torneio para auto-agendar.");
+      setCalendarError("Seleciona um torneio para auto-agendar.");
       pushOpsLive(
         "warn",
         "Auto-agendamento indisponível",
@@ -6728,7 +6728,7 @@ export default function PadelHubClient({
       setAutoScheduleByCategory(byCategory);
       const unscheduledSummary = formatUnscheduledSummary(unscheduledByReason);
       setAutoScheduleUnscheduledByReason(unscheduledByReason);
-      const summary = `Agendados ${scheduledCount} jogos${skippedCount ? ` · ${skippedCount} sem slot` : ""}${runId ? ` · run ${runId}` : ""}.`;
+      const summary = `Agendados ${scheduledCount} jogos${skippedCount ? ` · ${skippedCount} sem slot` : ""}.`;
       setAutoScheduleSummary(summary);
       if (skippedCount > 0) {
         setCalendarWarning(
@@ -6770,7 +6770,7 @@ export default function PadelHubClient({
 
   const undoAutoScheduleRun = async () => {
     if (!eventId) {
-      setCalendarError("Abre a partir de um torneio para desfazer o lote.");
+      setCalendarError("Seleciona um torneio para desfazer o lote.");
       return;
     }
     if (!lastAutoScheduleRunId) {
@@ -6834,7 +6834,7 @@ export default function PadelHubClient({
 
   const previewAutoSchedule = async () => {
     if (!eventId) {
-      setCalendarError("Abre a partir de um torneio para simular.");
+      setCalendarError("Seleciona um torneio para simular.");
       pushOpsLive(
         "warn",
         "Simulação indisponível",
@@ -6939,7 +6939,6 @@ export default function PadelHubClient({
       }
       const scheduledCount = Number(json?.scheduledCount ?? 0);
       const skippedCount = Number(json?.skippedCount ?? 0);
-      const runId = typeof json?.runId === "string" ? json.runId : null;
       const unscheduledByReason = normalizeUnscheduledByReason(
         json?.unscheduledByReason,
       );
@@ -6954,7 +6953,7 @@ export default function PadelHubClient({
       setAutoScheduleByCategory(byCategory);
       const unscheduledSummary = formatUnscheduledSummary(unscheduledByReason);
       setAutoScheduleUnscheduledByReason(unscheduledByReason);
-      const summary = `Simulação: ${scheduledCount} jogos cabem${skippedCount ? ` · ${skippedCount} sem slot` : ""}${runId ? ` · run ${runId}` : ""}.`;
+      const summary = `Simulação: ${scheduledCount} jogos cabem${skippedCount ? ` · ${skippedCount} sem slot` : ""}.`;
       setAutoScheduleSummary(summary);
       setAutoSchedulePreview(
         Array.isArray(json?.scheduled) ? json.scheduled : [],
@@ -7919,7 +7918,7 @@ export default function PadelHubClient({
 
           <details className="rounded-2xl border border-white/12 bg-black/20">
             <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-white">
-              Operações avançadas de bloqueio
+              Bloqueios e overrides
             </summary>
             <div className="border-t border-white/10 p-4">
               <div className="grid gap-4 lg:grid-cols-2">
@@ -7929,7 +7928,7 @@ export default function PadelHubClient({
                       Bloqueio em lote
                     </p>
                     <p className="text-[12px] text-white/70">
-                      Bloqueia vários campos com política canónica.
+                      Aplica bloqueios em vários campos.
                     </p>
                   </div>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -7987,7 +7986,7 @@ export default function PadelHubClient({
                             event.target.value.toUpperCase(),
                           )
                         }
-                        placeholder="BLOQUEIO_TORNEIO"
+                        placeholder="MOTIVO_BLOQUEIO"
                         className="w-full rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-white"
                       />
                     </label>
@@ -8011,7 +8010,7 @@ export default function PadelHubClient({
                       }
                       className="h-4 w-4 accent-white"
                     />
-                    Forçar override
+                    Forçar
                   </label>
                   {bulkBlockError && (
                     <p className="text-[12px] text-red-200">{bulkBlockError}</p>
@@ -8037,12 +8036,12 @@ export default function PadelHubClient({
                       Override auditável
                     </p>
                     <p className="text-[12px] text-white/70">
-                      Regista exceções com trilho de auditoria.
+                      Regista exceções auditáveis.
                     </p>
                   </div>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     <label className="space-y-1 text-[12px] text-white/65">
-                      ID da operação
+                      Operação ID
                       <input
                         value={overrideOperationId}
                         onChange={(event) =>
@@ -8052,7 +8051,7 @@ export default function PadelHubClient({
                       />
                     </label>
                     <label className="space-y-1 text-[12px] text-white/65">
-                      ID do bloqueio suave
+                      Soft block ID
                       <input
                         value={overrideSoftBlockId}
                         onChange={(event) =>
@@ -8091,7 +8090,7 @@ export default function PadelHubClient({
                             event.target.value.toUpperCase(),
                           )
                         }
-                        placeholder="OVERRIDE_MANUAL"
+                        placeholder="MOTIVO_OVERRIDE"
                         className="w-full rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-white"
                       />
                     </label>
@@ -8124,11 +8123,11 @@ export default function PadelHubClient({
                   </button>
                   <div className="rounded-xl border border-white/10 bg-black/20 p-2">
                     <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">
-                      Últimos overrides
+                      Histórico recente
                     </p>
                     <div className="mt-2 space-y-1 text-[12px] text-white/70">
                       {tournamentOverrides.length === 0 && (
-                        <p>Sem overrides recentes.</p>
+                        <p>Sem registos.</p>
                       )}
                       {tournamentOverrides.slice(0, 5).map((item) => (
                         <p key={`override-${item.auditId}`}>
@@ -8145,9 +8144,9 @@ export default function PadelHubClient({
               </div>
               <div className="mt-4 border-t border-white/10 pt-3">
                 <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">
-                  Campos alvo
+                  Campos
                 </p>
-                <div className="mt-2 flex flex-wrap gap-2">
+                <div className="mt-2 flex max-h-40 flex-wrap gap-2 overflow-y-auto pr-1 orya-scrollbar-hide">
                   {calendarCourts.map((court) => {
                     const active = bulkBlockCourtIds.includes(court.id);
                     return (
@@ -9242,29 +9241,29 @@ export default function PadelHubClient({
                 Treinadores
               </p>
               <p className="text-sm text-white/70">
-                Fonte canónica: Equipa + Academia, sem gestão paralela no Clube.
+                Gestão centralizada em Equipa e Academia.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Link
                 href={
                   organizationId
-                    ? buildOrgHref(organizationId, "/team")
+                    ? buildOrgHref(organizationId, "/academy/trainers")
                     : buildOrgHubHref("/organizations")
                 }
-                className="rounded-full border border-white/25 px-4 py-2 text-[12px] font-semibold text-white hover:border-white/40"
+                className={CTA_PAD_PRIMARY_SM}
               >
-                Equipa
+                Gerir treinadores
               </Link>
               <Link
                 href={
                   organizationId
-                    ? buildOrgHref(organizationId, "/academy/trainers")
+                    ? buildOrgHref(organizationId, "/team")
                     : buildOrgHubHref("/organizations")
                 }
                 className="rounded-full border border-white/15 px-4 py-2 text-[12px] font-semibold text-white/80 hover:border-white/35"
               >
-                Academia
+                Equipa
               </Link>
             </div>
           </div>
@@ -9281,11 +9280,30 @@ export default function PadelHubClient({
 
           {!coachesLoading && !coachErrorLabel && coaches.length === 0 && (
             <div className="rounded-2xl border border-white/15 bg-white/5 p-6 text-white ">
-              <p className="text-lg font-semibold">Sem treinadores.</p>
-              <p className="text-sm text-white/70">
-                Associa o membro na Equipa e ativa-o em Academia &gt;
-                Treinadores.
-              </p>
+              <p className="text-lg font-semibold">Sem treinadores ativos.</p>
+              <p className="text-sm text-white/70">Adiciona na Equipa e ativa na Academia.</p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Link
+                  href={
+                    organizationId
+                      ? buildOrgHref(organizationId, "/academy/trainers")
+                      : buildOrgHubHref("/organizations")
+                  }
+                  className={CTA_PAD_PRIMARY_SM}
+                >
+                  Abrir Academia
+                </Link>
+                <Link
+                  href={
+                    organizationId
+                      ? buildOrgHref(organizationId, "/team")
+                      : buildOrgHubHref("/organizations")
+                  }
+                  className={CTA_SECONDARY}
+                >
+                  Abrir Equipa
+                </Link>
+              </div>
             </div>
           )}
 
@@ -9337,7 +9355,7 @@ export default function PadelHubClient({
                           {coach.professionalId &&
                           coach.professionalIsActive === true
                             ? "Profissional ativo"
-                            : "Profissional pendente"}
+                            : "Inativo na Academia"}
                         </span>
                       </div>
                     </div>
@@ -9374,7 +9392,7 @@ export default function PadelHubClient({
                           }
                           className="rounded-full border border-amber-300/50 bg-amber-500/10 px-3 py-1.5 text-[11px] text-amber-100 hover:border-amber-200/70"
                         >
-                          Ativar na Academia
+                          Ativar
                         </Link>
                       )}
                     </div>
@@ -9393,38 +9411,26 @@ export default function PadelHubClient({
               <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">
                 Aulas
               </p>
-              <p className="text-sm text-white/70">
-                Catálogo, instrutores e marcações de treino.
-              </p>
+              <p className="text-sm text-white/70">Catálogo operacional de aulas.</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href={
+                  organizationId
+                    ? buildOrgHref(organizationId, "/academy/classes")
+                    : buildOrgHubHref("/organizations")
+                }
+                className={CTA_PAD_PRIMARY_SM}
+              >
+                Abrir Academia
+              </Link>
               <button
                 type="button"
                 onClick={() => setPadelSection("coaches")}
-                className="rounded-full border border-white/25 px-4 py-2 text-[12px] font-semibold text-white hover:border-white/40"
+                className={CTA_SECONDARY}
               >
-                Ver treinadores
+                Treinadores
               </button>
-              <Link
-                href={
-                  organizationId
-                    ? buildOrgHref(organizationId, "/academy/classes")
-                    : buildOrgHubHref("/organizations")
-                }
-                className="rounded-full border border-white/20 px-4 py-2 text-[12px] font-semibold text-white/80 hover:border-white/35"
-              >
-                Agenda avançada
-              </Link>
-              <Link
-                href={
-                  organizationId
-                    ? buildOrgHref(organizationId, "/academy/classes")
-                    : buildOrgHubHref("/organizations")
-                }
-                className="rounded-full border border-white/15 px-4 py-2 text-[12px] font-semibold text-white/70 hover:border-white/30"
-              >
-                Catálogo completo
-              </Link>
             </div>
           </div>
 
@@ -9442,10 +9448,20 @@ export default function PadelHubClient({
             !lessonsErrorLabel &&
             lessonServices.length === 0 && (
               <div className="rounded-2xl border border-white/15 bg-white/5 p-6 text-white ">
-                <p className="text-lg font-semibold">Sem aulas.</p>
-                <p className="text-sm text-white/70">
-                  Cria o primeiro serviço de aula.
-                </p>
+                <p className="text-lg font-semibold">Sem aulas no catálogo.</p>
+                <p className="text-sm text-white/70">Cria a primeira aula na Academia.</p>
+                <div className="mt-4">
+                  <Link
+                    href={
+                      organizationId
+                        ? buildOrgHref(organizationId, "/academy/classes/new")
+                        : buildOrgHubHref("/organizations")
+                    }
+                    className={CTA_PAD_PRIMARY_SM}
+                  >
+                    Nova aula
+                  </Link>
+                </div>
               </div>
             )}
 
@@ -9504,14 +9520,9 @@ export default function PadelHubClient({
           )}
 
           {!lessonsErrorLabel && (
-            <div className="rounded-2xl border border-white/12 bg-white/5 p-4 space-y-3 ">
+            <div className="rounded-2xl border border-white/12 bg-white/5 p-4 space-y-2">
               <div>
-                <p className="text-sm font-semibold text-white">
-                  Gestão canónica de aulas
-                </p>
-                <p className="text-[11px] text-white/60">
-                  A criação e gestão de aulas foi centralizada na Academia.
-                </p>
+                <p className="text-sm font-semibold text-white">Gestão de aulas na Academia</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <Link
@@ -9522,7 +9533,7 @@ export default function PadelHubClient({
                   }
                   className={CTA_PAD_PRIMARY_SM}
                 >
-                  Nova aula (Academia)
+                  Nova aula
                 </Link>
                 <Link
                   href={

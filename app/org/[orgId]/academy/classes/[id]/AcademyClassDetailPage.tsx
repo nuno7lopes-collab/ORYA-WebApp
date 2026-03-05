@@ -299,6 +299,13 @@ export default function AcademyClassDetailPage() {
   const [seriesActive, setSeriesActive] = useState(true);
   const [seriesSaving, setSeriesSaving] = useState(false);
   const [seriesError, setSeriesError] = useState<string | null>(null);
+  const seriesDraftSummary = useMemo(() => {
+    const modeLabel = seriesDraftMode === "SINGLE" ? "Sessão única" : "Série";
+    if (seriesDraftMode === "SINGLE") {
+      return `${modeLabel} · ${seriesSingleDate || "--"} · ${seriesStartTime}`;
+    }
+    return `${modeLabel} · ${DAY_LABELS[Number(seriesDay)] ?? "--"} · ${seriesStartTime}`;
+  }, [seriesDay, seriesDraftMode, seriesSingleDate, seriesStartTime]);
 
   useEffect(() => {
     if (!service) return;
@@ -988,8 +995,8 @@ export default function AcademyClassDetailPage() {
         <section className={cn(DASHBOARD_CARD, "p-5 space-y-4")}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-base font-semibold text-white">Agenda de aulas</h2>
-              <p className={DASHBOARD_MUTED}>Cria séries recorrentes e sessões únicas no mesmo fluxo.</p>
+              <h2 className="text-base font-semibold text-white">Agenda</h2>
+              <p className={DASHBOARD_MUTED}>{seriesDraftSummary}</p>
             </div>
             {seriesEditingId && (
               <button type="button" className={CTA_SECONDARY} onClick={resetSeriesForm}>
@@ -1010,7 +1017,7 @@ export default function AcademyClassDetailPage() {
               )}
             >
               <p className="text-sm font-semibold">Série recorrente</p>
-              <p className="text-[11px] text-white/55">Repete semanalmente entre datas.</p>
+              <p className="text-[11px] text-white/55">Semanal</p>
             </button>
             <button
               type="button"
@@ -1023,7 +1030,7 @@ export default function AcademyClassDetailPage() {
               )}
             >
               <p className="text-sm font-semibold">Sessão única</p>
-              <p className="text-[11px] text-white/55">Cria apenas uma aula numa data específica.</p>
+              <p className="text-[11px] text-white/55">Data única</p>
             </button>
           </div>
 

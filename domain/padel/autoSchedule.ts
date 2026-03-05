@@ -60,6 +60,7 @@ export type AutoScheduleConfig = {
   slotMinutes: number;
   bufferMinutes: number;
   minRestMinutes: number;
+  minParticipantsPerSide?: number;
   priority: "GROUPS_FIRST" | "KNOCKOUT_FIRST";
   allowPlaceholderMatches?: boolean;
   preserveInputOrder?: boolean;
@@ -238,6 +239,7 @@ export function computeAutoSchedulePlan({
     slotMinutes,
     bufferMinutes,
     minRestMinutes,
+    minParticipantsPerSide = 1,
     priority,
     allowPlaceholderMatches = false,
     preserveInputOrder = false,
@@ -506,28 +508,31 @@ export function computeAutoSchedulePlan({
   const skipped: AutoScheduleResult["skipped"] = [];
 
   for (const match of sortedMatches) {
-    const hasSideAProfiles =
-      Array.isArray(match.sideAProfileIds) &&
-      match.sideAProfileIds.some(
-        (id) => typeof id === "number" && Number.isFinite(id),
-      );
-    const hasSideBProfiles =
-      Array.isArray(match.sideBProfileIds) &&
-      match.sideBProfileIds.some(
-        (id) => typeof id === "number" && Number.isFinite(id),
-      );
-    const hasSideAEmails =
-      Array.isArray(match.sideAEmails) &&
-      match.sideAEmails.some(
-        (email) => typeof email === "string" && email.trim().length > 0,
-      );
-    const hasSideBEmails =
-      Array.isArray(match.sideBEmails) &&
-      match.sideBEmails.some(
-        (email) => typeof email === "string" && email.trim().length > 0,
-      );
-    const hasSideA = hasSideAProfiles || hasSideAEmails;
-    const hasSideB = hasSideBProfiles || hasSideBEmails;
+    const sideAProfiles = new Set<number>();
+    const sideBProfiles = new Set<number>();
+    const sideAEmails = new Set<string>();
+    const sideBEmails = new Set<string>();
+    (match.sideAProfileIds ?? []).forEach((id) => {
+      if (typeof id === "number" && Number.isFinite(id)) sideAProfiles.add(id);
+    });
+    (match.sideBProfileIds ?? []).forEach((id) => {
+      if (typeof id === "number" && Number.isFinite(id)) sideBProfiles.add(id);
+    });
+    (match.sideAEmails ?? []).forEach((email) => {
+      const normalized =
+        typeof email === "string" ? email.trim().toLowerCase() : "";
+      if (normalized) sideAEmails.add(normalized);
+    });
+    (match.sideBEmails ?? []).forEach((email) => {
+      const normalized =
+        typeof email === "string" ? email.trim().toLowerCase() : "";
+      if (normalized) sideBEmails.add(normalized);
+    });
+    const sideACount = sideAProfiles.size + sideAEmails.size;
+    const sideBCount = sideBProfiles.size + sideBEmails.size;
+    const requiredPerSide = Math.max(1, Math.round(minParticipantsPerSide));
+    const hasSideA = sideACount >= requiredPerSide;
+    const hasSideB = sideBCount >= requiredPerSide;
     if ((!hasSideA || !hasSideB) && !allowPlaceholderMatches) {
       skipped.push({ matchId: match.id, reason: "MISSING_PARTICIPANTS" });
       continue;

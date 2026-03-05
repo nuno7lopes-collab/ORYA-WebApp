@@ -2594,8 +2594,7 @@ function OrganizacaoPageInner({
     : 0;
   const progressPercent = Math.max(0, Math.min(100, completionPercent));
   const requiredSteps = summarySteps.filter((step) => step.required);
-  const requiredIncomplete = requiredSteps.filter((step) => !step.done);
-  const requiredComplete = requiredIncomplete.length === 0;
+  const requiredComplete = requiredSteps.every((step) => step.done);
   const checklistStorageKey = organization?.id
     ? `orya_checklist_dismissed_${organization.id}`
     : null;
@@ -3049,116 +3048,108 @@ function OrganizacaoPageInner({
     <div className={`${containerClasses} space-y-6 text-white`}>
       {" "}
       {activeObjective === "create" && (
-        <section className="space-y-4">
+        <section id="overview" className="space-y-4">
           {" "}
-          <div
-            id="overview"
-            className="flex flex-wrap items-center justify-between gap-3"
-          >
+          <div className="flex flex-wrap items-end justify-between gap-3">
             {" "}
             <div className="space-y-1">
               {" "}
               <h1 className="text-2xl sm:text-3xl font-semibold text-white">
                 Visão geral
               </h1>{" "}
-              <p className="text-sm text-white/70"> {orgDisplayName} </p>{" "}
+              <p className="text-sm text-white/70">{orgDisplayName}</p>{" "}
             </div>{" "}
-            <div className="flex flex-wrap items-center gap-2">
-              {" "}
-              <Link href={primaryCreateMeta.href} className={CTA_PRIMARY}>
-                {" "}
-                {primaryCreateMeta.label}{" "}
-              </Link>{" "}
-            </div>{" "}
+            <Link href={primaryCreateMeta.href} className={CTA_PRIMARY}>
+              {primaryCreateMeta.label}
+            </Link>{" "}
           </div>{" "}
           <div className={cn("space-y-4", fadeClass)}>
             {" "}
-            <div
+            <section
               id="ferramentas"
-              className="rounded-3xl border border-white/12 bg-[#111214]/92 p-4 sm:p-5"
+              className="rounded-3xl border border-white/12 bg-[linear-gradient(180deg,rgba(20,24,34,0.92)_0%,rgba(12,16,24,0.96)_100%)] p-4 sm:p-5"
             >
               {" "}
-              <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 {" "}
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="text-lg font-semibold text-white">
-                    {userFirstName}, ponto de situação
-                  </h2>{" "}
+                <h2 className="text-lg font-semibold text-white">
+                  Ponto de situação
+                </h2>{" "}
+                <div className="flex items-center gap-2">
+                  <span className="text-[12px] text-white/65">{userFirstName}</span>{" "}
                   <span className="rounded-full border border-white/12 bg-white/5 px-3 py-1 text-[11px] text-white/75">
                     {activeToolCount} módulos
                   </span>{" "}
                 </div>{" "}
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {" "}
-                  {dailySummaryKpis.map((kpi) => (
-                    <article
-                      key={kpi.id}
-                      className={cn(
-                        "rounded-2xl border px-3 py-3 transition-colors duration-200",
-                        KPI_CARD_STYLE_BY_ID[kpi.id] ??
-                          "border-white/12 bg-white/5",
-                      )}
-                    >
-                      {" "}
-                      <p className="text-[11px] text-white/65">
-                        {kpi.label}
-                      </p>{" "}
-                      <p className="mt-1 text-xl font-semibold text-white">
-                        {kpi.value}
-                      </p>{" "}
-                      {kpi.hint ? (
-                        <p className="mt-1 text-[11px] text-white/55">
-                          {kpi.hint}
-                        </p>
-                      ) : null}{" "}
-                    </article>
-                  ))}{" "}
-                </div>{" "}
               </div>{" "}
-            </div>{" "}
-            <div className="rounded-3xl border border-white/12 bg-white/[0.04] p-4 sm:p-5">
-              {" "}
-              <div className="space-y-2">
+              <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {" "}
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-[11px] uppercase tracking-[0.24em] text-[#7FE0FF]/80">
-                    Inteligência artificial
-                  </p>{" "}
-                </div>{" "}
-                <h3 className="text-lg font-semibold text-white">
-                  Resumo automático de {aiReferenceDateLabel}
-                </h3>{" "}
-                <div className="grid gap-2 md:grid-cols-3">
-                  <article className="rounded-2xl border border-white/12 bg-white/5 p-3">
-                    <p className="text-[11px] uppercase tracking-[0.14em] text-white/60">
-                      Alerta
+                {dailySummaryKpis.map((kpi) => (
+                  <article
+                    key={kpi.id}
+                    className={cn(
+                      "rounded-2xl border px-3 py-3 transition-colors duration-200",
+                      KPI_CARD_STYLE_BY_ID[kpi.id] ??
+                        "border-white/12 bg-white/5",
+                    )}
+                  >
+                    {" "}
+                    <p className="text-[11px] text-white/65">{kpi.label}</p>{" "}
+                    <p className="mt-1 text-xl font-semibold text-white">
+                      {kpi.value}
                     </p>{" "}
-                    <p className="mt-1 text-[13px] text-white/90">
-                      {aiPreview.primaryAlert}
-                    </p>{" "}
-                  </article>{" "}
-                  <article className="rounded-2xl border border-white/12 bg-white/5 p-3">
-                    <p className="text-[11px] uppercase tracking-[0.14em] text-white/60">
-                      Oportunidade
-                    </p>{" "}
-                    <p className="mt-1 text-[13px] text-white/90">
-                      {aiPreview.primaryOpportunity}
-                    </p>{" "}
-                  </article>{" "}
-                  <article className="rounded-2xl border border-[#7FE0FF]/30 bg-[#7FE0FF]/10 p-3">
-                    <p className="text-[11px] uppercase tracking-[0.14em] text-[#C9F6FF]">
-                      Próxima ação
-                    </p>{" "}
-                    <p className="mt-1 text-[13px] text-white">
-                      {aiPreview.recommendation}
-                    </p>{" "}
-                    <p className="mt-2 text-[11px] text-[#C9F6FF]/90">
-                      Atualizado: {aiPreview.generatedAtLabel}
-                    </p>{" "}
-                  </article>{" "}
-                </div>{" "}
+                    {kpi.hint ? (
+                      <p className="mt-1 text-[11px] text-white/55">
+                        {kpi.hint}
+                      </p>
+                    ) : null}{" "}
+                  </article>
+                ))}{" "}
               </div>{" "}
-            </div>{" "}
+            </section>{" "}
+            <section className="rounded-3xl border border-[#7FE0FF]/20 bg-[linear-gradient(180deg,rgba(16,28,40,0.72)_0%,rgba(10,18,28,0.8)_100%)] p-4 sm:p-5">
+              {" "}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                {" "}
+                <p className="text-[11px] uppercase tracking-[0.22em] text-[#9DEEFF]/80">
+                  IA operacional
+                </p>{" "}
+                <p className="text-[11px] text-[#C9F6FF]/85">
+                  {aiReferenceDateLabel}
+                </p>{" "}
+              </div>{" "}
+              <article className="mt-2 rounded-2xl border border-[#7FE0FF]/30 bg-[#7FE0FF]/10 p-3">
+                {" "}
+                <p className="text-[11px] uppercase tracking-[0.14em] text-[#C9F6FF]">
+                  Próxima ação
+                </p>{" "}
+                <p className="mt-1 text-[13px] text-white">
+                  {aiPreview.recommendation}
+                </p>{" "}
+                <p className="mt-2 text-[11px] text-[#C9F6FF]/90">
+                  Atualizado: {aiPreview.generatedAtLabel}
+                </p>{" "}
+              </article>{" "}
+              <div className="mt-2 grid gap-2 md:grid-cols-2">
+                {" "}
+                <article className="rounded-2xl border border-white/12 bg-white/5 p-3">
+                  <p className="text-[11px] uppercase tracking-[0.14em] text-white/60">
+                    Alerta
+                  </p>{" "}
+                  <p className="mt-1 text-[13px] text-white/90">
+                    {aiPreview.primaryAlert}
+                  </p>{" "}
+                </article>{" "}
+                <article className="rounded-2xl border border-white/12 bg-white/5 p-3">
+                  <p className="text-[11px] uppercase tracking-[0.14em] text-white/60">
+                    Oportunidade
+                  </p>{" "}
+                  <p className="mt-1 text-[13px] text-white/90">
+                    {aiPreview.primaryOpportunity}
+                  </p>{" "}
+                </article>{" "}
+              </div>{" "}
+            </section>{" "}
           </div>{" "}
         </section>
       )}{" "}
@@ -6080,10 +6071,10 @@ function OrganizacaoPageInner({
           {" "}
           <div
             className={cn(
-              "rounded-3xl border border-white/15 bg-[#050a14]/95 text-white ",
+              "rounded-3xl border border-white/15 bg-[#050a14]/95 text-white shadow-[0_14px_40px_rgba(2,8,20,0.5)]",
               checklistCollapsed
                 ? "p-2"
-                : "p-4 w-[320px] max-w-[calc(100vw-2rem)]",
+                : "w-[336px] max-w-[calc(100vw-2rem)] p-4",
             )}
           >
             {" "}
@@ -6101,31 +6092,33 @@ function OrganizacaoPageInner({
                 </button>{" "}
                 <button
                   type="button"
-                  onClick={handleDismissChecklist}
-                  aria-label="Fechar checklist"
-                  disabled={!canDismissChecklist}
-                  title={checklistDismissHint}
-                  className={cn(
-                    "flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/70 transition hover:border-white/30 hover:bg-white/10",
-                    !canDismissChecklist &&
-                      "cursor-not-allowed opacity-50 hover:border-white/15 hover:bg-white/5",
-                  )}
+                  onClick={handleToggleChecklist}
+                  className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/75 transition hover:border-white/30 hover:bg-white/10"
                 >
-                  {" "}
-                  <svg
-                    viewBox="0 0 24 24"
-                    className="h-4 w-4"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    {" "}
-                    <path d="M6 6l12 12M18 6l-12 12" />{" "}
-                  </svg>{" "}
+                  {progressPercent}%
                 </button>{" "}
+                {canDismissChecklist ? (
+                  <button
+                    type="button"
+                    onClick={handleDismissChecklist}
+                    aria-label="Fechar checklist"
+                    title={checklistDismissHint}
+                    className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/70 transition hover:border-white/30 hover:bg-white/10"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="h-4 w-4"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M6 6l12 12M18 6l-12 12" />
+                    </svg>
+                  </button>
+                ) : null}{" "}
               </div>
             ) : (
               <>
@@ -6138,13 +6131,13 @@ function OrganizacaoPageInner({
                     <div>
                       {" "}
                       <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">
-                        Checklist
+                        Setup inicial
                       </p>{" "}
                       <p className="text-sm font-semibold text-white">
                         {" "}
                         {checklistComplete
-                          ? "Tudo pronto"
-                          : `Progresso ${progressPercent}%`}{" "}
+                          ? "Tudo concluído"
+                          : `${completedSteps}/${summarySteps.length} concluídos`}{" "}
                       </p>{" "}
                     </div>{" "}
                   </div>{" "}
@@ -6171,36 +6164,31 @@ function OrganizacaoPageInner({
                         <path d="M6 9l6 6 6-6" />{" "}
                       </svg>{" "}
                     </button>{" "}
-                    <button
-                      type="button"
-                      onClick={handleDismissChecklist}
-                      aria-label="Fechar checklist"
-                      disabled={!canDismissChecklist}
-                      title={checklistDismissHint}
-                      className={cn(
-                        "flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/70 transition hover:border-white/30 hover:bg-white/10",
-                        !canDismissChecklist &&
-                          "cursor-not-allowed opacity-50 hover:border-white/15 hover:bg-white/5",
-                      )}
-                    >
-                      {" "}
-                      <svg
-                        viewBox="0 0 24 24"
-                        className="h-4 w-4"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden="true"
+                    {canDismissChecklist ? (
+                      <button
+                        type="button"
+                        onClick={handleDismissChecklist}
+                        aria-label="Fechar checklist"
+                        title={checklistDismissHint}
+                        className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/70 transition hover:border-white/30 hover:bg-white/10"
                       >
-                        {" "}
-                        <path d="M6 6l12 12M18 6l-12 12" />{" "}
-                      </svg>{" "}
-                    </button>{" "}
+                        <svg
+                          viewBox="0 0 24 24"
+                          className="h-4 w-4"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="M6 6l12 12M18 6l-12 12" />
+                        </svg>
+                      </button>
+                    ) : null}{" "}
                   </div>{" "}
                 </div>{" "}
-                <div className="mt-4 max-h-[50vh] space-y-2 overflow-y-auto pr-1">
+                <div className="mt-3 max-h-[48vh] space-y-2 overflow-y-auto pr-1">
                   {" "}
                   {orderedChecklistSteps.map((step) => {
                     const iconGradient =
@@ -6232,48 +6220,33 @@ function OrganizacaoPageInner({
                             <p className="text-[12px] font-semibold text-white/90">
                               {step.label}
                             </p>{" "}
-                            <p className="text-[11px] text-white/60">
-                              {step.description}
-                            </p>{" "}
                           </div>{" "}
                         </div>{" "}
-                        <div className="flex flex-col items-end gap-1">
+                        <div className="flex items-center gap-1">
                           {" "}
                           {step.required && (
-                            <span className="rounded-full border border-amber-300/40 bg-amber-400/10 px-2 py-1 text-[9px] uppercase tracking-[0.18em] text-amber-100">
+                            <span className="rounded-full border border-amber-300/40 bg-amber-400/10 px-2 py-1 text-[9px] uppercase tracking-[0.14em] text-amber-100">
                               {" "}
-                              Obrigatório{" "}
+                              Obrig.{" "}
                             </span>
                           )}{" "}
                           <span
                             className={cn(
-                              "rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.18em]",
+                              "rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.14em]",
                               step.done
                                 ? "border-emerald-300/40 bg-emerald-500/15 text-emerald-100"
                                 : "border-white/15 bg-white/5 text-white/70",
                             )}
                           >
                             {" "}
-                            {step.done ? "Feito" : "Abrir"}{" "}
+                            {step.done ? "OK" : "Abrir"}{" "}
                           </span>{" "}
                         </div>{" "}
                       </Link>
                     );
                   })}{" "}
-                  <div className="flex items-center justify-between text-[11px] text-white/60">
-                    {" "}
-                    <span>
-                      {" "}
-                      {completedSteps}/{summarySteps.length} concluídos{" "}
-                    </span>{" "}
-                    {!checklistComplete && (
-                      <span className="text-white/45">
-                        {" "}
-                        {requiredComplete
-                          ? "Passos opcionais pendentes"
-                          : "Passos obrigatórios pendentes"}{" "}
-                      </span>
-                    )}{" "}
+                  <div className="text-[11px] text-white/60">
+                    {progressPercent}% concluído
                   </div>{" "}
                 </div>{" "}
               </>

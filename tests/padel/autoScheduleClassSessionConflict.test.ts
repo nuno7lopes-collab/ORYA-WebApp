@@ -9,6 +9,7 @@ const resolvePadelCourtSelection = vi.hoisted(() => vi.fn());
 const resolvePartnershipScheduleConstraints = vi.hoisted(() => vi.fn());
 const computeSchedulerV2Plan = vi.hoisted(() => vi.fn());
 const resolveAllowPlaceholderMatches = vi.hoisted(() => vi.fn(() => false));
+const resolveMinParticipantsPerSide = vi.hoisted(() => vi.fn(() => 2));
 const handlePadelOutboxEvent = vi.hoisted(() => vi.fn());
 const recordOutboxEvent = vi.hoisted(() => vi.fn());
 const appendEventLog = vi.hoisted(() => vi.fn());
@@ -34,7 +35,10 @@ vi.mock("@/lib/organizationMemberAccess", () => ({ ensureMemberModuleAccess }));
 vi.mock("@/domain/padel/courtSelection", () => ({ resolvePadelCourtSelection }));
 vi.mock("@/domain/padel/partnershipSchedulePolicy", () => ({ resolvePartnershipScheduleConstraints }));
 vi.mock("@/domain/padel/schedulerV2/planner", () => ({ computeSchedulerV2Plan }));
-vi.mock("@/domain/padel/schedulerV2/formatAdapters", () => ({ resolveAllowPlaceholderMatches }));
+vi.mock("@/domain/padel/schedulerV2/formatAdapters", () => ({
+  resolveAllowPlaceholderMatches,
+  resolveMinParticipantsPerSide,
+}));
 vi.mock("@/domain/padel/outbox", () => ({ handlePadelOutboxEvent }));
 vi.mock("@/domain/outbox/producer", () => ({ recordOutboxEvent }));
 vi.mock("@/domain/eventLog/append", () => ({ appendEventLog }));
@@ -54,6 +58,7 @@ beforeEach(async () => {
   resolvePartnershipScheduleConstraints.mockReset();
   computeSchedulerV2Plan.mockReset();
   resolveAllowPlaceholderMatches.mockReset();
+  resolveMinParticipantsPerSide.mockReset();
   handlePadelOutboxEvent.mockReset();
   recordOutboxEvent.mockReset();
   appendEventLog.mockReset();
@@ -100,6 +105,7 @@ beforeEach(async () => {
   });
   resolvePartnershipScheduleConstraints.mockResolvedValue({ ok: true, additionalCourtBlocks: [] });
   resolveAllowPlaceholderMatches.mockReturnValue(false);
+  resolveMinParticipantsPerSide.mockReturnValue(2);
 
   prisma.eventMatchSlot.findMany
     .mockResolvedValueOnce([

@@ -83,6 +83,7 @@ export default function AcademyTrainersPage() {
   const items = data?.items ?? [];
   const members = membersData?.items ?? [];
   const membersReady = Array.isArray(membersData?.items);
+  const activeItemsCount = items.filter((item) => item.isActive).length;
 
   const eligibleMembers = useMemo(
     () => members.filter((member) => ELIGIBLE_TEAM_ROLES.has(member.role)),
@@ -211,29 +212,33 @@ export default function AcademyTrainersPage() {
         <div>
           <p className={DASHBOARD_LABEL}>Academia</p>
           <h1 className="text-xl font-semibold text-white">Treinadores</h1>
-          <p className={DASHBOARD_MUTED}>
-            Treinadores são sempre membros reais da Equipa (Owner, Co-owner, Admin ou Staff).
-          </p>
+          <p className={DASHBOARD_MUTED}>Fonte única: Equipa.</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-white/65">
+            <span className="rounded-full border border-emerald-300/35 bg-emerald-400/10 px-2 py-0.5 text-emerald-100">
+              {activeItemsCount} ativos
+            </span>
+            <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5">
+              {items.length} total
+            </span>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button type="button" className={CTA_SECONDARY} onClick={handleHygiene} disabled={hygieneRunning}>
-            {hygieneRunning ? "A higienizar..." : "Higienizar Academia"}
-          </button>
           <Link href={appendOrganizationIdToHref("/org/academy/classes", canonicalOrganizationId)} className={CTA_SECONDARY}>
             Aulas
           </Link>
           <Link href={appendOrganizationIdToHref("/org/academy/students", canonicalOrganizationId)} className={CTA_SECONDARY}>
             Alunos
           </Link>
+          <button type="button" className={CTA_SECONDARY} onClick={handleHygiene} disabled={hygieneRunning}>
+            {hygieneRunning ? "A higienizar..." : "Higienizar"}
+          </button>
         </div>
       </div>
 
       <section className={cn(DASHBOARD_CARD, "p-5 space-y-4")}>
         <div>
-          <h2 className="text-base font-semibold text-white">Adicionar treinador da Equipa</h2>
-          <p className={DASHBOARD_MUTED}>
-            Sem criação manual: a Academia herda membros da Equipa. Owner, Co-owner, Admin e Staff podem ser treinadores.
-          </p>
+          <h2 className="text-base font-semibold text-white">Adicionar da Equipa</h2>
+          <p className={DASHBOARD_MUTED}>Sem criação manual de perfil.</p>
         </div>
 
         <div className="flex flex-wrap items-end gap-3">
@@ -254,12 +259,23 @@ export default function AcademyTrainersPage() {
             </select>
           </label>
           <button type="button" className={CTA_PRIMARY} onClick={handleAddMember} disabled={!memberUserId || saving}>
-            {saving ? "A adicionar..." : "Adicionar treinador"}
+            {saving ? "A adicionar..." : "Adicionar"}
           </button>
           {membersReady && availableMembers.length === 0 && (
-            <span className="text-[12px] text-white/50">Todos os membros elegíveis já estão na Academia.</span>
+            <span className="text-[12px] text-white/50">
+              Todos os elegíveis já estão adicionados.
+            </span>
           )}
         </div>
+
+        {membersReady && availableMembers.length === 0 ? (
+          <div className="flex flex-wrap items-center gap-2 text-[12px] text-white/60">
+            <span>Precisas de mais treinadores?</span>
+            <Link href={appendOrganizationIdToHref("/org/team", canonicalOrganizationId)} className={CTA_SECONDARY}>
+              Gerir Equipa
+            </Link>
+          </div>
+        ) : null}
 
         {error && (
           <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-100">
@@ -275,8 +291,8 @@ export default function AcademyTrainersPage() {
 
       <section className={cn(DASHBOARD_CARD, "p-5 space-y-3")}>
         <div>
-          <h2 className="text-base font-semibold text-white">Treinadores ativos na Academia</h2>
-          <p className={DASHBOARD_MUTED}>Ligação direta à Equipa, sem perfis paralelos.</p>
+          <h2 className="text-base font-semibold text-white">Treinadores na Academia</h2>
+          <p className={DASHBOARD_MUTED}>Ligação direta à Equipa.</p>
         </div>
         {items.length === 0 ? (
           <p className="text-sm text-white/60">Sem treinadores.</p>
@@ -305,17 +321,6 @@ export default function AcademyTrainersPage() {
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <button type="button" className={CTA_SECONDARY} onClick={() => handleToggle(item)}>
-                      {item.isActive ? "Desativar" : "Ativar"}
-                    </button>
-                    <button
-                      type="button"
-                      className={CTA_SECONDARY}
-                      onClick={() => handleDelete(item)}
-                      disabled={deleteSavingId === item.id}
-                    >
-                      {deleteSavingId === item.id ? "A remover..." : "Remover"}
-                    </button>
                     <Link
                       href={appendOrganizationIdToHref(
                         `/org/calendar/availability?scopeType=PROFESSIONAL&scopeId=${item.id}`,
@@ -325,6 +330,17 @@ export default function AcademyTrainersPage() {
                     >
                       Disponibilidade
                     </Link>
+                    <button type="button" className={CTA_SECONDARY} onClick={() => handleToggle(item)}>
+                      {item.isActive ? "Desativar" : "Ativar"}
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-full border border-rose-300/40 bg-rose-500/10 px-4 py-2 text-[12px] font-semibold text-rose-100 transition hover:border-rose-200/60 hover:bg-rose-500/15 disabled:cursor-not-allowed disabled:opacity-60"
+                      onClick={() => handleDelete(item)}
+                      disabled={deleteSavingId === item.id}
+                    >
+                      {deleteSavingId === item.id ? "A remover..." : "Remover"}
+                    </button>
                   </div>
                 </div>
               </div>

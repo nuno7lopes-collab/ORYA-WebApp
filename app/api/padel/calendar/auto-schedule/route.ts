@@ -27,7 +27,10 @@ import {
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { resolvePadelCourtSelection } from "@/domain/padel/courtSelection";
 import { dailyWindowsToIntervals, normalizePadelDailyWindows } from "@/lib/padel/scheduleWindows";
-import { resolveAllowPlaceholderMatches } from "@/domain/padel/schedulerV2/formatAdapters";
+import {
+  resolveAllowPlaceholderMatches,
+  resolveMinParticipantsPerSide,
+} from "@/domain/padel/schedulerV2/formatAdapters";
 import { handlePadelOutboxEvent } from "@/domain/padel/outbox";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
@@ -699,6 +702,10 @@ async function _POST(req: NextRequest) {
       tournamentFormat: event.padelTournamentConfig?.format ?? null,
       unscheduledMatches,
     });
+    const minParticipantsPerSide = resolveMinParticipantsPerSide({
+      tournamentFormat: event.padelTournamentConfig?.format ?? null,
+      allowPlaceholderMatches,
+    });
 
     const bookingPlannerBlocks = bookings
       .filter((booking) => booking.courtId && isActiveBooking(booking))
@@ -738,6 +745,7 @@ async function _POST(req: NextRequest) {
         minRestMinutes,
         priority,
         allowPlaceholderMatches,
+        minParticipantsPerSide,
       },
     });
     const unscheduledByReason: Record<string, number> = { ...scheduleResult.unscheduledByReason };

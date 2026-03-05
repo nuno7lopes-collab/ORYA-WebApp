@@ -290,7 +290,7 @@ export default function OrgCalendarAvailabilityPage() {
                   : "border-white/20 bg-black/35 text-white/78 hover:border-white/35 hover:text-white",
               )}
             >
-              Disponibilidade geral
+              Geral
             </button>
           </div>
 

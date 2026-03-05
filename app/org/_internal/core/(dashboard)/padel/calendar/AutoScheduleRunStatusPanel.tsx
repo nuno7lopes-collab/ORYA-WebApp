@@ -67,11 +67,20 @@ export function AutoScheduleRunStatusPanel(props: {
         <p>
           {run.scheduledCount} agendados · {run.skippedCount} pendentes
         </p>
-        <p>Ref: {run.id.slice(0, 8)}</p>
-        {run.applied === true ? (
-          <p className="text-emerald-100">Aplicado</p>
+        {run.applied === true || run.queued === true ? (
+          <div className="flex flex-wrap gap-1 text-[10px]">
+            {run.applied === true ? (
+              <span className="rounded-full border border-emerald-300/40 bg-emerald-500/15 px-2 py-0.5 text-emerald-100">
+                Aplicado
+              </span>
+            ) : null}
+            {run.queued === true ? (
+              <span className="rounded-full border border-amber-300/40 bg-amber-500/15 px-2 py-0.5 text-amber-100">
+                Em fila
+              </span>
+            ) : null}
+          </div>
         ) : null}
-        {run.queued === true ? <p className="text-amber-100">Em fila</p> : null}
       </div>
       {run.errorCode || (run.byCategory ?? []).length > 0 ? (
         <details className="mt-2 rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-[11px] text-white/70">

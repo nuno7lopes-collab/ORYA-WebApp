@@ -65,6 +65,7 @@ export function CalendarMatchAdjustmentsPanel(props: {
   onClearSelection: () => void;
   onBulkMove: (targetCourtId: number) => void;
 }) {
+  const hasEvent = Boolean(props.eventId);
   const [bulkCourtId, setBulkCourtId] = useState("");
   const selectedSet = useMemo(
     () => new Set(props.selectedMatchIds),
@@ -95,10 +96,12 @@ export function CalendarMatchAdjustmentsPanel(props: {
         <p className="text-sm font-semibold text-white">
           Ajuste manual de jogos
         </p>
-        <p className="text-[12px] text-white/65">
-          Edita horário/campo e faz ações em lote por seleção.
-        </p>
       </div>
+      {!hasEvent ? (
+        <p className="rounded-lg border border-amber-300/35 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-100">
+          Seleciona um torneio para editar jogos.
+        </p>
+      ) : null}
       {sortedMatches.length === 0 ? (
         <p className="text-[12px] text-white/60">
           Sem jogos visíveis para ajustar neste filtro.
@@ -138,7 +141,7 @@ export function CalendarMatchAdjustmentsPanel(props: {
               disabled={disabled}
               className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-[#22D3EE]"
             >
-              <option value="">Selecionar campo</option>
+              <option value="">Campo</option>
               {props.courts.map((court) => (
                 <option
                   key={`manual-match-court-${court.id}`}
@@ -277,9 +280,6 @@ export function CalendarMatchAdjustmentsPanel(props: {
           </div>
         </>
       )}
-      {!props.eventId ? (
-        <p className="text-[12px] text-white/55">Precisas de eventId no URL.</p>
-      ) : null}
     </div>
   );
 }

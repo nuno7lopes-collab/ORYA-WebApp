@@ -135,6 +135,15 @@ function formatIntervals(intervals: AvailabilityOverride["intervals"]) {
     )
     .join(",");
 }
+function resolveOverrideTone(kind: AvailabilityOverride["kind"]) {
+  if (kind === "CLOSED") {
+    return "border-rose-300/45 bg-rose-500/12";
+  }
+  if (kind === "OPEN") {
+    return "border-emerald-300/45 bg-emerald-500/12";
+  }
+  return "border-amber-300/45 bg-amber-500/12";
+}
 export default function AvailabilityEditor({
   orgId,
   scopeType,
@@ -210,6 +219,7 @@ export default function AvailabilityEditor({
     "create",
   );
   const [scheduleDraftId, setScheduleDraftId] = useState<number | null>(null);
+  const [scheduleFormOpen, setScheduleFormOpen] = useState(false);
   const [overrideDate, setOverrideDate] = useState("");
   const [overrideKind, setOverrideKind] =
     useState<AvailabilityOverride["kind"]>("CLOSED");
@@ -217,6 +227,7 @@ export default function AvailabilityEditor({
   const [overrideDrafts, setOverrideDrafts] = useState<AvailabilityOverride[]>(
     [],
   );
+  const [overrideFormOpen, setOverrideFormOpen] = useState(false);
   const nextOverrideIdRef = useRef(0);
   const createLocalOverrideId = () => {
     nextOverrideIdRef.current -= 1;
@@ -287,6 +298,10 @@ export default function AvailabilityEditor({
       setSelectedScheduleId(null);
     }
   }, [availabilityData, schedules, selectedScheduleId]);
+  useEffect(() => {
+    if (schedules.length > 0) return;
+    setScheduleFormOpen(true);
+  }, [schedules.length]);
   useEffect(() => {
     if (!isDirty) return;
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -478,12 +493,17 @@ export default function AvailabilityEditor({
     setScheduleEndDate("");
     setScheduleNoEnd(true);
   };
+  const openCreateScheduleForm = () => {
+    resetScheduleForm();
+    setScheduleFormOpen(true);
+  };
   const handleEditSchedule = (schedule: AvailabilitySchedule) => {
     setScheduleFormMode("edit");
     setScheduleDraftId(schedule.id);
     setScheduleStartDate(toDateInput(schedule.startDate));
     setScheduleEndDate(toDateInput(schedule.endDate));
     setScheduleNoEnd(!schedule.endDate);
+    setScheduleFormOpen(true);
   };
   const handleScheduleSubmit = async () => {
     if (guardPendingChangeset()) return;
@@ -579,6 +599,7 @@ export default function AvailabilityEditor({
       const nextId =
         Number(payload?.scheduleId) > 0 ? Number(payload?.scheduleId) : null;
       resetScheduleForm();
+      setScheduleFormOpen(false);
       setIsDirty(false);
       await mutateAvailability();
       if (nextId) {
@@ -650,6 +671,7 @@ export default function AvailabilityEditor({
       });
       setOverrideDate("");
       setOverrideIntervals([]);
+      setOverrideFormOpen(false);
       setIsDirty(true);
     } catch (err) {
       setAvailabilityError(
@@ -922,14 +944,20 @@ export default function AvailabilityEditor({
         {" "}
         <div className="flex flex-wrap items-center justify-between gap-2">
           {" "}
-          <h3 className="text-sm font-semibold text-white">Disponibilidade base</h3>{" "}
+          <h3 className="text-sm font-semibold text-white">Base</h3>{" "}
           <button
             type="button"
             className={CTA_NEUTRAL}
-            onClick={resetScheduleForm}
+            onClick={() => {
+              if (scheduleFormOpen) {
+                setScheduleFormOpen(false);
+                return;
+              }
+              openCreateScheduleForm();
+            }}
           >
             {" "}
-            Nova disponibilidade{" "}
+            {scheduleFormOpen ? "Fechar" : "Nova base"}{" "}
           </button>{" "}
         </div>{" "}
         <div className="mt-3 grid gap-2 md:grid-cols-2">
@@ -1014,63 +1042,65 @@ export default function AvailabilityEditor({
             );
           })}{" "}
         </div>{" "}
-        <div className="mt-4 grid gap-3 md:grid-cols-4">
-          {" "}
-          <div>
+        {scheduleFormOpen ? (
+          <div className="mt-4 grid gap-3 md:grid-cols-4">
             {" "}
-            <label className="text-sm text-white/80">Início</label>{" "}
-            <OryaDateField
-              value={scheduleStartDate}
-              onChange={setScheduleStartDate}
-              className="mt-1 w-full"
-              buttonClassName="h-10 rounded-xl"
-            />{" "}
-          </div>{" "}
-          <div>
-            {" "}
-            <label className="text-sm text-white/80">Fim</label>{" "}
-            <OryaDateField
-              value={scheduleEndDate}
-              onChange={setScheduleEndDate}
-              className="mt-1 w-full"
-              buttonClassName="h-10 rounded-xl"
-              disabled={scheduleNoEnd}
-              minDate={scheduleStartDate || undefined}
-            />{" "}
-          </div>{" "}
-          <div className="flex flex-col justify-end gap-2">
-            {" "}
-            <label className="flex items-center gap-2 text-xs text-white/70">
+            <div>
               {" "}
-              <input
-                type="checkbox"
-                className="h-4 w-4 rounded border-white/20 bg-black/30"
-                checked={scheduleNoEnd}
-                onChange={(event) => {
-                  setScheduleNoEnd(event.target.checked);
-                  if (event.target.checked) setScheduleEndDate("");
-                }}
+              <label className="text-sm text-white/80">Início</label>{" "}
+              <OryaDateField
+                value={scheduleStartDate}
+                onChange={setScheduleStartDate}
+                className="mt-1 w-full"
+                buttonClassName="h-10 rounded-xl"
               />{" "}
-              Sem fim{" "}
-            </label>{" "}
-          </div>{" "}
-          <div className="flex items-end">
-            {" "}
-            <button
-              type="button"
-              className={CTA_PRIMARY}
-              onClick={handleScheduleSubmit}
-              disabled={scheduleSaving || Boolean(pendingChangeSetId)}
-            >
+            </div>{" "}
+            <div>
               {" "}
-              {scheduleSaving
-                ? "A guardar..."
-                : scheduleFormMode === "edit"
-                  ? "Atualizar disponibilidade"
-                  : "Criar disponibilidade"}{" "}
-            </button>{" "}
-          </div>{" "}
-        </div>{" "}
+              <label className="text-sm text-white/80">Fim</label>{" "}
+              <OryaDateField
+                value={scheduleEndDate}
+                onChange={setScheduleEndDate}
+                className="mt-1 w-full"
+                buttonClassName="h-10 rounded-xl"
+                disabled={scheduleNoEnd}
+                minDate={scheduleStartDate || undefined}
+              />{" "}
+            </div>{" "}
+            <div className="flex flex-col justify-end gap-2">
+              {" "}
+              <label className="flex items-center gap-2 text-xs text-white/70">
+                {" "}
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-white/20 bg-black/30"
+                  checked={scheduleNoEnd}
+                  onChange={(event) => {
+                    setScheduleNoEnd(event.target.checked);
+                    if (event.target.checked) setScheduleEndDate("");
+                  }}
+                />{" "}
+                Sem fim{" "}
+              </label>{" "}
+            </div>{" "}
+            <div className="flex items-end">
+              {" "}
+              <button
+                type="button"
+                className={CTA_PRIMARY}
+                onClick={handleScheduleSubmit}
+                disabled={scheduleSaving || Boolean(pendingChangeSetId)}
+              >
+                {" "}
+                {scheduleSaving
+                  ? "A guardar..."
+                  : scheduleFormMode === "edit"
+                    ? "Atualizar base"
+                    : "Criar base"}{" "}
+              </button>{" "}
+            </div>{" "}
+          </div>
+        ) : null}{" "}
       </div>{" "}
       {isDirty && (
         <div className="rounded-xl border border-amber-300/35 bg-amber-500/10 p-3">
@@ -1105,11 +1135,14 @@ export default function AvailabilityEditor({
       )}{" "}
       <div className="rounded-2xl border border-white/12 bg-white/[0.04] overflow-hidden">
         {" "}
-        <div className="flex items-center px-4 py-3">
+        <div className="flex items-center justify-between gap-2 px-4 py-3">
           {" "}
           <h3 className="text-sm font-semibold text-white/90 tracking-[0.02em]">
             Calendário semanal
           </h3>{" "}
+          <span className="rounded-full border border-cyan-200/80 bg-cyan-400/28 px-2 py-0.5 text-[10px] font-medium text-cyan-50">
+            Disponibilidade
+          </span>{" "}
         </div>{" "}
         <div className="overflow-x-auto px-4 pb-4">
           {" "}
@@ -1290,98 +1323,123 @@ export default function AvailabilityEditor({
       </div>{" "}
       <div className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3">
         {" "}
-        <h3 className="text-sm font-semibold text-white">Exceções</h3>{" "}
-        <div className="grid gap-3 md:grid-cols-3">
-          {" "}
-          <div>
-            {" "}
-            <label className="text-sm text-white/80">Data</label>{" "}
-            <OryaDateField
-              value={overrideDate}
-              onChange={setOverrideDate}
-              className="mt-1 w-full"
-              buttonClassName="h-10 rounded-xl"
-            />{" "}
-          </div>{" "}
-          <div>
-            {" "}
-            <label className="text-sm text-white/80">Tipo</label>{" "}
-            <select
-              className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-              value={overrideKind}
-              onChange={(e) =>
-                setOverrideKind(e.target.value as AvailabilityOverride["kind"])
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-white">Exceções</h3>{" "}
+          <button
+            type="button"
+            className={CTA_NEUTRAL}
+            onClick={() => {
+              if (overrideFormOpen) {
+                setOverrideFormOpen(false);
+                return;
               }
-            >
+              setOverrideDate("");
+              setOverrideKind("CLOSED");
+              setOverrideIntervals([]);
+              setOverrideFormOpen(true);
+            }}
+          >
+            {overrideFormOpen ? "Fechar" : "Nova exceção"}
+          </button>
+        </div>
+        {overrideFormOpen ? (
+          <>
+            <div className="grid gap-3 md:grid-cols-3">
               {" "}
-              <option value="CLOSED">Fechado</option>{" "}
-              <option value="OPEN">Horário especial</option>{" "}
-              <option value="BLOCK">Bloquear intervalos</option>{" "}
-            </select>{" "}
-          </div>{" "}
-          <div className="flex items-end">
-            {" "}
-            <button
-              type="button"
-              className={CTA_PRIMARY}
-              onClick={handleOverrideCreate}
-              disabled={overrideSaving}
-            >
-              {" "}
-              {overrideSaving ? "A guardar..." : "Guardar exceção"}{" "}
-            </button>{" "}
-          </div>{" "}
-        </div>{" "}
-        {overrideKind !== "CLOSED" && (
-          <div className="space-y-2">
-            {" "}
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                className={CTA_SECONDARY}
-                onClick={handleOverrideAdd}
-              >
+              <div>
                 {" "}
-                Adicionar intervalo{" "}
-              </button>{" "}
-            </div>{" "}
-            {overrideIntervals.map((interval, idx) => (
-              <div
-                key={`override-${idx}`}
-                className="flex flex-wrap items-center gap-2"
-              >
-                {" "}
-                <OryaTimeField
-                  value={interval.start}
-                  onChange={(next) =>
-                    handleOverrideIntervalChange(idx, "start", next)
-                  }
-                  stepMinutes={timePickerStepMinutes}
+                <label className="text-sm text-white/80">Data</label>{" "}
+                <OryaDateField
+                  value={overrideDate}
+                  onChange={setOverrideDate}
+                  className="mt-1 w-full"
                   buttonClassName="h-10 rounded-xl"
                 />{" "}
-                <span className="text-white/60">→</span>{" "}
-                <OryaTimeField
-                  value={interval.end}
-                  onChange={(next) =>
-                    handleOverrideIntervalChange(idx, "end", next)
+              </div>{" "}
+              <div>
+                {" "}
+                <label className="text-sm text-white/80">Tipo</label>{" "}
+                <select
+                  className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                  value={overrideKind}
+                  onChange={(e) =>
+                    setOverrideKind(e.target.value as AvailabilityOverride["kind"])
                   }
-                  stepMinutes={timePickerStepMinutes}
-                  buttonClassName="h-10 rounded-xl"
-                />{" "}
-                <button
-                  type="button"
-                  className={CTA_DANGER}
-                  onClick={() => handleOverrideRemove(idx)}
                 >
                   {" "}
-                  Remover{" "}
+                  <option value="CLOSED">Fechado</option>{" "}
+                  <option value="OPEN">Horário especial</option>{" "}
+                  <option value="BLOCK">Bloquear intervalos</option>{" "}
+                </select>{" "}
+              </div>{" "}
+              <div className="flex items-end">
+                {" "}
+                <button
+                  type="button"
+                  className={CTA_PRIMARY}
+                  onClick={handleOverrideCreate}
+                  disabled={overrideSaving}
+                >
+                  {" "}
+                  {overrideSaving ? "A guardar..." : "Guardar exceção"}{" "}
                 </button>{" "}
+              </div>{" "}
+            </div>{" "}
+            {overrideKind !== "CLOSED" && (
+              <div className="space-y-2">
+                {" "}
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className={CTA_SECONDARY}
+                    onClick={handleOverrideAdd}
+                  >
+                    {" "}
+                    Adicionar intervalo{" "}
+                  </button>{" "}
+                </div>{" "}
+                {overrideIntervals.map((interval, idx) => (
+                  <div
+                    key={`override-${idx}`}
+                    className="flex flex-wrap items-center gap-2"
+                  >
+                    {" "}
+                    <OryaTimeField
+                      value={interval.start}
+                      onChange={(next) =>
+                        handleOverrideIntervalChange(idx, "start", next)
+                      }
+                      stepMinutes={timePickerStepMinutes}
+                      buttonClassName="h-10 rounded-xl"
+                    />{" "}
+                    <span className="text-white/60">→</span>{" "}
+                    <OryaTimeField
+                      value={interval.end}
+                      onChange={(next) =>
+                        handleOverrideIntervalChange(idx, "end", next)
+                      }
+                      stepMinutes={timePickerStepMinutes}
+                      buttonClassName="h-10 rounded-xl"
+                    />{" "}
+                    <button
+                      type="button"
+                      className={CTA_DANGER}
+                      onClick={() => handleOverrideRemove(idx)}
+                    >
+                      {" "}
+                      Remover{" "}
+                    </button>{" "}
+                  </div>
+                ))}{" "}
               </div>
-            ))}{" "}
-          </div>
-        )}{" "}
+            )}
+          </>
+        ) : null}{" "}
         <div className="space-y-2">
           {" "}
+          {overrideDrafts.length === 0 ? (
+            <p className="text-xs text-white/55">Sem exceções.</p>
+          ) : null}
           {overrideDrafts.map((override) => {
             const dateLabel = new Date(override.date).toLocaleDateString(
               "pt-PT",
@@ -1395,7 +1453,10 @@ export default function AvailabilityEditor({
             return (
               <div
                 key={override.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 p-3"
+                className={cn(
+                  "flex flex-wrap items-center justify-between gap-2 rounded-xl border p-3",
+                  resolveOverrideTone(override.kind),
+                )}
               >
                 {" "}
                 <div>

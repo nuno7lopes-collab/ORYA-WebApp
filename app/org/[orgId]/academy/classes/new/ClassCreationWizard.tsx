@@ -707,22 +707,58 @@ export default function NovaAulaPage() {
     }
   };
 
+  const pricePreview = useMemo(() => {
+    const value = Number(unitPrice.replace(",", "."));
+    if (!Number.isFinite(value)) return "0,00 €";
+    return new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" }).format(value);
+  }, [unitPrice]);
+
+  const selectedProfessionalName = useMemo(() => {
+    if (!selectedProfessionalId) return "Sem treinador";
+    return activeProfessionals.find((item) => item.id === Number(selectedProfessionalId))?.name ?? "Sem treinador";
+  }, [activeProfessionals, selectedProfessionalId]);
+
+  const selectedResourceLabel = useMemo(() => {
+    if (!selectedResourceId) return "Sem campo";
+    return linkedCourtOptions.find((item) => item.linkId === Number(selectedResourceId))?.labelText ?? "Sem campo";
+  }, [linkedCourtOptions, selectedResourceId]);
+
+  const scheduleModeLabel = useMemo(() => {
+    if (scheduleMode === "NONE") return "Sem agenda";
+    if (scheduleMode === "SINGLE") return "Aula única";
+    return "Aula recorrente";
+  }, [scheduleMode]);
+
+  const currentStepMeta = WIZARD_STEPS[currentStep];
+  const progressValue = Math.round(((currentStep + 1) / WIZARD_STEPS.length) * 100);
   const isLastStep = currentStep === WIZARD_STEPS.length - 1;
 
   return (
     <>
-      <div className="space-y-6">
-        <div className="space-y-3">
+      <div className="space-y-5">
+        <div className="space-y-2">
           <p className={DASHBOARD_LABEL}>Academia</p>
-          <h1 className="text-3xl font-semibold text-white">Novo wizard de aula</h1>
-          <p className={DASHBOARD_MUTED}>
-            Num único fluxo: cria a aula, define equipa e configura agenda única ou recorrente.
-          </p>
+          <h1 className="text-3xl font-semibold text-white">Nova aula</h1>
+          <p className={DASHBOARD_MUTED}>Fluxo único para aula única ou recorrente.</p>
         </div>
 
-        <section className={cn(DASHBOARD_CARD, "overflow-hidden p-0")}> 
-          <div className="relative border-b border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.24),transparent_45%),linear-gradient(135deg,rgba(8,24,45,0.92),rgba(4,10,24,0.92))] px-5 py-4">
-            <div className="grid gap-2 md:grid-cols-4">
+        <section className={cn(DASHBOARD_CARD, "overflow-hidden p-0")}>
+          <div className="relative border-b border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.2),transparent_50%),linear-gradient(145deg,rgba(7,20,38,0.95),rgba(5,12,26,0.95))] px-5 py-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Passo {currentStep + 1} de {WIZARD_STEPS.length}</p>
+                <p className="text-sm font-semibold text-white">{currentStepMeta.title}</p>
+              </div>
+              <p className="text-[11px] text-white/60">{progressValue}%</p>
+            </div>
+            <div className="h-1 overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full rounded-full bg-cyan-300 transition-all duration-300"
+                style={{ width: `${progressValue}%` }}
+              />
+            </div>
+
+            <div className="mt-4 grid gap-2 md:grid-cols-4">
               {WIZARD_STEPS.map((step, index) => {
                 const isDone = index < currentStep;
                 const isActive = index === currentStep;
@@ -732,170 +768,163 @@ export default function NovaAulaPage() {
                     type="button"
                     onClick={() => handleStepChange(index)}
                     className={cn(
-                      "group rounded-2xl border px-3 py-2 text-left transition",
+                      "group rounded-xl border px-3 py-2 text-left transition",
                       isActive
-                        ? "border-cyan-300/60 bg-cyan-300/10 shadow-[0_0_0_1px_rgba(167,243,255,0.25)]"
+                        ? "border-cyan-300/60 bg-cyan-300/10"
                         : "border-white/12 bg-white/[0.04] hover:border-white/30",
                     )}
                   >
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">
-                      {isDone ? "Concluído" : `Passo ${index + 1}`}
-                    </p>
-                    <p className={cn("text-sm font-semibold", isActive ? "text-white" : "text-white/82")}>{step.title}</p>
-                    <p className="text-[11px] text-white/55">{step.subtitle}</p>
+                    <p className={cn("text-sm font-semibold", isActive ? "text-white" : "text-white/85")}>{step.title}</p>
+                    <p className="text-[11px] text-white/55">{isDone ? "Concluído" : step.subtitle}</p>
                   </button>
                 );
               })}
             </div>
           </div>
 
-          <div className="space-y-4 p-5">
-            {currentStep === 0 && (
-              <div className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <label className="text-sm text-white/80">Título</label>
-                    <input
-                      className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300/70"
-                      value={title}
-                      onChange={(event) => setTitle(event.target.value)}
-                      placeholder="Ex: Aula de iniciação"
+          <div className="grid gap-5 p-5 xl:grid-cols-[minmax(0,1fr)_300px]">
+            <div className="space-y-5">
+              {currentStep === 0 && (
+                <div className="space-y-4">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <label className="space-y-1.5 text-sm text-white/80">
+                      <span>Título</span>
+                      <input
+                        className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2.5 text-sm text-white outline-none transition focus:border-cyan-300/70"
+                        value={title}
+                        onChange={(event) => setTitle(event.target.value)}
+                        placeholder="Ex: Aula de iniciação"
+                      />
+                    </label>
+                    <label className="space-y-1.5 text-sm text-white/80">
+                      <span>Duração</span>
+                      <select
+                        className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2.5 text-sm text-white outline-none transition focus:border-cyan-300/70"
+                        value={durationMinutes}
+                        onChange={(event) => setDurationMinutes(event.target.value)}
+                      >
+                        {DURATION_OPTIONS.map((option) => (
+                          <option key={option} value={String(option)}>
+                            {option} min
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <label className="space-y-1.5 text-sm text-white/80">
+                      <span>Preço</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        inputMode="decimal"
+                        className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2.5 text-sm text-white outline-none transition focus:border-cyan-300/70"
+                        value={unitPrice}
+                        onChange={(event) => setUnitPrice(event.target.value)}
+                      />
+                    </label>
+                    <label className="space-y-1.5 text-sm text-white/80">
+                      <span>Moeda</span>
+                      <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white/75">
+                        {DEFAULT_CURRENCY}
+                      </div>
+                    </label>
+                  </div>
+
+                  <label className="space-y-1.5 text-sm text-white/80">
+                    <span>Descrição</span>
+                    <textarea
+                      className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2.5 text-sm text-white outline-none transition focus:border-cyan-300/70"
+                      rows={4}
+                      value={description}
+                      onChange={(event) => setDescription(event.target.value)}
+                      placeholder="Opcional"
                     />
-                  </div>
-
-                  <div>
-                    <label className="text-sm text-white/80">Duração</label>
-                    <select
-                      className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300/70"
-                      value={durationMinutes}
-                      onChange={(event) => setDurationMinutes(event.target.value)}
-                    >
-                      {DURATION_OPTIONS.map((option) => (
-                        <option key={option} value={String(option)}>
-                          {option} min
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  </label>
                 </div>
+              )}
 
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <label className="text-sm text-white/80">Preço</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      inputMode="decimal"
-                      className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300/70"
-                      value={unitPrice}
-                      onChange={(event) => setUnitPrice(event.target.value)}
-                    />
-                    <p className="text-[11px] text-white/50">Usa 0 para gratuito.</p>
+              {currentStep === 1 && (
+                <div className="space-y-4">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className="space-y-1.5 text-sm text-white/80">
+                      <span>Treinador</span>
+                      <select
+                        className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2.5 text-sm text-white outline-none transition focus:border-cyan-300/70"
+                        value={selectedProfessionalId}
+                        onChange={(event) => setSelectedProfessionalId(event.target.value)}
+                      >
+                        <option value="">Sem treinador</option>
+                        {activeProfessionals.map((professional) => (
+                          <option key={professional.id} value={String(professional.id)}>
+                            {professional.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="space-y-1.5 text-sm text-white/80">
+                      <span>Campo</span>
+                      <select
+                        className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2.5 text-sm text-white outline-none transition focus:border-cyan-300/70"
+                        value={selectedResourceId}
+                        onChange={(event) => {
+                          setSelectedResourceId(event.target.value);
+                          if (!seriesCourtTouched) {
+                            const resourceId = Number(event.target.value);
+                            const selectedOption = linkedCourtOptions.find((option) => option.linkId === resourceId);
+                            setSeriesCourtId(selectedOption?.courtId ? String(selectedOption.courtId) : "");
+                          }
+                        }}
+                      >
+                        <option value="">Sem campo</option>
+                        {linkedCourtOptions.map((resource) => (
+                          <option key={resource.id} value={String(resource.linkId)}>
+                            {resource.labelText}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                   </div>
 
-                  <div>
-                    <label className="text-sm text-white/80">Moeda</label>
-                    <div className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/75">
-                      {DEFAULT_CURRENCY}
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                    <p className="text-[12px] text-white/70">Imagem</p>
+                    <div className="mt-2 flex flex-wrap gap-3">
+                      <div className="relative h-28 w-28 overflow-hidden rounded-xl border border-white/15 bg-white/5">
+                        {coverPreviewUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={coverPreviewUrl} alt={`Capa da ${entityLabel}`} className="h-full w-full object-cover" />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-[11px] text-white/45">Sem imagem</div>
+                        )}
+                      </div>
+                      <div className="flex flex-col items-start gap-2">
+                        <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-[12px] text-white/85 hover:bg-white/10">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(event) => handleCoverUpload(event.target.files?.[0] ?? null)}
+                          />
+                          <span>{coverUrl ? "Substituir" : "Adicionar"}</span>
+                        </label>
+                        {coverUrl ? (
+                          <button type="button" className={CTA_SECONDARY} onClick={() => setCoverUrl(null)}>
+                            Remover
+                          </button>
+                        ) : null}
+                        {uploadingCover ? <p className="text-[11px] text-white/55">A carregar...</p> : null}
+                      </div>
                     </div>
                   </div>
                 </div>
+              )}
 
-                <div>
-                  <label className="text-sm text-white/80">Descrição</label>
-                  <textarea
-                    className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300/70"
-                    rows={4}
-                    value={description}
-                    onChange={(event) => setDescription(event.target.value)}
-                    placeholder="Resumo (opcional)"
-                  />
-                </div>
-              </div>
-            )}
-
-            {currentStep === 1 && (
-              <div className="space-y-4">
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div>
-                    <label className="text-sm text-white/80">Treinador principal (opcional)</label>
-                    <select
-                      className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300/70"
-                      value={selectedProfessionalId}
-                      onChange={(event) => setSelectedProfessionalId(event.target.value)}
-                    >
-                      <option value="">Sem treinador definido</option>
-                      {activeProfessionals.map((professional) => (
-                        <option key={professional.id} value={String(professional.id)}>
-                          {professional.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-sm text-white/80">Campo principal (opcional)</label>
-                    <select
-                      className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300/70"
-                      value={selectedResourceId}
-                      onChange={(event) => {
-                        setSelectedResourceId(event.target.value);
-                        if (!seriesCourtTouched) {
-                          const resourceId = Number(event.target.value);
-                          const selectedOption = linkedCourtOptions.find((option) => option.linkId === resourceId);
-                          setSeriesCourtId(selectedOption?.courtId ? String(selectedOption.courtId) : "");
-                        }
-                      }}
-                    >
-                      <option value="">Sem campo definido</option>
-                      {linkedCourtOptions.map((resource) => (
-                        <option key={resource.id} value={String(resource.linkId)}>
-                          {resource.labelText}
-                        </option>
-                      ))}
-                    </select>
-                    <p className="text-[11px] text-white/45">Campo ligado ao serviço e usado como predefinição da agenda.</p>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-sm text-white/80">Fotografia</label>
-                  <div className="mt-2 flex flex-wrap gap-4">
-                    <div className="relative h-32 w-32 overflow-hidden rounded-2xl border border-white/15 bg-white/5">
-                      {coverPreviewUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={coverPreviewUrl} alt={`Capa da ${entityLabel}`} className="h-full w-full object-cover" />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center text-[11px] text-white/50">Sem foto</div>
-                      )}
-                    </div>
-                    <div className="space-y-2">
-                      <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-2 text-[12px] text-white/80 hover:bg-white/10">
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(event) => handleCoverUpload(event.target.files?.[0] ?? null)}
-                        />
-                        <span>{coverUrl ? "Substituir foto" : "Adicionar foto"}</span>
-                      </label>
-                      {coverUrl && (
-                        <button type="button" className={CTA_SECONDARY} onClick={() => setCoverUrl(null)}>
-                          Remover foto
-                        </button>
-                      )}
-                      <p className={DASHBOARD_MUTED}>Imagem quadrada recomendada.</p>
-                      {uploadingCover && <p className={DASHBOARD_MUTED}>A carregar imagem...</p>}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {currentStep === 2 && (
-              <div className="space-y-5">
-                <div className="grid gap-3 md:grid-cols-3">
+              {currentStep === 2 && (
+                <div className="space-y-4">
+                  <div className="grid gap-2 md:grid-cols-3">
                   {[
                     {
                       id: "SINGLE",
@@ -920,24 +949,24 @@ export default function NovaAulaPage() {
                         type="button"
                         onClick={() => setScheduleMode(option.id as ScheduleMode)}
                         className={cn(
-                          "rounded-2xl border px-4 py-3 text-left transition",
+                          "rounded-xl border px-3 py-2.5 text-left transition",
                           isSelected
-                            ? "border-cyan-300/60 bg-cyan-300/10 shadow-[0_0_0_1px_rgba(167,243,255,0.3)]"
+                            ? "border-cyan-300/60 bg-cyan-300/10"
                             : "border-white/12 bg-white/[0.04] hover:border-white/30",
                         )}
                       >
                         <p className="text-sm font-semibold text-white">{option.title}</p>
-                        <p className="text-[12px] text-white/60">{option.subtitle}</p>
+                        <p className="text-[11px] text-white/55">{option.subtitle}</p>
                       </button>
                     );
                   })}
-                </div>
+                  </div>
 
-                {scheduleMode !== "NONE" && (
-                  <div className="space-y-4">
+                  {scheduleMode !== "NONE" && (
+                    <div className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
                     <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
                       <label className="text-[12px] text-white/70">
-                        Hora de início
+                        Hora
                         <OryaTimeField
                           value={scheduleStartTime}
                           onChange={setScheduleStartTime}
@@ -959,7 +988,7 @@ export default function NovaAulaPage() {
                       </label>
 
                       <label className="text-[12px] text-white/70">
-                        Treinador da agenda
+                        Treinador
                         <select
                           className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300/70"
                           value={seriesProfessionalId}
@@ -978,7 +1007,7 @@ export default function NovaAulaPage() {
                       </label>
 
                       <label className="text-[12px] text-white/70">
-                        Campo da agenda
+                        Campo
                         <select
                           className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300/70"
                           value={seriesCourtId}
@@ -1049,7 +1078,7 @@ export default function NovaAulaPage() {
                         </label>
 
                         <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white/80">
-                          <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Estimativa</p>
+                          <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Sessões</p>
                           <p className="mt-1 font-semibold text-white">
                             {recurringEstimatedSessions == null
                               ? "Sem fim definido"
@@ -1058,100 +1087,74 @@ export default function NovaAulaPage() {
                         </div>
                       </div>
                     )}
-                  </div>
-                )}
+                    </div>
+                  )}
 
-                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                  <p className="text-[12px] uppercase tracking-[0.2em] text-white/55">Pré-visualização da agenda</p>
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Pré-visualização</p>
                   {scheduleMode === "NONE" ? (
-                    <p className="mt-2 text-sm text-white/65">A aula será criada sem sessões automáticas.</p>
+                      <p className="mt-2 text-sm text-white/65">Sem sessões automáticas.</p>
                   ) : schedulePreview.length === 0 ? (
-                    <p className="mt-2 text-sm text-white/65">Preenche os dados de agenda para visualizar sessões.</p>
+                      <p className="mt-2 text-sm text-white/65">Preenche agenda para visualizar.</p>
                   ) : (
-                    <div className="mt-3 space-y-2">
+                      <div className="mt-3 space-y-2">
                       {schedulePreview.map((session) => (
-                        <div key={session.key} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/75">
+                          <div key={session.key} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/75">
                           <p className="font-semibold text-white">{formatSessionLabel(session)}</p>
                           <p>
-                            Termina às{" "}
+                              Fim às{" "}
                             {new Intl.DateTimeFormat("pt-PT", { timeStyle: "short" }).format(session.endsAt)}
                           </p>
                         </div>
                       ))}
-                    </div>
+                      </div>
                   )}
-                </div>
-              </div>
-            )}
-
-            {currentStep === 3 && (
-              <div className="space-y-4">
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Detalhes</p>
-                    <p className="mt-2 text-base font-semibold text-white">{title || "Sem título"}</p>
-                    <p className="text-[12px] text-white/70">{durationMinutes} min · {unitPrice || "0"} EUR</p>
-                    <p className="mt-2 text-[12px] text-white/60">{description || "Sem descrição"}</p>
-                  </div>
-
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Equipa e campo</p>
-                    <p className="mt-2 text-[13px] text-white/75">
-                      Treinador: {selectedProfessionalId ? activeProfessionals.find((item) => item.id === Number(selectedProfessionalId))?.name ?? "-" : "Sem treinador"}
-                    </p>
-                    <p className="text-[13px] text-white/75">
-                      Campo: {selectedResourceId ? linkedCourtOptions.find((item) => item.linkId === Number(selectedResourceId))?.labelText ?? "-" : "Sem campo"}
-                    </p>
-                    <p className="text-[12px] text-white/55">Foto: {coverUrl ? "Configurada" : "Sem foto"}</p>
                   </div>
                 </div>
+              )}
 
-                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Agenda</p>
-                  <p className="mt-2 text-sm font-semibold text-white">
-                    {scheduleMode === "NONE"
-                      ? "Sem agenda inicial"
-                      : scheduleMode === "SINGLE"
-                        ? "Aula única"
-                        : "Aula recorrente"}
-                  </p>
-                  {scheduleMode !== "NONE" ? (
-                    <div className="mt-2 space-y-2 text-[13px] text-white/70">
-                      <p>Hora: {scheduleStartTime}</p>
-                      <p>Capacidade: {scheduleCapacity}</p>
-                      {scheduleMode === "SINGLE" ? (
-                        <p>Data: {singleDate}</p>
-                      ) : (
-                        <>
-                          <p>Dia: {DAY_LABELS[Number(recurringDay)]}</p>
-                          <p>Válido: {recurringValidFrom}{recurringValidUntil ? ` até ${recurringValidUntil}` : " sem fim"}</p>
-                        </>
-                      )}
+              {currentStep === 3 ? (
+                <div className="space-y-3">
+                  <div className="rounded-2xl border border-emerald-300/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+                    Pronto para criar.
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                      <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Aula</p>
+                      <p className="mt-2 text-base font-semibold text-white">{title || "Sem título"}</p>
+                      <p className="text-[12px] text-white/65">{durationMinutes} min · {pricePreview}</p>
                     </div>
-                  ) : (
-                    <p className="mt-2 text-[13px] text-white/70">Sem sessões automáticas nesta criação.</p>
-                  )}
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                      <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Agenda</p>
+                      <p className="mt-2 text-sm font-semibold text-white">{scheduleModeLabel}</p>
+                      {scheduleMode !== "NONE" ? (
+                        <p className="text-[12px] text-white/65">
+                          {scheduleMode === "SINGLE"
+                            ? `${singleDate} · ${scheduleStartTime}`
+                            : `${DAY_LABELS[Number(recurringDay)]} · ${scheduleStartTime}`}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            )}
+              ) : null}
 
-            {error && (
-              <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-100">
-                <p>{error}</p>
-                {errorCtaHref && errorCtaLabel ? (
-                  <button
-                    type="button"
-                    onClick={() => router.push(errorCtaHref)}
-                    className="mt-3 rounded-full border border-red-200/50 bg-red-200/15 px-3 py-1.5 text-xs font-semibold text-red-50 transition hover:bg-red-200/25"
-                  >
-                    {errorCtaLabel}
-                  </button>
-                ) : null}
-              </div>
-            )}
+              {error ? (
+                <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-100">
+                  <p>{error}</p>
+                  {errorCtaHref && errorCtaLabel ? (
+                    <button
+                      type="button"
+                      onClick={() => router.push(errorCtaHref)}
+                      className="mt-3 rounded-full border border-red-200/50 bg-red-200/15 px-3 py-1.5 text-xs font-semibold text-red-50 transition hover:bg-red-200/25"
+                    >
+                      {errorCtaLabel}
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
 
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4">
                 <button
                   type="button"
                   className={CTA_SECONDARY}
@@ -1165,20 +1168,48 @@ export default function NovaAulaPage() {
                 >
                   {currentStep === 0 ? "Cancelar" : "Voltar"}
                 </button>
-              </div>
 
-              <div className="flex flex-wrap gap-2">
                 {!isLastStep ? (
                   <button type="button" className={CTA_PRIMARY} onClick={handleNextStep}>
                     Seguinte
                   </button>
                 ) : (
                   <button type="button" className={CTA_PRIMARY} onClick={handleSubmit} disabled={saving}>
-                    {saving ? "A criar..." : `Criar ${entityLabel}`}
+                    {saving ? "A criar..." : "Criar aula"}
                   </button>
                 )}
               </div>
             </div>
+
+            <aside className="space-y-3 xl:sticky xl:top-4 xl:self-start">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Resumo</p>
+                <p className="mt-2 text-base font-semibold text-white">{title.trim() || "Nova aula"}</p>
+                <div className="mt-3 space-y-2 text-[12px] text-white/70">
+                  <p>{durationMinutes} min · {pricePreview}</p>
+                  <p>{selectedProfessionalName}</p>
+                  <p>{selectedResourceLabel}</p>
+                  <p>{scheduleModeLabel}</p>
+                </div>
+              </div>
+
+              {scheduleMode !== "NONE" ? (
+                <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Próximas sessões</p>
+                  {schedulePreview.length === 0 ? (
+                    <p className="mt-2 text-[12px] text-white/65">Sem dados.</p>
+                  ) : (
+                    <div className="mt-2 space-y-2">
+                      {schedulePreview.slice(0, 4).map((session) => (
+                        <div key={session.key} className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-[11px] text-white/75">
+                          {formatSessionLabel(session)}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </aside>
           </div>
         </section>
       </div>
