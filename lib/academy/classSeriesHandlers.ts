@@ -850,5 +850,35 @@ export async function handleAcademyClassSessionsGet(req: NextRequest, classIdRaw
     },
   });
 
-  return respondOk(access.ctx, { items });
+  const sessionIds = items.map((item) => item.id);
+  const enrollmentCounts = sessionIds.length
+    ? await prisma.academyEnrollment.groupBy({
+        by: ["classSessionId"],
+        where: {
+          organizationId: access.organization.id,
+          classSessionId: { in: sessionIds },
+          status: { in: ["PENDING", "CONFIRMED"] },
+        },
+        _count: { _all: true },
+      })
+    : [];
+
+  const enrolledCountBySession = new Map<number, number>();
+  enrollmentCounts.forEach((row) => {
+    enrolledCountBySession.set(row.classSessionId, row._count._all);
+  });
+
+  const enrichedItems = items.map((item) => {
+    const enrolledCount = enrolledCountBySession.get(item.id) ?? 0;
+    const isFull = item.status !== "SCHEDULED" || enrolledCount >= item.capacity;
+    const isOverbooked = enrolledCount > item.capacity;
+    return {
+      ...item,
+      enrolledCount,
+      isFull,
+      isOverbooked,
+    };
+  });
+
+  return respondOk(access.ctx, { items: enrichedItems });
 }

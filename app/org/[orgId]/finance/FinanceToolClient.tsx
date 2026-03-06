@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import {
@@ -41,6 +41,31 @@ type FinanceToolClientProps = {
 };
 
 type ScopeOption = "all" | "eventos" | "padel";
+type PaymentsStatus = "NO_STRIPE" | "PENDING" | "READY";
+type PaymentsMode = "CONNECT" | "PLATFORM";
+type StripeConnectApiStatus = "PLATFORM" | "NOT_CONNECTED" | "INCOMPLETE" | "CONNECTED";
+
+type OrganizationMeFinanceResponse = {
+  membershipRole?: string | null;
+  paymentsStatus?: PaymentsStatus;
+  paymentsMode?: PaymentsMode;
+  organization?: {
+    status?: string | null;
+    officialEmail?: string | null;
+    officialEmailVerifiedAt?: string | null;
+    stripeAccountId?: string | null;
+    stripeChargesEnabled?: boolean | null;
+    stripePayoutsEnabled?: boolean | null;
+  } | null;
+};
+
+type StripeStatusResponse = {
+  status?: StripeConnectApiStatus;
+  accountId?: string | null;
+  charges_enabled?: boolean;
+  payouts_enabled?: boolean;
+  requirements_due?: string[];
+};
 
 type FinanceOverviewResponse = {
   ok?: boolean;
@@ -200,6 +225,61 @@ function buildQueryString(query: Record<string, string | number | undefined | nu
   return params.toString();
 }
 
+function isOwnerRole(value: string | null | undefined) {
+  return (value ?? "").trim().toUpperCase() === "OWNER";
+}
+
+function normalizeStripeStatus(params: {
+  paymentsMode: PaymentsMode;
+  paymentsStatus: PaymentsStatus;
+  stripeStatus?: StripeConnectApiStatus | null;
+}): StripeConnectApiStatus {
+  if (params.paymentsMode === "PLATFORM") return "PLATFORM";
+  if (params.stripeStatus) return params.stripeStatus;
+  if (params.paymentsStatus === "READY") return "CONNECTED";
+  if (params.paymentsStatus === "PENDING") return "INCOMPLETE";
+  return "NOT_CONNECTED";
+}
+
+function formatStatusCode(value: string | null | undefined) {
+  if (!value) return "—";
+  return value.replaceAll("_", " ");
+}
+
+function paymentsStatusLabel(status: PaymentsStatus) {
+  if (status === "READY") return "Pronto";
+  if (status === "PENDING") return "Pendente";
+  return "Sem Stripe";
+}
+
+function stripeStatusLabel(status: StripeConnectApiStatus) {
+  if (status === "CONNECTED") return "Ligado";
+  if (status === "INCOMPLETE") return "Incompleto";
+  if (status === "NOT_CONNECTED") return "Não ligado";
+  return "Conta ORYA";
+}
+
+function mapStripeConnectError(errorCode: string | null, fallbackMessage: string) {
+  const normalized = (errorCode ?? "").trim().toUpperCase();
+  if (normalized === "APENAS_OWNER") return "Só o owner pode iniciar o onboarding Stripe.";
+  if (normalized === "OFFICIAL_EMAIL_REQUIRED") return "Define o email oficial da organização antes de ligares o Stripe.";
+  if (normalized === "OFFICIAL_EMAIL_NOT_VERIFIED") return "Verifica o email oficial da organização antes de ligares o Stripe.";
+  if (normalized === "ORGANIZATION_NOT_ACTIVE") return "A organização tem de estar ativa para ligares o Stripe.";
+  if (normalized === "PLATFORM_ACCOUNT") return "Esta organização usa pagamentos na conta ORYA (sem Stripe Connect).";
+  return fallbackMessage;
+}
+
+function extractApiError(payload: unknown, fallbackErrorCode: string) {
+  const topLevel = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : null;
+  const data = topLevel?.data && typeof topLevel.data === "object" ? (topLevel.data as Record<string, unknown>) : null;
+  const errorCodeRaw = topLevel?.errorCode ?? topLevel?.error ?? data?.errorCode ?? data?.error ?? fallbackErrorCode;
+  const messageRaw = topLevel?.message ?? topLevel?.error ?? data?.message ?? "Erro inesperado.";
+  return {
+    errorCode: typeof errorCodeRaw === "string" ? errorCodeRaw : fallbackErrorCode,
+    message: typeof messageRaw === "string" ? messageRaw : "Erro inesperado.",
+  };
+}
+
 export default function FinanceToolClient({ orgId, initialView }: FinanceToolClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -236,6 +316,8 @@ export default function FinanceToolClient({ orgId, initialView }: FinanceToolCli
       ? `${orgApiBase}/finance/reconciliation?${buildQueryString(scopeQuery)}`
       : null;
   const opsFeedKey = view === "ops" ? `${orgApiBase}/ops/feed?limit=25` : null;
+  const onboardingParam = (searchParams?.get("onboarding") ?? "").trim().toLowerCase();
+  const orgMeKey = `${orgApiBase}/me`;
 
   const { data: overview, error: overviewError, isLoading: overviewLoading, mutate: mutateOverview } = useSWR<FinanceOverviewResponse>(
     overviewKey,
@@ -253,12 +335,203 @@ export default function FinanceToolClient({ orgId, initialView }: FinanceToolCli
     apiFetcher,
     swrOptions,
   );
+  const { data: orgMe, error: orgMeError, isLoading: orgMeLoading, mutate: mutateOrgMe } = useSWR<OrganizationMeFinanceResponse>(
+    orgMeKey,
+    apiFetcher,
+    swrOptions,
+  );
+
+  const paymentsMode = orgMe?.paymentsMode ?? "CONNECT";
+  const paymentsStatus = orgMe?.paymentsStatus ?? "NO_STRIPE";
+  const isOwner = isOwnerRole(orgMe?.membershipRole);
+  const stripeStatusKey = paymentsMode === "CONNECT" && isOwner ? `${orgApiBase}/finance/payouts/status` : null;
+
+  const {
+    data: stripeStatusData,
+    error: stripeStatusError,
+    isLoading: stripeStatusLoading,
+    mutate: mutateStripeStatus,
+  } = useSWR<StripeStatusResponse>(stripeStatusKey, apiFetcher, swrOptions);
+
+  const [stripeActionLoading, setStripeActionLoading] = useState(false);
+  const [stripeRefreshLoading, setStripeRefreshLoading] = useState(false);
+  const [stripeActionError, setStripeActionError] = useState<string | null>(null);
+  const [stripeActionMessage, setStripeActionMessage] = useState<string | null>(null);
+
+  const organizationStatus = orgMe?.organization?.status ?? null;
+  const officialEmail = orgMe?.organization?.officialEmail?.trim() ?? "";
+  const officialEmailVerified = Boolean(officialEmail && orgMe?.organization?.officialEmailVerifiedAt);
+  const stripeStatus = normalizeStripeStatus({
+    paymentsMode,
+    paymentsStatus,
+    stripeStatus: stripeStatusData?.status ?? null,
+  });
+  const stripeAccountId = (stripeStatusData?.accountId ?? orgMe?.organization?.stripeAccountId ?? "").trim();
+  const stripeChargesEnabled = Boolean(
+    stripeStatusData?.charges_enabled ?? orgMe?.organization?.stripeChargesEnabled ?? false,
+  );
+  const stripePayoutsEnabled = Boolean(
+    stripeStatusData?.payouts_enabled ?? orgMe?.organization?.stripePayoutsEnabled ?? false,
+  );
+  const stripeRequirements = Array.isArray(stripeStatusData?.requirements_due) ? stripeStatusData.requirements_due : [];
+
+  const stripeSetupSummary = useMemo(() => {
+    if (paymentsMode === "PLATFORM") {
+      return {
+        title: "Pagamentos em modo plataforma ORYA",
+        description: "Esta organização recebe pagamentos pela conta da plataforma.",
+      };
+    }
+    if (stripeStatus === "CONNECTED") {
+      return {
+        title: "Stripe ligado e operacional",
+        description: "Cobranças e transferências estão ativas.",
+      };
+    }
+    if (stripeStatus === "INCOMPLETE") {
+      return {
+        title: "Onboarding Stripe incompleto",
+        description: "Faltam dados obrigatórios para ativar pagamentos e transferências.",
+      };
+    }
+    return {
+      title: "Stripe ainda não ligado",
+      description: "Liga o Stripe para ativar pagamentos e transferências da organização.",
+    };
+  }, [paymentsMode, stripeStatus]);
+
+  const activationRows = useMemo(
+    () => [
+      {
+        id: "org_status",
+        label: "Estado da organização",
+        code: formatStatusCode(organizationStatus),
+        active: organizationStatus === "ACTIVE",
+      },
+      {
+        id: "payments_mode",
+        label: "Modo de pagamentos",
+        code: formatStatusCode(paymentsMode),
+        active: paymentsMode === "PLATFORM" || paymentsStatus === "READY",
+      },
+      {
+        id: "payments_status",
+        label: "Estado pagamentos (UI)",
+        code: `${paymentsStatus} · ${paymentsStatusLabel(paymentsStatus)}`,
+        active: paymentsStatus === "READY",
+      },
+      {
+        id: "stripe_api_status",
+        label: "Estado Stripe (API)",
+        code: `${stripeStatus} · ${stripeStatusLabel(stripeStatus)}`,
+        active: stripeStatus === "CONNECTED" || stripeStatus === "PLATFORM",
+      },
+      {
+        id: "stripe_charges",
+        label: "Cobranças Stripe",
+        code: stripeChargesEnabled ? "ATIVO" : "INATIVO",
+        active: stripeChargesEnabled,
+      },
+      {
+        id: "stripe_payouts",
+        label: "Transferências Stripe",
+        code: stripePayoutsEnabled ? "ATIVO" : "INATIVO",
+        active: stripePayoutsEnabled,
+      },
+      {
+        id: "official_email",
+        label: "Email oficial verificado",
+        code: officialEmailVerified ? "VERIFICADO" : "PENDENTE",
+        active: officialEmailVerified,
+      },
+    ],
+    [
+      officialEmailVerified,
+      organizationStatus,
+      paymentsMode,
+      paymentsStatus,
+      stripeChargesEnabled,
+      stripePayoutsEnabled,
+      stripeStatus,
+    ],
+  );
 
   const refreshCurrentView = useCallback(async () => {
     if (view === "overview") await mutateOverview();
     if (view === "reconciliation") await mutateReconciliation();
     if (view === "ops") await mutateOpsFeed();
   }, [mutateOpsFeed, mutateOverview, mutateReconciliation, view]);
+
+  const refreshStripeState = useCallback(async () => {
+    const refreshTasks: Array<Promise<unknown>> = [mutateOrgMe()];
+    if (stripeStatusKey) refreshTasks.push(mutateStripeStatus());
+    await Promise.all(refreshTasks);
+  }, [mutateOrgMe, mutateStripeStatus, stripeStatusKey]);
+
+  const handleStripeConnect = useCallback(async () => {
+    if (paymentsMode === "PLATFORM") return;
+    setStripeActionError(null);
+    setStripeActionMessage(null);
+    setStripeActionLoading(true);
+    try {
+      const res = await fetch(`${orgApiBase}/finance/payouts/connect`, {
+        method: "POST",
+        cache: "no-store",
+      });
+      const payload = await res.json().catch(() => null);
+      const unwrapped = unwrapEnvelope(payload) as Record<string, unknown> | null;
+      const urlValue = unwrapped?.url ?? (payload && typeof payload === "object" ? (payload as Record<string, unknown>).url : null);
+      const url = typeof urlValue === "string" ? urlValue.trim() : "";
+      if (!res.ok || !url) {
+        const parsed = extractApiError(payload, `HTTP_${res.status}`);
+        setStripeActionError(mapStripeConnectError(parsed.errorCode, parsed.message));
+        return;
+      }
+      window.location.assign(url);
+    } catch (error) {
+      setStripeActionError(error instanceof Error ? error.message : "Erro inesperado ao iniciar onboarding Stripe.");
+    } finally {
+      setStripeActionLoading(false);
+    }
+  }, [orgApiBase, paymentsMode]);
+
+  const handleStripeRefresh = useCallback(async () => {
+    setStripeActionError(null);
+    setStripeActionMessage(null);
+    setStripeRefreshLoading(true);
+    try {
+      await refreshStripeState();
+      setStripeActionMessage("Estado Stripe atualizado.");
+    } catch (error) {
+      setStripeActionError(error instanceof Error ? error.message : "Erro ao atualizar estado Stripe.");
+    } finally {
+      setStripeRefreshLoading(false);
+    }
+  }, [refreshStripeState]);
+
+  useEffect(() => {
+    if (!onboardingParam) return;
+    if (onboardingParam === "done") {
+      setStripeActionMessage("Onboarding Stripe concluído. Estado sincronizado.");
+      void refreshStripeState();
+      return;
+    }
+    if (onboardingParam === "refresh") {
+      setStripeActionMessage("Retomaste o onboarding Stripe. Continua a configuração.");
+      void refreshStripeState();
+    }
+  }, [onboardingParam, refreshStripeState]);
+
+  useEffect(() => {
+    if (!onboardingParam) return;
+    updateQuery({ onboarding: null });
+  }, [onboardingParam, updateQuery]);
+
+  useEffect(() => {
+    if (!stripeActionMessage) return;
+    const timeoutId = window.setTimeout(() => setStripeActionMessage(null), 4200);
+    return () => window.clearTimeout(timeoutId);
+  }, [stripeActionMessage]);
 
   const headerByView = useMemo<Record<FinanceAllowedView, string>>(
     () => ({
@@ -420,6 +693,150 @@ export default function FinanceToolClient({ orgId, initialView }: FinanceToolCli
           )}
         </div>
       </div>
+
+      <Panel title="Stripe e onboarding" subtitle="Local único para ligação Stripe, onboarding e estados de ativação">
+        {orgMeLoading ? (
+          <div className="rounded-xl border border-white/12 bg-white/[0.03] px-3 py-2 text-sm text-white/75">
+            A carregar estado financeiro da organização...
+          </div>
+        ) : orgMeError ? (
+          <div className="rounded-xl border border-rose-300/50 bg-rose-500/14 px-3 py-2 text-sm text-rose-100">
+            Erro ao carregar estado da organização: {orgMeError instanceof Error ? orgMeError.message : "erro inesperado."}
+          </div>
+        ) : (
+          <div className="grid gap-3 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="rounded-2xl border border-white/12 bg-white/[0.03] p-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-white/70">Matriz de estados</p>
+              <div className="mt-2 space-y-2">
+                {activationRows.map((row) => (
+                  <div
+                    key={row.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm text-white">{row.label}</p>
+                      <p className="text-xs text-white/70">{row.code}</p>
+                    </div>
+                    <ActiveStatePill active={row.active} />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="rounded-2xl border border-white/12 bg-white/[0.03] p-3">
+                <p className="text-sm font-semibold text-white">{stripeSetupSummary.title}</p>
+                <p className="mt-1 text-xs text-white/75">{stripeSetupSummary.description}</p>
+
+                <div className="mt-3 grid gap-2 text-xs text-white/78">
+                  <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+                    Conta Stripe:{" "}
+                    <span className="font-semibold text-white">
+                      {stripeAccountId ? `…${stripeAccountId.slice(-6)}` : "Por ligar"}
+                    </span>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+                    Requisitos pendentes:{" "}
+                    <span className="font-semibold text-white">{stripeRequirements.length}</span>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {paymentsMode === "CONNECT" && isOwner ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleStripeConnect()}
+                      disabled={stripeActionLoading || stripeRefreshLoading}
+                      className={cn(CTA_PRIMARY_CLEAN, "px-3 py-1.5 text-xs disabled:opacity-60")}
+                    >
+                      {stripeActionLoading
+                        ? "A abrir Stripe..."
+                        : stripeStatus === "INCOMPLETE"
+                          ? "Continuar onboarding"
+                          : stripeStatus === "CONNECTED"
+                            ? "Rever onboarding"
+                            : "Ligar Stripe"}
+                    </button>
+                  ) : null}
+
+                  {paymentsMode === "CONNECT" && isOwner ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleStripeRefresh()}
+                      disabled={stripeRefreshLoading || stripeActionLoading}
+                      className={cn(CTA_SECONDARY_CLEAN, "px-3 py-1.5 text-xs disabled:opacity-60")}
+                    >
+                      {stripeRefreshLoading ? "A validar..." : "Atualizar estado Stripe"}
+                    </button>
+                  ) : null}
+
+                  {paymentsMode === "CONNECT" && !isOwner ? (
+                    <span className="rounded-lg border border-amber-300/40 bg-amber-300/10 px-2 py-1 text-[11px] text-amber-100">
+                      Só o owner pode iniciar onboarding Stripe.
+                    </span>
+                  ) : null}
+
+                  {stripeAccountId ? (
+                    <a
+                      href="https://dashboard.stripe.com/"
+                      target="_blank"
+                      rel="noreferrer"
+                      className={cn(CTA_SECONDARY_CLEAN, "px-3 py-1.5 text-xs")}
+                    >
+                      Abrir dashboard Stripe
+                    </a>
+                  ) : null}
+
+                  {!officialEmailVerified ? (
+                    <a
+                      href={buildOrgHref(orgId, "/settings", { tab: "official-email" })}
+                      className={cn(CTA_SECONDARY_CLEAN, "px-3 py-1.5 text-xs")}
+                    >
+                      Configurar email oficial
+                    </a>
+                  ) : null}
+                </div>
+
+                {stripeStatusLoading ? (
+                  <p className="mt-2 text-xs text-white/70">A validar estado Stripe...</p>
+                ) : null}
+                {stripeStatusError ? (
+                  <div className="mt-2 rounded-lg border border-rose-300/40 bg-rose-500/12 px-2 py-1.5 text-xs text-rose-100">
+                    Erro na validação Stripe: {stripeStatusError instanceof Error ? stripeStatusError.message : "erro inesperado."}
+                  </div>
+                ) : null}
+                {stripeActionMessage ? (
+                  <div className="mt-2 rounded-lg border border-emerald-300/40 bg-emerald-500/12 px-2 py-1.5 text-xs text-emerald-100">
+                    {stripeActionMessage}
+                  </div>
+                ) : null}
+                {stripeActionError ? (
+                  <div className="mt-2 rounded-lg border border-rose-300/40 bg-rose-500/12 px-2 py-1.5 text-xs text-rose-100">
+                    {stripeActionError}
+                  </div>
+                ) : null}
+              </div>
+
+              {stripeRequirements.length > 0 ? (
+                <div className="rounded-2xl border border-amber-300/45 bg-amber-300/12 p-3 text-xs text-amber-100">
+                  <p className="font-semibold">Itens pendentes no Stripe</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-4">
+                    {stripeRequirements.slice(0, 8).map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {onboardingParam === "done" && stripeRequirements.length > 0 ? (
+                <div className="rounded-2xl border border-amber-300/45 bg-amber-300/10 p-3 text-xs text-amber-100">
+                  Regressaste do onboarding em estado incompleto. Abre o Stripe e conclui os itens pendentes.
+                </div>
+              ) : null}
+            </div>
+          </div>
+        )}
+      </Panel>
 
       {view === "overview" && (
         <ViewSection
@@ -816,6 +1233,21 @@ function MetricCard({ label, value }: { label: string; value: string }) {
       <p className="org-clean-label uppercase tracking-[0.16em] text-white/78">{label}</p>
       <p className="mt-1 text-[24px] font-bold leading-tight text-white">{value}</p>
     </div>
+  );
+}
+
+function ActiveStatePill({ active }: { active: boolean }) {
+  return (
+    <span
+      className={cn(
+        "rounded-full border px-2 py-0.5 text-[11px]",
+        active
+          ? "border-emerald-300/60 bg-emerald-500/15 text-emerald-100"
+          : "border-rose-300/55 bg-rose-500/12 text-rose-100",
+      )}
+    >
+      {active ? "Ativo" : "Inativo"}
+    </span>
   );
 }
 

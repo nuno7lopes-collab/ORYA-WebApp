@@ -100,6 +100,10 @@ type ClassSessionItem = {
   id: number;
   startsAt: string;
   endsAt: string;
+  capacity: number;
+  enrolledCount?: number;
+  isFull?: boolean;
+  isOverbooked?: boolean;
   status: string;
   professional?: { id: number; name: string } | null;
   court?: { id: number; name: string | null; isActive?: boolean | null } | null;
@@ -164,6 +168,31 @@ function mapSeriesApiErrorToMessage(parsedError: {
   }
 
   return parsedError.message;
+}
+
+function rangesOverlap(startsAtA: number, endsAtA: number, startsAtB: number, endsAtB: number) {
+  return startsAtA < endsAtB && endsAtA > startsAtB;
+}
+
+function formatPreviewDateLabel(value: Date) {
+  return new Intl.DateTimeFormat("pt-PT", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(value);
+}
+
+function resolveSessionStatusVisual(statusRaw: string | null | undefined) {
+  const status = String(statusRaw ?? "").trim().toUpperCase();
+  if (status === "SCHEDULED") {
+    return { label: "Agendada", className: "border-emerald-300/35 bg-emerald-400/10 text-emerald-100" };
+  }
+  if (status === "CANCELLED") {
+    return { label: "Cancelada", className: "border-red-400/40 bg-red-500/12 text-red-100" };
+  }
+  if (status === "COMPLETED") {
+    return { label: "Concluída", className: "border-cyan-300/35 bg-cyan-400/10 text-cyan-100" };
+  }
+  return { label: status || "Estado", className: "border-white/15 bg-white/8 text-white/70" };
 }
 
 
@@ -662,6 +691,111 @@ export default function AcademyClassDetailPage() {
     }
   };
 
+  const draftSchedulePreview = useMemo(() => {
+    const [hourRaw, minuteRaw] = seriesStartTime.split(":");
+    const hour = Number(hourRaw);
+    const minute = Number(minuteRaw);
+    const durationValue = Number(seriesDuration);
+    if (!Number.isFinite(hour) || !Number.isFinite(minute) || !Number.isFinite(durationValue) || durationValue <= 0) {
+      return [];
+    }
+    const startMinute = hour * 60 + minute;
+
+    if (seriesDraftMode === "SINGLE") {
+      const date = parseDateInput(seriesSingleDate);
+      if (!date) return [];
+      const startsAt = new Date(date.getTime());
+      startsAt.setHours(hour, minute, 0, 0);
+      return [
+        {
+          key: `${seriesSingleDate}-${startMinute}`,
+          startsAt,
+          endsAt: new Date(startsAt.getTime() + durationValue * 60_000),
+        },
+      ];
+    }
+
+    const startDate = parseDateInput(seriesValidFrom);
+    if (!startDate) return [];
+    const targetDay = Number(seriesDay);
+    if (!Number.isFinite(targetDay) || targetDay < 0 || targetDay > 6) return [];
+    const validUntil = seriesValidUntil ? parseDateInput(seriesValidUntil) : null;
+    if (validUntil && validUntil < startDate) return [];
+
+    const first = new Date(startDate.getTime());
+    first.setDate(first.getDate() + ((targetDay - first.getDay() + 7) % 7));
+    const previews: Array<{ key: string; startsAt: Date; endsAt: Date }> = [];
+    const cursor = new Date(first.getTime());
+
+    while (previews.length < 8) {
+      if (validUntil && cursor > validUntil) break;
+      const startsAt = new Date(cursor.getTime());
+      startsAt.setHours(hour, minute, 0, 0);
+      previews.push({
+        key: `${startsAt.toISOString()}-${startMinute}`,
+        startsAt,
+        endsAt: new Date(startsAt.getTime() + durationValue * 60_000),
+      });
+      cursor.setDate(cursor.getDate() + 7);
+    }
+
+    return previews;
+  }, [seriesDraftMode, seriesDay, seriesDuration, seriesSingleDate, seriesStartTime, seriesValidFrom, seriesValidUntil]);
+
+  const draftConflictAlerts = useMemo(() => {
+    const trainerId = Number(seriesProfessionalId);
+    const courtId = Number(seriesCourtId);
+    const hasTrainerScope = Number.isFinite(trainerId) && trainerId > 0;
+    const hasCourtScope = Number.isFinite(courtId) && courtId > 0;
+    if ((!hasTrainerScope && !hasCourtScope) || draftSchedulePreview.length === 0 || classSessions.length === 0) {
+      return [];
+    }
+
+    const alerts: Array<{ key: string; label: string }> = [];
+    draftSchedulePreview.forEach((preview) => {
+      const previewStartMs = preview.startsAt.getTime();
+      const previewEndMs = preview.endsAt.getTime();
+      classSessions.forEach((session) => {
+        if (seriesEditingId && session.series?.id === seriesEditingId) return;
+        if (String(session.status ?? "").toUpperCase() === "CANCELLED") return;
+        const sessionStartMs = new Date(session.startsAt).getTime();
+        const sessionEndMs = new Date(session.endsAt).getTime();
+        if (!Number.isFinite(sessionStartMs) || !Number.isFinite(sessionEndMs)) return;
+        if (!rangesOverlap(previewStartMs, previewEndMs, sessionStartMs, sessionEndMs)) return;
+
+        const trainerConflict = hasTrainerScope && session.professional?.id === trainerId;
+        const courtConflict = hasCourtScope && session.court?.id === courtId;
+        if (!trainerConflict && !courtConflict) return;
+
+        const scopeLabel = trainerConflict && courtConflict
+          ? "treinador e campo"
+          : trainerConflict
+            ? "treinador"
+            : "campo";
+        const label = `${formatPreviewDateLabel(preview.startsAt)} · conflito com ${scopeLabel}.`;
+        alerts.push({
+          key: `${preview.key}-${session.id}-${scopeLabel}`,
+          label,
+        });
+      });
+    });
+
+    return alerts.slice(0, 6);
+  }, [classSessions, draftSchedulePreview, seriesProfessionalId, seriesCourtId, seriesEditingId]);
+
+  const sessionSummary = useMemo(() => {
+    const total = classSessions.length;
+    const full = classSessions.filter((session) => session.isFull).length;
+    const overbooked = classSessions.filter((session) => session.isOverbooked).length;
+    return { total, full, overbooked };
+  }, [classSessions]);
+
+  const seriesSummary = useMemo(() => {
+    const total = classSeries.length;
+    const active = classSeries.filter((series) => series.isActive).length;
+    return { total, active };
+  }, [classSeries]);
+
   if (!serviceId) {
     return <div className="text-white/70">Registo inválido.</div>;
   }
@@ -677,6 +811,20 @@ export default function AcademyClassDetailPage() {
             ? `${service.durationMinutes} min · Preço: ${formatMoney(service.unitPriceCents, service.currency)}`
             : "A carregar detalhes..."}
         </p>
+        <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+          <span className="rounded-full border border-white/15 bg-white/8 px-2 py-0.5 text-white/75">
+            Séries {seriesSummary.total}
+          </span>
+          <span className="rounded-full border border-emerald-300/35 bg-emerald-400/10 px-2 py-0.5 text-emerald-100">
+            Ativas {seriesSummary.active}
+          </span>
+          <span className="rounded-full border border-white/15 bg-white/8 px-2 py-0.5 text-white/75">
+            Sessões {sessionSummary.total}
+          </span>
+          <span className="rounded-full border border-amber-300/35 bg-amber-400/10 px-2 py-0.5 text-amber-100">
+            Cheias {sessionSummary.full}
+          </span>
+        </div>
       </div>
 
       <section className={cn(DASHBOARD_CARD, "p-5 space-y-4")}> 
@@ -1169,6 +1317,28 @@ export default function AcademyClassDetailPage() {
               {seriesError}
             </div>
           )}
+          {!seriesError && draftConflictAlerts.length > 0 && (
+            <div className="rounded-xl border border-amber-300/45 bg-amber-500/12 px-3 py-2">
+              <p className="text-[12px] font-semibold text-amber-100">Conflitos detetados na pré-visualização</p>
+              <ul className="mt-1 space-y-1 text-[11px] text-amber-100/85">
+                {draftConflictAlerts.map((alert) => (
+                  <li key={alert.key}>{alert.label}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {draftSchedulePreview.length > 0 && (
+            <div className="rounded-xl border border-white/12 bg-white/[0.04] px-3 py-2">
+              <p className="text-[12px] font-semibold text-white/85">Pré-visualização</p>
+              <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+                {draftSchedulePreview.slice(0, 8).map((preview) => (
+                  <span key={preview.key} className="rounded-full border border-white/15 bg-white/8 px-2 py-0.5 text-white/70">
+                    {formatPreviewDateLabel(preview.startsAt)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
 
           <button type="button" className={CTA_PRIMARY} onClick={handleSeriesSubmit} disabled={seriesSaving}>
             {seriesSaving
@@ -1191,28 +1361,47 @@ export default function AcademyClassDetailPage() {
               const isSingleSession =
                 Boolean(series.validUntil) && series.validUntil?.slice(0, 10) === series.validFrom.slice(0, 10);
               return (
-                <div key={series.id} className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-2">
+                <div key={series.id} className="rounded-2xl border border-white/10 bg-white/[0.06] p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <p className="text-sm font-semibold text-white">
                         {DAY_LABELS[series.dayOfWeek]} · {pad(hour)}:{pad(minute)} · {series.durationMinutes} min
                       </p>
-                      <p className="text-[12px] text-white/60">
-                        Capacidade {series.capacity}
-                        {series.professional?.name ? ` · ${series.professional.name}` : ""}
-                        {series.court?.name ? ` · ${series.court.name}${series.court.isActive === false ? " (inativo)" : ""}` : ""}
-                      </p>
-                      <p className="text-[11px] text-white/45">
+                      <p className="mt-1 text-[11px] text-white/50">
                         {isSingleSession
                           ? `Sessão única: ${series.validFrom.slice(0, 10)}`
                           : `Válido: ${series.validFrom.slice(0, 10)}${series.validUntil ? ` → ${series.validUntil.slice(0, 10)}` : ""}`}
                       </p>
-                      <p className="text-[11px] text-white/45">
-                        Sessões: {series._count?.sessions ?? 0}
-                      </p>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        <span className="rounded-full border border-white/15 bg-white/8 px-2 py-0.5 text-[10px] text-white/75">
+                          Capacidade {series.capacity}
+                        </span>
+                        <span className="rounded-full border border-white/15 bg-white/8 px-2 py-0.5 text-[10px] text-white/75">
+                          Sessões {series._count?.sessions ?? 0}
+                        </span>
+                        {series.professional?.name ? (
+                          <span className="rounded-full border border-cyan-300/35 bg-cyan-400/10 px-2 py-0.5 text-[10px] text-cyan-100">
+                            {series.professional.name}
+                          </span>
+                        ) : null}
+                        {series.court?.name ? (
+                          <span className="rounded-full border border-violet-300/35 bg-violet-400/10 px-2 py-0.5 text-[10px] text-violet-100">
+                            {series.court.name}{series.court.isActive === false ? " (inativo)" : ""}
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/60">
-                      <span>{series.isActive ? "Ativa" : "Inativa"}</span>
+                      <span
+                        className={cn(
+                          "rounded-full border px-2 py-0.5",
+                          series.isActive
+                            ? "border-emerald-300/35 bg-emerald-400/10 text-emerald-100"
+                            : "border-white/20 bg-white/8 text-white/65",
+                        )}
+                      >
+                        {series.isActive ? "Ativa" : "Inativa"}
+                      </span>
                       <button
                         type="button"
                         className={CTA_SECONDARY}
@@ -1235,19 +1424,91 @@ export default function AcademyClassDetailPage() {
           </div>
 
           <div className="space-y-2">
-            <p className="text-[12px] text-white/60">Próximas sessões</p>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[12px] text-white/60">Próximas sessões</p>
+              <div className="flex flex-wrap gap-1.5 text-[10px]">
+                <span className="rounded-full border border-white/15 bg-white/8 px-2 py-0.5 text-white/75">
+                  {sessionSummary.total} sessões
+                </span>
+                <span className="rounded-full border border-amber-300/35 bg-amber-400/10 px-2 py-0.5 text-amber-100">
+                  {sessionSummary.full} cheias
+                </span>
+                {sessionSummary.overbooked > 0 ? (
+                  <span className="rounded-full border border-red-400/40 bg-red-500/12 px-2 py-0.5 text-red-100">
+                    {sessionSummary.overbooked} sobrelotadas
+                  </span>
+                ) : null}
+              </div>
+            </div>
             {classSessions.length === 0 ? (
               <p className="text-[12px] text-white/50">Sem sessões futuras.</p>
             ) : (
               <div className="space-y-2">
-                {classSessions.slice(0, 10).map((session) => (
-                  <div key={session.id} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/70">
-                    {new Date(session.startsAt).toLocaleString("pt-PT", { dateStyle: "medium", timeStyle: "short" })}
-                    {session.professional?.name ? ` · ${session.professional.name}` : ""}
-                    {session.court?.name ? ` · ${session.court.name}${session.court.isActive === false ? " (inativo)" : ""}` : ""}
-                    {session.status ? ` · ${session.status}` : ""}
-                  </div>
-                ))}
+                {classSessions.slice(0, 10).map((session) => {
+                  const statusVisual = resolveSessionStatusVisual(session.status);
+                  const enrolledCount = session.enrolledCount ?? 0;
+                  const safeCapacity = Math.max(1, session.capacity);
+                  const occupancyRatio = Math.min(1, enrolledCount / safeCapacity);
+                  return (
+                    <div key={session.id} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-[12px] font-semibold text-white">
+                          {new Date(session.startsAt).toLocaleString("pt-PT", { dateStyle: "medium", timeStyle: "short" })}
+                        </p>
+                        <div className="flex flex-wrap gap-1.5 text-[10px]">
+                          <span className="rounded-full border border-white/15 bg-white/8 px-2 py-0.5 text-white/75">
+                            {enrolledCount}/{session.capacity}
+                          </span>
+                          {session.isFull ? (
+                            <span className="rounded-full border border-amber-300/35 bg-amber-400/10 px-2 py-0.5 text-amber-100">
+                              Cheia
+                            </span>
+                          ) : null}
+                          {session.isOverbooked ? (
+                            <span className="rounded-full border border-red-400/40 bg-red-500/12 px-2 py-0.5 text-red-100">
+                              Sobrelotada
+                            </span>
+                          ) : null}
+                          <span className={cn("rounded-full border px-2 py-0.5", statusVisual.className)}>
+                            {statusVisual.label}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="mt-2">
+                        <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                          <div
+                            className={cn(
+                              "h-full rounded-full",
+                              session.isOverbooked
+                                ? "bg-red-400"
+                                : session.isFull
+                                  ? "bg-amber-300"
+                                  : "bg-cyan-300",
+                            )}
+                            style={{
+                              width:
+                                enrolledCount <= 0
+                                  ? "0%"
+                                  : `${Math.max(6, Math.round(occupancyRatio * 100))}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+                        {session.professional?.name ? (
+                          <span className="rounded-full border border-cyan-300/35 bg-cyan-400/10 px-2 py-0.5 text-cyan-100">
+                            {session.professional.name}
+                          </span>
+                        ) : null}
+                        {session.court?.name ? (
+                          <span className="rounded-full border border-violet-300/35 bg-violet-400/10 px-2 py-0.5 text-violet-100">
+                            {session.court.name}{session.court.isActive === false ? " (inativo)" : ""}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
