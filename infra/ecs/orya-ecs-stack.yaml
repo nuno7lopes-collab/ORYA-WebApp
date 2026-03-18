@@ -884,8 +884,6 @@ Resources:
 
   WebServiceAlb:
     Type: AWS::ECS::Service
-    DependsOn:
-      - Listener443
     Properties:
       ServiceName: !Sub "orya-${EnvironmentName}-web"
       Cluster: !Ref ECSCluster
